@@ -31,7 +31,7 @@ The app is currently German. API error details may use the provider's language. 
 
 ## Build and unsigned IPA
 
-The `Build and test unsigned iOS app` GitHub Actions workflow generates the Xcode project using XcodeGen, runs XCTest and XCUITest on an iPhone simulator, builds the ARM64 Release app with code signing disabled, verifies its executable and packages `Payload/Panel.app` as an unsigned IPA. Artifacts include the IPA, SHA-256 and simulator test results/screenshots. Push to main or use **Run workflow**.
+The `Build and test unsigned iOS app` GitHub Actions workflow generates the Xcode project using XcodeGen, runs XCTest and XCUITest on an iPhone simulator, builds the ARM64 Release app with code signing disabled, verifies its executable and packages `Payload/Panel.app` as an unsigned IPA. Artifacts include the IPA, SHA-256 and simulator test results/screenshots. Push to main or use **Run workflow**. For packaging/documentation-only changes, the workflow can reuse an authenticated successful simulator test step from commit `0d704657e54866a0aaf856d89b721b8626f9635c`, but only after verifying that all app source, assets, tests, project settings and entitlements are byte-identical. Any change to those inputs runs the complete test suite. The artifact includes the validation proof.
 
 For local builds on a Mac with Xcode 26+:
 
