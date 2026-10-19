@@ -41,6 +41,7 @@ enum Vault {
     @Published var api: PanelAPI?
     @Published var servers: [Server] = []
     @Published var loading = false
+    private var refreshID = UUID()
     @Published var error: String?
     @Published var demo = false
     @Published var locked = false
@@ -81,12 +82,16 @@ enum Vault {
         persist()
     }
     func refresh() async {
-        guard let api, !loading else { return }
-        loading = true; defer { loading = false }
+        guard let api else { return }
+        let requestID = UUID(); refreshID = requestID
+        loading = true
+        defer { if refreshID == requestID { loading = false } }
         do {
             let result = try await api.list("").map { Server(data: $0) }
-            guard self.api === api else { return }; servers = result
-        } catch is CancellationError {} catch { self.error = error.localizedDescription }
+            guard self.api === api, refreshID == requestID, !Task.isCancelled else { return }; servers = result
+        } catch {
+            if !Task.isCancelled && self.api === api && refreshID == requestID { self.error = error.localizedDescription }
+        }
     }
     func startDemo() {
         demo = true; api = PanelAPI(base: URL(string: "https://demo.invalid")!, key: "", demo: true)

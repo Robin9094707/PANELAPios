@@ -60,6 +60,24 @@ final class PanelTests: XCTestCase {
         StubProtocol.handler = { _ in (200, Data("<html>Login</html>".utf8)) }
         do { _ = try await api.request(""); XCTFail("Must reject HTML") } catch { XCTAssertTrue(error.localizedDescription.contains("keine API-Daten")) }
     }
+    @MainActor func testPanelSwitchLoadsNewAccountDuringPreviousRequest() async throws {
+        let firstStarted = expectation(description: "First panel request started")
+        StubProtocol.handler = { request in
+            let isNew = request.value(forHTTPHeaderField: "Authorization") == "Bearer new-account"
+            if !isNew { firstStarted.fulfill(); Thread.sleep(forTimeInterval: 0.4) }
+            return (200, Data("{\"data\":[{\"attributes\":{\"identifier\":\"\(isNew ? "new-server" : "old-server")\",\"name\":\"Server\"}}]}".utf8))
+        }
+        let first = try client()
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubProtocol.self]
+        let second = PanelAPI(base: first.base, key: "new-account", session: URLSession(configuration: config))
+        let store = AppStore(); store.api = first
+        let pending = Task { await store.refresh() }
+        await fulfillment(of: [firstStarted], timeout: 5)
+        store.api = second
+        await store.refresh(); await pending.value
+        XCTAssertEqual(store.servers.map(\.id), ["new-server"])
+        XCTAssertFalse(store.loading)
+    }
     @MainActor func testDemoRejectsWritesAtTransportLayer() async throws {
         let api = PanelAPI(base: URL(string: "https://demo.invalid")!, key: "", demo: true)
         do { _ = try await api.request("servers/a/power", method: "POST", body: .object(["signal": .string("kill")])); XCTFail("Demo must reject mutations") } catch { XCTAssertTrue(error.localizedDescription.contains("Demomodus")) }
