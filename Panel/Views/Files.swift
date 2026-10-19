@@ -25,6 +25,8 @@ struct FilesView: View {
         List(selection: $selected) {
             Section {
                 HStack { Label(root, systemImage: "folder").font(.system(.caption, design: .monospaced)).textSelection(.enabled); Spacer(); Text("\(entries.count)").foregroundStyle(.secondary) }
+                HStack { Image(systemName: "magnifyingglass").foregroundStyle(.secondary); TextField("In diesem Ordner suchen", text: $search).autocorrectionDisabled().textInputAutocapitalization(.never) }
+                HStack { EditButton().buttonStyle(.borderless); Spacer(); fileTools.buttonStyle(.borderless) }
                 if transfer { Label("Übertragung läuft …", systemImage: "arrow.up.arrow.down").foregroundStyle(.teal) }
             }
             if loading && !loaded { ProgressView("Dateien laden …") }
@@ -47,26 +49,22 @@ struct FilesView: View {
                 }
             }
         }.panelScreen().navigationTitle(root == "/" ? server.name : URL(fileURLWithPath: root).lastPathComponent)
-            .searchable(text: $search, prompt: "Dateien suchen")
             .refreshable { await load() }.task { await load() }
-            .toolbar {
-                ToolbarItemGroup(placement: .secondaryAction) {
-                    EditButton()
-                    Menu {
-                        Button("Hochladen", systemImage: "square.and.arrow.up") { importer = true }
-                        Button("Neue Datei", systemImage: "doc.badge.plus") { createFile() }
-                        Button("Neuer Ordner", systemImage: "folder.badge.plus") { operation = Operation(title: "Ordner erstellen", path: prefix + "/create-folder", fields: [Field(key: "name", label: "Ordnername")], fixed: ["root": .string(root)]) }
-                        Button("Von URL laden", systemImage: "link") { operation = Operation(title: "Datei von URL laden", detail: "Der Server lädt die Datei direkt von der angegebenen URL.", path: prefix + "/pull", fields: [Field(key: "url", label: "https://…")], fixed: ["directory": .string(root)]) }
-                        Button("Aktualisieren", systemImage: "arrow.clockwise") { Task { await load() } }
-                    } label: { Image(systemName: "plus").accessibilityLabel("Dateiaktionen") }.disabled(transfer)
-                }
-            }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { selected = []; await load() } }
             .sheet(item: $editor) { FileEditor(api: api, server: server, item: $0) { Task { await load() } } }
             .sheet(item: $share) { ShareSheet(url: $0.url) }
             .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .item], allowsMultipleSelection: true) { result in
                 switch result { case .success(let urls): upload(urls); case .failure(let e): error = e.localizedDescription }
             }.errorAlert($error)
+    }
+    var fileTools: some View {
+        Menu {
+            Button("Hochladen", systemImage: "square.and.arrow.up") { importer = true }
+            Button("Neue Datei", systemImage: "doc.badge.plus") { createFile() }
+            Button("Neuer Ordner", systemImage: "folder.badge.plus") { operation = Operation(title: "Ordner erstellen", path: prefix + "/create-folder", fields: [Field(key: "name", label: "Ordnername")], fixed: ["root": .string(root)]) }
+            Button("Von URL laden", systemImage: "link") { operation = Operation(title: "Datei von URL laden", detail: "Der Server lädt die Datei direkt von der angegebenen URL.", path: prefix + "/pull", fields: [Field(key: "url", label: "https://…")], fixed: ["directory": .string(root)]) }
+            Button("Aktualisieren", systemImage: "arrow.clockwise") { Task { await load() } }
+        } label: { Label("Aktionen", systemImage: "plus.circle") }.disabled(transfer)
     }
     func fileRow(_ entry: JSON) -> some View {
         HStack(spacing: 14) {

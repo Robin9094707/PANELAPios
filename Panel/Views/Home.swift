@@ -32,7 +32,7 @@ struct HomeView: View {
                         }
                         if store.demo { Button("Eigenes Panel verbinden", systemImage: "plus") { add = true }.buttonStyle(.glassProminent).frame(maxWidth: .infinity) }
                     }
-                }.padding(22).frame(maxWidth: 1100).frame(maxWidth: .infinity)
+                }.padding(.bottom, 60).padding(22).frame(maxWidth: 1100).frame(maxWidth: .infinity)
             }.panelScreen().navigationTitle("Panel").navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $search, prompt: "Server suchen")
                 .refreshable { await store.refresh() }

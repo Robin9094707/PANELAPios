@@ -130,13 +130,27 @@ struct ActivityView: View {
     let path: String
     @State private var events: [JSON] = []
     @State private var error: String?
+    @State private var page = 1
+    @State private var more = true
+    @State private var loading = false
     var body: some View {
         List {
-            if events.isEmpty { ContentUnavailableView("Keine Aktivitäten", systemImage: "clock.arrow.circlepath") }
+            if events.isEmpty && !loading { ContentUnavailableView("Keine Aktivitäten", systemImage: "clock.arrow.circlepath") }
             ForEach(Array(events.enumerated()), id: \.offset) { _, event in
                 NavigationLink { JSONDetails(title: "Aktivität", data: event) } label: { VStack(alignment: .leading, spacing: 6) { Text(event["event"].string).font(.subheadline.weight(.medium)); Text(event["timestamp"].string).font(.caption).foregroundStyle(.secondary) } }
             }
-        }.panelScreen().navigationTitle("Aktivitäten").navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }.errorAlert($error)
+            if loading { ProgressView("Aktivitäten laden …") }
+            else if more { Button("Weitere Aktivitäten laden") { Task { await load(reset: false) } } }
+        }.panelScreen().navigationTitle("Aktivitäten").navigationBarTitleDisplayMode(.inline).task { await load(reset: true) }.refreshable { await load(reset: true) }.errorAlert($error)
     }
-    func load() async { do { events = try await api.list(path) } catch { self.error = error.localizedDescription } }
+    func load(reset: Bool) async {
+        guard !loading else { return }; loading = true; defer { loading = false }
+        do {
+            let requested = reset ? 1 : page
+            let result = try await api.request(path, query: ["page": String(requested), "per_page": "50"])
+            if reset { events = result.rows } else { events += result.rows }
+            let pages = result["meta"]["pagination"]["total_pages"].int
+            more = requested < pages; page = requested + 1
+        } catch is CancellationError {} catch { self.error = error.localizedDescription }
+    }
 }

@@ -28,7 +28,10 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Zeitpläne"].waitForExistence(timeout: 10)); capture("07-Verwalten")
     }
     func testConnectionFormRequiresURLAndClientKey() throws {
-        app.buttons["Eigenes Panel verbinden"].tap()
+        app.swipeUp()
+        let connect = app.buttons["Eigenes Panel verbinden"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 10))
+        connect.tap()
         XCTAssertTrue(app.textFields["panelURL"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.secureTextFields["apiKey"].exists)
         XCTAssertFalse(app.buttons["Verbinden"].isEnabled)
