@@ -1,0 +1,142 @@
+import SwiftUI
+
+struct ManageView: View {
+    let api: PanelAPI
+    let server: Server
+    @State private var operation: Operation?
+    var prefix: String { "servers/\(server.id)" }
+    var body: some View {
+        List {
+            Section("Server verwalten") {
+                NavigationLink { SchedulesView(api: api, server: server) } label: { Label("Zeitpläne", systemImage: "calendar.badge.clock") }
+                NavigationLink { ResourcesView(api: api, server: server, kind: .databases) } label: { Label("Datenbanken", systemImage: "externaldrive.connected.to.line.below") }
+                NavigationLink { ResourcesView(api: api, server: server, kind: .network) } label: { Label("Netzwerk & Ports", systemImage: "network") }
+                NavigationLink { ResourcesView(api: api, server: server, kind: .users) } label: { Label("Mitbenutzer", systemImage: "person.2") }
+                NavigationLink { StartupView(api: api, server: server) } label: { Label("Startparameter", systemImage: "play.rectangle") }
+                NavigationLink { ActivityView(api: api, path: prefix + "/activity") } label: { Label("Aktivitäten", systemImage: "clock.arrow.circlepath") }
+            }
+            Section("Einstellungen") {
+                Button("Name & Beschreibung", systemImage: "pencil") { operation = Operation(title: "Server umbenennen", path: prefix + "/settings/rename", fields: [Field(key: "name", label: "Name", value: server.name), Field(key: "description", label: "Beschreibung", value: server.data["description"].string, kind: .multiline)]) }
+                Button("Docker-Image ändern", systemImage: "shippingbox") { operation = Operation(title: "Docker-Image ändern", detail: "Verwende ein vom Provider für diesen Server freigegebenes Image. Änderungen greifen beim nächsten Start.", path: prefix + "/settings/docker-image", method: "PUT", fields: [Field(key: "docker_image", label: "Docker-Image", value: server.data["docker_image"].string)], destructive: true) }
+                Button("Server neu installieren", systemImage: "arrow.triangle.2.circlepath", role: .destructive) { operation = Operation(title: "Server neu installieren", detail: "Das Installationsskript wird erneut ausgeführt. Dabei können Serverdateien verändert oder überschrieben werden. Erstelle vorher ein Backup.", path: prefix + "/settings/reinstall", destructive: true, submit: "Neu installieren") }
+            }
+            Section("SFTP") {
+                LabeledContent("Host", value: server.data["sftp_details"]["ip"].string).textSelection(.enabled)
+                LabeledContent("Port", value: server.data["sftp_details"]["port"].string)
+                Text("Der SFTP-Benutzername und das Passwort richten sich nach deinem Panel-Account. Der Client-API-Schlüssel ist kein SFTP-Passwort.").font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                NavigationLink { JSONDetails(title: "Serverdetails", data: server.data) } label: { Label("Alle Serverinformationen", systemImage: "info.circle") }
+            } footer: { Text("Aktionen verwenden ausschließlich die Client-API. Dein Provider legt die Berechtigungen, Ressourcenlimits und verfügbaren Funktionen fest.") }
+        }.panelScreen().sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
+    }
+}
+
+enum ResourceKind {
+    case databases, network, users
+    var title: String { switch self { case .databases: return "Datenbanken"; case .network: return "Netzwerk & Ports"; case .users: return "Mitbenutzer" } }
+    var path: String { switch self { case .databases: return "databases"; case .network: return "network/allocations"; case .users: return "users" } }
+    var symbol: String { switch self { case .databases: return "externaldrive"; case .network: return "network"; case .users: return "person.2" } }
+}
+struct ResourcesView: View {
+    let api: PanelAPI
+    let server: Server
+    let kind: ResourceKind
+    @State private var rows: [JSON] = []
+    @State private var loaded = false
+    @State private var error: String?
+    @State private var operation: Operation?
+    @State private var detail: DetailItem?
+    var prefix: String { "servers/\(server.id)/" + kind.path }
+    var body: some View {
+        List {
+            if !loaded { ProgressView("Laden …") }
+            if loaded && rows.isEmpty { ContentUnavailableView("Keine Einträge", systemImage: kind.symbol) }
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                Section {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text(title(row)).font(.headline)
+                            Text(subtitle(row)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        }; Spacer()
+                        Menu { actions(row) } label: { Image(systemName: "ellipsis.circle").font(.title3).padding(6) }
+                    }.padding(.vertical, 6)
+                    if kind == .users {
+                        Text(row["permissions"].array.map(\.string).joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }.panelScreen().navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline).refreshable { await load() }.task { await load() }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Hinzufügen", systemImage: "plus") { create() } } }
+            .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { await load() } }
+            .sheet(item: $detail) { item in NavigationStack { JSONDetails(title: "Details", data: item.data).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { detail = nil } } } } }
+            .errorAlert($error)
+    }
+    func title(_ row: JSON) -> String { switch kind { case .databases: return row["name"].string; case .network: return "\(row["ip_alias"].string.isEmpty ? row["ip"].string : row["ip_alias"].string):\(row["port"].string)"; case .users: return row["email"].string } }
+    func subtitle(_ row: JSON) -> String { switch kind { case .databases: return "\(row["username"].string) · \(row["host"]["address"].string):\(row["host"]["port"].string)"; case .network: return (row["is_default"].bool ? "Primär · " : "") + row["notes"].string; case .users: return row["username"].string } }
+    @ViewBuilder func actions(_ row: JSON) -> some View {
+        let id = kind == .users ? row["uuid"].string : row["id"].string
+        Button("Details", systemImage: "info.circle") { detail = DetailItem(data: row) }
+        switch kind {
+        case .databases:
+            Button("Passwort anzeigen", systemImage: "key") { Task { do { let result = try await api.list(prefix, query: ["include": "password"]); detail = DetailItem(data: result.first(where: { $0["id"].string == id }) ?? .null) } catch { self.error = error.localizedDescription } } }
+            Button("Passwort erneuern", systemImage: "arrow.clockwise", role: .destructive) { operation = Operation(title: "Datenbankpasswort erneuern", detail: "Plugins und Anwendungen müssen anschließend das neue Passwort verwenden.", path: prefix + "/\(id)/rotate-password", destructive: true, submit: "Erneuern") }
+        case .network:
+            Button("Notiz bearbeiten", systemImage: "pencil") { operation = Operation(title: "Port-Notiz", path: prefix + "/\(id)", fields: [Field(key: "notes", label: "Notiz", value: row["notes"].string)]) }
+            if !row["is_default"].bool { Button("Als primär festlegen", systemImage: "star") { operation = Operation(title: "Primären Port ändern", path: prefix + "/\(id)/primary", submit: "Festlegen") } }
+        case .users:
+            Button("Berechtigungen bearbeiten", systemImage: "person.badge.key") { operation = Operation(title: "Berechtigungen", detail: "Ein Berechtigungsname pro Zeile, z. B. control.console oder file.read. Nur tatsächlich vergebene Rechte erlauben Aktionen.", path: prefix + "/\(id)", fields: [Field(key: "permissions", label: "Berechtigungen", value: row["permissions"].array.map(\.string).joined(separator: "\n"), kind: .strings)]) }
+        }
+        Button("Entfernen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Eintrag entfernen", detail: kind == .databases ? "Die Datenbank und alle darin enthaltenen Daten werden dauerhaft gelöscht." : "\(title(row)) wird entfernt.", path: prefix + "/\(id)", method: "DELETE", destructive: true, submit: "Entfernen") }.disabled(kind == .network && row["is_default"].bool)
+    }
+    func create() {
+        switch kind {
+        case .databases:
+            operation = Operation(title: "Datenbank erstellen", path: prefix, fields: [Field(key: "database", label: "Datenbankname"), Field(key: "remote", label: "Erlaubte Verbindungen", value: "%", hint: "% erlaubt alle Quelladressen. Nutze eine feste Adresse, wenn möglich.")], submit: "Erstellen")
+        case .network:
+            operation = Operation(title: "Port zuweisen", detail: "Der Provider muss die automatische Zuweisung weiterer Ports unterstützen.", path: prefix, submit: "Port anfordern")
+        case .users:
+            operation = Operation(title: "Mitbenutzer hinzufügen", path: prefix, fields: [Field(key: "email", label: "E-Mail-Adresse"), Field(key: "permissions", label: "Berechtigungen", value: "control.console\ncontrol.start\ncontrol.stop\nfile.read", kind: .strings, hint: "Ein Recht pro Zeile. Du kannst nur Rechte vergeben, die dein Account besitzt.")], submit: "Hinzufügen")
+        }
+    }
+    func load() async { do { rows = try await api.list(prefix); loaded = true } catch is CancellationError {} catch { self.error = error.localizedDescription } }
+}
+struct DetailItem: Identifiable { let id = UUID(); let data: JSON }
+
+struct StartupView: View {
+    let api: PanelAPI
+    let server: Server
+    @State private var variables: [JSON] = []
+    @State private var operation: Operation?
+    @State private var error: String?
+    var body: some View {
+        List {
+            Section("Startbefehl") { Text(server.data["invocation"].string).font(.system(.footnote, design: .monospaced)).textSelection(.enabled) }
+            ForEach(variables, id: \.["env_variable"].string) { v in
+                Section {
+                    VStack(alignment: .leading, spacing: 8) { Text(v["name"].string).font(.headline); Text(v["server_value"].string).font(.system(.body, design: .monospaced)).textSelection(.enabled); Text(v["description"].string).font(.caption).foregroundStyle(.secondary) }
+                    if v["is_editable"].bool {
+                        Button("Wert ändern", systemImage: "pencil") { operation = Operation(title: v["name"].string, detail: v["rules"].string, path: "servers/\(server.id)/startup/variable", method: "PUT", fields: [Field(key: "value", label: "Wert", value: v["server_value"].string)], fixed: ["key": v["env_variable"]]) }
+                    } else { Label("Vom Provider verwaltet", systemImage: "lock").font(.caption).foregroundStyle(.secondary) }
+                }
+            }
+        }.panelScreen().navigationTitle("Startparameter").navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }.errorAlert($error)
+            .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { await load() } }
+    }
+    func load() async { do { variables = try await api.list("servers/\(server.id)/startup") } catch { self.error = error.localizedDescription } }
+}
+struct ActivityView: View {
+    let api: PanelAPI
+    let path: String
+    @State private var events: [JSON] = []
+    @State private var error: String?
+    var body: some View {
+        List {
+            if events.isEmpty { ContentUnavailableView("Keine Aktivitäten", systemImage: "clock.arrow.circlepath") }
+            ForEach(Array(events.enumerated()), id: \.offset) { _, event in
+                NavigationLink { JSONDetails(title: "Aktivität", data: event) } label: { VStack(alignment: .leading, spacing: 6) { Text(event["event"].string).font(.subheadline.weight(.medium)); Text(event["timestamp"].string).font(.caption).foregroundStyle(.secondary) } }
+            }
+        }.panelScreen().navigationTitle("Aktivitäten").navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }.errorAlert($error)
+    }
+    func load() async { do { events = try await api.list(path) } catch { self.error = error.localizedDescription } }
+}

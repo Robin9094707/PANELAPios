@@ -1,0 +1,80 @@
+name: Build and test unsigned iOS app
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    name: iOS build, simulator tests and unsigned IPA
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Show SDK and install XcodeGen
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Pick and boot iPhone simulator
+        id: simulator
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for k,vs in sorted(d["devices"].items(),reverse=True) if "iOS" in k for v in vs if "iPhone" in v["name"]))')
+          echo "id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          xcrun simctl status_bar "$DEVICE_ID" override --time '9:41' --batteryState charged --batteryLevel 100
+      - name: Build and test on simulator
+        run: |
+          set -o pipefail
+          xcodebuild test -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO -parallel-testing-enabled NO | tee simulator.log
+      - name: Build unsigned iPhone app
+        run: |
+          set -o pipefail
+          xcodebuild build -project Panel.xcodeproj -scheme Panel -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' | tee device.log
+      - name: Package and verify IPA
+        run: |
+          mkdir -p build/export/Payload
+          cp -R build/device/Build/Products/Release-iphoneos/Panel.app build/export/Payload/
+          test -f build/export/Payload/Panel.app/Panel
+          test ! -d build/export/Payload/Panel.app/_CodeSignature
+          xcrun lipo -verify_arch arm64 build/export/Payload/Panel.app/Panel
+          plutil -lint build/export/Payload/Panel.app/Info.plist
+          cd build/export
+          zip -qry Panel-1.0.0-unsigned.ipa Payload
+          unzip -t Panel-1.0.0-unsigned.ipa
+          shasum -a 256 Panel-1.0.0-unsigned.ipa > SHA256SUMS.txt
+      - name: Extract UI test screenshots
+        if: always()
+        run: |
+          mkdir -p build/screenshots
+          if [ -d build/Tests.xcresult ]; then xcrun xcresulttool export attachments --path build/Tests.xcresult --output-path build/screenshots || true; fi
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Panel-unsigned-IPA
+          path: |
+            build/export/Panel-1.0.0-unsigned.ipa
+            build/export/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iOS-test-results
+          path: |
+            build/Tests.xcresult
+            build/screenshots
+            simulator.log
+            device.log
+          retention-days: 14
