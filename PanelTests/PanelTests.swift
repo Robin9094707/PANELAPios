@@ -60,6 +60,10 @@ final class PanelTests: XCTestCase {
         StubProtocol.handler = { _ in (200, Data("<html>Login</html>".utf8)) }
         do { _ = try await api.request(""); XCTFail("Must reject HTML") } catch { XCTAssertTrue(error.localizedDescription.contains("keine API-Daten")) }
     }
+    @MainActor func testDemoRejectsWritesAtTransportLayer() async throws {
+        let api = PanelAPI(base: URL(string: "https://demo.invalid")!, key: "", demo: true)
+        do { _ = try await api.request("servers/a/power", method: "POST", body: .object(["signal": .string("kill")])); XCTFail("Demo must reject mutations") } catch { XCTAssertTrue(error.localizedDescription.contains("Demomodus")) }
+    }
     func testRedirectsProtectPanelCredentialsAndAllowUnsignedStorage() throws {
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }

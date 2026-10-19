@@ -98,11 +98,11 @@ struct AddPanelView: View {
                         Text("Verwende die Webadresse, mit der du die Pterodactyl-Konsole im Browser öffnest.").foregroundStyle(.secondary)
                     }.padding(.vertical, 8)
                 }
-                Section("Zugang") {
+                Section {
                     TextField("Name, z. B. Kinetic", text: $name)
                     TextField("https://panel.example.com", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("panelURL")
                     SecureField("Client-API-Schlüssel (ptlc_…)", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive().accessibilityIdentifier("apiKey")
-                } footer: { Text("Im Panel: Account → API Credentials → Create API Key. Verwende einen Client-Schlüssel. Application-Schlüssel sind für die Administration des gesamten Panels gedacht.") }
+                } header: { Text("Zugang") } footer: { Text("Im Panel: Account → API Credentials → Create API Key. Verwende einen Client-Schlüssel. Application-Schlüssel sind für die Administration des gesamten Panels gedacht.") }
                 Section {
                     Button { connect() } label: { HStack { Spacer(); if busy { ProgressView() }; Text(busy ? "Verbindung prüfen …" : "Verbinden").bold(); Spacer() } }.disabled(busy || url.isEmpty || key.isEmpty)
                 } footer: { Text("Nur HTTPS. Dein Schlüssel wird ausschließlich an dieses Panel gesendet und lokal im iOS-Schlüsselbund gespeichert.") }

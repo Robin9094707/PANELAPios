@@ -53,7 +53,10 @@ final class PanelAPI {
         return c.url!
     }
     func raw(_ path: String, method: String = "GET", query: [String: String] = [:], body: JSON? = nil, text: String? = nil) async throws -> Data {
-        if demo { return try JSONEncoder().encode(Demo.response(path)) }
+        if demo {
+            guard method == "GET" else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }
+            return try JSONEncoder().encode(Demo.response(path))
+        }
         var request = URLRequest(url: try url(path, query: query))
         request.httpMethod = method
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
