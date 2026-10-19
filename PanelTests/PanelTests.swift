@@ -60,6 +60,19 @@ final class PanelTests: XCTestCase {
         StubProtocol.handler = { _ in (200, Data("<html>Login</html>".utf8)) }
         do { _ = try await api.request(""); XCTFail("Must reject HTML") } catch { XCTAssertTrue(error.localizedDescription.contains("keine API-Daten")) }
     }
+    func testRedirectsProtectPanelCredentialsAndAllowUnsignedStorage() throws {
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let origin = URL(string: "https://panel.example.com/api/client")!
+        let other = URL(string: "https://storage.example.com/file")!
+        let response = HTTPURLResponse(url: origin, statusCode: 302, httpVersion: nil, headerFields: nil)!
+        var authenticated = URLRequest(url: origin)
+        authenticated.setValue("Bearer secret", forHTTPHeaderField: "Authorization")
+        let delegate = SameOriginRedirect()
+        delegate.urlSession(session, task: session.dataTask(with: authenticated), willPerformHTTPRedirection: response, newRequest: URLRequest(url: other)) { XCTAssertNil($0) }
+        delegate.urlSession(session, task: session.dataTask(with: authenticated), willPerformHTTPRedirection: response, newRequest: URLRequest(url: origin)) { XCTAssertEqual($0?.value(forHTTPHeaderField: "Authorization"), "Bearer secret") }
+        delegate.urlSession(session, task: session.dataTask(with: origin), willPerformHTTPRedirection: response, newRequest: URLRequest(url: other)) { XCTAssertEqual($0?.url, other); XCTAssertNil($0?.value(forHTTPHeaderField: "Authorization")) }
+    }
     func testJSONPreservesBooleansAndAPIFields() throws {
         let value = try JSON.parse("{\"is_locked\":true,\"bytes\":2048,\"empty\":null,\"permissions\":[\"file.read\"]}")
         XCTAssertTrue(value["is_locked"].bool)

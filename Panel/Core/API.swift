@@ -3,11 +3,16 @@ import Foundation
 final class SameOriginRedirect: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        guard let original = task.originalRequest?.url, let next = request.url,
-              original.scheme == next.scheme, original.host == next.host, original.port == next.port else {
-            completionHandler(nil); return
+        guard let original = task.originalRequest?.url, let next = request.url, next.scheme == "https" else { completionHandler(nil); return }
+        if task.originalRequest?.value(forHTTPHeaderField: "Authorization") != nil {
+            guard original.scheme == next.scheme, original.host == next.host, original.port == next.port else { completionHandler(nil); return }
+            var authenticated = request
+            authenticated.setValue(task.originalRequest?.value(forHTTPHeaderField: "Authorization"), forHTTPHeaderField: "Authorization")
+            completionHandler(authenticated)
+        } else {
+            // Signed downloads may redirect to object storage. They never contain the panel API header.
+            var unsigned = request; unsigned.setValue(nil, forHTTPHeaderField: "Authorization"); completionHandler(unsigned)
         }
-        completionHandler(request)
     }
 }
 

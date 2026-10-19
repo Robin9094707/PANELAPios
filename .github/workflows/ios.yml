@@ -26,18 +26,24 @@ jobs:
           brew install xcodegen
       - name: Generate project
         run: xcodegen generate
-      - name: Pick and boot iPhone simulator
+      - name: Pick iPhone simulator
         id: simulator
         run: |
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for k,vs in sorted(d["devices"].items(),reverse=True) if "iOS" in k for v in vs if "iPhone" in v["name"]))')
           echo "id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
-          xcrun simctl boot "$DEVICE_ID" || true
-          xcrun simctl bootstatus "$DEVICE_ID" -b
-          xcrun simctl status_bar "$DEVICE_ID" override --time '9:41' --batteryState charged --batteryLevel 100
-      - name: Build and test on simulator
+      - name: Compile app and simulator tests
         run: |
           set -o pipefail
-          xcodebuild test -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO -parallel-testing-enabled NO | tee simulator.log
+          xcodebuild build-for-testing -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO | tee simulator-build.log
+      - name: Boot simulator
+        run: |
+          xcrun simctl boot '${{ steps.simulator.outputs.id }}' || true
+          xcrun simctl bootstatus '${{ steps.simulator.outputs.id }}' -b
+          xcrun simctl status_bar '${{ steps.simulator.outputs.id }}' override --time '9:41' --batteryState charged --batteryLevel 100
+      - name: Test on simulator
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO -parallel-testing-enabled NO | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -76,5 +82,6 @@ jobs:
             build/Tests.xcresult
             build/screenshots
             simulator.log
+            simulator-build.log
             device.log
           retention-days: 14

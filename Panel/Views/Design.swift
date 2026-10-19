@@ -124,6 +124,7 @@ struct Operation: Identifiable {
     var fixed: [String: JSON] = [:]
     var destructive = false
     var submit = "Speichern"
+    var transform: (([String: JSON]) throws -> JSON)? = nil
 }
 struct OperationSheet: View {
     let api: PanelAPI
@@ -132,7 +133,9 @@ struct OperationSheet: View {
     var body: some View {
         ActionForm(title: operation.title, detail: operation.detail, fields: operation.fields, destructive: operation.destructive, submit: operation.submit) { values in
             guard !api.demo else { throw PanelError(message: "Der Demomodus zeigt Beispieldaten. Verbinde dein Panel, um Änderungen vorzunehmen.") }
-            _ = try await api.request(operation.path, method: operation.method, body: .object(operation.fixed.merging(values) { _, new in new }))
+            let payload = operation.fixed.merging(values) { _, new in new }
+            let body = try operation.transform?(payload) ?? .object(payload)
+            _ = try await api.request(operation.path, method: operation.method, body: body)
             await onSuccess()
         }
     }

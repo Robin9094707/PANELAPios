@@ -79,6 +79,7 @@ struct ScheduleDetail: View {
         operation = Operation(title: task == .null ? "Aufgabe hinzufügen" : "Aufgabe bearbeiten", detail: "command: Konsolenbefehl. power: start, stop, restart oder kill. backup: optionale Ausschlussmuster.", path: path + "/tasks" + (task == .null ? "" : "/\(task["id"].string)"), fields: [
             Field(key: "action", label: "Aktion", value: task["action"].string.isEmpty ? "command" : task["action"].string, options: ["command", "power", "backup"]),
             Field(key: "payload", label: "Befehl / Inhalt", value: task["payload"].string, kind: .multiline),
+            Field(key: "sequence_id", label: "Position", value: task["sequence_id"].string.isEmpty ? String(tasks.count + 1) : task["sequence_id"].string, kind: .number, hint: "Aufgaben werden in dieser Reihenfolge ausgeführt."),
             Field(key: "time_offset", label: "Verzögerung in Sekunden", value: task["time_offset"].string.isEmpty ? "0" : task["time_offset"].string, kind: .number),
             Field(key: "continue_on_failure", label: "Bei Fehler fortsetzen", value: task["continue_on_failure"].bool ? "true" : "false", kind: .toggle)])
     }

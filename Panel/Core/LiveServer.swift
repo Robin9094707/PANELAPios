@@ -7,6 +7,7 @@ import Combine
     @Published var connection = "Verbinden …"
     @Published var connected = false
     @Published var lines: [String] = []
+    @Published var logRevision = 0
     @Published var history: [ResourcePoint] = []
     @Published var lastUpdate: Date?
     @Published var issue: String?
@@ -44,6 +45,7 @@ import Combine
                 request.setValue(origin.url!.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")), forHTTPHeaderField: "Origin")
                 let ws = URLSession.shared.webSocketTask(with: request); socket = ws; ws.resume()
                 try await send(event: "auth", args: [auth["token"].string], to: ws)
+                var requestedLogs = false
                 while !Task.isCancelled && active && runID == generation {
                     let message = try await ws.receive()
                     let data: Data
@@ -53,7 +55,8 @@ import Combine
                     switch name {
                     case "auth success":
                         connected = true; connection = "Live verbunden"; issue = nil; retry = 1
-                        try await send(event: "send logs", to: ws); try await send(event: "send stats", to: ws)
+                        if !requestedLogs { try await send(event: "send logs", to: ws); requestedLogs = true }
+                        try await send(event: "send stats", to: ws)
                     case "console output", "install output":
                         for arg in args { append(cleanConsole(arg.string)) }
                     case "status": state = args.first?.string ?? "unknown"
@@ -98,5 +101,6 @@ import Combine
         // Bound individual messages as well as the entire scrollback.
         lines += text.suffix(64_000).components(separatedBy: "\n")
         if lines.count > 1500 { lines.removeFirst(lines.count - 1500) }
+        logRevision &+= 1
     }
 }

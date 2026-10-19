@@ -95,17 +95,23 @@ struct FilesView: View {
         if entry["size"].double > 2 * 1024 * 1024 { error = "Der Texteditor öffnet Dateien bis 2 MiB. Größere Dateien kannst du herunterladen."; return }
         editor = EditorItem(path: pathJoin(root, entry["name"].string))
     }
-    func createFile() {
-        operation = Operation(title: "Neue Datei", detail: "Gib den Namen relativ zum aktuellen Ordner ein. Danach kannst du den Inhalt über Bearbeiten anpassen.", path: prefix + "/write", fields: [Field(key: "__filename", label: "Dateiname")])
-        // Creation uses its own editor to send a plain text body instead of a JSON API payload.
-        operation = nil; editor = EditorItem(path: root, isNew: true)
-    }
+    func createFile() { editor = EditorItem(path: root, isNew: true) }
     func delete(_ names: [String]) { operation = Operation(title: "Dateien löschen", detail: "\(names.joined(separator: ", "))\n\nDateien und enthaltene Ordner werden dauerhaft gelöscht.", path: prefix + "/delete", fixed: ["root": .string(root), "files": .array(names.map(JSON.string))], destructive: true, submit: "Endgültig löschen") }
     func compress(_ names: [String]) { operation = Operation(title: "Archiv erstellen", path: prefix + "/compress", fixed: ["root": .string(root), "files": .array(names.map(JSON.string))], submit: "Komprimieren") }
     func rename(_ name: String) {
-        operation = Operation(title: "Umbenennen / verschieben", path: prefix + "/rename", method: "PUT", fields: [Field(key: "files", label: "Ziel", value: JSON.array([.object(["from": .string(name), "to": .string(name)])]).pretty, kind: .json, hint: "Ändere nur den Wert bei to. Ein Pfad verschiebt die Datei in einen anderen Ordner.")], fixed: ["root": .string(root)])
+        operation = Operation(title: "Umbenennen / verschieben", path: prefix + "/rename", method: "PUT", fields: [Field(key: "to", label: "Neuer Name oder Zielpfad", value: name, hint: "Relativ zum aktuellen Ordner. Ein absoluter Pfad beginnt mit /.")], transform: { values in
+            let target = values["to"]?.string ?? ""
+            guard !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PanelError(message: "Bitte einen Namen eingeben.") }
+            return .object(["root": .string(root), "files": .array([.object(["from": .string(name), "to": .string(target)])])])
+        })
     }
-    func chmod(_ name: String) { operation = Operation(title: "Dateirechte ändern", path: prefix + "/chmod", fields: [Field(key: "files", label: "Unix-Rechte", value: JSON.array([.object(["file": .string(name), "mode": .string("0644")])]).pretty, kind: .json)], fixed: ["root": .string(root)], destructive: true) }
+    func chmod(_ name: String) {
+        operation = Operation(title: "Dateirechte ändern", path: prefix + "/chmod", fields: [Field(key: "mode", label: "Unix-Rechte", value: "0644", hint: "Zum Beispiel 0644 für Dateien oder 0755 für Ordner.")], destructive: true, transform: { values in
+            let mode = values["mode"]?.string ?? ""
+            guard mode.range(of: "^[0-7]{3,4}$", options: .regularExpression) != nil else { throw PanelError(message: "Bitte drei oder vier Oktalziffern eingeben.") }
+            return .object(["root": .string(root), "files": .array([.object(["file": .string(name), "mode": .string(mode)])])])
+        })
+    }
     func upload(_ urls: [URL]) {
         transfer = true
         Task { defer { transfer = false }; do {
@@ -167,6 +173,10 @@ struct FileEditor: View {
                 guard !name.contains("/"), ![".", ".."].contains(name), !name.trimmingCharacters(in: .whitespaces).isEmpty else { throw PanelError(message: "Bitte einen gültigen Dateinamen ohne Schrägstrich eingeben.") }
                 let existing = try await api.list("servers/\(server.id)/files/list", query: ["directory": item.path])
                 guard !existing.contains(where: { $0["name"].string == name }) else { throw PanelError(message: "Eine Datei mit diesem Namen existiert bereits. Öffne sie über Bearbeiten.") }
+            }
+            if !item.isNew {
+                let current = try await api.fileText(server: server.id, path: item.path)
+                guard current == original else { throw PanelError(message: "Die Datei wurde inzwischen auf dem Server geändert. Kopiere deine Änderungen und öffne die Datei erneut, um beide Versionen abzugleichen.") }
             }
             _ = try await api.raw("servers/\(server.id)/files/write", method: "POST", query: ["file": item.isNew ? pathJoin(item.path, name) : item.path], text: text)
             original = text; onSave(); dismiss()

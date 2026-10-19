@@ -84,7 +84,7 @@ struct TwoFactorView: View {
             } footer: { Text("Wenn 2FA bereits aktiv ist, meldet das Panel dies beim Laden der Einrichtung.") }
             if setup != .null {
                 Section("Authenticator einrichten") {
-                    if let image = qrImage(setup["image_url"].string) { Image(uiImage: image).interpolation(.none).resizable().scaledToFit().frame(maxWidth: 220).padding().background(.white, in: RoundedRectangle(cornerRadius: 16)).frame(maxWidth: .infinity) }
+                    if let image = qrImage(setup["image_url_data"].string.isEmpty ? setup["image_url"].string : setup["image_url_data"].string) { Image(uiImage: image).interpolation(.none).resizable().scaledToFit().frame(maxWidth: 220).padding().background(.white, in: RoundedRectangle(cornerRadius: 16)).frame(maxWidth: .infinity) }
                     Text(setup["secret"].string).font(.system(.body, design: .monospaced)).textSelection(.enabled)
                     Text("Übernimm den Schlüssel in deine Authenticator-App und bestätige mit dem sechsstelligen Code.").font(.caption).foregroundStyle(.secondary)
                     Button("Aktivierung bestätigen", systemImage: "checkmark.shield") { enable = true }

@@ -103,7 +103,7 @@ struct ServerView: View {
                         Color.clear.frame(height: 1).id("end")
                     }.padding(16).frame(minWidth: 300, alignment: .leading)
                 }.background(.black.opacity(0.14))
-                    .onChange(of: live.lines.count) { _, _ in if follow { proxy.scrollTo("end", anchor: .bottom) } }
+                    .onChange(of: live.logRevision) { _, _ in if follow { proxy.scrollTo("end", anchor: .bottom) } }
             }
             HStack(spacing: 12) {
                 Text(">").font(.system(.body, design: .monospaced)).foregroundStyle(.teal)
