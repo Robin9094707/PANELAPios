@@ -29,6 +29,17 @@ Use the URL containing the web console, **not** the Minecraft game address or th
 
 The app is currently German. API error details may use the provider's language. Advanced rights and permission names follow Pterodactyl naming. Hosting billing, node administration and changing provider-assigned RAM/CPU limits are outside the Client API.
 
+## Version 1.6.0 — integrated player administration
+
+- Workspace cards open online players and player search directly. A connected Suite adds device-labelled online profiles, player search/actions and recent offline profiles to the server dashboard and management tab. The existing Liquid Glass design remains.
+- One player directory filters All / Online / Recently online. Name/UUID searches are debounced and cancel obsolete requests. Online scans continue across the API's 100-profile pages; recent offline views load all matching pages and sort by actual last-seen timestamps. More general results remain paginated.
+- Profiles put current/last device, all recorded devices, ban/kick and Ultra ban up front. Existing server-issued confirmation tickets and read/manage/full permissions remain enforced. Full player records, inventory/NBT, original menus and all other actions remain accessible through compact disclosures or one grouped searchable action list.
+- A shared per-server connection model reuses the verified client and action schema. Foreground dashboard refresh runs every 30 seconds; independent panel/access/Suite refreshes start together. Explicit refresh always rechecks Suite health/server identity. Search and paging reject stale responses and deduplicate by UUID.
+- URLSession cancellation (-999) and Swift task cancellation no longer produce a Canceled alert during refresh. Other failures remain visible. Regression tests cover cancellation vs real authorization failures, cross-page online discovery, recent ordering and UUID deduplication; the simulator tour covers the integrated player/device/offline flows.
+- **App-only update:** Admin Suite 8.3.0 and its files remain unchanged. Bundle IDs, Keychain services, saved profile/Suite connections, preferences, transfers, widgets and entitlements are retained. Install over the existing app with the same signing identity and bundle ID; do not uninstall first.
+
+Rollback source: [`backup/v1.5.0-before-integrated-admin`](https://github.com/Robin9094707/PANELAPios/tree/backup/v1.5.0-before-integrated-admin), commit `52738c15d7ece1f33e16c6b1f56867748ce80eda`. Ask to revert this update to restore the saved source and build the previous app. Real moderation changes made on the server are separate from an app rollback.
+
 ## Version 1.5.0 — Simplex Panel + optional Admin Suite 8.3.0
 
 - Display name becomes **Simplex Panel**. Bundle IDs, panel profiles, original credential Keychain service, workspace data and widgets remain compatible.

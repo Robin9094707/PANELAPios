@@ -63,7 +63,7 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -only-testing:PanelUITests/PanelUITests/testIntegratedSuitePlayersSearchDevicesAndOffline -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail

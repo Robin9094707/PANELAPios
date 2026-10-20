@@ -38,9 +38,35 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Gefundene Profile"].waitForExistence(timeout: 10))
         app.buttons.containing(.staticText, identifier: "TadMC_YT").firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Live-Spielerwerte"].waitForExistence(timeout: 10)); capture("19-Suite-Spielerakte")
-        app.swipeUp()
+        for _ in 0..<6 { if app.buttons["Spielerakte & gespeicherte Daten"].isHittable { break }; app.swipeUp() }
+        app.buttons["Spielerakte & gespeicherte Daten"].tap()
+        for _ in 0..<4 { if app.buttons["Alt-Accounts & Belege"].isHittable { break }; app.swipeUp() }
         app.buttons["Alt-Accounts & Belege"].tap()
         XCTAssertTrue(app.staticTexts[".BedrockDemo"].waitForExistence(timeout: 10)); capture("20-Suite-Alt-Accounts")
+    }
+    func testIntegratedSuitePlayersSearchDevicesAndOffline() throws {
+        let online = app.buttons["workspace-online-simplex1"]
+        XCTAssertTrue(online.waitForExistence(timeout: 15)); online.tap()
+        XCTAssertTrue(app.staticTexts["iPhone · Demo"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["RecentOffline"].exists)
+        app.segmentedControls.buttons["Zuletzt online"].tap()
+        XCTAssertTrue(app.staticTexts["RecentOffline"].waitForExistence(timeout: 10))
+        app.buttons.containing(.staticText, identifier: "RecentOffline").firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Letztes Gerät"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Samsung · Demo"].exists)
+        capture("21-Offline-Spieler")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.segmentedControls.buttons["Alle"].tap()
+        app.swipeDown()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 10)); search.tap(); search.typeText("TadMC")
+        let row = app.buttons.containing(.staticText, identifier: "TadMC_YT").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+        for _ in 0..<4 { if app.buttons["player-ultraban"].isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(app.buttons["player-ultraban"].exists)
+        app.buttons["Alle Geräte anzeigen"].tap()
+        XCTAssertTrue(app.staticTexts["iPhone · Demo"].waitForExistence(timeout: 10))
+        capture("22-Spielergeraete")
     }
     func testConnectionFormRequiresURLAndClientKey() throws {
         app.swipeUp()

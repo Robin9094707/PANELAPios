@@ -8,11 +8,15 @@ struct ServerView: View {
     let initialFolder: String?
     init(api: PanelAPI, server: Server, initialFolder: String? = nil) {
         self.api = api; self.initialServer = server; self.initialFolder = initialFolder
+        _suite = StateObject(wrappedValue: SuiteModel(panel: api, server: server))
         _tab = State(initialValue: initialFolder == nil ? 0 : 2)
     }
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var workspace: WorkspaceStore
     @State private var commandLibrary = false
+    @ObservedObject private var suiteConnections = SuiteConnections.shared
+    @StateObject private var suite: SuiteModel
+    @State private var refreshing = false
     @StateObject private var live = LiveServer()
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = 0
@@ -29,7 +33,7 @@ struct ServerView: View {
             Tab("Konsole", systemImage: "terminal", value: 1) { AccessBoundary(access: api.access, server: server.id, permission: "websocket.connect") { console } }
             Tab("Dateien", systemImage: "folder", value: 2) { AccessBoundary(access: api.access, server: server.id, permission: "file.read") { FilesView(api: api, server: server, root: initialFolder ?? "/") } }
             Tab("Backups", systemImage: "externaldrive.badge.timemachine", value: 3) { AccessBoundary(access: api.access, server: server.id, permission: "backup.read") { BackupsView(api: api, server: server) } }
-            Tab("Verwalten", systemImage: "square.grid.2x2", value: 4) { ManageView(api: api, server: server, live: live) }
+            Tab("Verwalten", systemImage: "square.grid.2x2", value: 4) { ManageView(api: api, server: server, suite: suite, live: live) }
         }.navigationTitle(server.name).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Server aktualisieren", systemImage: "arrow.clockwise") { Task { await refreshServer() } } }; ToolbarItem(placement: .topBarTrailing) { powerMenu } }
             .task(id: "\(scenePhase)-\(workspace.isMinecraft(api, server))") {
@@ -37,6 +41,14 @@ struct ServerView: View {
                     await api.loadAccess(server: server.id)
                     guard !Task.isCancelled else { return }
                     await live.run(api: api, server: server, minecraft: workspace.isMinecraft(api, server))
+                }
+            }
+            .task(id: "\(scenePhase)-\(suiteConnections.values)") {
+                guard scenePhase == .active, suite.configured else { if !suite.configured { await suite.load() }; return }
+                await suite.load()
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                    await suite.load(force: true)
                 }
             }
             .onChange(of: live.lastUpdate) { _, _ in WidgetPublisher.publish(api: api, server: server, live: live) }
@@ -65,7 +77,11 @@ struct ServerView: View {
                 if let issue = live.issue, !live.connected { Label(issue, systemImage: "wifi.exclamationmark").font(.footnote).foregroundStyle(.orange).card() }
                 AccessSummary(access: api.access, api: api, server: server.id)
                 Toggle("Minecraft-Spielerübersicht", isOn: Binding(get: { workspace.isMinecraft(api, server) }, set: { workspace.setMinecraft($0, api, server) })).font(.subheadline)
-                if workspace.isMinecraft(api, server) { PlayersCard(live: live, api: api, server: server); TPSCard(live: live, api: api, server: server) }
+                if suite.configured { SuiteDashboardCard(model: suite) }
+                if workspace.isMinecraft(api, server) {
+                    if !suite.configured { PlayersCard(live: live, api: api, server: server, suite: suite) }
+                    TPSCard(live: live, api: api, server: server)
+                }
                 if server.data["is_suspended"].bool || server.data["is_installing"].bool || server.data["is_node_under_maintenance"].bool {
                     Label(server.data["is_suspended"].bool ? "Server ist gesperrt" : server.data["is_installing"].bool ? "Installation läuft" : "Node wird gewartet", systemImage: "exclamationmark.triangle").foregroundStyle(.orange).card()
                 }
@@ -96,8 +112,14 @@ struct ServerView: View {
         }.panelScreen().refreshable { await refreshServer() }.scrollBounceBehavior(.always)
     }
     func refreshServer() async {
-        await api.loadAccess(server: server.id); await store.refresh()
-        do { try await live.refresh(api: api, server: server, minecraft: workspace.isMinecraft(api, server)) } catch { self.error = error.localizedDescription }
+        guard !refreshing else { return }; refreshing = true; defer { refreshing = false }
+        // Independent sources start together; slow workspace lists do not block live stats.
+        async let access: Void = api.loadAccess(server: server.id)
+        async let workspaceRefresh: Void = store.refresh()
+        async let suiteRefresh: Void = suite.load(force: true)
+        do { try await live.refresh(api: api, server: server, minecraft: workspace.isMinecraft(api, server)) }
+        catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }
+        _ = await (access, workspaceRefresh, suiteRefresh)
     }
     func limitBytes(_ key: String) -> String { let limit = server.data["limits"][key].double; return limit > 0 ? "von " + bytes(limit * 1_048_576) : "Unbegrenzt" }
     func fraction(_ value: Double, _ key: String) -> Double? { let limit = server.data["limits"][key].double; return limit > 0 ? value / (limit * 1_048_576) : nil }

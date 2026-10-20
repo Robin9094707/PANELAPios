@@ -3,15 +3,23 @@ import SwiftUI
 struct ManageView: View {
     let api: PanelAPI
     let server: Server
+    @ObservedObject var suite: SuiteModel
     @State private var operation: Operation?
     @EnvironmentObject private var store: AppStore
     var live: LiveServer? = nil
     var prefix: String { "servers/\(server.id)" }
     var body: some View {
         List {
-            Section("Simplex Admin Suite") { NavigationLink { SuiteHubView(panel: api, server: server) } label: { Label("Admin Suite", systemImage: "shield.lefthalf.filled") }.accessibilityIdentifier("adminSuiteHub") }
+            Section("Simplex Admin Suite") {
+                if suite.configured, let live {
+                    NavigationLink { IntegratedPlayersView(model: suite, live: live, initialFilter: .online) } label: { Label("Online-Spieler & Geräte", systemImage: "person.2.fill") }
+                    NavigationLink { IntegratedPlayersView(model: suite, live: live) } label: { Label("Spieler suchen & Aktion ausführen", systemImage: "magnifyingglass") }
+                    NavigationLink { IntegratedPlayersView(model: suite, live: live, initialFilter: .recent) } label: { Label("Zuletzt online", systemImage: "clock.arrow.circlepath") }
+                }
+                NavigationLink { SuiteHubView(panel: api, server: server, model: suite) } label: { Label("Admin Suite", systemImage: "shield.lefthalf.filled") }.accessibilityIdentifier("adminSuiteHub")
+            }
             Section("Minecraft") {
-                if let live { NavigationLink { PlayerManagerView(api: api, server: server, live: live) } label: { Label("Spieler-Manager", systemImage: "person.crop.circle.badge.checkmark") } }
+                if !suite.configured, let live { NavigationLink { PlayerManagerView(api: api, server: server, live: live) } label: { Label("Spieler-Manager", systemImage: "person.crop.circle.badge.checkmark") } }
                 NavigationLink { PluginsView(api: api, server: server) } label: { Label("Plugins & JAR-Dateien", systemImage: "puzzlepiece.extension") }.requiresAccess(api, server.id, "file.read")
                 NavigationLink { MinecraftPropertiesView(api: api, server: server) } label: { Label("Minecraft & Welt-Einstellungen", systemImage: "globe") }.requiresAccess(api, server.id, "file.read-content")
             }

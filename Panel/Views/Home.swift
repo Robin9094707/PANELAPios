@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct HomeView: View {
+    @ObservedObject private var suiteConnections = SuiteConnections.shared
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var workspace: WorkspaceStore
     @State private var add = false
@@ -35,8 +36,17 @@ struct HomeView: View {
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
                             ForEach(filtered) { server in
+                                VStack(spacing: 12) {
                                 NavigationLink(value: server) { ServerCard(server: server, presence: store.presence[server.id], favorite: store.api.map { workspace.favorites.contains(workspace.key($0, server)) } ?? false) }.buttonStyle(.plain).accessibilityIdentifier("server-\(server.id)").contextMenu {
                                     if let api = store.api { Button(workspace.favorites.contains(workspace.key(api, server)) ? "Server lösen" : "Server anpinnen", systemImage: "star") { workspace.toggleServer(api, server) } }
+                                }
+                                if let api = store.api, suiteConnections.get(api, server) != nil || store.demo && ProcessInfo.processInfo.arguments.contains("--demo-suite") {
+                                    HStack {
+                                        NavigationLink { SuitePlayerBrowser(panel: api, server: server, filter: .online) } label: { Label("Online-Spieler", systemImage: "person.2.fill") }.accessibilityIdentifier("workspace-online-" + server.id)
+                                        Spacer()
+                                        NavigationLink { SuitePlayerBrowser(panel: api, server: server) } label: { Label("Spieler suchen", systemImage: "magnifyingglass") }
+                                    }.font(.subheadline).padding(.horizontal, 12)
+                                }
                                 }
                             }
                         }

@@ -70,7 +70,10 @@ final class PanelAPI {
         if let binary { request.httpBody = binary; request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type") }
         else if let text { request.httpBody = Data(text.utf8); request.setValue("text/plain; charset=utf-8", forHTTPHeaderField: "Content-Type") }
         else if let body { request.httpBody = try JSONEncoder().encode(body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do { (data, response) = try await session.data(for: request) }
+        catch { if RequestFailure.isCancellation(error) { throw CancellationError() }; throw error }
         clock.observe(response)
         do { try Self.validate(data, response: response) }
         catch {

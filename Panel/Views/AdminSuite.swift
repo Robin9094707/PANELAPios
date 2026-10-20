@@ -4,17 +4,43 @@ import SwiftUI
     @Published var api: SuiteAPI?
     @Published var health: JSON = .null
     @Published var actions: [SuiteAction] = []
+    @Published var players: [JSON] = []
+    @Published var total = 0
+    @Published var updated: Date?
     @Published var error: String?
     @Published var busy = false
     let panel: PanelAPI
     let server: Server
+    private var loadedAt: Date?
     init(panel: PanelAPI, server: Server) { self.panel = panel; self.server = server }
-    func load() async {
-        guard !busy else { return }; busy = true; defer { busy = false }
-        if panel.demo && ProcessInfo.processInfo.arguments.contains("--demo-suite") { do { let record = SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: "https://suite.demo.invalid", fingerprint: "", serverIdentity: "synthetic-suite"); let client = try SuiteAPI(record, token: "", demo: true); health = try await client.health(); actions = try await client.request("schema")["actions"].array.map { SuiteAction(data: $0) }; api = client } catch { self.error = error.localizedDescription }; return }
-        guard let record = SuiteConnections.shared.get(panel, server) else { api = nil; return }
-        do { let client = try SuiteAPI(record); health = try await client.health(); actions = try await client.request("schema")["actions"].array.map { SuiteAction(data: $0) }; api = client }
-        catch { api = nil; self.error = error.localizedDescription }
+    var configured: Bool { SuiteConnections.shared.get(panel, server) != nil || panel.demo && ProcessInfo.processInfo.arguments.contains("--demo-suite") }
+    func load(force: Bool = false) async {
+        guard !busy else { return }
+        guard configured else { api = nil; players = []; actions = []; updated = nil; loadedAt = nil; return }
+        if !force, let loadedAt, Date().timeIntervalSince(loadedAt) < 30, api != nil { return }
+        busy = true; defer { busy = false }
+        do {
+            let record = SuiteConnections.shared.get(panel, server) ?? SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: "https://suite.demo.invalid", fingerprint: "", serverIdentity: "synthetic-suite")
+            let client: SuiteAPI
+            if let existing = api, existing.connection == record { client = existing }
+            else { client = try SuiteAPI(record, token: panel.demo ? "" : nil, demo: panel.demo) }
+            let status = try await client.health()
+            try Task.checkCancellation()
+            if api !== client || actions.isEmpty {
+                actions = try await client.request("schema")["actions"].array.map { SuiteAction(data: $0) }
+            }
+            try Task.checkCancellation()
+            health = status; api = client; error = nil; loadedAt = Date()
+            await refreshPlayers()
+        } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { api = nil; players = []; self.error = error.localizedDescription } }
+    }
+    func refreshPlayers() async {
+        guard let api else { return }
+        do {
+            let result = try await api.data("players")
+            try Task.checkCancellation()
+            players = result["items"].array; total = result["total"].int; updated = Date(); error = nil
+        } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }
     }
 }
 struct SuiteHubView: View {
@@ -23,7 +49,7 @@ struct SuiteHubView: View {
     @StateObject private var model: SuiteModel
     @ObservedObject private var connections = SuiteConnections.shared
     @State private var settings = false
-    init(panel: PanelAPI, server: Server) { self.panel = panel; self.server = server; _model = StateObject(wrappedValue: SuiteModel(panel: panel, server: server)) }
+    init(panel: PanelAPI, server: Server, model: SuiteModel? = nil) { self.panel = panel; self.server = server; _model = StateObject(wrappedValue: model ?? SuiteModel(panel: panel, server: server)) }
     var body: some View {
         List {
             Section {
@@ -40,24 +66,28 @@ struct SuiteHubView: View {
                 }
             }
             if let api = model.api {
-                Section("Verwalten") {
+                Section("Spieler & Moderation") {
+                    NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions, initialFilter: .online) } label: { Label("Online-Spieler", systemImage: "person.2.wave.2.fill") }
+                    NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions, initialFilter: .recent) } label: { Label("Zuletzt online", systemImage: "clock.arrow.circlepath") }
                     NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions) } label: { Label("Spieler, Geräte & Alt-Accounts", systemImage: "person.2.fill") }
                     NavigationLink { SuiteUltraView(suite: api, actions: model.actions) } label: { Label("Ultrabanns & Identitätsgruppen", systemImage: "shield.slash.fill") }
                     NavigationLink { SuiteSettingsView(suite: api) } label: { Label("Suite-Einstellungen", systemImage: "slider.horizontal.3") }
                     NavigationLink { SuiteReadView(suite: api, path: "server.status", title: "Serverstatus") } label: { Label("Server & Neustartstatus", systemImage: "server.rack") }
                 }
-                if api.scope == "full" { Section("Vollständige Suite-Verwaltung") { NavigationLink { SuiteRemoteMenuView(suite: api) } label: { Label("Alle Suite-Menüs", systemImage: "square.grid.2x2.fill") } } }
-                Section("Alle Verwaltungsbereiche") {
-                    ForEach(Array(Set(model.actions.filter { $0.id != "menu.action" && $0.id != "settings.update" }.map(\.group))).sorted(), id: \.self) { group in NavigationLink { SuiteActionsView(suite: api, actions: model.actions.filter { $0.group == group && $0.id != "menu.action" && $0.id != "settings.update" }, title: group) } label: { Label(group, systemImage: symbol(group)) } }
+                
+                Section("Weitere Funktionen") {
+                    NavigationLink { SuiteActionsView(suite: api, actions: model.actions.filter { !["menu.action", "settings.update"].contains($0.id) }, title: "Alle Funktionen") } label: { Label("Alle Funktionen durchsuchen", systemImage: "magnifyingglass") }
+                    if api.scope == "full" { NavigationLink { SuiteRemoteMenuView(suite: api) } label: { Label("Originale Suite-Menüs", systemImage: "square.grid.2x2") } }
                 }
-                Section { Button("Kopplung bearbeiten", systemImage: "key.horizontal") { settings = true }; Button("Verbindung aktualisieren", systemImage: "arrow.clockwise") { Task { await model.load() } } }
+                Section { Button("Kopplung bearbeiten", systemImage: "key.horizontal") { settings = true }; Button("Verbindung aktualisieren", systemImage: "arrow.clockwise") { Task { await model.load(force: true) } } }
             }
-            Section("Einrichten & rückgängig machen") {
+            if model.api == nil { Section("Einrichten & rückgängig machen") {
                 Text("1. Admin Suite 8.3.0 installieren; vorhandenen Plugin-Datenordner behalten.\n2. Zusätzlichen TCP-Port beim Hoster zuweisen.\n3. /sas app enable <Port>\n4. /sas app create Mein-iPhone full\n5. /sas app fingerprint\n6. HTTPS-Adresse, Schlüssel und Fingerabdruck hier eintragen.").font(.footnote.monospaced()).textSelection(.enabled)
                 Text("Alternativ: /sas app im Java- oder Bedrock-Adminmenü. Abschalten mit /sas app disable; die übrige Suite läuft weiter. Die App zeigt vor Änderungen eine serverseitig gebundene Bestätigung. Ein read-Schlüssel kann ausschließlich lesen.").font(.footnote).foregroundStyle(.secondary)
             }
-        }.panelScreen().navigationTitle("Admin Suite").navigationBarTitleDisplayMode(.inline).task { await model.load() }.refreshable { await model.load() }.errorAlert($model.error)
-            .sheet(isPresented: $settings) { SuiteConnectionView(panel: panel, server: server) { await model.load() } }
+            }
+        }.panelScreen().navigationTitle("Admin Suite").navigationBarTitleDisplayMode(.inline).task { await model.load() }.refreshable { await model.load(force: true) }.errorAlert($model.error)
+            .sheet(isPresented: $settings) { SuiteConnectionView(panel: panel, server: server) { await model.load(force: true) } }
     }
     func scopeName(_ value: String) -> String { switch value { case "full": return "Vollzugriff"; case "manage": return "Spieler & Moderation"; default: return "Nur lesen" } }
     func symbol(_ group: String) -> String { switch group { case "Spieler": return "person.crop.circle"; case "Server": return "server.rack"; case "Sicherheit": return "lock.shield"; case "Moderation": return "hand.raised.fill"; case "Einstellungen": return "gearshape"; case "KI & Integrationen": return "sparkles"; default: return "square.grid.2x2" } }
@@ -96,7 +126,7 @@ struct SuiteConnectionView: View {
             if let existing { record.id = existing.id; record.useForModeration = existing.useForModeration }
             let api = try SuiteAPI(record, token: token); let health = try await api.health(); record.serverIdentity = health["serverId"].string
             try SuiteConnections.shared.save(record, token: token); Feedback.success(); await saved(); dismiss()
-        } catch { self.error = error.localizedDescription }
+        } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }
     }
 }
 struct SuiteActionsView: View {
@@ -104,7 +134,19 @@ struct SuiteActionsView: View {
     let actions: [SuiteAction]
     var title: String
     @State private var search = ""
-    var body: some View { List { ForEach(actions.filter { search.isEmpty || ($0.title + $0.id).localizedCaseInsensitiveContains(search) }) { action in NavigationLink { SuiteActionView(suite: suite, action: action) } label: { VStack(alignment: .leading, spacing: 4) { Text(action.title); Text(action.id).font(.caption).foregroundStyle(.secondary) } } } }.panelScreen().navigationTitle(title).searchable(text: $search, prompt: "Funktion suchen") }
+    var filtered: [SuiteAction] { actions.filter { search.isEmpty || ($0.title + $0.id + $0.group).localizedCaseInsensitiveContains(search) } }
+    var body: some View {
+        List {
+            ForEach(Array(Set(filtered.map(\.group))).sorted(), id: \.self) { group in
+                Section(group.isEmpty ? "Weitere Funktionen" : group) {
+                    ForEach(filtered.filter { $0.group == group }) { action in
+                        NavigationLink(action.title) { SuiteActionView(suite: suite, action: action) }
+                    }
+                }
+            }
+            if filtered.isEmpty { ContentUnavailableView.search(text: search) }
+        }.panelScreen().navigationTitle(title).searchable(text: $search, prompt: "Funktion suchen")
+    }
 }
 struct SuiteActionView: View {
     let suite: SuiteAPI
@@ -152,13 +194,13 @@ struct SuiteActionView: View {
         else { TextField(field["description"].string, text: Binding(get: { values[id]?.string ?? "" }, set: { values[id] = .string($0) }), axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(field["type"].int == 4 ? .numbersAndPunctuation : .default) }
     }
     var payload: [String: JSON] { values.filter { $0.value != .null && (!$0.value.string.isEmpty || $0.value == .bool(false) || action.id == "settings.update" && $0.key == "value") } }
-    func read() async { busy = true; defer { busy = false }; do { result = try await suite.view(action.id, values: payload) } catch { self.error = error.localizedDescription } }
-    func prepare() async { busy = true; defer { busy = false }; do { plan = try await suite.prepare(action.id, values: payload) } catch { self.error = error.localizedDescription } }
+    func read() async { busy = true; defer { busy = false }; do { result = try await suite.view(action.id, values: payload) } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
+    func prepare() async { busy = true; defer { busy = false }; do { plan = try await suite.prepare(action.id, values: payload) } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
     func confirmation(_ prepared: JSON) -> some View {
-        NavigationStack { List { Section { Text(action.title).font(.headline); SuiteFormattedText(text: prepared["summary"].string); Text("Bestätigung ist 60 Sekunden gültig. Bei Zeitüberschreitung zuerst den Serverzustand prüfen.").font(.footnote).foregroundStyle(.secondary) }; Section { Button("Jetzt ausführen", role: .destructive) { Task { busy = true; do { result = try await suite.execute(prepared["ticket"].string); if result?["ok"].bool == true { Feedback.success() } } catch { self.error = error.localizedDescription }; busy = false; plan = nil } }.disabled(busy); if busy { ProgressView("Wird ausgeführt …") } } }.panelScreen().navigationTitle("Aktion bestätigen").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { plan = nil }.disabled(busy) } } }.interactiveDismissDisabled(busy)
+        NavigationStack { List { Section { Text(action.title).font(.headline); SuiteFormattedText(text: prepared["summary"].string); Text("Bestätigung ist 60 Sekunden gültig. Bei Zeitüberschreitung zuerst den Serverzustand prüfen.").font(.footnote).foregroundStyle(.secondary) }; Section { Button("Jetzt ausführen", role: .destructive) { Task { busy = true; do { result = try await suite.execute(prepared["ticket"].string); if result?["ok"].bool == true { Feedback.success() } } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }; busy = false; plan = nil } }.disabled(busy); if busy { ProgressView("Wird ausgeführt …") } } }.panelScreen().navigationTitle("Aktion bestätigen").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { plan = nil }.disabled(busy) } } }.interactiveDismissDisabled(busy)
     }
     var suggestionSheet: some View {
-        NavigationStack { List { ForEach(choices, id: \.["value"].string) { item in Button(item["name"].string) { if let field = choiceField { values[field["name"].string] = item["value"] }; choiceField = nil } } }.panelScreen().navigationTitle("Vorschläge").searchable(text: $choiceQuery).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { choiceField = nil } } }.task(id: choiceQuery) { let revision = UUID(); choiceGeneration = revision; do { try await Task.sleep(for: .milliseconds(250)); var q = payload.mapValues(\.string); q["path"] = action.id; q["field"] = choiceField?["name"].string ?? ""; q["q"] = choiceQuery; let response = try await suite.request("choices", query: q); if choiceGeneration == revision { choices = response.array } } catch is CancellationError {} catch { self.error = error.localizedDescription } } }
+        NavigationStack { List { ForEach(choices, id: \.["value"].string) { item in Button(item["name"].string) { if let field = choiceField { values[field["name"].string] = item["value"] }; choiceField = nil } } }.panelScreen().navigationTitle("Vorschläge").searchable(text: $choiceQuery).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { choiceField = nil } } }.task(id: choiceQuery) { let revision = UUID(); choiceGeneration = revision; do { try await Task.sleep(for: .milliseconds(250)); var q = payload.mapValues(\.string); q["path"] = action.id; q["field"] = choiceField?["name"].string ?? ""; q["q"] = choiceQuery; let response = try await suite.request("choices", query: q); if choiceGeneration == revision { choices = response.array } } catch is CancellationError {} catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } } }
     }
 }
 struct SuiteFormattedText: View {
@@ -177,7 +219,7 @@ struct SuiteReadView: View {
     @State private var result: JSON = .null
     @State private var error: String?
     var body: some View { List { if result != .null { SuiteReplyContent(data: result) } else { ProgressView() } }.panelScreen().navigationTitle(title).navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }.errorAlert($error) }
-    func load() async { do { result = try await suite.view(path, values: values) } catch { self.error = error.localizedDescription } }
+    func load() async { do { result = try await suite.view(path, values: values) } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
 }
 
 struct SuiteLinkedPlayerView: View {
@@ -187,7 +229,7 @@ struct SuiteLinkedPlayerView: View {
     @StateObject private var model: SuiteModel
     init(panel: PanelAPI, server: Server, player: String) { self.panel = panel; self.server = server; self.player = player; _model = StateObject(wrappedValue: SuiteModel(panel: panel, server: server)) }
     var body: some View {
-        Group { if let api = model.api { SuitePlayerView(suite: api, panel: panel, server: server, player: player, actions: model.actions) } else { List { if model.busy { ProgressView("Admin Suite verbinden …") }; Text("Moderation ist auf Admin Suite eingestellt. Bei Verbindungsproblemen wird keine andere Bannverwaltung automatisch verwendet.").font(.footnote).foregroundStyle(.secondary); Button("Erneut verbinden") { Task { await model.load() } }; NavigationLink("Kopplung prüfen") { SuiteHubView(panel: panel, server: server) } }.panelScreen().navigationTitle(player) } }.task { await model.load() }.errorAlert($model.error)
+        Group { if let api = model.api { SuitePlayerView(suite: api, panel: panel, server: server, player: player, actions: model.actions) } else { List { if model.busy { ProgressView("Admin Suite verbinden …") }; Text("Moderation ist auf Admin Suite eingestellt. Bei Verbindungsproblemen wird keine andere Bannverwaltung automatisch verwendet.").font(.footnote).foregroundStyle(.secondary); Button("Erneut verbinden") { Task { await model.load(force: true) } }; NavigationLink("Kopplung prüfen") { SuiteHubView(panel: panel, server: server) } }.panelScreen().navigationTitle(player) } }.task { await model.load() }.errorAlert($model.error)
     }
 }
 
@@ -220,6 +262,6 @@ struct SuiteRemoteMenuView: View {
             }
     }
     func select(_ option: JSON, click: String = "left") { selected = option; selectedClick = click; Task { busy = true; defer { busy = false }; do { let values: [String: JSON] = ["session": menu["session"], "revision": menu["revision"], "option": option["id"], "click": .string(click), "input": .string(option["id"].string == "input" ? input : "")]; plan = try await suite.prepare("menu.action", values: values) } catch { selected = nil; self.error = error.localizedDescription } } }
-    func load() async { guard !busy else { return }; busy = true; defer { busy = false }; do { menu = try await suite.request("menu"); if menu["input"].bool { input = menu["previous"].string } } catch { self.error = error.localizedDescription } }
-    func execute() async { guard let plan else { return }; busy = true; defer { busy = false; self.plan = nil; selected = nil }; do { menu = try await suite.execute(plan["ticket"].string); search = ""; if menu["input"].bool { input = menu["previous"].string }; Feedback.success() } catch { self.error = error.localizedDescription } }
+    func load() async { guard !busy else { return }; busy = true; defer { busy = false }; do { menu = try await suite.request("menu"); if menu["input"].bool { input = menu["previous"].string } } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
+    func execute() async { guard let plan else { return }; busy = true; defer { busy = false; self.plan = nil; selected = nil }; do { menu = try await suite.execute(plan["ticket"].string); search = ""; if menu["input"].bool { input = menu["previous"].string }; Feedback.success() } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
 }

@@ -81,7 +81,7 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
             else { (data, response) = try await PinnedHTTPS.load(request, pin: pin) }
         }
         catch let error as URLError {
-            if Task.isCancelled { throw CancellationError() }
+            if Task.isCancelled || error.code == .cancelled { throw CancellationError() }
             if [.serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot, .secureConnectionFailed, .cancelled].contains(error.code) { throw PanelError(message: "HTTPS-Verbindung konnte nicht bestätigt werden. Prüfe Adresse, Port und den SHA-256-Fingerabdruck aus /sas app fingerprint. Ein geändertes Zertifikat wird nicht automatisch akzeptiert.") }
             throw error
         }

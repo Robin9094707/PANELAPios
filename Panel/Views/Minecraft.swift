@@ -40,6 +40,7 @@ struct PlayersCard: View {
     @ObservedObject var live: LiveServer
     let api: PanelAPI
     let server: Server
+    @ObservedObject var suite: SuiteModel
     @State private var showPlayers = false
     var body: some View {
         HStack(spacing: 14) {
@@ -50,7 +51,7 @@ struct PlayersCard: View {
             }
             Spacer()
             Button("Spielerübersicht", systemImage: "info.circle") { showPlayers = true }.labelStyle(.iconOnly).font(.title2).accessibilityIdentifier("showPlayers")
-        }.card().sheet(isPresented: $showPlayers) { PlayerListSheet(live: live, api: api, server: server) }
+        }.card().sheet(isPresented: $showPlayers) { NavigationStack { IntegratedPlayersView(model: suite, live: live, initialFilter: .online).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { showPlayers = false } } } } }
     }
 }
 struct PlayerListSheet: View {

@@ -147,7 +147,7 @@ enum Vault {
             let result = try await api.list("").map { Server(data: $0) }
             guard self.api === api, refreshID == requestID, !Task.isCancelled else { return }; servers = result; error = nil
         } catch {
-            if !Task.isCancelled && self.api === api && refreshID == requestID { self.error = error.localizedDescription }
+            if !RequestFailure.isCancellation(error) && !Task.isCancelled && self.api === api && refreshID == requestID { self.error = error.localizedDescription }
         }
     }
     func startDemo() {
