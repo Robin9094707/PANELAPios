@@ -82,7 +82,6 @@ struct ResourcePoint: Identifiable {
 func bytes(_ value: Double) -> String {
     ByteCountFormatter.string(fromByteCount: Int64(max(0, value)), countStyle: .binary)
 }
-func cleanConsole(_ value: String) -> String {
-    value.replacingOccurrences(of: "\u{1B}\\[[0-?]*[ -/]*[@-~]", with: "", options: .regularExpression)
-        .replacingOccurrences(of: "\r", with: "")
-}
+func cleanConsole(_ value: String) -> String { ConsoleStyle.plain(value) }
+
+extension String { var cleanedForSearch: String { cleanConsole(self) } }

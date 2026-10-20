@@ -13,7 +13,7 @@ struct DatabasesView: View {
         List {
             Section {
                 Text("Verbindungsdaten, Passwörter und Datenbankverwaltung. Tabellen und SQL-Inhalte sind über diese Panel-API nicht zugänglich.").font(.footnote).foregroundStyle(.secondary)
-                Button("Datenbank erstellen", systemImage: "plus") { operation = Operation(title: "Datenbank erstellen", path: prefix, fields: [Field(key: "database", label: "Name"), Field(key: "remote", label: "Erlaubte Quelladresse", value: "%")], submit: "Erstellen") }
+                Button("Datenbank erstellen", systemImage: "plus") { operation = Operation(title: "Datenbank erstellen", path: prefix, fields: [Field(key: "database", label: "Name"), Field(key: "remote", label: "Erlaubte Quelladresse", value: "%")], submit: "Erstellen") }.requiresRequest(api, prefix, method: "POST")
             }
             if loading { ProgressView() }
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
@@ -50,12 +50,12 @@ struct DatabaseDetail: View {
                 }
                 Section("Passwort") {
                     if !db.password.isEmpty { HStack { Text(reveal ? db.password : "••••••••••••").font(.system(.body, design: .monospaced)).textSelection(.enabled); Spacer(); Button(reveal ? "Verbergen" : "Anzeigen", systemImage: reveal ? "eye.slash" : "eye") { reveal.toggle() }.labelStyle(.iconOnly); Button("Kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = db.password }.labelStyle(.iconOnly) } }
-                    else { Button("Passwort laden", systemImage: "key") { Task { await password() } } }
-                    Button("Passwort erneuern", systemImage: "arrow.clockwise", role: .destructive) { operation = Operation(title: "Passwort erneuern", detail: "Plugin-Konfigurationen müssen danach das neue Passwort verwenden.", path: "servers/\(server.id)/databases/\(row["id"].string)/rotate-password", destructive: true, submit: "Erneuern") }
+                    else { Button("Passwort laden", systemImage: "key") { Task { await password() } }.requiresAccess(api, server.id, "database.view_password") }
+                    Button("Passwort erneuern", systemImage: "arrow.clockwise", role: .destructive) { operation = Operation(title: "Passwort erneuern", detail: "Plugin-Konfigurationen müssen danach das neue Passwort verwenden.", path: "servers/\(server.id)/databases/\(row["id"].string)/rotate-password", destructive: true, submit: "Erneuern") }.requiresRequest(api, "servers/\(server.id)/databases/\(row["id"].string)/rotate-password", method: "POST")
                 }
                 Section {
                     Button("Verbindungsdaten kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = "Host: \(db.host)\nPort: \(db.port)\nDatabase: \(db.name)\nUser: \(row["username"].string)" }
-                    Button("Datenbank löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Datenbank löschen", detail: "Alle Tabellen und Daten dieser Datenbank werden endgültig gelöscht.", path: "servers/\(server.id)/databases/\(row["id"].string)", method: "DELETE", destructive: true, submit: "Endgültig löschen") }
+                    Button("Datenbank löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Datenbank löschen", detail: "Alle Tabellen und Daten dieser Datenbank werden endgültig gelöscht.", path: "servers/\(server.id)/databases/\(row["id"].string)", method: "DELETE", destructive: true, submit: "Endgültig löschen") }.requiresRequest(api, "servers/\(server.id)/databases/\(row["id"].string)", method: "DELETE")
                 }
             }.panelScreen().navigationTitle(db.name).navigationBarTitleDisplayMode(.inline).privacySensitive().errorAlert($error)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }

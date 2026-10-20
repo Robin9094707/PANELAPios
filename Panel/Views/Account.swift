@@ -14,8 +14,8 @@ struct AccountView: View {
                 LabeledContent("Sprache", value: account["language"].string)
             }
             Section("Sicherheit") {
-                Button("E-Mail ändern", systemImage: "envelope") { operation = Operation(title: "E-Mail ändern", path: "account/email", method: "PUT", fields: [Field(key: "email", label: "Neue E-Mail", value: account["email"].string), Field(key: "password", label: "Account-Passwort", kind: .secret)]) }
-                Button("Passwort ändern", systemImage: "key") { operation = Operation(title: "Passwort ändern", path: "account/password", method: "PUT", fields: [Field(key: "current_password", label: "Aktuelles Passwort", kind: .secret), Field(key: "password", label: "Neues Passwort", kind: .secret), Field(key: "password_confirmation", label: "Neues Passwort wiederholen", kind: .secret)], destructive: true) }
+                Button("E-Mail ändern", systemImage: "envelope") { operation = Operation(title: "E-Mail ändern", path: "account/email", method: "PUT", fields: [Field(key: "email", label: "Neue E-Mail", value: account["email"].string), Field(key: "password", label: "Account-Passwort", kind: .secret)]) }.requiresRequest(api, "account/email", method: "PUT")
+                Button("Passwort ändern", systemImage: "key") { operation = Operation(title: "Passwort ändern", path: "account/password", method: "PUT", fields: [Field(key: "current_password", label: "Aktuelles Passwort", kind: .secret), Field(key: "password", label: "Neues Passwort", kind: .secret), Field(key: "password_confirmation", label: "Neues Passwort wiederholen", kind: .secret)], destructive: true) }.requiresRequest(api, "account/password", method: "PUT")
                 NavigationLink { TwoFactorView(api: api) } label: { Label("Zwei-Faktor-Authentifizierung", systemImage: "lock.shield") }
                 NavigationLink { AccountKeysView(api: api, ssh: false) } label: { Label("API-Schlüssel", systemImage: "key.horizontal") }
                 NavigationLink { AccountKeysView(api: api, ssh: true) } label: { Label("SSH-Schlüssel", systemImage: "terminal") }
@@ -97,7 +97,7 @@ struct TwoFactorView: View {
                 }
             }
             Section {
-                Button("2FA deaktivieren", systemImage: "lock.open", role: .destructive) { operation = Operation(title: "2FA deaktivieren", detail: "Der zusätzliche Anmeldeschutz deines Panel-Accounts wird entfernt.", path: "account/two-factor/disable", fields: [Field(key: "password", label: "Account-Passwort", kind: .secret)], destructive: true, submit: "Deaktivieren") }
+                Button("2FA deaktivieren", systemImage: "lock.open", role: .destructive) { operation = Operation(title: "2FA deaktivieren", detail: "Der zusätzliche Anmeldeschutz deines Panel-Accounts wird entfernt.", path: "account/two-factor/disable", fields: [Field(key: "password", label: "Account-Passwort", kind: .secret)], destructive: true, submit: "Deaktivieren") }.requiresRequest(api, "account/two-factor/disable", method: "POST")
             }
         }.panelScreen().navigationTitle("Zwei-Faktor-Schutz").navigationBarTitleDisplayMode(.inline).errorAlert($error).privacySensitive()
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { setup = .null; tokens = [] } }

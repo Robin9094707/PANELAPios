@@ -32,7 +32,7 @@ struct FolderPicker: View {
                             .disabled(selection.directories.contains { pathJoin(destination, folder) == pathJoin(source, $0) })
                     }
                 }
-                Section { Button("Hierher verschieben", systemImage: "folder.badge.plus") { confirm = true }.disabled(blocked || loading || busy) }
+                Section { Button("Hierher verschieben", systemImage: "folder.badge.plus") { confirm = true }.disabled(blocked || loading || busy).requiresAccess(api, server.id, "file.update") }
             }.panelScreen().searchable(text: $search, prompt: "Unterordner suchen").navigationTitle("Ziel auswählen").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() }.disabled(busy) } }
                 .task(id: destination) { await load() }.errorAlert($error)

@@ -17,7 +17,7 @@ struct BackupsView: View {
                     Label("Backups", systemImage: "externaldrive.badge.timemachine").font(.headline)
                     Spacer(); Text("\(backups.count) / \(server.data["feature_limits"]["backups"].string)").monospacedDigit().foregroundStyle(.secondary)
                 }
-                Button("Backup erstellen", systemImage: "plus.circle.fill") { create() }
+                Button("Backup erstellen", systemImage: "plus.circle.fill") { create() }.requiresAccess(api, server.id, "backup.create")
                 if downloading { ProgressView("Backup herunterladen …") }
             } footer: { Text("Backups werden vom Panel und deinem Provider verwaltet. Ein erfolgreicher Abschluss wird hier angezeigt.") }
             if !loaded { ProgressView("Backups laden …") }
@@ -49,13 +49,13 @@ struct BackupsView: View {
     @ViewBuilder func actions(_ b: JSON) -> some View {
         let path = prefix + "/" + b["uuid"].string
         if b["is_successful"].bool {
-            Button("Herunterladen", systemImage: "arrow.down.circle") { download(b) }.disabled(downloading)
+            Button("Herunterladen", systemImage: "arrow.down.circle") { download(b) }.disabled(downloading).requiresAccess(api, server.id, "backup.download")
             Button("Wiederherstellen", systemImage: "arrow.counterclockwise", role: .destructive) {
                 operation = Operation(title: "Backup wiederherstellen", detail: "Stoppe den Server vorher. Dateien aus diesem Backup überschreiben vorhandene Dateien. Ein aktuelles Backup ist empfohlen. Mit 'Vorhandene Dateien vorher löschen' werden auch Dateien entfernt, die im Backup fehlen.", path: path + "/restore", fields: [Field(key: "truncate", label: "Vorhandene Dateien vorher löschen", value: "false", kind: .toggle)], destructive: true, submit: "Backup wiederherstellen")
-            }
+            }.requiresAccess(api, server.id, "backup.restore")
         }
-        Button(b["is_locked"].bool ? "Schutz aufheben" : "Vor Löschen schützen", systemImage: b["is_locked"].bool ? "lock.open" : "lock") { operation = Operation(title: b["is_locked"].bool ? "Backup entsperren" : "Backup schützen", path: path + "/lock", submit: "Bestätigen") }
-        Button("Löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Backup löschen", detail: "\(b["name"].string) wird dauerhaft gelöscht.", path: path, method: "DELETE", destructive: true, submit: "Endgültig löschen") }.disabled(b["is_locked"].bool)
+        Button(b["is_locked"].bool ? "Schutz aufheben" : "Vor Löschen schützen", systemImage: b["is_locked"].bool ? "lock.open" : "lock") { operation = Operation(title: b["is_locked"].bool ? "Backup entsperren" : "Backup schützen", path: path + "/lock", submit: "Bestätigen") }.requiresRequest(api, path + "/lock", method: "POST")
+        Button("Löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Backup löschen", detail: "\(b["name"].string) wird dauerhaft gelöscht.", path: path, method: "DELETE", destructive: true, submit: "Endgültig löschen") }.disabled(b["is_locked"].bool).requiresRequest(api, path, method: "DELETE")
     }
     func create() { operation = Operation(title: "Backup erstellen", path: prefix, fields: [Field(key: "name", label: "Name", value: "Backup " + Date().formatted(date: .numeric, time: .shortened)), Field(key: "is_locked", label: "Vor Löschen schützen", value: "false", kind: .toggle), Field(key: "ignored", label: "Ausgeschlossene Dateien", kind: .multiline, hint: "Optional. Ein Muster pro Zeile, gemäß den Backup-Regeln deines Panels.")], submit: "Erstellen") }
     func load(silent: Bool = false) async { do { backups = try await api.list(prefix); loaded = true } catch is CancellationError {} catch { if !silent { self.error = error.localizedDescription } } }

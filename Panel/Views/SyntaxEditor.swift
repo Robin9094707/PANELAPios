@@ -4,6 +4,7 @@ import UIKit
 struct SyntaxEditor: UIViewRepresentable {
     @Binding var text: String
     let colors: Bool
+    var editable = true
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: SyntaxEditor
         var pending: DispatchWorkItem?
@@ -62,68 +63,10 @@ struct SyntaxEditor: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: UITextView, context: Context) {
+        view.isEditable = editable
         let changedColors = context.coordinator.parent.colors != colors
         context.coordinator.parent = self
         if view.text != text { let selection = view.selectedRange; view.text = text; if NSMaxRange(selection) <= view.text.utf16.count { view.selectedRange = selection }; context.coordinator.schedule(view) }
         else if changedColors { context.coordinator.schedule(view) }
     }
-}
-struct YAMLScalar: Identifiable {
-    let line: Int
-    let indent: String
-    let key: String
-    let value: String
-    let comment: String
-    let kind: String
-    var id: Int { line }
-    static func parse(_ text: String) -> [YAMLScalar] {
-        guard text.utf8.count <= 524288 else { return [] }
-        var rows: [YAMLScalar] = []
-        let re = try! NSRegularExpression(pattern: #"^( *)([A-Za-z0-9_.-]+): +(.+)$"#)
-        let lines = text.components(separatedBy: "\n")
-        for (index, line) in lines.enumerated() {
-            guard rows.count < 300, let m = re.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)), let a = Range(m.range(at: 1), in: line), let b = Range(m.range(at: 2), in: line), let c = Range(m.range(at: 3), in: line) else { continue }
-            if let next = lines.dropFirst(index + 1).first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }), next.prefix(while: { $0 == " " }).count > line[a].count { continue }
-            var value = String(line[c]), comment = ""
-            // Quoted values and collections stay in the full editor; no partial YAML parser guesses their semantics.
-            guard !value.hasPrefix("\""), !value.hasPrefix("'"), !value.contains("\\"), !value.contains("\t") else { continue }
-            if let marker = value.range(of: " #") { comment = String(value[marker.lowerBound...]); value = String(value[..<marker.lowerBound]) }
-            guard !value.isEmpty, value.range(of: #"^[A-Za-z0-9 _./:@+-]+$"#, options: .regularExpression) != nil else { continue }
-            let kind = ["true", "false"].contains(value) ? "bool" : Double(value) != nil ? "number" : "string"
-            rows.append(YAMLScalar(line: index, indent: String(line[a]), key: String(line[b]), value: value, comment: comment, kind: kind))
-        }; return rows
-    }
-    func replacement(_ value: String) throws -> String {
-        guard !value.contains("\n"), !value.contains("\r") else { throw PanelError(message: "Einzeiligen Wert eingeben.") }
-        let encoded: String
-        if kind == "bool" { guard ["true", "false"].contains(value) else { throw PanelError(message: "true oder false erwartet.") }; encoded = value }
-        else if kind == "number" { guard let n = Double(value), n.isFinite else { throw PanelError(message: "Gültige Zahl erwartet.") }; encoded = value }
-        else { encoded = JSON.string(value).pretty }
-        return indent + key + ": " + encoded + comment
-    }
-}
-struct YAMLForm: View {
-    @Binding var text: String
-    @Environment(\.dismiss) private var dismiss
-    @State private var rows: [YAMLScalar] = []
-    @State private var edits: [Int: String] = [:]
-    @State private var error: String?
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section { Text("Schnellbearbeitung einfacher, unzitierter YAML-Werte. Komplexe Strukturen, Listen, Anker und zitierte Werte bearbeitest du im Texteditor. Bis 300 Felder / 512 KiB.").font(.footnote).foregroundStyle(.secondary) }
-                ForEach(rows) { row in
-                    Section {
-                        let binding = Binding<String>(get: { edits[row.line] ?? row.value }, set: { edits[row.line] = $0 })
-                        if row.kind == "bool" { Toggle(row.key, isOn: Binding(get: { binding.wrappedValue == "true" }, set: { binding.wrappedValue = $0 ? "true" : "false" })) }
-                        else { TextField(row.key, text: binding).textInputAutocapitalization(.never).autocorrectionDisabled() }
-                    } header: { Text("\(row.key) · Zeile \(row.line + 1)") }
-                }
-                if rows.isEmpty { Text("Keine einfachen Formularfelder gefunden. Nutze den vollständigen Texteditor.").foregroundStyle(.secondary) }
-            }.panelScreen().navigationTitle("YAML-Werte").errorAlert($error)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Übernehmen") { apply() } } }
-                .onAppear { rows = YAMLScalar.parse(text) }
-        }
-    }
-    func apply() { do { var lines = text.components(separatedBy: "\n"); for row in rows { if let edit = edits[row.line], edit != row.value { lines[row.line] = try row.replacement(edit) } }; text = lines.joined(separator: "\n"); dismiss() } catch { self.error = error.localizedDescription } }
 }

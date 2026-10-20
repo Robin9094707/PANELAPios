@@ -5,7 +5,7 @@ struct ConsoleTextView: UIViewRepresentable {
     let text: String
     let fontSize: Double
     let follow: Bool
-    final class Coordinator { var previous = "" }
+    final class Coordinator { var previous = ""; var size = 0.0 }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
@@ -17,11 +17,9 @@ struct ConsoleTextView: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: UITextView, context: Context) {
-        view.font = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        view.textColor = .label
-        guard context.coordinator.previous != text else { return }
+        guard context.coordinator.previous != text || context.coordinator.size != fontSize else { return }
         let selection = view.selectedRange; let offset = view.contentOffset
-        view.text = text; context.coordinator.previous = text
+        view.attributedText = ConsoleStyle.attributed(text, size: fontSize); context.coordinator.previous = text; context.coordinator.size = fontSize
         if selection.length > 0 && NSMaxRange(selection) <= view.text.utf16.count { view.selectedRange = selection; view.setContentOffset(offset, animated: false) }
         else if follow && !text.isEmpty { view.scrollRangeToVisible(NSRange(location: max(0, view.text.utf16.count - 1), length: 1)) }
         else { view.setContentOffset(offset, animated: false) }
@@ -66,9 +64,18 @@ struct PlayerListSheet: View {
 }
 struct TPSCard: View {
     @ObservedObject var live: LiveServer
+    let api: PanelAPI
+    let server: Server
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Label("Server-TPS", systemImage: "waveform.path.ecg").font(.headline); Spacer(); if let date = live.tps?.updated { Text(date, style: .time).font(.caption).foregroundStyle(.secondary) } }
+            if let issue = live.tpsIssue { Label(issue, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange) }
+            HStack {
+                Text(live.tpsRequested.map { "Angefragt um " + $0.formatted(date: .omitted, time: .standard) } ?? "Abfrage startet nach der Live-Verbindung").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Button("Aktualisieren", systemImage: "arrow.clockwise") { Task { await live.requestTPS(api: api, server: server) } }
+                    .labelStyle(.iconOnly).disabled(!live.connected || live.state != "running").requiresAccess(api, server.id, "control.console")
+            }
             if live.state == "offline" { Text("Server offline").foregroundStyle(.secondary) }
             else if let tps = live.tps {
                 HStack { sample("1 Minute", tps.minute); Spacer(); sample("5 Minuten", tps.five); Spacer(); sample("15 Minuten", tps.fifteen) }

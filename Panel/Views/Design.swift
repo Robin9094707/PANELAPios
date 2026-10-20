@@ -54,6 +54,7 @@ struct ActionForm: View {
     var fields: [Field] = []
     var destructive = false
     var submit = "Speichern"
+    var allowed = true
     let perform: ([String: JSON]) async throws -> Void
     @State private var values: [String: String] = [:]
     @State private var error: String?
@@ -62,6 +63,7 @@ struct ActionForm: View {
     var body: some View {
         NavigationStack {
             Form {
+                if !allowed { Section { Label("Keine Berechtigung für diese Aktion", systemImage: "lock.shield").foregroundStyle(.secondary) } }
                 if !detail.isEmpty { Section { Text(detail).foregroundStyle(.secondary) } }
                 ForEach(fields) { field in
                     Section {
@@ -82,7 +84,7 @@ struct ActionForm: View {
                 Section {
                     Button(role: destructive ? .destructive : nil) { if destructive { confirm = true } else { save() } } label: {
                         HStack { Spacer(); if busy { ProgressView() }; Text(submit).fontWeight(.semibold); Spacer() }
-                    }.disabled(busy)
+                    }.disabled(busy || !allowed)
                 }
             }.panelScreen().navigationTitle(title).navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() }.disabled(busy) } }
@@ -95,6 +97,7 @@ struct ActionForm: View {
     }
     private func binding(_ f: Field) -> Binding<String> { Binding(get: { values[f.key] ?? f.value }, set: { values[f.key] = $0 }) }
     private func save() {
+        guard allowed else { return }
         busy = true
         Task { do {
             var payload: [String: JSON] = [:]
@@ -129,9 +132,13 @@ struct Operation: Identifiable {
 struct OperationSheet: View {
     let api: PanelAPI
     let operation: Operation
-    var onSuccess: () async -> Void = {}
+    var onSuccess: () async -> Void
+    @ObservedObject private var access: ServerAccess
+    init(api: PanelAPI, operation: Operation, onSuccess: @escaping () async -> Void = {}) {
+        self.api = api; self.operation = operation; self.onSuccess = onSuccess; self.access = api.access
+    }
     var body: some View {
-        ActionForm(title: operation.title, detail: operation.detail, fields: operation.fields, destructive: operation.destructive, submit: operation.submit) { values in
+        ActionForm(title: operation.title, detail: operation.detail, fields: operation.fields, destructive: operation.destructive, submit: operation.submit, allowed: access.allows(path: operation.path, method: operation.method, body: .object(operation.fixed))) { values in
             guard !api.demo else { throw PanelError(message: "Der Demomodus zeigt Beispieldaten. Verbinde dein Panel, um Änderungen vorzunehmen.") }
             let payload = operation.fixed.merging(values) { _, new in new }
             let body = try operation.transform?(payload) ?? .object(payload)

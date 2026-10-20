@@ -9,6 +9,7 @@ struct PluginsView: View {
     @State private var operation: Operation?
     @State private var importer = false
     @State private var selectedPlugin: String?
+    @State private var importedPlugin: URL?
     @State private var candidate: PluginUpdateCandidate?
     @State private var stagedLocal: URL?
     @State private var busy = false
@@ -33,11 +34,11 @@ struct PluginsView: View {
                     VStack(alignment: .leading, spacing: 9) {
                         Text(name).font(.headline).textSelection(.enabled)
                         Text(bytes(entry["size"].double) + (name.hasSuffix(".disabled") ? " · Deaktiviert" : " · Bei nächstem Start geladen")).font(.caption).foregroundStyle(.secondary)
-                        Button("Update-Datei hochladen", systemImage: "arrow.up.doc") { selectedPlugin = name; importer = true }.buttonStyle(.borderless).disabled(busy || name.hasSuffix(".disabled"))
+                        Button("Update-Datei hochladen", systemImage: "arrow.up.doc") { selectedPlugin = name; importer = true }.buttonStyle(.borderless).disabled(busy || name.hasSuffix(".disabled")).requiresAccess(api, server.id, "file.create", "file.read-content")
                         HStack {
-                            Button(name.hasSuffix(".disabled") ? "Aktivieren" : "Deaktivieren") { rename(name) }
+                            Button(name.hasSuffix(".disabled") ? "Aktivieren" : "Deaktivieren") { rename(name) }.requiresAccess(api, server.id, "file.update")
                             Spacer()
-                            Button("Löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Plugin löschen", detail: "\(name) wird endgültig gelöscht. Stoppe den Server zuerst. Der Konfigurationsordner bleibt erhalten.", path: prefix + "/delete", fixed: ["root": .string("/plugins"), "files": .array([.string(name)])], destructive: true, submit: "JAR löschen") }
+                            Button("Löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Plugin löschen", detail: "\(name) wird endgültig gelöscht. Stoppe den Server zuerst. Der Konfigurationsordner bleibt erhalten.", path: prefix + "/delete", fixed: ["root": .string("/plugins"), "files": .array([.string(name)])], destructive: true, submit: "JAR löschen") }.requiresRequest(api, prefix + "/delete", method: "POST")
                         }.buttonStyle(.borderless).font(.subheadline)
                     }.padding(.vertical, 5)
                 }
@@ -50,8 +51,13 @@ struct PluginsView: View {
                     try await commit(value)
                 }
             }
-            .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .item]) { result in
-                switch result { case .success(let url): inspect(url); case .failure(let e): error = e.localizedDescription }
+            .sheet(isPresented: $importer, onDismiss: {
+                if let url = importedPlugin { importedPlugin = nil; inspect(url) }
+            }) {
+                FileImportPicker { result in
+                    switch result { case .success(let urls): importedPlugin = urls.first; case .failure(let e): error = e.localizedDescription }
+                    importer = false
+                }.ignoresSafeArea()
             }
     }
     func load() async { do { entries = try await api.list(prefix + "/list", query: ["directory": "/plugins"]) } catch { self.error = error.localizedDescription } }
@@ -67,7 +73,9 @@ struct PluginsView: View {
             let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
             let installedData = try await api.fileData(server: server.id, path: "/plugins/" + filename, limit: 128 * 1024 * 1024)
             let result = try await Task.detached(priority: .userInitiated) {
-                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                let resource = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+                guard resource.isRegularFile == true else { throw PanelError(message: "Bitte eine einzelne JAR-Datei auswählen, keinen Ordner.") }
+                let size = resource.fileSize ?? 0
                 guard size <= 128 * 1024 * 1024 else { throw PanelError(message: "JAR größer als 128 MiB.") }
                 let nextData = try Data(contentsOf: url)
                 let old = try PluginArchive.descriptor(installedData), next = try PluginArchive.descriptor(nextData)

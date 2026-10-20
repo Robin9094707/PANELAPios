@@ -15,6 +15,10 @@ import Combine
     @Published var playerCapacity: Int?
     @Published var tps: TPSSnapshot?
     @Published var playerIssue: String?
+    @Published var tpsIssue: String?
+    @Published var tpsRequested: Date?
+    private var tpsPending = false
+    private var tpsBusy = false
     private var socket: URLSessionWebSocketTask?
     private var runID = UUID()
     private var active = false
@@ -24,13 +28,23 @@ import Combine
     var uptime: Double { stats["uptime"].double / 1000 }
     func stop() { active = false; runID = UUID(); socket?.cancel(with: .goingAway, reason: nil); socket = nil; connected = false }
     func run(api: PanelAPI, server: Server, minecraft: Bool = false) async {
-        stop(); active = true; players = nil; playerCapacity = nil; tps = nil; playerIssue = nil; let generation = UUID(); runID = generation
+        stop(); active = true; let generation = UUID(); runID = generation
+        await withTaskCancellationHandler {
+            await stream(api: api, server: server, minecraft: minecraft, generation: generation)
+        } onCancel: {
+            Task { @MainActor in self.stop(generation: generation) }
+        }
+        stop(generation: generation)
+    }
+    private func stop(generation: UUID) { if runID == generation { stop() } }
+    private func stream(api: PanelAPI, server: Server, minecraft: Bool, generation: UUID) async {
+        players = nil; playerCapacity = nil; tps = nil; playerIssue = nil; tpsIssue = nil; tpsRequested = nil; tpsPending = false; tpsBusy = false
         if api.demo {
             connected = true; connection = "Demo · Beispieldaten"; state = "running"
             playerCapacity = minecraft ? 60 : nil
             tps = minecraft ? TPSSnapshot(minute: 20, five: 19.98, fifteen: 20) : nil
             players = minecraft ? PlayerSnapshot(online: 2, maximum: 60, names: ["TadMC_YT", ".niex2277"], source: "Demo") : nil
-            lines = ["[22:37:00 INFO]: Starting minecraft server", "[22:37:02 INFO]: Loading properties", "[22:37:05 INFO]: Simplex SMP is ready", "[22:37:06 INFO]: Done (4.218s)! For help, type \"help\"", "[22:37:14 INFO]: MissCaitlyn joined the game"]
+            lines = ["[22:37:00 INFO]: Starting minecraft server", "[22:37:02 INFO]: Loading properties", "[22:37:05 INFO]: \u{1B}[32mSimplex SMP is ready\u{1B}[0m", "[22:37:06 INFO]: Done (4.218s)! For help, type \"help\"", "[22:37:14 INFO]: MissCaitlyn joined the game"]
             while !Task.isCancelled && active && runID == generation {
                 stats = try! JSON.from(["memory_bytes": 8_214_000_000.0, "cpu_absolute": Double.random(in: 34...62), "disk_bytes": 23_144_000_000.0, "uptime": 12_814_000, "network": ["rx_bytes": 2_124_000, "tx_bytes": 8_124_000]])
                 sample(); try? await Task.sleep(for: .seconds(2))
@@ -40,11 +54,14 @@ import Combine
         // REST fallback and WebSocket run together; cancellation tears both down.
         async let poll: Void = polling(api: api, server: server, generation: generation)
         async let playerPoll: Void = pollingPlayers(api: api, server: server, enabled: minecraft, generation: generation)
+        async let tpsPoll: Void = pollingTPS(api: api, server: server, enabled: minecraft, generation: generation)
         var retry = 1
         while !Task.isCancelled && active && runID == generation {
             do {
+                guard api.access.allows(server.id, "websocket.connect") else { connection = "Keine Berechtigung für die Live-Konsole"; break }
                 connection = retry == 1 ? "Verbinden …" : "Verbindung wird wiederhergestellt …"
                 let auth = try await api.request("servers/\(server.id)/websocket")["data"]
+                guard active && runID == generation && !Task.isCancelled else { break }
                 guard let url = URL(string: auth["socket"].string), url.scheme == "wss", !auth["token"].string.isEmpty else { throw PanelError(message: "Das Panel hat keine sichere WebSocket-Verbindung geliefert.") }
                 var request = URLRequest(url: url)
                 // Wings may validate Origin. Never forward the panel API key to Wings.
@@ -56,6 +73,7 @@ import Combine
                 var requestedLogs = false
                 while !Task.isCancelled && active && runID == generation {
                     let message = try await ws.receive()
+                    guard active && runID == generation && !Task.isCancelled else { break }
                     let data: Data
                     switch message { case .data(let d): data = d; case .string(let s): data = Data(s.utf8); @unknown default: continue }
                     let event = try JSONDecoder().decode(JSON.self, from: data)
@@ -66,14 +84,16 @@ import Combine
                         if !requestedLogs { try await send(event: "send logs", to: ws); requestedLogs = true }
                         try await send(event: "send stats", to: ws)
                     case "console output", "install output":
-                        for arg in args { append(cleanConsole(arg.string)) }
+                        receiveConsole(args.map(\.string).joined(separator: "\n"))
                     case "status": state = args.first?.string ?? "unknown"
                     case "stats":
-                        if let text = args.first?.string, let value = try? JSON.parse(text) { stats = value; sample() }
+                        if let text = args.first?.string, let value = try? JSON.parse(text) { stats = value; if !value["state"].string.isEmpty { state = value["state"].string }; sample() }
                     case "token expiring", "token expired", "jwt error":
                         let renewed = try await api.request("servers/\(server.id)/websocket")["data"]
                         try await send(event: "auth", args: [renewed["token"].string], to: ws)
-                    case "daemon error": issue = "Wings: " + (args.first?.string ?? "Fehler")
+                    case "daemon error":
+                        issue = "Wings: " + (args.first?.string ?? "Fehler")
+                        if tpsPending { tpsIssue = issue; tpsPending = false }
                     default: break
                     }
                 }
@@ -81,16 +101,18 @@ import Combine
                 if Task.isCancelled || !active || runID != generation { break }
                 connected = false; connection = "Live getrennt · erneuter Versuch"; issue = error.localizedDescription
             }
+            guard runID == generation else { break }
             socket?.cancel(with: .goingAway, reason: nil); socket = nil
             try? await Task.sleep(for: .seconds(min(retry * 2, 30))); retry += 1
         }
-        socket?.cancel(with: .goingAway, reason: nil); connected = false
-        _ = await (poll, playerPoll)
+        if runID == generation { socket?.cancel(with: .goingAway, reason: nil); connected = false }
+        _ = await (poll, playerPoll, tpsPoll)
     }
     private func polling(api: PanelAPI, server: Server, generation: UUID) async {
         while !Task.isCancelled && active && runID == generation {
             do {
                 let result = try await api.request("servers/\(server.id)/resources").attributes
+                guard active && runID == generation && !Task.isCancelled else { return }
                 if !result["current_state"].string.isEmpty { state = result["current_state"].string }
                 if !connected { stats = result["resources"]; sample() }
             } catch { if !connected { issue = error.localizedDescription } }
@@ -100,13 +122,9 @@ import Combine
     private func pollingPlayers(api: PanelAPI, server: Server, enabled: Bool, generation: UUID) async {
         guard enabled else { return }
         var useProvider = true
-        var lastTPS = Date.distantPast
         while !Task.isCancelled && active && runID == generation {
             if state == "offline" { players = PlayerSnapshot(online: 0, maximum: players?.maximum, names: [], source: "Server offline") }
             else {
-                if connected && state == "running" && Date().timeIntervalSince(lastTPS) >= 30 {
-                    do { try await api.mutate("servers/\(server.id)/command", ["command": "tps"]); lastTPS = Date() } catch { /* TPS can be unavailable for non-Paper servers. */ }
-                }
                 var received = false
                 if useProvider {
                     do {
@@ -120,12 +138,43 @@ import Combine
                     }
                 }
                 if (!received || (players?.maximum == nil && playerCapacity == nil)) && connected && state == "running" {
-                    do { try await api.mutate("servers/\(server.id)/command", ["command": "list"]) }
+                    do { try await sendCommand("list", api: api, server: server) }
                     catch { playerIssue = error.localizedDescription }
                 }
             }
             do { try await Task.sleep(for: .seconds(useProvider ? 15 : 30)) } catch { return }
         }
+    }
+    private func pollingTPS(api: PanelAPI, server: Server, enabled: Bool, generation: UUID) async {
+        guard enabled else { return }
+        while !Task.isCancelled && active && runID == generation {
+            if connected && state == "running" {
+                if !api.access.allows(server.id, "control.console") { tpsIssue = "Keine Berechtigung zum Abfragen von TPS (Konsolenbefehle)." }
+                else {
+                    if tpsPending, let requested = tpsRequested, Date().timeIntervalSince(requested) > 15 {
+                        tpsPending = false
+                        tpsIssue = "Keine TPS-Antwort erhalten. Prüfe in der Konsole, ob tps verfügbar ist (Paper/Purpur)."
+                    }
+                    if tpsRequested == nil || Date().timeIntervalSince(tpsRequested!) >= 30 { await requestTPS(api: api, server: server) }
+                }
+            }
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+        }
+    }
+    func requestTPS(api: PanelAPI, server: Server) async {
+        guard !tpsBusy, connected, state == "running", !api.demo else { return }
+        let generation = runID
+        tpsBusy = true; tpsRequested = Date(); tpsPending = true; tpsIssue = nil
+        defer { if runID == generation { tpsBusy = false } }
+        do { try await sendCommand("tps", api: api, server: server) }
+        catch { if runID == generation { tpsPending = false; tpsIssue = error.localizedDescription } }
+    }
+    func sendCommand(_ command: String, api: PanelAPI, server: Server) async throws {
+        guard !api.demo else { throw PanelError(message: "Im Demomodus werden keine Befehle gesendet.") }
+        guard api.access.allows(path: "servers/\(server.id)/command", method: "POST") else { throw PanelError(message: "Keine Berechtigung für Konsolenbefehle.") }
+        // Same command channel as the web panel: subscribe first, then send through Wings.
+        if connected, let socket { try await send(event: "send command", args: [command], to: socket) }
+        else { try await api.mutate("servers/\(server.id)/command", ["command": command]) }
     }
     private func send(event: String, args: [String] = [], to socket: URLSessionWebSocketTask) async throws {
         let data = try JSONEncoder().encode(JSON.object(["event": .string(event), "args": .array(args.map(JSON.string))]))
@@ -136,14 +185,17 @@ import Combine
         history.append(ResourcePoint(date: Date(), cpu: cpu, memory: memory))
         if history.count > 120 { history.removeFirst(history.count - 120) }
     }
-    private func append(_ text: String) {
+    func receiveConsole(_ text: String) {
         for line in text.components(separatedBy: .newlines) {
-            if let parsed = TPSSnapshot.parse(line) { tps = parsed }
+            if let parsed = TPSSnapshot.parse(line) { tps = parsed; tpsPending = false; tpsIssue = nil }
             if let parsed = PlayerSnapshot.parseLog(line) { players = parsed; playerCapacity = parsed.maximum; playerIssue = nil }
         }
         // Bound individual messages as well as the entire scrollback.
-        lines += text.suffix(64_000).components(separatedBy: "\n")
+        lines += text.suffix(64_000).components(separatedBy: "\n").map { $0 + "\u{1B}[0m" }
         if lines.count > 1500 { lines.removeFirst(lines.count - 1500) }
+        var count = 0; var keep = 0
+        for line in lines.reversed() { count += line.utf8.count; if count > 1_048_576 { break }; keep += 1 }
+        if keep < lines.count { lines.removeFirst(lines.count - keep) }
         logRevision &+= 1
     }
 }

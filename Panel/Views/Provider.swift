@@ -25,7 +25,7 @@ struct ProviderHub: View {
             }
             Section("Weitere Einstellungen") {
                 link("Eingebundene Backups", "backups/mounted", "externaldrive")
-                Button("Startbefehl bearbeiten", systemImage: "terminal") { operation = Operation(title: "Startbefehl ändern", detail: "Der Provider muss eigene Startbefehle erlauben. Änderungen wirken beim nächsten Start.", path: "servers/\(server.id)/settings/start-command", method: "PUT", fields: [Field(key: "start_command", label: "Startbefehl", value: server.data["invocation"].string, kind: .multiline)]) }
+                Button("Startbefehl bearbeiten", systemImage: "terminal") { operation = Operation(title: "Startbefehl ändern", detail: "Der Provider muss eigene Startbefehle erlauben. Änderungen wirken beim nächsten Start.", path: "servers/\(server.id)/settings/start-command", method: "PUT", fields: [Field(key: "start_command", label: "Startbefehl", value: server.data["invocation"].string, kind: .multiline)]) }.requiresRequest(api, "servers/\(server.id)/settings/start-command", method: "PUT")
             }
         }.panelScreen().navigationTitle("Kinetic").navigationBarTitleDisplayMode(.inline)
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
@@ -76,8 +76,8 @@ struct ProviderCollection: View {
         let id = row["uuid"].string.isEmpty ? row["id"].string : row["uuid"].string
         if !id.isEmpty && !id.contains("/") {
             if path == "instances" {
-                Button("Umbenennen", systemImage: "pencil") { operation = Operation(title: "Instanz umbenennen", path: prefix + "instances/\(id)/rename", method: "PATCH", fields: [Field(key: "name", label: "Name", value: row["name"].string)]) }
-                Button("Zu dieser Instanz wechseln", systemImage: "arrow.triangle.swap") { operation = Operation(title: "Instanz wechseln", detail: "Stoppe den Server vorher. Die aktive Instanz wird gewechselt.", path: prefix + "instances/\(id)/swap", destructive: true, submit: "Wechseln") }
+                Button("Umbenennen", systemImage: "pencil") { operation = Operation(title: "Instanz umbenennen", path: prefix + "instances/\(id)/rename", method: "PATCH", fields: [Field(key: "name", label: "Name", value: row["name"].string)]) }.requiresRequest(api, prefix + "instances/\(id)/rename", method: "PATCH")
+                Button("Zu dieser Instanz wechseln", systemImage: "arrow.triangle.swap") { operation = Operation(title: "Instanz wechseln", detail: "Stoppe den Server vorher. Die aktive Instanz wird gewechselt.", path: prefix + "instances/\(id)/swap", destructive: true, submit: "Wechseln") }.requiresRequest(api, prefix + "instances/\(id)/swap", method: "POST")
             }
             if ["subdomain", "proxy", "firewall", "instances"].contains(path) {
                 Button("Löschen", systemImage: "trash", role: .destructive) {

@@ -106,7 +106,7 @@ struct NBTEditor: View {
                     Section { NavigationLink("Alle NBT-Daten · \(root.children.count) Felder") { NBTBranch(model: model, nodeID: root.id, title: "NBT-Wurzel") } }
                     Section {
                         Button("Entwurf exportieren", systemImage: "square.and.arrow.up") { Task { do { share = ShareItem(url: try await model.export()) } catch { model.error = error.localizedDescription } } }
-                        Button("Auf Server anwenden", systemImage: "checkmark.shield") { confirm = true }.disabled(!model.dirty || model.busy || model.state != "offline")
+                        Button("Auf Server anwenden", systemImage: "checkmark.shield") { confirm = true }.disabled(!model.dirty || model.busy || model.state != "offline").requiresAccess(model.api, model.server.id, "file.update", "file.create")
                         Button("Serverstatus aktualisieren", systemImage: "arrow.clockwise") { Task { await model.refreshState() } }
                     }
                 }

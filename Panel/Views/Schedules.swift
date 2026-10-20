@@ -32,7 +32,7 @@ struct SchedulesView: View {
                 }
             }
         }.panelScreen().navigationTitle("Zeitpläne").navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Neuer Zeitplan", systemImage: "plus") { operation = Operation(title: "Zeitplan erstellen", path: prefix, fields: scheduleFields(), submit: "Erstellen") } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Neuer Zeitplan", systemImage: "plus") { operation = Operation(title: "Zeitplan erstellen", path: prefix, fields: scheduleFields(), submit: "Erstellen") }.requiresRequest(api, prefix, method: "POST") } }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { await load() } }.errorAlert($error)
     }
     func load() async { do { schedules = try await api.list(prefix) } catch { self.error = error.localizedDescription } }
@@ -54,23 +54,23 @@ struct ScheduleDetail: View {
                 LabeledContent("Status", value: data["is_processing"].bool ? "Wird ausgeführt" : data["is_active"].bool ? "Aktiv" : "Pausiert")
                 LabeledContent("Nächste Ausführung", value: data["next_run_at"].string.isEmpty ? "–" : data["next_run_at"].string)
                 Text(["minute", "hour", "day_of_month", "month", "day_of_week"].map { data["cron"][$0].string.isEmpty ? "*" : data["cron"][$0].string }.joined(separator: " ")).font(.system(.body, design: .monospaced))
-                Button("Zeitplan bearbeiten", systemImage: "pencil") { operation = Operation(title: "Zeitplan bearbeiten", path: path, fields: scheduleFields(data)) }
-                Button("Jetzt ausführen", systemImage: "play") { operation = Operation(title: "Zeitplan ausführen", detail: "Alle Aufgaben dieses Zeitplans werden ausgeführt.", path: path + "/execute", submit: "Ausführen") }
+                Button("Zeitplan bearbeiten", systemImage: "pencil") { operation = Operation(title: "Zeitplan bearbeiten", path: path, fields: scheduleFields(data)) }.requiresRequest(api, path, method: "POST")
+                Button("Jetzt ausführen", systemImage: "play") { operation = Operation(title: "Zeitplan ausführen", detail: "Alle Aufgaben dieses Zeitplans werden ausgeführt.", path: path + "/execute", submit: "Ausführen") }.requiresRequest(api, path + "/execute", method: "POST")
             }
             Section("Aufgaben · \(tasks.count)") {
                 ForEach(tasks, id: \.["id"].string) { task in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { Text(task["action"].string).font(.headline); Spacer(); Menu {
-                            Button("Bearbeiten", systemImage: "pencil") { taskForm(task) }
-                            Button("Löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Aufgabe löschen", path: path + "/tasks/\(task["id"].string)", method: "DELETE", destructive: true, submit: "Löschen") }
+                            Button("Bearbeiten", systemImage: "pencil") { taskForm(task) }.requiresRequest(api, path + "/tasks")
+                            Button("Löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Aufgabe löschen", path: path + "/tasks/\(task["id"].string)", method: "DELETE", destructive: true, submit: "Löschen") }.requiresRequest(api, path + "/tasks/\(task["id"].string)", method: "DELETE")
                         } label: { Image(systemName: "ellipsis.circle").padding(6) } }
                         Text(task["payload"].string.isEmpty ? "Kein Payload" : task["payload"].string).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
                         Text("Verzögerung: \(task["time_offset"].string) s").font(.caption).foregroundStyle(.secondary)
                     }.padding(.vertical, 4)
                 }
-                Button("Aufgabe hinzufügen", systemImage: "plus") { taskForm(.null) }
+                Button("Aufgabe hinzufügen", systemImage: "plus") { taskForm(.null) }.requiresRequest(api, path + "/tasks")
             }
-            Section { Button("Zeitplan löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Zeitplan löschen", detail: "Alle zugehörigen Aufgaben werden ebenfalls entfernt.", path: path, method: "DELETE", destructive: true, submit: "Löschen") } }
+            Section { Button("Zeitplan löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Zeitplan löschen", detail: "Alle zugehörigen Aufgaben werden ebenfalls entfernt.", path: path, method: "DELETE", destructive: true, submit: "Löschen") } }.requiresRequest(api, path, method: "DELETE")
         }.panelScreen().navigationTitle(data["name"].string).navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }.errorAlert($error)
             .sheet(item: $operation) { op in OperationSheet(api: api, operation: op) { if op.method == "DELETE" && op.path == path { dismiss() } else { await load() } } }
     }

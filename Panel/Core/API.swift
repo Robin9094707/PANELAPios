@@ -18,6 +18,7 @@ final class SameOriginRedirect: NSObject, URLSessionTaskDelegate {
 
 @MainActor
 final class PanelAPI {
+    let access = ServerAccess()
     let base: URL
     private let key: String
     var isKinetic: Bool { base.host?.lowercased() == "kineticpanel.net" || base.host?.lowercased().hasSuffix(".kineticpanel.net") == true }
@@ -58,6 +59,7 @@ final class PanelAPI {
             guard method == "GET" else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }
             return try JSONEncoder().encode(Demo.response(path, query: query))
         }
+        guard access.allows(path: path, method: method, body: body) else { throw PanelError(message: "Keine Berechtigung für diese Aktion.") }
         var request = URLRequest(url: try url(path, query: query))
         request.httpMethod = method
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
@@ -66,7 +68,14 @@ final class PanelAPI {
         else if let text { request.httpBody = Data(text.utf8); request.setValue("text/plain; charset=utf-8", forHTTPHeaderField: "Content-Type") }
         else if let body { request.httpBody = try JSONEncoder().encode(body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let (data, response) = try await session.data(for: request)
-        try Self.validate(data, response: response)
+        do { try Self.validate(data, response: response) }
+        catch {
+            if (response as? HTTPURLResponse)?.statusCode == 403,
+               let json = try? JSONDecoder().decode(JSON.self, from: data), !json["errors"].array.isEmpty {
+                access.recordDenial(path: path, method: method)
+            }
+            throw error
+        }
         return data
     }
     nonisolated static func validate(_ data: Data, response: URLResponse) throws {
@@ -97,6 +106,11 @@ final class PanelAPI {
             if data.count > 262144 { return try await Task.detached(priority: .userInitiated) { try JSONDecoder().decode(JSON.self, from: data) }.value }
             return try JSONDecoder().decode(JSON.self, from: data)
         } catch { throw PanelError(message: "Das Panel lieferte keine API-Daten. Verwende die URL des Pterodactyl-Panels, nicht die Hosting-Webseite.") }
+    }
+    func loadAccess(server: String) async {
+        access.clearDenials(server: server)
+        if demo { access.ingest(.object(["meta": .object(["is_server_owner": .bool(true)])]), server: server); return }
+        if let response = try? await request("servers/" + server) { access.ingest(response, server: server) }
     }
     func list(_ path: String, query: [String: String] = [:]) async throws -> [JSON] {
         var rows: [JSON] = []; var page = 1

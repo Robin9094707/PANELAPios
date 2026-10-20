@@ -68,8 +68,8 @@ final class QualityOfLifeTests: XCTestCase {
     }
     func testYAMLQuickFormPreservesIndentAndComment() throws {
         let text = "settings:\n  enabled: true # keep me\n  max: 12\n  complex: [a, b]\n  quoted: 'leave alone'\n  message: hello\n    continued\n"
-        let rows = YAMLScalar.parse(text)
-        XCTAssertEqual(rows.map(\.key), ["enabled", "max"])
+        let rows = ConfigurationField.parse(text, properties: false)
+        XCTAssertEqual(rows.map(\.key), ["enabled", "max", "quoted"])
         XCTAssertEqual(try rows[0].replacement("false"), "  enabled: false # keep me")
         XCTAssertThrowsError(try rows[1].replacement("invalid"))
     }

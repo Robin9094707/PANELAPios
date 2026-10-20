@@ -6,11 +6,19 @@ struct TPSSnapshot: Equatable {
     let fifteen: Double
     var updated = Date()
     static func parse(_ text: String) -> TPSSnapshot? {
-        let pattern = #"TPS from last\s+1m,\s*5m,\s*15m:\s*\*?([0-9]+(?:\.[0-9]+)?),\s*\*?([0-9]+(?:\.[0-9]+)?),\s*\*?([0-9]+(?:\.[0-9]+)?)"#
-        let line = cleanConsole(text).replacingOccurrences(of: "§[0-9a-fk-or]", with: "", options: .regularExpression)
-        guard let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive), let m = re.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
+        let line = cleanConsole(text).replacingOccurrences(of: "\u{00A0}", with: " ")
+        let pattern = #"TPS from last\s+([^:\n]+):\s*([^\n]+)"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let match = re.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+              let header = Range(match.range(at: 1), in: line), let payload = Range(match.range(at: 2), in: line) else { return nil }
+        let labels = line[header].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        let numbers = line[payload].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "*")) }
         var values: [Double] = []
-        for i in 1...3 { guard let r = Range(m.range(at: i), in: line), let n = Double(line[r]), (0...20.1).contains(n) else { return nil }; values.append(min(20, n)) }
+        for label in ["1m", "5m", "15m"] {
+            guard let index = labels.firstIndex(of: label), index < numbers.count,
+                  let n = Double(numbers[index]), n.isFinite, (0...20.1).contains(n) else { return nil }
+            values.append(min(20, n))
+        }
         return TPSSnapshot(minute: values[0], five: values[1], fifteen: values[2])
     }
     static func color(_ value: Double) -> Color { value >= 19 ? .green : value >= 16 ? .yellow : .red }

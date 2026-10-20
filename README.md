@@ -29,6 +29,16 @@ Use the URL containing the web console, **not** the Minecraft game address or th
 
 The app is currently German. API error details may use the provider's language. Advanced rights and permission names follow Pterodactyl naming. Hosting billing, node administration and changing provider-assigned RAM/CPU limits are outside the Client API.
 
+## Version 1.2.1 — permissions, TPS and import fixes
+
+- Per-server Client API permission metadata disables unauthorized actions and labels restricted access in German. Known Pterodactyl permissions cover console, power, files, backups, databases, users, schedules and startup/settings. Unknown provider extensions retain server authorization; JSON API 403 responses disable the exact rejected request for this connection. Refreshing permissions clears these denials. No admin token is required.
+- TPS polling is independent of potentially slow player requests, starts only after live authentication and running state, and uses the same Wings command channel as the web console. Manual refresh, request time, timeout/error feedback, classic and extended Paper TPS output parsing. Generation-scoped cancellation prevents an old view task from disconnecting a newer connection.
+- Files and plugin updates use the native document picker in copy/import mode with an unrestricted item type. JAR selection is validated after import, so provider type labels cannot hide compatible files. Plugin identity/version/CRC and upload SHA-256 checks remain in place.
+- Text remains the default editor. Editor options → **Werte als Formular** adds searchable server.properties and nested YAML scalar forms, booleans, numbers, quoted strings and known Minecraft enums. Unknown/complex nodes stay untouched. Only edited lines are replaced; comments, indentation, CRLF and property escaping are preserved. No speculative plugin-specific enums or full YAML validation.
+- Selectable console output renders ANSI 16/256/RGB and Minecraft section-sign/hex colors, bold, italic, underline and strikeout. Copy/filter use plain text. Scrollback is bounded by both lines and a 1 MiB UTF-8 budget.
+
+Pre-update backup: [`backup/v1.2.0-before-permissions-fixes`](https://github.com/Robin9094707/PANELAPios/tree/backup/v1.2.0-before-permissions-fixes). Live provider writes and third-party iCloud/File Provider implementations require device verification; no hosting credentials are bundled.
+
 ## Version 1.2.0 — quality of life
 
 - Compact online count; searchable player names in an information sheet. Paper `tps` output supplies 1/5/15 minute values, polled about every 30 seconds only in the foreground Minecraft server view. Thresholds: >=19 green, >=16 yellow, below16 red; no fabricated TPS if the command is unavailable.
@@ -66,7 +76,7 @@ The pre-update source is retained in [`backup/v1.0.0-before-provider-update`](ht
 
 ## Build and unsigned IPA
 
-The `Build and test unsigned iOS app` GitHub Actions workflow generates the Xcode project using XcodeGen, runs XCTest and XCUITest on an iPhone simulator, builds the ARM64 Release app with code signing disabled, verifies its executable and packages `Payload/Panel.app` as an unsigned IPA. Artifacts include the IPA, SHA-256 and simulator test results/screenshots. Push to main or use **Run workflow**. For packaging/documentation-only changes, the workflow can reuse an authenticated successful simulator test step from commit `851f72c4b45f354463e95f5f419796e234f0c188`, but only after verifying that all app source, assets, tests, project settings and entitlements are byte-identical. Other changes to those inputs run the unit suite and the selected UI smoke tour. One explicitly checked exception permits only the exact heart-icon mask/display-precision replacement in NBTEditor.swift; all other app/test/project inputs must remain identical to the successful 1.2.0 run39377109031 (22 unit tests +1 UI test). The release app is rebuilt; the artifact includes the precise validation scope in its proof.
+The `Build and test unsigned iOS app` GitHub Actions workflow generates the Xcode project using XcodeGen, runs XCTest and XCUITest on an iPhone simulator, builds the ARM64 Release app with code signing disabled, verifies its executable and packages `Payload/Panel.app` as an unsigned IPA. Artifacts include the IPA, SHA-256 and simulator test results/screenshots. Push to main or use **Run workflow**. For packaging/documentation-only changes, the workflow can reuse an authenticated successful simulator test step from commit `851f72c4b45f354463e95f5f419796e234f0c188`, but only after verifying that all app source, assets, tests, project settings and entitlements are byte-identical. Other changes to those inputs run the unit suite and the selected UI smoke tour. The release app is rebuilt; the artifact includes the precise validation scope in its proof.
 
 For local builds on a Mac with Xcode 26+:
 

@@ -19,7 +19,7 @@ struct MinecraftPropertiesView: View {
             Section {
                 Label("Minecraft & Welt", systemImage: "globe.europe.africa.fill").font(.title2.bold()).foregroundStyle(.teal)
                 Text("Server-Eigenschaften wie Schwierigkeit, Spielerlimit und Weltname. Änderungen greifen meist nach einem Neustart. Änderungen an Weltname oder Seed erzeugen keine Konvertierung bestehender Welten.").font(.footnote).foregroundStyle(.secondary)
-                Button("server.properties öffnen", systemImage: "doc.text") { editor = EditorItem(path: "/server.properties") }
+                Button("server.properties öffnen", systemImage: "doc.text") { editor = EditorItem(path: "/server.properties") }.requiresAccess(api, server.id, "file.read-content")
                 NavigationLink("Weltordner & Dateien") { FilesView(api: api, server: server, root: "/") }
                 if saved { Label("Gespeichert · bei Bedarf Server neu starten", systemImage: "checkmark.circle").foregroundStyle(.teal).font(.footnote) }
             }
@@ -30,7 +30,7 @@ struct MinecraftPropertiesView: View {
                     ForEach(keys, id: \.self) { key in property(key) }
                 }
                 if loaded && original.isEmpty { Text("Der Provider liefert keine bearbeitbaren Eigenschaften. Verwende server.properties.").foregroundStyle(.secondary) }
-                if dirty { Section { Button("Änderungen speichern", systemImage: "checkmark") { confirm = true }.disabled(busy) } }
+                if dirty { Section { Button("Änderungen speichern", systemImage: "checkmark") { confirm = true }.disabled(busy).requiresAccess(api, server.id, "file.update") } }
             } else { Section { Text("Bei diesem Panel werden Minecraft-Einstellungen direkt in server.properties bearbeitet.").foregroundStyle(.secondary) } }
         }.panelScreen().navigationTitle("Minecraft-Einstellungen").navigationBarTitleDisplayMode(.inline).task { if api.isKinetic || api.demo { await load() } }.errorAlert($error)
             .sheet(item: $editor) { FileEditor(api: api, server: server, item: $0) { if api.isKinetic { Task { await load() } } } }

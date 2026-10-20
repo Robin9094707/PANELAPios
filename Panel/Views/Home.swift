@@ -156,7 +156,7 @@ struct SettingsView: View {
                 }
                 if let api = store.api { Section("Account") { NavigationLink("Account & Sicherheit") { AccountView(api: api) } } }
                 Section {
-                    LabeledContent("Version", value: "1.2.0")
+                    LabeledContent("Version", value: "1.2.1")
                     Text("Unabhängiger Pterodactyl-Client. Funktionen und Limits richten sich nach deinem Hoster und deinen Panel-Berechtigungen.").font(.footnote).foregroundStyle(.secondary)
                 }
             }.panelScreen().navigationTitle("Einstellungen").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }

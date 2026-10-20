@@ -8,22 +8,22 @@ struct ManageView: View {
     var body: some View {
         List {
             Section("Minecraft") {
-                NavigationLink { PluginsView(api: api, server: server) } label: { Label("Plugins & JAR-Dateien", systemImage: "puzzlepiece.extension") }
-                NavigationLink { MinecraftPropertiesView(api: api, server: server) } label: { Label("Minecraft & Welt-Einstellungen", systemImage: "globe") }
+                NavigationLink { PluginsView(api: api, server: server) } label: { Label("Plugins & JAR-Dateien", systemImage: "puzzlepiece.extension") }.requiresAccess(api, server.id, "file.read")
+                NavigationLink { MinecraftPropertiesView(api: api, server: server) } label: { Label("Minecraft & Welt-Einstellungen", systemImage: "globe") }.requiresAccess(api, server.id, "file.read-content")
             }
             if api.isKinetic { Section("Provider-Funktionen") { NavigationLink { ProviderHub(api: api, server: server) } label: { Label("Kinetic-Erweiterungen", systemImage: "sparkles") } } }
             Section("Server verwalten") {
-                NavigationLink { SchedulesView(api: api, server: server) } label: { Label("Zeitpläne", systemImage: "calendar.badge.clock") }
-                NavigationLink { DatabasesView(api: api, server: server) } label: { Label("Datenbanken", systemImage: "externaldrive.connected.to.line.below") }
-                NavigationLink { ResourcesView(api: api, server: server, kind: .network) } label: { Label("Netzwerk & Ports", systemImage: "network") }
-                NavigationLink { ResourcesView(api: api, server: server, kind: .users) } label: { Label("Mitbenutzer", systemImage: "person.2") }
-                NavigationLink { StartupView(api: api, server: server) } label: { Label("Startparameter", systemImage: "play.rectangle") }
-                NavigationLink { ActivityView(api: api, path: prefix + "/activity") } label: { Label("Aktivitäten", systemImage: "clock.arrow.circlepath") }
+                NavigationLink { SchedulesView(api: api, server: server) } label: { Label("Zeitpläne", systemImage: "calendar.badge.clock") }.requiresAccess(api, server.id, "schedule.read")
+                NavigationLink { DatabasesView(api: api, server: server) } label: { Label("Datenbanken", systemImage: "externaldrive.connected.to.line.below") }.requiresAccess(api, server.id, "database.read")
+                NavigationLink { ResourcesView(api: api, server: server, kind: .network) } label: { Label("Netzwerk & Ports", systemImage: "network") }.requiresAccess(api, server.id, "allocation.read")
+                NavigationLink { ResourcesView(api: api, server: server, kind: .users) } label: { Label("Mitbenutzer", systemImage: "person.2") }.requiresAccess(api, server.id, "user.read")
+                NavigationLink { StartupView(api: api, server: server) } label: { Label("Startparameter", systemImage: "play.rectangle") }.requiresAccess(api, server.id, "startup.read")
+                NavigationLink { ActivityView(api: api, path: prefix + "/activity") } label: { Label("Aktivitäten", systemImage: "clock.arrow.circlepath") }.requiresAccess(api, server.id, "activity.read")
             }
             Section("Einstellungen") {
-                Button("Name & Beschreibung", systemImage: "pencil") { operation = Operation(title: "Server umbenennen", path: prefix + "/settings/rename", fields: [Field(key: "name", label: "Name", value: server.name), Field(key: "description", label: "Beschreibung", value: server.data["description"].string, kind: .multiline)]) }
-                Button("Docker-Image ändern", systemImage: "shippingbox") { operation = Operation(title: "Docker-Image ändern", detail: "Verwende ein vom Provider für diesen Server freigegebenes Image. Änderungen greifen beim nächsten Start.", path: prefix + "/settings/docker-image", method: "PUT", fields: [Field(key: "docker_image", label: "Docker-Image", value: server.data["docker_image"].string)], destructive: true) }
-                Button("Server neu installieren", systemImage: "arrow.triangle.2.circlepath", role: .destructive) { operation = Operation(title: "Server neu installieren", detail: "Das Installationsskript wird erneut ausgeführt. Dabei können Serverdateien verändert oder überschrieben werden. Erstelle vorher ein Backup.", path: prefix + "/settings/reinstall", destructive: true, submit: "Neu installieren") }
+                Button("Name & Beschreibung", systemImage: "pencil") { operation = Operation(title: "Server umbenennen", path: prefix + "/settings/rename", fields: [Field(key: "name", label: "Name", value: server.name), Field(key: "description", label: "Beschreibung", value: server.data["description"].string, kind: .multiline)]) }.requiresRequest(api, prefix + "/settings/rename", method: "POST")
+                Button("Docker-Image ändern", systemImage: "shippingbox") { operation = Operation(title: "Docker-Image ändern", detail: "Verwende ein vom Provider für diesen Server freigegebenes Image. Änderungen greifen beim nächsten Start.", path: prefix + "/settings/docker-image", method: "PUT", fields: [Field(key: "docker_image", label: "Docker-Image", value: server.data["docker_image"].string)], destructive: true) }.requiresRequest(api, prefix + "/settings/docker-image", method: "PUT")
+                Button("Server neu installieren", systemImage: "arrow.triangle.2.circlepath", role: .destructive) { operation = Operation(title: "Server neu installieren", detail: "Das Installationsskript wird erneut ausgeführt. Dabei können Serverdateien verändert oder überschrieben werden. Erstelle vorher ein Backup.", path: prefix + "/settings/reinstall", destructive: true, submit: "Neu installieren") }.requiresRequest(api, prefix + "/settings/reinstall", method: "POST")
             }
             Section("SFTP") {
                 LabeledContent("Host", value: server.data["sftp_details"]["ip"].string).textSelection(.enabled)
@@ -72,7 +72,7 @@ struct ResourcesView: View {
                 }
             }
         }.panelScreen().navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline).refreshable { await load() }.task { await load() }
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Hinzufügen", systemImage: "plus") { create() } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Hinzufügen", systemImage: "plus") { create() }.requiresRequest(api, prefix) } }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { await load() } }
             .sheet(item: $detail) { item in NavigationStack { JSONDetails(title: "Details", data: item.data).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { detail = nil } } } } }
             .errorAlert($error)
@@ -84,15 +84,15 @@ struct ResourcesView: View {
         Button("Details", systemImage: "info.circle") { detail = DetailItem(data: row) }
         switch kind {
         case .databases:
-            Button("Passwort anzeigen", systemImage: "key") { Task { do { let result = try await api.list(prefix, query: ["include": "password"]); detail = DetailItem(data: result.first(where: { $0["id"].string == id }) ?? .null) } catch { self.error = error.localizedDescription } } }
-            Button("Passwort erneuern", systemImage: "arrow.clockwise", role: .destructive) { operation = Operation(title: "Datenbankpasswort erneuern", detail: "Plugins und Anwendungen müssen anschließend das neue Passwort verwenden.", path: prefix + "/\(id)/rotate-password", destructive: true, submit: "Erneuern") }
+            Button("Passwort anzeigen", systemImage: "key") { Task { do { let result = try await api.list(prefix, query: ["include": "password"]); detail = DetailItem(data: result.first(where: { $0["id"].string == id }) ?? .null) } catch { self.error = error.localizedDescription } } }.requiresAccess(api, server.id, "database.view_password")
+            Button("Passwort erneuern", systemImage: "arrow.clockwise", role: .destructive) { operation = Operation(title: "Datenbankpasswort erneuern", detail: "Plugins und Anwendungen müssen anschließend das neue Passwort verwenden.", path: prefix + "/\(id)/rotate-password", destructive: true, submit: "Erneuern") }.requiresRequest(api, prefix + "/\(id)/rotate-password", method: "POST")
         case .network:
-            Button("Notiz bearbeiten", systemImage: "pencil") { operation = Operation(title: "Port-Notiz", path: prefix + "/\(id)", method: api.isKinetic ? "PATCH" : "POST", fields: [Field(key: "notes", label: "Notiz", value: row["notes"].string)]) }
-            if !row["is_default"].bool { Button("Als primär festlegen", systemImage: "star") { operation = Operation(title: "Primären Port ändern", path: prefix + "/\(id)" + (api.isKinetic ? "" : "/primary"), method: api.isKinetic ? "PATCH" : "POST", fixed: api.isKinetic ? ["primary": .bool(true)] : [:], submit: "Festlegen") } }
+            Button("Notiz bearbeiten", systemImage: "pencil") { operation = Operation(title: "Port-Notiz", path: prefix + "/\(id)", method: api.isKinetic ? "PATCH" : "POST", fields: [Field(key: "notes", label: "Notiz", value: row["notes"].string)]) }.requiresRequest(api, prefix + "/\(id)", method: api.isKinetic ? "PATCH" : "POST")
+            if !row["is_default"].bool { Button("Als primär festlegen", systemImage: "star") { operation = Operation(title: "Primären Port ändern", path: prefix + "/\(id)" + (api.isKinetic ? "" : "/primary"), method: api.isKinetic ? "PATCH" : "POST", fixed: api.isKinetic ? ["primary": .bool(true)] : [:], submit: "Festlegen") }.requiresRequest(api, prefix + "/\(id)" + (api.isKinetic ? "" : "/primary"), method: api.isKinetic ? "PATCH" : "POST") }
         case .users:
-            Button("Berechtigungen bearbeiten", systemImage: "person.badge.key") { operation = Operation(title: "Berechtigungen", detail: "Ein Berechtigungsname pro Zeile, z. B. control.console oder file.read. Nur tatsächlich vergebene Rechte erlauben Aktionen.", path: prefix + "/\(id)", fields: [Field(key: "permissions", label: "Berechtigungen", value: row["permissions"].array.map(\.string).joined(separator: "\n"), kind: .strings)]) }
+            Button("Berechtigungen bearbeiten", systemImage: "person.badge.key") { operation = Operation(title: "Berechtigungen", detail: "Ein Berechtigungsname pro Zeile, z. B. control.console oder file.read. Nur tatsächlich vergebene Rechte erlauben Aktionen.", path: prefix + "/\(id)", fields: [Field(key: "permissions", label: "Berechtigungen", value: row["permissions"].array.map(\.string).joined(separator: "\n"), kind: .strings)]) }.requiresRequest(api, prefix + "/\(id)", method: "POST")
         }
-        Button("Entfernen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Eintrag entfernen", detail: kind == .databases ? "Die Datenbank und alle darin enthaltenen Daten werden dauerhaft gelöscht." : "\(title(row)) wird entfernt.", path: prefix + "/\(id)", method: "DELETE", destructive: true, submit: "Entfernen") }.disabled(kind == .network && row["is_default"].bool)
+        Button("Entfernen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Eintrag entfernen", detail: kind == .databases ? "Die Datenbank und alle darin enthaltenen Daten werden dauerhaft gelöscht." : "\(title(row)) wird entfernt.", path: prefix + "/\(id)", method: "DELETE", destructive: true, submit: "Entfernen") }.disabled(kind == .network && row["is_default"].bool).requiresRequest(api, prefix + "/\(id)", method: "DELETE")
     }
     func create() {
         switch kind {
@@ -121,7 +121,7 @@ struct StartupView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 8) { Text(v["name"].string).font(.headline); Text(v["server_value"].string).font(.system(.body, design: .monospaced)).textSelection(.enabled); Text(v["description"].string).font(.caption).foregroundStyle(.secondary) }
                     if v["is_editable"].bool {
-                        Button("Wert ändern", systemImage: "pencil") { operation = Operation(title: v["name"].string, detail: v["rules"].string, path: "servers/\(server.id)/startup/variable", method: "PUT", fields: [Field(key: "value", label: "Wert", value: v["server_value"].string)], fixed: ["key": v["env_variable"]]) }
+                        Button("Wert ändern", systemImage: "pencil") { operation = Operation(title: v["name"].string, detail: v["rules"].string, path: "servers/\(server.id)/startup/variable", method: "PUT", fields: [Field(key: "value", label: "Wert", value: v["server_value"].string)], fixed: ["key": v["env_variable"]]) }.requiresRequest(api, "servers/\(server.id)/startup/variable", method: "PUT")
                     } else { Label("Vom Provider verwaltet", systemImage: "lock").font(.caption).foregroundStyle(.secondary) }
                 }
             }

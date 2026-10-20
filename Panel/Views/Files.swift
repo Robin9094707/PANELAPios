@@ -40,18 +40,18 @@ struct FilesView: View {
                 let name = entry["name"].string
                 Group {
                     if entry["is_file"].bool {
-                        Button { open(entry) } label: { fileRow(entry) }.buttonStyle(.plain)
+                        Button { open(entry) } label: { fileRow(entry) }.buttonStyle(.plain).requiresAccess(api, server.id, "file.read-content")
                     } else {
                         NavigationLink { FilesView(api: api, server: server, root: pathJoin(root, name)) } label: { fileRow(entry) }
                     }
                 }.tag(name).onAppear { if visible.last?["name"].string == name && displayCount < matches.count { displayCount += 200 } }.contextMenu { fileActions(entry) }
-                    .swipeActions { Button("Löschen", role: .destructive) { delete([name]) } }
+                    .swipeActions { Button("Löschen", role: .destructive) { delete([name]) }.requiresAccess(api, server.id, "file.delete") }
             }
             if !selected.isEmpty {
                 Section("\(selected.count) ausgewählt") {
-                    Button("Auswahl verschieben", systemImage: "folder") { move(Array(selected)) }
-                    Button("Auswahl komprimieren", systemImage: "archivebox") { compress(Array(selected)) }
-                    Button("Auswahl löschen", systemImage: "trash", role: .destructive) { delete(Array(selected)) }
+                    Button("Auswahl verschieben", systemImage: "folder") { move(Array(selected)) }.requiresAccess(api, server.id, "file.update")
+                    Button("Auswahl komprimieren", systemImage: "archivebox") { compress(Array(selected)) }.requiresAccess(api, server.id, "file.archive")
+                    Button("Auswahl löschen", systemImage: "trash", role: .destructive) { delete(Array(selected)) }.requiresAccess(api, server.id, "file.delete")
                 }
             }
         }.panelScreen().navigationTitle(root == "/" ? server.name : URL(fileURLWithPath: root).lastPathComponent)
@@ -62,16 +62,19 @@ struct FilesView: View {
             .sheet(item: $mover) { FolderPicker(api: api, server: server, source: root, selection: $0) { selected = []; Task { await load() } } }
             .sheet(item: $nbt) { NBTEditor(api: api, server: server, path: $0.path) }
             .sheet(item: $share) { ShareSheet(url: $0.url) }
-            .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .item], allowsMultipleSelection: true) { result in
-                switch result { case .success(let urls): upload(urls); case .failure(let e): error = e.localizedDescription }
+            .sheet(isPresented: $importer) {
+                FileImportPicker(multiple: true) { result in
+                    importer = false
+                    switch result { case .success(let urls): if !urls.isEmpty { upload(urls) }; case .failure(let e): error = e.localizedDescription }
+                }.ignoresSafeArea()
             }.errorAlert($error)
     }
     var fileTools: some View {
         Menu {
-            Button("Hochladen", systemImage: "square.and.arrow.up") { importer = true }
-            Button("Neue Datei", systemImage: "doc.badge.plus") { createFile() }
-            Button("Neuer Ordner", systemImage: "folder.badge.plus") { operation = Operation(title: "Ordner erstellen", path: prefix + "/create-folder", fields: [Field(key: "name", label: "Ordnername")], fixed: ["root": .string(root)]) }
-            Button("Von URL laden", systemImage: "link") { operation = Operation(title: "Datei von URL laden", detail: "Der Server lädt die Datei direkt von der angegebenen URL.", path: prefix + "/pull", fields: [Field(key: "url", label: "https://…")], fixed: ["directory": .string(root)]) }
+            Button("Hochladen", systemImage: "square.and.arrow.up") { importer = true }.requiresRequest(api, prefix + "/upload", method: "GET")
+            Button("Neue Datei", systemImage: "doc.badge.plus") { createFile() }.requiresAccess(api, server.id, "file.update")
+            Button("Neuer Ordner", systemImage: "folder.badge.plus") { operation = Operation(title: "Ordner erstellen", path: prefix + "/create-folder", fields: [Field(key: "name", label: "Ordnername")], fixed: ["root": .string(root)]) }.requiresRequest(api, prefix + "/create-folder", method: "POST")
+            Button("Von URL laden", systemImage: "link") { operation = Operation(title: "Datei von URL laden", detail: "Der Server lädt die Datei direkt von der angegebenen URL.", path: prefix + "/pull", fields: [Field(key: "url", label: "https://…")], fixed: ["directory": .string(root)]) }.requiresRequest(api, prefix + "/pull", method: "POST")
             Button("Aktualisieren", systemImage: "arrow.clockwise") { Task { await load() } }
         } label: { Label("Aktionen", systemImage: "plus.circle") }.disabled(transfer)
     }
@@ -88,17 +91,17 @@ struct FilesView: View {
     @ViewBuilder func fileActions(_ entry: JSON) -> some View {
         let name = entry["name"].string
         if entry["is_file"].bool {
-            Button("Bearbeiten", systemImage: "pencil") { open(entry) }
-            Button("Herunterladen", systemImage: "square.and.arrow.down") { download(entry) }
-            Button("Kopieren", systemImage: "doc.on.doc") { operation = Operation(title: "Datei kopieren", path: prefix + "/copy", fixed: ["location": .string(pathJoin(root, name))], submit: "Kopieren") }
-            Button("Entpacken", systemImage: "archivebox") { operation = Operation(title: "Archiv entpacken", path: prefix + "/decompress", fixed: ["root": .string(root), "file": .string(name)], submit: "Entpacken") }
+            Button("Bearbeiten", systemImage: "pencil") { open(entry) }.requiresAccess(api, server.id, "file.read-content")
+            Button("Herunterladen", systemImage: "square.and.arrow.down") { download(entry) }.requiresAccess(api, server.id, "file.read-content")
+            Button("Kopieren", systemImage: "doc.on.doc") { operation = Operation(title: "Datei kopieren", path: prefix + "/copy", fixed: ["location": .string(pathJoin(root, name))], submit: "Kopieren") }.requiresRequest(api, prefix + "/copy", method: "POST")
+            Button("Entpacken", systemImage: "archivebox") { operation = Operation(title: "Archiv entpacken", path: prefix + "/decompress", fixed: ["root": .string(root), "file": .string(name)], submit: "Entpacken") }.requiresRequest(api, prefix + "/decompress", method: "POST")
         }
         if !entry["is_file"].bool { Button("Ordner anpinnen", systemImage: "pin") { workspace.toggleFolder(api, server, pathJoin(root, name)) } }
-        Button("Verschieben …", systemImage: "folder") { move([name]) }
-        Button("Umbenennen", systemImage: "pencil.line") { rename(name) }
-        Button("Komprimieren", systemImage: "archivebox.fill") { compress([name]) }
-        Button("Dateirechte", systemImage: "lock.doc") { chmod(name) }
-        Button("Löschen", systemImage: "trash", role: .destructive) { delete([name]) }
+        Button("Verschieben …", systemImage: "folder") { move([name]) }.requiresAccess(api, server.id, "file.update")
+        Button("Umbenennen", systemImage: "pencil.line") { rename(name) }.requiresAccess(api, server.id, "file.update")
+        Button("Komprimieren", systemImage: "archivebox.fill") { compress([name]) }.requiresAccess(api, server.id, "file.archive")
+        Button("Dateirechte", systemImage: "lock.doc") { chmod(name) }.requiresAccess(api, server.id, "file.update")
+        Button("Löschen", systemImage: "trash", role: .destructive) { delete([name]) }.requiresAccess(api, server.id, "file.delete")
     }
     func filter() async {
         let values = entries, term = search
@@ -139,6 +142,7 @@ struct FilesView: View {
         Task { defer { transfer = false }; do {
             for url in urls {
                 let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
+                guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw PanelError(message: "Bitte Dateien auswählen. Ordner können nicht direkt hochgeladen werden.") }
                 try await api.upload(server: server.id, directory: root, file: url)
             }; await load()
         } catch { self.error = error.localizedDescription } }
@@ -158,6 +162,10 @@ struct FileEditor: View {
     let item: EditorItem
     let onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var access: ServerAccess
+    init(api: PanelAPI, server: Server, item: EditorItem, onSave: @escaping () -> Void) {
+        self.api = api; self.server = server; self.item = item; self.onSave = onSave; self.access = api.access
+    }
     @State private var text = ""
     @State private var original = ""
     @State private var name = ""
@@ -175,18 +183,18 @@ struct FileEditor: View {
                 if item.isNew { TextField("Dateiname, z. B. config.yml", text: $name).textFieldStyle(.roundedBorder).padding().textInputAutocapitalization(.never).autocorrectionDisabled() }
                 if loading { Spacer(); ProgressView("Inhalt laden …"); Spacer() }
                 else if failed { ContentUnavailableView("Datei kann nicht geöffnet werden", systemImage: "doc.questionmark", description: Text("Lade sie herunter oder versuche es erneut.")) }
-                else { SyntaxEditor(text: $text, colors: syntaxColors).frame(maxWidth: .infinity, maxHeight: .infinity) }
-                HStack { Text("UTF-8"); Spacer(); Text(bytes(Double(text.utf8.count))) }.font(.caption.monospaced()).foregroundStyle(.secondary).padding(12).background(.bar)
+                else { SyntaxEditor(text: $text, colors: syntaxColors, editable: access.allows(server.id, "file.update")).frame(maxWidth: .infinity, maxHeight: .infinity) }
+                HStack { Text(access.allows(server.id, "file.update") ? "UTF-8" : "Schreibgeschützt · Keine Berechtigung"); Spacer(); Text(bytes(Double(text.utf8.count))) }.font(.caption.monospaced()).foregroundStyle(.secondary).padding(12).background(.bar)
             }.panelScreen().navigationTitle(item.isNew ? "Neue Datei" : URL(fileURLWithPath: item.path).lastPathComponent).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Schließen") { if dirty { discard = true } else { dismiss() } }.disabled(saving) }
                     ToolbarItem(placement: .primaryAction) { Menu {
                         Toggle("Syntaxfarben", isOn: $syntaxColors)
-                        if ["yml", "yaml"].contains(URL(fileURLWithPath: item.path).pathExtension.lowercased()) { Button("YAML-Werte als Formular", systemImage: "slider.horizontal.3") { yamlForm = true }.disabled(loading || failed) }
-                    } label: { Image(systemName: "textformat") } }
-                    ToolbarItem(placement: .confirmationAction) { Button { save() } label: { if saving { ProgressView() } else { Text("Speichern").bold() } }.disabled(loading || failed || saving || (item.isNew && name.isEmpty) || !dirty) }
+                        if ["yml", "yaml", "properties"].contains(URL(fileURLWithPath: item.isNew ? name : item.path).pathExtension.lowercased()) { Button("Werte als Formular", systemImage: "slider.horizontal.3") { yamlForm = true }.disabled(loading || failed || !access.allows(server.id, "file.update")) }
+                    } label: { Image(systemName: "textformat") }.accessibilityLabel("Editoroptionen") }
+                    ToolbarItem(placement: .confirmationAction) { Button { save() } label: { if saving { ProgressView() } else { Text("Speichern").bold() } }.disabled(loading || failed || saving || (item.isNew && name.isEmpty) || !dirty).requiresAccess(api, server.id, "file.update") }
                 }.interactiveDismissDisabled(dirty || saving).errorAlert($error)
-                .sheet(isPresented: $yamlForm) { YAMLForm(text: $text) }
+                .sheet(isPresented: $yamlForm) { ConfigurationForm(text: $text, properties: URL(fileURLWithPath: item.isNew ? name : item.path).pathExtension.lowercased() == "properties") }
                 .confirmationDialog("Änderungen verwerfen?", isPresented: $discard, titleVisibility: .visible) { Button("Verwerfen", role: .destructive) { dismiss() } }
                 .task {
                     if item.isNew { loading = false; return }
