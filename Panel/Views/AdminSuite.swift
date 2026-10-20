@@ -48,7 +48,7 @@ struct SuiteHubView: View {
                 }
                 if api.scope == "full" { Section("Vollständige Suite-Verwaltung") { NavigationLink { SuiteRemoteMenuView(suite: api) } label: { Label("Alle Suite-Menüs", systemImage: "square.grid.2x2.fill") } } }
                 Section("Alle Verwaltungsbereiche") {
-                    ForEach(Array(Set(model.actions.filter { $0.id != "menu.action" }.map(\.group))).sorted(), id: \.self) { group in NavigationLink { SuiteActionsView(suite: api, actions: model.actions.filter { $0.group == group && $0.id != "menu.action" }, title: group) } label: { Label(group, systemImage: symbol(group)) } }
+                    ForEach(Array(Set(model.actions.filter { $0.id != "menu.action" && $0.id != "settings.update" }.map(\.group))).sorted(), id: \.self) { group in NavigationLink { SuiteActionsView(suite: api, actions: model.actions.filter { $0.group == group && $0.id != "menu.action" && $0.id != "settings.update" }, title: group) } label: { Label(group, systemImage: symbol(group)) } }
                 }
                 Section { Button("Kopplung bearbeiten", systemImage: "key.horizontal") { settings = true }; Button("Verbindung aktualisieren", systemImage: "arrow.clockwise") { Task { await model.load() } } }
             }
@@ -196,6 +196,7 @@ struct SuiteRemoteMenuView: View {
     @State private var menu: JSON = .null
     @State private var input = ""
     @State private var selected: JSON?
+    @State private var selectedClick = "left"
     @State private var plan: JSON?
     @State private var error: String?
     @State private var busy = false
@@ -207,6 +208,7 @@ struct SuiteRemoteMenuView: View {
             Section(cleanConsole(menu["title"].string)) {
                 ForEach(menu["options"].array.filter { search.isEmpty || ($0["name"].string + $0["detail"].string).localizedCaseInsensitiveContains(search) }, id: \.["id"].string) { option in
                     Button { select(option) } label: { VStack(alignment: .leading, spacing: 5) { Text(cleanConsole(option["name"].string)).font(.headline); if !option["detail"].string.isEmpty { Text(cleanConsole(option["detail"].string)).font(.caption).foregroundStyle(.secondary) } }.disabled(option["disabled"].bool || busy || suite.demo)
+                        .contextMenu { if menu["inventory"].bool { Button("Rechtsklick") { select(option, click: "right") }; Button("Umschalt + Linksklick") { select(option, click: "shift-left") }; Button("Umschalt + Rechtsklick") { select(option, click: "shift-right") } }
                 }
                 if busy { ProgressView("Suite-Menü verarbeiten …") }
             }
@@ -214,10 +216,10 @@ struct SuiteRemoteMenuView: View {
             Section { Button("Zur Admin-Zentrale", systemImage: "house") { select(.object(["id": .string("home"), "name": .string("Admin-Zentrale öffnen")])) }.disabled(busy || suite.demo); Button("Menüstand aktualisieren", systemImage: "arrow.clockwise") { Task { await load() } }.disabled(busy) }
         }.panelScreen().navigationTitle("Suite-Menüs").navigationBarTitleDisplayMode(.inline).searchable(text: $search, prompt: "Menüpunkt suchen").task { await load() }.refreshable { await load() }.errorAlert($error)
             .sheet(isPresented: Binding(get: { plan != nil }, set: { if !$0 && !busy { plan = nil; selected = nil } })) {
-                NavigationStack { List { Section { Text(cleanConsole(selected?["name"].string ?? "Menüaktion")).font(.headline); Text(cleanConsole(selected?["detail"].string ?? "")).textSelection(.enabled); Text("Die Auswahl wird im vorhandenen Suite-Menü ausgeführt. Bei abgelaufenem oder geändertem Menü wird sie abgelehnt.").font(.footnote).foregroundStyle(.secondary) }; Section { Button("Bestätigen & ausführen", role: .destructive) { Task { await execute() } }.disabled(busy); if busy { ProgressView() } } }.panelScreen().navigationTitle("Suite-Auswahl").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { plan = nil; selected = nil }.disabled(busy) } } }.interactiveDismissDisabled(busy)
+                NavigationStack { List { Section { Text(cleanConsole(selected?["name"].string ?? "Menüaktion")).font(.headline); Text(["left": "Linksklick", "right": "Rechtsklick", "shift-left": "Umschalt + Linksklick", "shift-right": "Umschalt + Rechtsklick"][selectedClick] ?? selectedClick).font(.caption).foregroundStyle(.secondary); Text(cleanConsole(selected?["detail"].string ?? "")).textSelection(.enabled); Text("Die Auswahl wird im vorhandenen Suite-Menü ausgeführt. Bei abgelaufenem oder geändertem Menü wird sie abgelehnt.").font(.footnote).foregroundStyle(.secondary) }; Section { Button("Bestätigen & ausführen", role: .destructive) { Task { await execute() } }.disabled(busy); if busy { ProgressView() } } }.panelScreen().navigationTitle("Suite-Auswahl").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { plan = nil; selected = nil }.disabled(busy) } } }.interactiveDismissDisabled(busy)
             }
     }
-    func select(_ option: JSON) { selected = option; Task { busy = true; defer { busy = false }; do { let values: [String: JSON] = ["session": menu["session"], "revision": menu["revision"], "option": option["id"], "input": .string(option["id"].string == "input" ? input : "")]; plan = try await suite.prepare("menu.action", values: values) } catch { selected = nil; self.error = error.localizedDescription } } }
+    func select(_ option: JSON, click: String = "left") { selected = option; selectedClick = click; Task { busy = true; defer { busy = false }; do { let values: [String: JSON] = ["session": menu["session"], "revision": menu["revision"], "option": option["id"], "click": .string(click), "input": .string(option["id"].string == "input" ? input : "")]; plan = try await suite.prepare("menu.action", values: values) } catch { selected = nil; self.error = error.localizedDescription } } }
     func load() async { guard !busy else { return }; busy = true; defer { busy = false }; do { menu = try await suite.request("menu"); if menu["input"].bool { input = menu["previous"].string } } catch { self.error = error.localizedDescription } }
     func execute() async { guard let plan else { return }; busy = true; defer { busy = false; self.plan = nil; selected = nil }; do { menu = try await suite.execute(plan["ticket"].string); search = ""; if menu["input"].bool { input = menu["previous"].string }; Feedback.success() } catch { self.error = error.localizedDescription } }
 }
