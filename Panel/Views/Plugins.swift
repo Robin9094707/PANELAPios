@@ -5,6 +5,10 @@ struct PluginsView: View {
     let api: PanelAPI
     let server: Server
     @State private var entries: [JSON] = []
+    @State private var pending: [JSON] = []
+    @State private var updateDirectory = "/plugins/update"
+    @State private var detail: PluginDetailSelection?
+    @State private var refreshID = UUID()
     @State private var error: String?
     @State private var operation: Operation?
     @State private var importer = false
@@ -25,28 +29,24 @@ struct PluginsView: View {
                 if busy { ProgressView("Update übertragen …") }
                 if let message { Label(message, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.teal) }
                 NavigationLink("Plugin-Dateien & Konfigurationen") { FilesView(api: api, server: server, root: "/plugins") }
-                NavigationLink("Vorgemerkte Updates") { FilesView(api: api, server: server, root: "/plugins/update") }
+                NavigationLink("Vorgemerkte Updates") { FilesView(api: api, server: server, root: updateDirectory) }
                 Link("Paper-Anleitung für Plugin-Updates", destination: URL(string: "https://docs.papermc.io/paper/updating/#step-2-update-plugins")!)
             } footer: { Text("Der Updatepfad wird aus bukkit.yml gelesen. Standard: /plugins/update. Neue Plugins direkt unter /plugins bei gestopptem Server installieren.") }
             Section {
                 ForEach(jars, id: \.["name"].string) { entry in
                     let name = entry["name"].string
-                    VStack(alignment: .leading, spacing: 9) {
-                        Text(name).font(.headline).textSelection(.enabled)
-                        Text(bytes(entry["size"].double) + (name.hasSuffix(".disabled") ? " · Deaktiviert" : " · Bei nächstem Start geladen")).font(.caption).foregroundStyle(.secondary)
-                        Button("Update-Datei hochladen", systemImage: "arrow.up.doc") { selectedPlugin = name; importer = true }.buttonStyle(.borderless).disabled(busy || name.hasSuffix(".disabled")).requiresAccess(api, server.id, "file.create", "file.read-content")
-                        HStack {
-                            Button(name.hasSuffix(".disabled") ? "Aktivieren" : "Deaktivieren") { rename(name) }.requiresAccess(api, server.id, "file.update")
-                            Spacer()
-                            Button("Löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Plugin löschen", detail: "\(name) wird endgültig gelöscht. Stoppe den Server zuerst. Der Konfigurationsordner bleibt erhalten.", path: prefix + "/delete", fixed: ["root": .string("/plugins"), "files": .array([.string(name)])], destructive: true, submit: "JAR löschen") }.requiresRequest(api, prefix + "/delete", method: "POST")
-                        }.buttonStyle(.borderless).font(.subheadline)
-                    }.padding(.vertical, 5)
+                    PluginListRow(api: api, server: server, entry: entry, pending: pending, updateDirectory: updateDirectory, refreshID: refreshID, busy: busy, details: {
+                        detail = PluginDetailSelection(entry: entry)
+                    }, update: { selectedPlugin = name; importer = true }, toggle: { rename(name) }, remove: {
+                        operation = Operation(title: "Plugin löschen", detail: "\(name) wird endgültig gelöscht. Stoppe den Server zuerst. Der Konfigurationsordner bleibt erhalten.", path: prefix + "/delete", fixed: ["root": .string("/plugins"), "files": .array([.string(name)])], destructive: true, submit: "JAR löschen")
+                    }, catalog: api.plugins)
                 }
-            } header: { Text("JAR-Dateien · \(jars.count)") } footer: { Text("Die Anzeige basiert auf Dateien, nicht auf einer Abfrage geladener Plugins. Aktivieren und Deaktivieren wirkt nach einem Neustart.") }
-        }.panelScreen().navigationTitle("Plugins").navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }.errorAlert($error)
+            } header: { Text("JAR-Dateien · \(jars.count)") } footer: { Text("Versionen werden aus den Server-JARs gelesen, nicht aus Dateinamen geraten. Sichtbare JARs bis 8 MiB werden automatisch gelesen; größere erst beim Öffnen der Details. Bereits geladene Plugins können bis zum Neustart eine andere Version verwenden.") }
+        }.panelScreen().navigationTitle("Plugins").navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { api.plugins.clear(server: server.id); await load(); refreshID = UUID() }.errorAlert($error)
+            .sheet(item: $detail) { PluginDetailsView(api: api, server: server, entry: $0.entry, catalog: api.plugins) }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { await load() } }
             .sheet(item: $candidate, onDismiss: { if let url = stagedLocal { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }; stagedLocal = nil }) { value in
-                ActionForm(title: "Plugin-Update prüfen", detail: "\(value.installed.name)\nInstalliert: \(value.installed.version)\nNeue Datei: \(value.next.version)\nAPI-Version: \(value.next.apiVersion)\n\n\(value.report)\n\nDie Prüfung bestätigt keine vollständige Minecraft-/Java-Kompatibilität. Das Update wird erst beim nächsten Serverstart angewendet.", fields: [Field(key: "ack", label: "Passende Serverversion und Abhängigkeiten geprüft", value: "false", kind: .toggle)], submit: "Update vormerken") { values in
+                ActionForm(title: "Plugin-Update prüfen", detail: "\(value.installed.name)\nInstalliert: \(value.installed.version)\nNeue Datei: \(value.next.version)\nUpdate-Dateiname: \(value.updateFilename)\nAPI-Version: \(value.next.apiVersion)\n\n\(value.report)\n\nDie Prüfung bestätigt keine vollständige Minecraft-/Java-Kompatibilität. Das Update wird erst beim nächsten Serverstart angewendet.", fields: [Field(key: "ack", label: "Passende Serverversion und Abhängigkeiten geprüft", value: "false", kind: .toggle)], submit: "Update vormerken") { values in
                     guard values["ack"]?.bool == true else { throw PanelError(message: "Bitte die Kompatibilitätsprüfung bestätigen.") }
                     try await commit(value)
                 }
@@ -60,7 +60,16 @@ struct PluginsView: View {
                 }.ignoresSafeArea()
             }
     }
-    func load() async { do { entries = try await api.list(prefix + "/list", query: ["directory": "/plugins"]) } catch { self.error = error.localizedDescription } }
+    func load() async {
+        do {
+            entries = try await api.list(prefix + "/list", query: ["directory": "/plugins"])
+            if let config = try? await api.fileText(server: server.id, path: "/bukkit.yml"), let directory = try? PluginUpdatePlan.directory(config) { updateDirectory = directory }
+            pending = (try? await api.list(prefix + "/list", query: ["directory": updateDirectory]))?.filter { $0["is_file"].bool && $0["name"].string.hasSuffix(".jar") } ?? []
+            for entry in pending where entry["size"].double <= 8 * 1024 * 1024 {
+                await api.plugins.load(api: api, server: server.id, directory: updateDirectory, entry: entry)
+            }
+        } catch is CancellationError {} catch { self.error = error.localizedDescription }
+    }
     func rename(_ name: String) {
         let target = name.hasSuffix(".disabled") ? String(name.dropLast(".disabled".count)) : name + ".disabled"
         operation = Operation(title: name.hasSuffix(".disabled") ? "Plugin aktivieren" : "Plugin deaktivieren", detail: "Stoppe den Server zuerst. Die Änderung wirkt beim nächsten Start. Konfigurationen werden nicht gelöscht.", path: prefix + "/rename", method: "PUT", fixed: ["root": .string("/plugins"), "files": .array([.object(["from": .string(name), "to": .string(target)])])], destructive: true)
@@ -82,7 +91,7 @@ struct PluginsView: View {
                 let report = try old.validateUpdate(next)
                 let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                let local = folder.appendingPathComponent(filename); try nextData.write(to: local)
+                let local = folder.appendingPathComponent(next.versionedFilename); try nextData.write(to: local)
                 return PluginUpdateCandidate(filename: filename, file: local, installed: old, next: next, originalHash: PluginArchive.digest(installedData), report: report)
             }.value
             candidate = result; stagedLocal = result.file
@@ -93,13 +102,10 @@ struct PluginsView: View {
         let current = try await api.fileData(server: server.id, path: "/plugins/" + value.filename, limit: 128 * 1024 * 1024)
         guard PluginArchive.digest(current) == value.originalHash else { throw PanelError(message: "Das installierte Plugin wurde zwischenzeitlich geändert. Bitte neu auswählen.") }
         let config = try await api.fileText(server: server.id, path: "/bukkit.yml")
-        var update = "update"
-        for line in config.components(separatedBy: .newlines) {
-            let text = line.trimmingCharacters(in: .whitespaces)
-            if text.hasPrefix("update-folder:") { update = String(text.dropFirst("update-folder:".count)).components(separatedBy: " #")[0].trimmingCharacters(in: CharacterSet(charactersIn: " \"'")) }
-        }
-        let components = update.split(separator: "/").map(String.init)
-        guard !update.hasPrefix("/"), !update.contains("\\"), !components.isEmpty, !components.contains(".."), !components.contains(".") else { throw PanelError(message: "Nicht unterstützter update-folder in bukkit.yml. Nutze den Datei-Manager.") }
+        let targetDirectory = try PluginUpdatePlan.directory(config)
+        let components = targetDirectory.dropFirst("/plugins/".count).split(separator: "/").map(String.init)
+        let installedFiles = try await api.list(prefix + "/list", query: ["directory": "/plugins"])
+        try PluginUpdatePlan.checkFilename(value.updateFilename, installed: value.filename, files: installedFiles.map { $0["name"].string })
         var directory = "/plugins"
         for part in components {
             let entries = try await api.list(prefix + "/list", query: ["directory": directory])
@@ -107,12 +113,19 @@ struct PluginsView: View {
             directory = pathJoin(directory, part)
         }
         let staged = try await api.list(prefix + "/list", query: ["directory": directory])
-        guard !staged.contains(where: { $0["name"].string == value.filename }) else { throw PanelError(message: "Für dieses Plugin ist bereits ein Update vorgemerkt. Entferne die alte Update-Datei zuerst im Datei-Manager.") }
+        guard !staged.contains(where: { $0["name"].string.caseInsensitiveCompare(value.updateFilename) == .orderedSame }) else { throw PanelError(message: "Für dieses Plugin ist bereits ein Update vorgemerkt. Entferne die alte Update-Datei zuerst im Datei-Manager.") }
+        // Different versioned filenames must not stage two candidates for one plugin.
+        for entry in staged where entry["is_file"].bool && entry["name"].string.hasSuffix(".jar") {
+            let data = try await api.fileData(server: server.id, path: pathJoin(directory, entry["name"].string), limit: 128 * 1024 * 1024)
+            let pending = try await Task.detached(priority: .utility) { try PluginArchive.descriptor(data) }.value
+            try PluginUpdatePlan.checkPending(pending, next: value.next)
+        }
         try await api.upload(server: server.id, directory: directory, file: value.file)
-        let uploaded = try await api.fileData(server: server.id, path: pathJoin(directory, value.filename), limit: 128 * 1024 * 1024)
+        let uploaded = try await api.fileData(server: server.id, path: pathJoin(directory, value.updateFilename), limit: 128 * 1024 * 1024)
         let local = try Data(contentsOf: value.file, options: .mappedIfSafe)
         guard PluginArchive.digest(uploaded) == PluginArchive.digest(local) else { throw PanelError(message: "Upload-Prüfsumme stimmt nicht überein. Entferne die vorgemerkte Datei vor dem Neustart.") }
-        message = "\(value.next.name) \(value.next.version) geprüft hochgeladen nach \(directory). Wird beim nächsten Start von Paper übernommen, sofern kompatibel."
+        await load()
+        message = "\(value.updateFilename) geprüft hochgeladen nach \(directory). Wird beim nächsten Start von Paper übernommen, sofern kompatibel."
         Feedback.success()
     }
 }

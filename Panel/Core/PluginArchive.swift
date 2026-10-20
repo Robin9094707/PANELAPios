@@ -7,19 +7,44 @@ struct PluginDescriptor: Equatable, Sendable {
     let version: String
     let main: String
     let apiVersion: String
+    var summary = ""
+    var author = ""
+    var website = ""
+    var descriptorFile = "plugin.yml"
+    var rawYAML = ""
+    var versionedFilename: String {
+        func safe(_ value: String, fallback: String) -> String {
+            let clean = value.replacingOccurrences(of: "[^A-Za-z0-9._+-]+", with: "-", options: .regularExpression)
+                .trimmingCharacters(in: CharacterSet(charactersIn: ".-"))
+            return clean.isEmpty ? fallback : String(clean.prefix(80))
+        }
+        return safe(name, fallback: "Plugin") + "-" + safe(version, fallback: "version") + ".jar"
+    }
     static func parse(_ text: String) throws -> PluginDescriptor {
         var fields: [String: String] = [:]
-        for line in text.components(separatedBy: .newlines) {
+        let lines = text.components(separatedBy: .newlines)
+        for (index, line) in lines.enumerated() {
             guard !line.hasPrefix(" "), !line.hasPrefix("\t"), let colon = line.firstIndex(of: ":") else { continue }
-            let key = String(line[..<colon]); guard ["name", "version", "main", "api-version"].contains(key) else { continue }
+            let key = String(line[..<colon]); guard ["name", "version", "main", "api-version", "description", "author", "authors", "website"].contains(key) else { continue }
             let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
-            fields[key] = value.hasPrefix("\"") || value.hasPrefix("'") ? String(value.dropFirst().prefix { $0 != value.first! }) : value.components(separatedBy: " #")[0].trimmingCharacters(in: .whitespaces)
+            fields[key] = ConfigurationField.decodeYAML(value)?.value ?? value.components(separatedBy: " #")[0].trimmingCharacters(in: .whitespaces)
+            if (key == "authors" && value.isEmpty) || (key == "description" && ["|", ">", "|-", ">-"].contains(value)) {
+                let body = lines.dropFirst(index + 1).prefix { $0.hasPrefix(" ") || $0.hasPrefix("\t") || $0.isEmpty }
+                if key == "authors" { fields[key] = body.compactMap { item -> String? in
+                    let row = item.trimmingCharacters(in: .whitespaces)
+                    guard row.hasPrefix("- ") else { return nil }
+                    let raw = String(row.dropFirst(2))
+                    return ConfigurationField.decodeYAML(raw)?.value ?? raw
+                }.joined(separator: ", ") }
+                else { fields[key] = body.map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: value.hasPrefix(">") ? " " : "\n").trimmingCharacters(in: .whitespacesAndNewlines) }
+            }
         }
         guard let name = fields["name"], !name.isEmpty, let version = fields["version"], !version.isEmpty, let main = fields["main"], !main.isEmpty else { throw PanelError(message: "Plugin-Metadaten fehlen: name, version und main müssen in plugin.yml oder paper-plugin.yml stehen.") }
-        return PluginDescriptor(name: name, version: version, main: main, apiVersion: fields["api-version"] ?? "Nicht angegeben")
+        guard name.utf8.count <= 256, version.utf8.count <= 256, main.utf8.count <= 1024 else { throw PanelError(message: "Plugin-Metadaten enthalten ungewöhnlich lange Identitätsfelder.") }
+        return PluginDescriptor(name: name, version: version, main: main, apiVersion: fields["api-version"] ?? "Nicht angegeben", summary: String((fields["description"] ?? "").prefix(4000)), author: String((fields["author"] ?? fields["authors"] ?? "").prefix(2000)), website: String((fields["website"] ?? "").prefix(2000)), rawYAML: text)
     }
     func validateUpdate(_ next: PluginDescriptor) throws -> String {
-        guard name.caseInsensitiveCompare(next.name) == .orderedSame, main == next.main else { throw PanelError(message: "Falsches Plugin. Erwartet: \(name) (\(main)); gewählt: \(next.name) (\(next.main)).") }
+        guard name == next.name, main == next.main else { throw PanelError(message: "Falsches Plugin. Erwartet: \(name) (\(main)); gewählt: \(next.name) (\(next.main)).") }
         guard version != next.version else { throw PanelError(message: "Dieselbe Version (\(version)) ist bereits installiert.") }
         let numeric = #"^\d+(\.\d+){0,4}$"#
         if version.range(of: numeric, options: .regularExpression) != nil && next.version.range(of: numeric, options: .regularExpression) != nil {
@@ -58,7 +83,9 @@ enum PluginArchive {
             cursor += 46 + nameCount + extra + comment
         }
         guard let yaml = descriptors["paper-plugin.yml"] ?? descriptors["plugin.yml"] else { throw PanelError(message: "Die JAR enthält weder plugin.yml noch paper-plugin.yml. Keine Paper/Bukkit-Plugin-Datei.") }
-        return try PluginDescriptor.parse(yaml)
+        var descriptor = try PluginDescriptor.parse(yaml)
+        descriptor.descriptorFile = descriptors["paper-plugin.yml"] != nil ? "paper-plugin.yml" : "plugin.yml"
+        return descriptor
     }
     static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 }
@@ -70,4 +97,30 @@ struct PluginUpdateCandidate: Identifiable {
     let next: PluginDescriptor
     let originalHash: String
     let report: String
+    var updateFilename: String { next.versionedFilename }
+}
+
+/// Paper matches updates by the exact descriptor name and adopts the staged filename.
+enum PluginUpdatePlan {
+    static func directory(_ config: String) throws -> String {
+        let field = ConfigurationField.parse(config, properties: false).first { $0.path == "settings › update-folder" || $0.path == "update-folder" }
+        if field == nil && config.range(of: #"(?m)^\s*update-folder\s*:"#, options: .regularExpression) != nil {
+            throw PanelError(message: "update-folder in bukkit.yml konnte nicht eindeutig gelesen werden. Nutze den Texteditor.")
+        }
+        let update = field?.value ?? "update"
+        let parts = update.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard !update.hasPrefix("/"), !update.contains("\\"), !parts.isEmpty,
+              !parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }), !update.contains("\n"), !update.contains("\r") else {
+            throw PanelError(message: "Nicht unterstützter update-folder in bukkit.yml. Nutze den Datei-Manager.")
+        }
+        return "/plugins/" + parts.joined(separator: "/")
+    }
+    static func checkFilename(_ target: String, installed: String, files: [String]) throws {
+        guard !files.contains(where: { $0 != installed && $0.caseInsensitiveCompare(target) == .orderedSame }) else {
+            throw PanelError(message: "Die Zieldatei \(target) existiert bereits unter /plugins. Bitte zuerst im Datei-Manager prüfen; es wird nichts überschrieben.")
+        }
+    }
+    static func checkPending(_ pending: PluginDescriptor, next: PluginDescriptor) throws {
+        guard pending.name != next.name else { throw PanelError(message: "Für \(next.name) ist bereits Version \(pending.version) vorgemerkt. Entferne die bisherige Update-JAR zuerst, damit Paper nur ein Update findet.") }
+    }
 }

@@ -19,6 +19,7 @@ final class SameOriginRedirect: NSObject, URLSessionTaskDelegate {
 @MainActor
 final class PanelAPI {
     let access = ServerAccess()
+    let plugins = PluginCatalog()
     let base: URL
     private let key: String
     var isKinetic: Bool { base.host?.lowercased() == "kineticpanel.net" || base.host?.lowercased().hasSuffix(".kineticpanel.net") == true }

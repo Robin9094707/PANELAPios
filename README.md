@@ -29,6 +29,15 @@ Use the URL containing the web console, **not** the Minecraft game address or th
 
 The app is currently German. API error details may use the provider's language. Advanced rights and permission names follow Pterodactyl naming. Hosting billing, node administration and changing provider-assigned RAM/CPU limits are outside the Client API.
 
+## Version 1.2.2 — plugin versions and versioned updates
+
+- Update JARs use the verified descriptor name and version, such as `AirTags-3.0.0.jar`. The selected active JAR stays untouched while staging. Paper matches the exact plugin name and adopts the staged filename on restart; other implementations may retain the active filename. Version labels always come from the actual JAR metadata.
+- Plugin rows show real name/version and separate pending-update versions. Detail sheets show descriptor name, version, API version, main class, description, authors, website, file information and the complete original plugin.yml/paper-plugin.yml with copy and syntax colors. This is the version on disk; the currently loaded version may differ until restart.
+- Visible JARs up to8MiB are read automatically; larger files require opening Details (up to128MiB). Only one download runs at a time; ZIP/deflate/CRC parsing runs off the main thread. Only decoded metadata is cached for the current panel connection, keyed by server/path/size/modification time. Pull to refresh rereads metadata. No plugin code is executed.
+- Sanitized bounded filenames, target-file collision checks and duplicate staged-plugin identity checks prevent silent overwrites and ambiguous multiple updates. Identity is case-sensitive to match Paper; main-class, version and upload hash checks remain in place.
+
+Source backup: [`backup/v1.2.1-before-plugin-details`](https://github.com/Robin9094707/PANELAPios/tree/backup/v1.2.1-before-plugin-details). References: [Paper update guide](https://docs.papermc.io/paper/updating/#step-2-update-plugins), [Paper filename replacement implementation](https://github.com/PaperMC/Paper/blob/main/paper-server/src/main/java/io/papermc/paper/plugin/provider/source/FileProviderSource.java).
+
 ## Version 1.2.1 — permissions, TPS and import fixes
 
 - Per-server Client API permission metadata disables unauthorized actions and labels restricted access in German. Known Pterodactyl permissions cover console, power, files, backups, databases, users, schedules and startup/settings. Unknown provider extensions retain server authorization; JSON API 403 responses disable the exact rejected request for this connection. Refreshing permissions clears these denials. No admin token is required.
