@@ -161,7 +161,10 @@ struct TransferRecord: Identifiable, Codable {
     }
     func resume(_ record: TransferRecord, api: PanelAPI?, legacySource: DownloadSource? = nil, restart: Bool = false) async throws {
         guard !record.upload, let index = records.firstIndex(where: { $0.id == record.id }), !records[index].active, records[index].state != "completed" else { return }
-        let source = records[index].source ?? legacySource
+        // Legacy inference is only for 1.3 records. A new provider export has its own signed URL
+        // and must not be mistaken for a standard backup-download endpoint.
+        let hasSavedRequest = FileManager.default.fileExists(atPath: folder(record.id).appendingPathComponent("request.url").path)
+        let source = records[index].source ?? (hasSavedRequest ? nil : legacySource)
         let resumeFile = folder(record.id).appendingPathComponent("resume.data")
         let task: URLSessionDownloadTask
         if !restart, let data = try? Data(contentsOf: resumeFile), !data.isEmpty {

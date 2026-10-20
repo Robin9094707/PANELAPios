@@ -75,7 +75,8 @@ final class PanelAPI {
         do { try Self.validate(data, response: response) }
         catch {
             if (response as? HTTPURLResponse)?.statusCode == 403,
-               let json = try? JSONDecoder().decode(JSON.self, from: data), !json["errors"].array.isEmpty {
+               let json = try? JSONDecoder().decode(JSON.self, from: data),
+               !json["errors"].array.isEmpty || !json["message"].string.isEmpty || !json["error"].string.isEmpty || !json["error"]["message"].string.isEmpty {
                 access.recordDenial(path: path, method: method)
             }
             throw error
