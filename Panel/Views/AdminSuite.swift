@@ -208,7 +208,7 @@ struct SuiteRemoteMenuView: View {
             Section(cleanConsole(menu["title"].string)) {
                 ForEach(menu["options"].array.filter { search.isEmpty || ($0["name"].string + $0["detail"].string).localizedCaseInsensitiveContains(search) }, id: \.["id"].string) { option in
                     Button { select(option) } label: { VStack(alignment: .leading, spacing: 5) { Text(cleanConsole(option["name"].string)).font(.headline); if !option["detail"].string.isEmpty { Text(cleanConsole(option["detail"].string)).font(.caption).foregroundStyle(.secondary) } } }.disabled(option["disabled"].bool || busy || suite.demo)
-                        .contextMenu { if menu["inventory"].bool { Button("Rechtsklick") { select(option, click: "right") }; Button("Umschalt + Linksklick") { select(option, click: "shift-left") }; Button("Umschalt + Rechtsklick") { select(option, click: "shift-right") } }
+                        .contextMenu { if menu["inventory"].bool { Button("Rechtsklick") { select(option, click: "right") }; Button("Umschalt + Linksklick") { select(option, click: "shift-left") }; Button("Umschalt + Rechtsklick") { select(option, click: "shift-right") } } }
                 }
                 if busy { ProgressView("Suite-Menü verarbeiten …") }
             }
