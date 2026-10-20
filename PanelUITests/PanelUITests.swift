@@ -15,7 +15,15 @@ final class PanelUITests: XCTestCase {
         server.tap()
         XCTAssertTrue(app.staticTexts["Arbeitsspeicher"].waitForExistence(timeout: 10)); capture("02-Live-Dashboard")
         app.tabBars.buttons["Konsole"].tap()
-        XCTAssertTrue(app.textFields["consoleCommand"].waitForExistence(timeout: 10)); capture("03-Konsole")
+        XCTAssertTrue(app.textFields["consoleCommand"].waitForExistence(timeout: 10))
+        let console = app.textViews["consoleOutput"]
+        XCTAssertTrue(console.waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(console.frame.width, app.frame.width * 0.9)
+        XCTAssertGreaterThan(console.frame.height, 100)
+        capture("03-Konsole")
+        app.buttons["Shortcuts"].tap()
+        XCTAssertTrue(app.buttons["Shortcut hinzufügen"].waitForExistence(timeout: 10)); capture("03b-Shortcuts")
+        app.buttons["Fertig"].tap()
         app.tabBars.buttons["Dateien"].tap()
         let properties = app.buttons.containing(.staticText, identifier: "server.properties").firstMatch
         XCTAssertTrue(properties.waitForExistence(timeout: 10)); capture("04-Dateien")
@@ -26,6 +34,11 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Before update"].waitForExistence(timeout: 10)); capture("06-Backups")
         app.tabBars.buttons["Verwalten"].tap()
         XCTAssertTrue(app.buttons["Zeitpläne"].waitForExistence(timeout: 10)); capture("07-Verwalten")
+        app.buttons["Minecraft & Welt-Einstellungen"].tap()
+        XCTAssertTrue(app.staticTexts["max-players"].waitForExistence(timeout: 10)); capture("09-Minecraft-Einstellungen")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["Datenbanken"].tap()
+        XCTAssertTrue(app.staticTexts["db.example.net:3306"].waitForExistence(timeout: 10)); capture("10-Datenbanken")
     }
     func testConnectionFormRequiresURLAndClientKey() throws {
         app.swipeUp()

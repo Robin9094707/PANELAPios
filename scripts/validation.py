@@ -1,7 +1,7 @@
 """Reuse an authenticated, successful test step only when all app inputs match.
 
 This avoids rerunning simulator UI tests for packaging/docs-only fixes. Any change
-under app source, tests, project settings, assets or entitlements runs all tests.
+under app source, tests, project settings, assets or entitlements runs the selected unit and UI smoke suites.
 """
 import json
 import os
@@ -37,10 +37,10 @@ try:
                          test_step="Test on simulator", conclusion="success", identical_inputs=INPUTS)
 except Exception as error:
     # The fallback always executes the complete test suite.
-    print("Could not verify prior test evidence; executing all simulator tests:", type(error).__name__)
+    print("Could not verify prior test evidence; executing selected simulator tests:", type(error).__name__)
 
 Path("build").mkdir(exist_ok=True)
 Path("build/validation-proof.json").write_text(json.dumps(proof, indent=2) + "\n")
 with open(os.environ["GITHUB_OUTPUT"], "a") as output:
     output.write("reuse=" + str(reuse).lower() + "\n")
-print("Reusing successful simulator tests for byte-identical app inputs." if reuse else "Running full simulator test suite.")
+print("Reusing successful simulator tests for byte-identical app inputs." if reuse else "Running unit suite and UI smoke tour.")

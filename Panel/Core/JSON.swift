@@ -38,7 +38,12 @@ enum JSON: Codable, Equatable, Sendable {
     var array: [JSON] { if case .array(let a) = self { return a }; return [] }
     var object: [String: JSON] { if case .object(let o) = self { return o }; return [:] }
     var attributes: JSON { self["attributes"] == .null ? self : self["attributes"] }
-    var rows: [JSON] { self["data"].array.map(\.attributes) }
+    var rows: [JSON] {
+        if case .array(let values) = self { return values.map(\.attributes) }
+        if case .array(let values) = self["data"] { return values.map(\.attributes) }
+        if case .array(let values) = self["data"]["data"] { return values.map(\.attributes) }
+        return []
+    }
     var pretty: String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return (try? String(data: encoder.encode(self), encoding: .utf8)) ?? "{}"

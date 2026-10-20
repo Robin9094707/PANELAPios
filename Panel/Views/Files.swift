@@ -6,6 +6,7 @@ struct FilesView: View {
     let api: PanelAPI
     let server: Server
     let root: String
+    @EnvironmentObject private var workspace: WorkspaceStore
     @State private var entries: [JSON] = []
     @State private var loading = false
     @State private var loaded = false
@@ -26,7 +27,8 @@ struct FilesView: View {
             Section {
                 HStack { Label(root, systemImage: "folder").font(.system(.caption, design: .monospaced)).textSelection(.enabled); Spacer(); Text("\(entries.count)").foregroundStyle(.secondary) }
                 HStack { Image(systemName: "magnifyingglass").foregroundStyle(.secondary); TextField("In diesem Ordner suchen", text: $search).autocorrectionDisabled().textInputAutocapitalization(.never) }
-                HStack { EditButton().buttonStyle(.borderless); Spacer(); fileTools.buttonStyle(.borderless) }
+                HStack { EditButton().buttonStyle(.borderless); Spacer(); Button(workspace.isPinned(api, server, root) ? "Lösen" : "Anpinnen", systemImage: "pin") { workspace.toggleFolder(api, server, root) }.buttonStyle(.borderless); fileTools.buttonStyle(.borderless) }
+                if root != "/" { NavigationLink("Stammordner") { FilesView(api: api, server: server, root: "/") } }
                 if transfer { Label("Übertragung läuft …", systemImage: "arrow.up.arrow.down").foregroundStyle(.teal) }
             }
             if loading && !loaded { ProgressView("Dateien laden …") }
@@ -83,6 +85,7 @@ struct FilesView: View {
             Button("Kopieren", systemImage: "doc.on.doc") { operation = Operation(title: "Datei kopieren", path: prefix + "/copy", fixed: ["location": .string(pathJoin(root, name))], submit: "Kopieren") }
             Button("Entpacken", systemImage: "archivebox") { operation = Operation(title: "Archiv entpacken", path: prefix + "/decompress", fixed: ["root": .string(root), "file": .string(name)], submit: "Entpacken") }
         }
+        if !entry["is_file"].bool { Button("Ordner anpinnen", systemImage: "pin") { workspace.toggleFolder(api, server, pathJoin(root, name)) } }
         Button("Umbenennen / verschieben", systemImage: "pencil.line") { rename(name) }
         Button("Komprimieren", systemImage: "archivebox.fill") { compress([name]) }
         Button("Dateirechte", systemImage: "lock.doc") { chmod(name) }

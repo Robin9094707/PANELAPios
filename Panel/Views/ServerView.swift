@@ -4,6 +4,13 @@ import Charts
 struct ServerView: View {
     let api: PanelAPI
     let server: Server
+    let initialFolder: String?
+    init(api: PanelAPI, server: Server, initialFolder: String? = nil) {
+        self.api = api; self.server = server; self.initialFolder = initialFolder
+        _tab = State(initialValue: initialFolder == nil ? 0 : 2)
+    }
+    @EnvironmentObject private var workspace: WorkspaceStore
+    @State private var commandLibrary = false
     @StateObject private var live = LiveServer()
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = 0
@@ -18,17 +25,18 @@ struct ServerView: View {
         TabView(selection: $tab) {
             Tab("Übersicht", systemImage: "gauge.with.dots.needle.67percent", value: 0) { overview }
             Tab("Konsole", systemImage: "terminal", value: 1) { console }
-            Tab("Dateien", systemImage: "folder", value: 2) { FilesView(api: api, server: server, root: "/") }
+            Tab("Dateien", systemImage: "folder", value: 2) { FilesView(api: api, server: server, root: initialFolder ?? "/") }
             Tab("Backups", systemImage: "externaldrive.badge.timemachine", value: 3) { BackupsView(api: api, server: server) }
             Tab("Verwalten", systemImage: "square.grid.2x2", value: 4) { ManageView(api: api, server: server) }
         }.navigationTitle(server.name).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { powerMenu } }
-            .task(id: scenePhase) {
-                if scenePhase == .active { await withTaskCancellationHandler { await live.run(api: api, server: server) } onCancel: { Task { @MainActor in live.stop() } } }
+            .task(id: "\(scenePhase)-\(workspace.isMinecraft(api, server))") {
+                if scenePhase == .active { await withTaskCancellationHandler { await live.run(api: api, server: server, minecraft: workspace.isMinecraft(api, server)) } onCancel: { Task { @MainActor in live.stop() } } }
                 else { live.stop() }
             }
             .onDisappear { live.stop() }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
+            .sheet(isPresented: $commandLibrary) { CommandLibrary(api: api, server: server) { command = $0 } }
             .errorAlert($error)
     }
     var powerMenu: some View {
@@ -48,6 +56,8 @@ struct ServerView: View {
                 HStack { VStack(alignment: .leading, spacing: 8) { Text(server.name).font(.largeTitle.bold()); Text(server.address).font(.system(.subheadline, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled) }; Spacer(); StatePill(state: live.state) }
                 HStack(spacing: 7) { Circle().fill(live.connected ? Color.green : Color.orange).frame(width: 6, height: 6); Text(live.connection); Spacer(); if let updated = live.lastUpdate { Text(updated, style: .time).monospacedDigit() } }.font(.caption).foregroundStyle(.secondary)
                 if let issue = live.issue, !live.connected { Label(issue, systemImage: "wifi.exclamationmark").font(.footnote).foregroundStyle(.orange).card() }
+                Toggle("Minecraft-Spielerübersicht", isOn: Binding(get: { workspace.isMinecraft(api, server) }, set: { workspace.setMinecraft($0, api, server) })).font(.subheadline)
+                if workspace.isMinecraft(api, server) { PlayersCard(live: live) }
                 if server.data["is_suspended"].bool || server.data["is_installing"].bool || server.data["is_node_under_maintenance"].bool {
                     Label(server.data["is_suspended"].bool ? "Server ist gesperrt" : server.data["is_installing"].bool ? "Installation läuft" : "Node wird gewartet", systemImage: "exclamationmark.triangle").foregroundStyle(.orange).card()
                 }
@@ -86,25 +96,28 @@ struct ServerView: View {
                 Spacer()
                 Menu {
                     Toggle("Automatisch scrollen", isOn: $follow)
+                    Button("Gefilterte Ausgabe kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = live.lines.filter { filter.isEmpty || $0.localizedCaseInsensitiveContains(filter) }.joined(separator: "\n") }
                     Button("Schrift vergrößern") { fontSize = min(22, fontSize + 1) }
                     Button("Schrift verkleinern") { fontSize = max(10, fontSize - 1) }
                     Button("Anzeige leeren", role: .destructive) { live.lines = [] }
                 } label: { Image(systemName: "ellipsis.circle").padding(6) }
             }.padding(.horizontal, 16).padding(.vertical, 8)
             TextField("Ausgabe filtern", text: $filter).textFieldStyle(.roundedBorder).padding(.horizontal, 16).padding(.bottom, 8).autocorrectionDisabled().textInputAutocapitalization(.never)
-            ScrollViewReader { proxy in
-                ScrollView([.vertical, .horizontal]) {
-                    LazyVStack(alignment: .leading, spacing: 3) {
-                        ForEach(Array(live.lines.enumerated()), id: \.offset) { index, line in
-                            if filter.isEmpty || line.localizedCaseInsensitiveContains(filter) {
-                                Text(line.isEmpty ? " " : line).font(.system(size: fontSize, design: .monospaced)).foregroundStyle(line.contains("ERROR") || line.contains("SEVERE") ? Color.red : line.contains("WARN") ? Color.orange : Color.primary.opacity(0.85)).textSelection(.enabled)
-                            }
+            ConsoleTextView(text: live.lines.filter { filter.isEmpty || $0.localizedCaseInsensitiveContains(filter) }.joined(separator: "\n"), fontSize: fontSize, follow: follow)
+                .frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1).background(.black.opacity(0.08))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    Button("Shortcuts", systemImage: "bolt") { commandLibrary = true }.buttonStyle(.glass)
+                    ForEach(workspace.shortcuts[workspace.key(api, server)] ?? []) { shortcut in
+                        Button(shortcut.name) { command = shortcut.command }.buttonStyle(.glass)
+                    }
+                    if workspace.isMinecraft(api, server) {
+                        ForEach(CommandLibrary.suggestions.filter { command.isEmpty ? ["list", "tps", "save-all"].contains($0) : $0.hasPrefix(command.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) && $0 != command }, id: \.self) { suggestion in
+                            Button(suggestion) { command = suggestion }.buttonStyle(.glass)
                         }
-                        Color.clear.frame(height: 1).id("end")
-                    }.padding(16).frame(minWidth: 300, alignment: .leading)
-                }.background(.black.opacity(0.14))
-                    .onChange(of: live.logRevision) { _, _ in if follow { proxy.scrollTo("end", anchor: .bottom) } }
-            }
+                    }
+                }.padding(.horizontal, 12).padding(.vertical, 8)
+            }.accessibilityLabel("Lokale Befehlsvorschläge und Shortcuts")
             HStack(spacing: 12) {
                 Text(">").font(.system(.body, design: .monospaced)).foregroundStyle(.teal)
                 TextField("Befehl eingeben …", text: $command).font(.system(.body, design: .monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never).submitLabel(.send).onSubmit(sendCommand).accessibilityIdentifier("consoleCommand")
@@ -113,7 +126,8 @@ struct ServerView: View {
         }.background { PanelBackground() }.safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 1) }
     }
     func sendCommand() {
-        let text = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        if workspace.isMinecraft(api, server) && text.hasPrefix("/") { text.removeFirst() }
         guard !text.isEmpty, !sending else { return }
         sending = true
         Task { do {

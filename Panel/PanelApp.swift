@@ -2,6 +2,7 @@ import SwiftUI
 
 @main struct PanelApp: App {
     @StateObject private var store = AppStore()
+    @StateObject private var workspace = WorkspaceStore()
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("appearance") private var appearance = "system"
     var body: some Scene {
@@ -9,7 +10,7 @@ import SwiftUI
             Group {
                 if store.locked { UnlockView() }
                 else { HomeView() }
-            }.environmentObject(store).tint(.teal)
+            }.environmentObject(store).environmentObject(workspace).tint(.teal)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .errorAlert($store.error)
                 .privacySensitive()

@@ -20,12 +20,13 @@ final class SameOriginRedirect: NSObject, URLSessionTaskDelegate {
 final class PanelAPI {
     let base: URL
     private let key: String
+    var isKinetic: Bool { base.host?.lowercased() == "kineticpanel.net" || base.host?.lowercased().hasSuffix(".kineticpanel.net") == true }
     let demo: Bool
     private let session: URLSession
     init(base: URL, key: String, demo: Bool = false, session: URLSession? = nil) {
         self.base = base; self.key = key; self.demo = demo
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 30; config.timeoutIntervalForResource = 120
+        config.timeoutIntervalForRequest = 30; config.timeoutIntervalForResource = 3600
         config.urlCache = nil
         self.session = session ?? URLSession(configuration: config, delegate: SameOriginRedirect(), delegateQueue: nil)
     }

@@ -7,9 +7,14 @@ struct ManageView: View {
     var prefix: String { "servers/\(server.id)" }
     var body: some View {
         List {
+            Section("Minecraft") {
+                NavigationLink { PluginsView(api: api, server: server) } label: { Label("Plugins & JAR-Dateien", systemImage: "puzzlepiece.extension") }
+                NavigationLink { MinecraftPropertiesView(api: api, server: server) } label: { Label("Minecraft & Welt-Einstellungen", systemImage: "globe") }
+            }
+            if api.isKinetic { Section("Provider-Funktionen") { NavigationLink { ProviderHub(api: api, server: server) } label: { Label("Kinetic-Erweiterungen", systemImage: "sparkles") } } }
             Section("Server verwalten") {
                 NavigationLink { SchedulesView(api: api, server: server) } label: { Label("Zeitpläne", systemImage: "calendar.badge.clock") }
-                NavigationLink { ResourcesView(api: api, server: server, kind: .databases) } label: { Label("Datenbanken", systemImage: "externaldrive.connected.to.line.below") }
+                NavigationLink { DatabasesView(api: api, server: server) } label: { Label("Datenbanken", systemImage: "externaldrive.connected.to.line.below") }
                 NavigationLink { ResourcesView(api: api, server: server, kind: .network) } label: { Label("Netzwerk & Ports", systemImage: "network") }
                 NavigationLink { ResourcesView(api: api, server: server, kind: .users) } label: { Label("Mitbenutzer", systemImage: "person.2") }
                 NavigationLink { StartupView(api: api, server: server) } label: { Label("Startparameter", systemImage: "play.rectangle") }
@@ -47,7 +52,7 @@ struct ResourcesView: View {
     @State private var error: String?
     @State private var operation: Operation?
     @State private var detail: DetailItem?
-    var prefix: String { "servers/\(server.id)/" + kind.path }
+    var prefix: String { "servers/\(server.id)/" + (kind == .network && api.isKinetic ? "allocations" : kind.path) }
     var body: some View {
         List {
             if !loaded { ProgressView("Laden …") }
@@ -82,8 +87,8 @@ struct ResourcesView: View {
             Button("Passwort anzeigen", systemImage: "key") { Task { do { let result = try await api.list(prefix, query: ["include": "password"]); detail = DetailItem(data: result.first(where: { $0["id"].string == id }) ?? .null) } catch { self.error = error.localizedDescription } } }
             Button("Passwort erneuern", systemImage: "arrow.clockwise", role: .destructive) { operation = Operation(title: "Datenbankpasswort erneuern", detail: "Plugins und Anwendungen müssen anschließend das neue Passwort verwenden.", path: prefix + "/\(id)/rotate-password", destructive: true, submit: "Erneuern") }
         case .network:
-            Button("Notiz bearbeiten", systemImage: "pencil") { operation = Operation(title: "Port-Notiz", path: prefix + "/\(id)", fields: [Field(key: "notes", label: "Notiz", value: row["notes"].string)]) }
-            if !row["is_default"].bool { Button("Als primär festlegen", systemImage: "star") { operation = Operation(title: "Primären Port ändern", path: prefix + "/\(id)/primary", submit: "Festlegen") } }
+            Button("Notiz bearbeiten", systemImage: "pencil") { operation = Operation(title: "Port-Notiz", path: prefix + "/\(id)", method: api.isKinetic ? "PATCH" : "POST", fields: [Field(key: "notes", label: "Notiz", value: row["notes"].string)]) }
+            if !row["is_default"].bool { Button("Als primär festlegen", systemImage: "star") { operation = Operation(title: "Primären Port ändern", path: prefix + "/\(id)" + (api.isKinetic ? "" : "/primary"), method: api.isKinetic ? "PATCH" : "POST", fixed: api.isKinetic ? ["primary": .bool(true)] : [:], submit: "Festlegen") } }
         case .users:
             Button("Berechtigungen bearbeiten", systemImage: "person.badge.key") { operation = Operation(title: "Berechtigungen", detail: "Ein Berechtigungsname pro Zeile, z. B. control.console oder file.read. Nur tatsächlich vergebene Rechte erlauben Aktionen.", path: prefix + "/\(id)", fields: [Field(key: "permissions", label: "Berechtigungen", value: row["permissions"].array.map(\.string).joined(separator: "\n"), kind: .strings)]) }
         }

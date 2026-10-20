@@ -2,10 +2,15 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var workspace: WorkspaceStore
     @State private var add = false
     @State private var settings = false
     @State private var search = ""
-    var filtered: [Server] { store.servers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.node.localizedCaseInsensitiveContains(search) } }
+    var filtered: [Server] { store.servers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.node.localizedCaseInsensitiveContains(search) }.sorted { a, b in
+        guard let api = store.api else { return a.name < b.name }
+        let ap = workspace.favorites.contains(workspace.key(api, a)), bp = workspace.favorites.contains(workspace.key(api, b))
+        return ap == bp ? a.name.localizedStandardCompare(b.name) == .orderedAscending : ap
+    } }
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -21,13 +26,16 @@ struct HomeView: View {
                     }.padding(.top, 16)
                     if store.api == nil { welcome }
                     else {
+                        if let api = store.api { pinnedFolders(api) }
                         HStack { Label("\(store.servers.count) Server", systemImage: "square.stack.3d.up").font(.subheadline.weight(.medium)); Spacer(); if store.loading { ProgressView() } }
                         if filtered.isEmpty {
                             ContentUnavailableView(search.isEmpty ? "Keine Server" : "Keine Treffer", systemImage: "server.rack", description: Text("Ziehe nach unten, um die Liste zu aktualisieren."))
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
                             ForEach(filtered) { server in
-                                NavigationLink(value: server) { ServerCard(server: server) }.buttonStyle(.plain).accessibilityIdentifier("server-\(server.id)")
+                                NavigationLink(value: server) { ServerCard(server: server) }.buttonStyle(.plain).accessibilityIdentifier("server-\(server.id)").contextMenu {
+                                    if let api = store.api { Button(workspace.favorites.contains(workspace.key(api, server)) ? "Server lösen" : "Server anpinnen", systemImage: "star") { workspace.toggleServer(api, server) } }
+                                }.overlay(alignment: .topTrailing) { if let api = store.api, workspace.favorites.contains(workspace.key(api, server)) { Image(systemName: "star.fill").foregroundStyle(.orange).padding(24).padding(.trailing, 24).allowsHitTesting(false) } }
                             }
                         }
                         if store.demo { Button("Eigenes Panel verbinden", systemImage: "plus") { add = true }.buttonStyle(.glassProminent).frame(maxWidth: .infinity) }
@@ -50,6 +58,21 @@ struct HomeView: View {
                 .sheet(isPresented: $add) { AddPanelView() }
                 .sheet(isPresented: $settings) { SettingsView() }
                 .task(id: store.api.map { ObjectIdentifier($0) }) { await store.refresh() }
+        }
+    }
+    @ViewBuilder func pinnedFolders(_ api: PanelAPI) -> some View {
+        let pins = workspace.folders.filter { pin in pin.panel == api.base.absoluteString && store.servers.contains(where: { $0.id == pin.serverID }) }
+        if !pins.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Favoritenordner", systemImage: "pin.fill").font(.headline)
+                ForEach(pins) { pin in
+                    if let server = store.servers.first(where: { $0.id == pin.serverID }) {
+                        NavigationLink { ServerView(api: api, server: server, initialFolder: pin.path) } label: {
+                            HStack { Image(systemName: "folder.fill").foregroundStyle(.teal); VStack(alignment: .leading) { Text(pin.path); Text(server.name).font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").font(.caption) }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                        }.buttonStyle(.plain).contextMenu { Button("Lösen", systemImage: "pin.slash") { workspace.toggleFolder(api, server, pin.path) } }
+                    }
+                }
+            }
         }
     }
     var welcome: some View {
@@ -128,7 +151,7 @@ struct SettingsView: View {
                 }
                 if let api = store.api { Section("Account") { NavigationLink("Account & Sicherheit") { AccountView(api: api) } } }
                 Section {
-                    LabeledContent("Version", value: "1.0.0")
+                    LabeledContent("Version", value: "1.1.0")
                     Text("Unabhängiger Pterodactyl-Client. Funktionen und Limits richten sich nach deinem Hoster und deinen Panel-Berechtigungen.").font(.footnote).foregroundStyle(.secondary)
                 }
             }.panelScreen().navigationTitle("Einstellungen").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
