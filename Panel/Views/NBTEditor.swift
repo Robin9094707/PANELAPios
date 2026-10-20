@@ -28,6 +28,7 @@ import SwiftUI
     }
     func refreshState() async { do { state = try await api.request("servers/\(server.id)/resources").attributes["current_state"].string } catch { state = "unknown" } }
     func update(_ id: UUID, _ text: String) throws {
+        if root?.find(id)?.text == text { return }
         guard var doc = document else { return }
         func change(_ node: inout NBTNode) throws -> Bool {
             if node.id == id { try node.setText(text); return true }
@@ -140,7 +141,7 @@ struct NBTEntry: View {
             if node.container { NavigationLink { NBTBranch(model: model, nodeID: node.id, title: title) } label: { row } }
             else { Button { edit = true } label: { row }.buttonStyle(.plain).disabled(model.busy || node.scalar.count > 100000) }
         }.sheet(isPresented: $edit) {
-            ActionForm(title: title, detail: "Typ: \(node.typeName). Ganzzahltypen und unbekannte Felder bleiben beim Speichern erhalten. Änderungen am UUID-/Inventar-/Versionsbaum nur mit passendem Minecraft-Wissen vornehmen.", fields: [Field(key: "value", label: "Wert", value: node.text, kind: .multiline)]) { values in try model.update(node.id, values["value"]?.string ?? "") }
+            NBTScalarEditor(model: model, node: node, title: title)
         }
     }
     var row: some View {
@@ -164,5 +165,36 @@ extension NBTNode {
         guard let data = try? await api.fileData(server: server.id, path: "/usercache.json", limit: 4 * 1024 * 1024), let json = try? JSONDecoder().decode(JSON.self, from: data) else { return }
         var result: [String: String] = [:]
         for row in json.array { let id = row["uuid"].string.lowercased(), name = row["name"].string; if !id.isEmpty && !name.isEmpty { result[id] = name } }; values[k] = result
+    }
+}
+
+struct NBTScalarEditor: View {
+    @ObservedObject var model: NBTModel
+    let node: NBTNode
+    let title: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var value: String
+    @State private var error: String?
+    init(model: NBTModel, node: NBTNode, title: String) { self.model = model; self.node = node; self.title = title; _value = State(initialValue: node.text) }
+    var flag: Bool { node.type == 1 && ["Invulnerable", "OnGround", "FallFlying", "mayfly", "flying", "invulnerable", "instabuild", "mayBuild", "keepLevel", "seenCredits"].contains(node.name) }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section { LabeledContent("Datentyp", value: node.typeName); Text("Änderungen bleiben zunächst im lokalen Entwurf. Ganzzahlbreite und übrige NBT-Felder bleiben erhalten.").font(.footnote).foregroundStyle(.secondary) }
+                Section("Wert") {
+                    if flag { Toggle(title, isOn: Binding(get: { (Int(value) ?? 0) != 0 }, set: { value = $0 ? "1" : "0" })) }
+                    else if node.name == "playerGameType" {
+                        Picker("Spielmodus", selection: $value) { Text("Überleben").tag("0"); Text("Kreativ").tag("1"); Text("Abenteuer").tag("2"); Text("Zuschauer").tag("3"); if !["0", "1", "2", "3"].contains(value) { Text(value).tag(value) } }
+                    } else if (1...6).contains(node.type) { TextField("Zahl", text: $value).keyboardType(.numbersAndPunctuation).font(.body.monospaced()).autocorrectionDisabled() }
+                    else { TextEditor(text: $value).font(.body.monospaced()).frame(minHeight: 180).autocorrectionDisabled().textInputAutocapitalization(.never) }
+                    if node.name == "Health" {
+                        Slider(value: Binding(get: { Double(value) ?? 0 }, set: { value = String($0) }), in: 0...max(40, Double(value) ?? 20), step: 0.5)
+                        Label("\(((Double(value) ?? 0) / 2).formatted(.number.precision(.fractionLength(2)))) Herzen", systemImage: "heart.fill").foregroundStyle(.red)
+                    }
+                }
+                Section { Text("Dezimalzahlen mit Punkt eingeben. Arrays verwenden kommaseparierte Ganzzahlen. UUID, DataVersion und Inventardaten nur gezielt ändern.").font(.caption).foregroundStyle(.secondary) }
+            }.panelScreen().navigationTitle(title).navigationBarTitleDisplayMode(.inline).errorAlert($error)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Übernehmen") { do { try model.update(node.id, value); dismiss() } catch { self.error = error.localizedDescription } } } }
+        }
     }
 }

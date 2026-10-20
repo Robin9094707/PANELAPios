@@ -12,6 +12,7 @@ import Combine
     @Published var lastUpdate: Date?
     @Published var issue: String?
     @Published var players: PlayerSnapshot?
+    @Published var playerCapacity: Int?
     @Published var tps: TPSSnapshot?
     @Published var playerIssue: String?
     private var socket: URLSessionWebSocketTask?
@@ -23,9 +24,10 @@ import Combine
     var uptime: Double { stats["uptime"].double / 1000 }
     func stop() { active = false; runID = UUID(); socket?.cancel(with: .goingAway, reason: nil); socket = nil; connected = false }
     func run(api: PanelAPI, server: Server, minecraft: Bool = false) async {
-        stop(); active = true; players = nil; tps = nil; playerIssue = nil; let generation = UUID(); runID = generation
+        stop(); active = true; players = nil; playerCapacity = nil; tps = nil; playerIssue = nil; let generation = UUID(); runID = generation
         if api.demo {
             connected = true; connection = "Demo · Beispieldaten"; state = "running"
+            playerCapacity = minecraft ? 60 : nil
             tps = minecraft ? TPSSnapshot(minute: 20, five: 19.98, fifteen: 20) : nil
             players = minecraft ? PlayerSnapshot(online: 2, maximum: 60, names: ["TadMC_YT", ".niex2277"], source: "Demo") : nil
             lines = ["[22:37:00 INFO]: Starting minecraft server", "[22:37:02 INFO]: Loading properties", "[22:37:05 INFO]: Simplex SMP is ready", "[22:37:06 INFO]: Done (4.218s)! For help, type \"help\"", "[22:37:14 INFO]: MissCaitlyn joined the game"]
@@ -109,7 +111,7 @@ import Combine
                 if useProvider {
                     do {
                         let response = try await api.request("servers/\(server.id)/players")
-                        if let decoded = PlayerSnapshot.decode(response) { players = decoded; playerIssue = nil; received = true }
+                        if let decoded = PlayerSnapshot.decode(response) { players = decoded; if let max = decoded.maximum { playerCapacity = max }; playerIssue = nil; received = true }
                         else { useProvider = false }
                     } catch {
                         if Task.isCancelled { return }
@@ -117,7 +119,7 @@ import Combine
                         playerIssue = "Spieler-API nicht verfügbar; Aktualisierung über list bei laufendem Server."
                     }
                 }
-                if !received && connected && state == "running" {
+                if (!received || (players?.maximum == nil && playerCapacity == nil)) && connected && state == "running" {
                     do { try await api.mutate("servers/\(server.id)/command", ["command": "list"]) }
                     catch { playerIssue = error.localizedDescription }
                 }
@@ -137,7 +139,7 @@ import Combine
     private func append(_ text: String) {
         for line in text.components(separatedBy: .newlines) {
             if let parsed = TPSSnapshot.parse(line) { tps = parsed }
-            if let parsed = PlayerSnapshot.parseLog(line) { players = parsed; playerIssue = nil }
+            if let parsed = PlayerSnapshot.parseLog(line) { players = parsed; playerCapacity = parsed.maximum; playerIssue = nil }
         }
         // Bound individual messages as well as the entire scrollback.
         lines += text.suffix(64_000).components(separatedBy: "\n")

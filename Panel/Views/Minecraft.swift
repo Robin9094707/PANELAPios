@@ -35,7 +35,7 @@ struct PlayersCard: View {
             Image(systemName: "person.2.fill").font(.title2).foregroundStyle(.teal)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Spieler online").font(.headline)
-                Text(live.players.map { "\($0.online)" + ($0.maximum.map { " von \($0)" } ?? "") } ?? "Warte auf Spielerdaten …").font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                Text(live.players.map { "\($0.online)" + (($0.maximum ?? live.playerCapacity).map { " von \($0)" } ?? " von ?") } ?? "Warte auf Spielerdaten …").font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
             }
             Spacer()
             Button("Spielerübersicht", systemImage: "info.circle") { showPlayers = true }.labelStyle(.iconOnly).font(.title2).accessibilityIdentifier("showPlayers")
@@ -51,7 +51,7 @@ struct PlayerListSheet: View {
             List {
                 Section {
                     Label(live.players.map { "\($0.online) Spieler online" } ?? "Spielerdaten laden …", systemImage: "person.2.fill").font(.title2.bold()).foregroundStyle(.teal)
-                    if let snapshot = live.players { LabeledContent("Kapazität", value: snapshot.maximum.map(String.init) ?? "Unbekannt"); LabeledContent("Quelle", value: snapshot.source); LabeledContent("Aktualisiert") { Text(snapshot.updated, style: .time) } }
+                    if let snapshot = live.players { LabeledContent("Kapazität", value: (snapshot.maximum ?? live.playerCapacity).map(String.init) ?? "Unbekannt"); LabeledContent("Quelle", value: snapshot.source); LabeledContent("Aktualisiert") { Text(snapshot.updated, style: .time) } }
                     if let issue = live.playerIssue { Text(issue).font(.caption).foregroundStyle(.secondary) }
                 }
                 Section("Online") {

@@ -39,6 +39,8 @@ final class PanelUITests: XCTestCase {
         app.buttons.containing(.staticText, identifier: "00000000-0000-0000-0000-000000000001.dat").firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Gesundheit"].waitForExistence(timeout: 10)); capture("05b-NBT-Editor")
         app.buttons["Schließen"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.tabBars.buttons["Backups"].tap()
         XCTAssertTrue(app.staticTexts["Before update"].waitForExistence(timeout: 10)); capture("06-Backups")
         app.tabBars.buttons["Verwalten"].tap()
