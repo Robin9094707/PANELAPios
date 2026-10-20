@@ -55,7 +55,7 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(pluginDetails.waitForExistence(timeout: 10)); capture("11-Plugin-Version")
         pluginDetails.tap()
         XCTAssertTrue(app.staticTexts["Version auf dem Server"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["2.0.0"].firstMatch.waitForExistence(timeout: 10)); capture("12-Plugin-Details")
+        XCTAssertTrue(app.staticTexts["Version auf dem Server, 2.0.0"].waitForExistence(timeout: 10)); capture("12-Plugin-Details")
         app.buttons["Fertig"].tap()
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["Minecraft & Welt-Einstellungen"].tap()
