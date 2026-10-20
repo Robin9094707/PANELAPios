@@ -31,7 +31,7 @@ enum PlayerCommands {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     static func response(_ text: String, player: String) -> String? {
-        let pattern = NSRegularExpression.escapedPattern(for: player) + #"\s+(?:has the following entity data|hat (?:die )?folgenden? Entitätsdaten):\s*(.+)$"#
+        let pattern = #"(?<![A-Za-z0-9_.-])"# + NSRegularExpression.escapedPattern(for: player) + #"\s+(?:has the following entity data|hat (?:die )?folgenden? Entitätsdaten):\s*(.+)$"#
         let line = cleanConsole(text)
         guard let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive), let match = re.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)), let range = Range(match.range(at: 1), in: line) else { return nil }
         return String(line[range]).trimmingCharacters(in: .whitespacesAndNewlines)

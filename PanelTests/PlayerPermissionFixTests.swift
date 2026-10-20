@@ -32,6 +32,8 @@ final class PlayerPermissionFixTests: XCTestCase {
         }
         XCTAssertEqual(try BackupInfo.downloadURL(JSON.parse(#"{"url":"/signed/archive?token=secret"}"#), base: base), "https://kineticpanel.net/signed/archive?token=secret")
         for text in [#"{"message":"export queued"}"#, #"{"url":"http://unsafe.example/a"}"#, #"{"url":"https://user:pass@example.com/a"}"#] { XCTAssertThrowsError(try BackupInfo.downloadURL(JSON.parse(text), base: base)) }
+        let denied = HTTPURLResponse(url: base, statusCode: 403, httpVersion: nil, headerFields: nil)!
+        XCTAssertThrowsError(try PanelAPI.validate(Data(#"{"message":"Backup downloads disabled by storage"}"#.utf8), response: denied)) { error in XCTAssertTrue(error.localizedDescription.contains("Backup downloads disabled by storage")) }
         let info = BackupInfo(value: try JSON.parse(#"{"uuid":"backup-id","is_successful":1,"can_download":false}"#))
         XCTAssertEqual(info.id, "backup-id"); XCTAssertTrue(info.successful); XCTAssertTrue(info.completed); XCTAssertFalse(info.downloadable)
     }
@@ -44,6 +46,8 @@ final class PlayerPermissionFixTests: XCTestCase {
         XCTAssertThrowsError(try PlayerCommands.render("stop", player: "Robin"))
         XCTAssertEqual(PlayerCommands.response("[12:00:00 INFO]: .niex2277 has the following entity data: 18.0f", player: ".niex2277"), "18.0f")
         XCTAssertNil(PlayerCommands.response("other has the following entity data: 20.0f", player: ".niex2277"))
+        XCTAssertNil(PlayerCommands.response(".Robin has the following entity data: 20.0f", player: "Robin"))
+        XCTAssertNil(PlayerCommands.response("BigRobin has the following entity data: 20.0f", player: "Robin"))
         XCTAssertEqual(PlayerCommands.number("18.0f"), 18); XCTAssertEqual(PlayerCommands.number("-1.2E2d"), -120)
         XCTAssertNil(PlayerCommands.number("NaN")); XCTAssertNil(PlayerCommands.number("[20.0f]"))
     }

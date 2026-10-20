@@ -86,7 +86,8 @@ final class PanelAPI {
         guard let http = response as? HTTPURLResponse else { throw PanelError(message: "Keine HTTP-Antwort erhalten.") }
         guard (200..<300).contains(http.statusCode) else {
             let json = try? JSONDecoder().decode(JSON.self, from: data)
-            let details = json?["errors"].array.map { $0["detail"].string }.filter { !$0.isEmpty }.joined(separator: "\n") ?? ""
+            var details = json?["errors"].array.map { $0["detail"].string }.filter { !$0.isEmpty }.joined(separator: "\n") ?? ""
+            if details.isEmpty, let json { details = [json["message"].string, json["error"].string, json["error"]["message"].string].first { !$0.isEmpty } ?? "" }
             let fallback: String
             switch http.statusCode {
             case 401: fallback = "Anmeldung fehlgeschlagen. Prüfe deinen Client-API-Schlüssel."

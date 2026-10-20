@@ -32,7 +32,7 @@ struct ConsoleTextView: UIViewRepresentable {
         let selection = view.selectedRange; let offset = view.contentOffset
         view.attributedText = ConsoleStyle.attributed(text, size: fontSize); context.coordinator.previous = text; context.coordinator.size = fontSize
         if selection.length > 0 && NSMaxRange(selection) <= view.text.utf16.count { view.selectedRange = selection; view.setContentOffset(offset, animated: false) }
-        else if follow && !text.isEmpty { view.scrollRangeToVisible(NSRange(location: max(0, view.text.utf16.count - 1), length: 1)) }
+        else if follow && !text.isEmpty && !view.isTracking && !view.isDragging && !view.isDecelerating && view.refreshControl?.isRefreshing != true { view.scrollRangeToVisible(NSRange(location: max(0, view.text.utf16.count - 1), length: 1)) }
         else { view.setContentOffset(offset, animated: false) }
     }
 }
