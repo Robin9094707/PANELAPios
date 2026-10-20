@@ -29,7 +29,12 @@ struct SubuserEditor: View {
                     Text("Der Rechtekatalog und seine Beschreibungen werden direkt von deinem Panel geladen. Du kannst nur eigene Rechte weitergeben; die endgültige Prüfung übernimmt das Panel.").font(.caption).foregroundStyle(.secondary)
                 }
                 if catalog.loading { ProgressView("Verfügbare Rechte laden …") }
-                if let issue = catalog.issue { Section { Text(issue).foregroundStyle(.orange); Button("Rechtekatalog erneut laden") { Task { await catalog.load(api) } } }
+                if let issue = catalog.issue {
+                    Section {
+                        Text(issue).foregroundStyle(.orange)
+                        Button("Rechtekatalog erneut laden") { Task { await catalog.load(api) } }
+                    }
+                }
                 ForEach(catalog.groups) { group in
                     let choices = group.choices.filter { search.isEmpty || ($0.id + " " + $0.title + " " + $0.description + " " + group.title).localizedCaseInsensitiveContains(search) }
                     if !choices.isEmpty {
