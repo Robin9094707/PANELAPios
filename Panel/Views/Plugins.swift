@@ -125,6 +125,9 @@ struct PluginsView: View {
         let local = try Data(contentsOf: value.file, options: .mappedIfSafe)
         guard PluginArchive.digest(uploaded) == PluginArchive.digest(local) else { throw PanelError(message: "Upload-Prüfsumme stimmt nicht überein. Entferne die vorgemerkte Datei vor dem Neustart.") }
         await load()
+        if let entry = pending.first(where: { $0["name"].string == value.updateFilename }) {
+            api.plugins.rememberVerifiedUpload(value.next, server: server.id, directory: directory, entry: entry)
+        }
         message = "\(value.updateFilename) geprüft hochgeladen nach \(directory). Wird beim nächsten Start von Paper übernommen, sofern kompatibel."
         Feedback.success()
     }

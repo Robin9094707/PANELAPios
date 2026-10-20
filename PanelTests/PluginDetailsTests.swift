@@ -43,5 +43,10 @@ final class PluginDetailsTests: XCTestCase {
         await api.plugins.load(api: api, server: "server", entry: entry)
         XCTAssertEqual(api.plugins.descriptor(server: "server", entry: entry)?.name, "ExamplePlugin")
         XCTAssertTrue(api.plugins.loading.isEmpty)
+        let pending = try JSON.from(["name": "ExamplePlugin-3.0.0.jar", "size": 20 * 1024 * 1024, "modified_at": "new"])
+        let next = PluginDescriptor(name: "ExamplePlugin", version: "3.0.0", main: "eu.example.Plugin", apiVersion: "26.3")
+        api.plugins.rememberVerifiedUpload(next, server: "server", directory: "/plugins/update", entry: pending)
+        XCTAssertEqual(api.plugins.descriptor(server: "server", directory: "/plugins/update", entry: pending)?.version, "3.0.0")
+        XCTAssertEqual(api.plugins.descriptor(server: "server", entry: entry)?.version, "2.0.0")
     }
 }

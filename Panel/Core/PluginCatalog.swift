@@ -38,6 +38,11 @@ import Combine
             descriptors[key] = descriptor
         } catch is CancellationError {} catch { if !Task.isCancelled && epoch == epochs[server, default: 0] { errors[key] = error.localizedDescription } }
     }
+    /// Reuse metadata only after the uploaded JAR's bytes were read back and verified.
+    func rememberVerifiedUpload(_ descriptor: PluginDescriptor, server: String, directory: String, entry: JSON) {
+        let key = Self.key(server: server, directory: directory, entry: entry)
+        descriptors[key] = descriptor; errors[key] = nil
+    }
     func clear(server: String) {
         epochs[server, default: 0] += 1
         let prefix = server + "\u{0}"
