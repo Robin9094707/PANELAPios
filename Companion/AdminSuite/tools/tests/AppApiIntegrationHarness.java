@@ -32,8 +32,10 @@ public final class AppApiIntegrationHarness {
         try{
             BukkitTask task=proxy(BukkitTask.class,(p,m,a)->empty(m.getReturnType()));
             BukkitScheduler scheduler=proxy(BukkitScheduler.class,(p,m,a)->{if(a!=null)for(Object item:a){if(item instanceof Runnable work)work.run();else if(item instanceof Consumer<?> consumer)((Consumer<BukkitTask>)consumer).accept(task);}return m.getReturnType()==BukkitTask.class?task:empty(m.getReturnType());});
-            Server server=proxy(Server.class,(p,m,a)->switch(m.getName()){case "getName","getVersion","getBukkitVersion","getMinecraftVersion"->"API Fixture";case "getScheduler"->scheduler;case "getOnlinePlayers"->List.of();case "isPrimaryThread"->true;case "getLogger"->java.util.logging.Logger.getLogger("AppApiHarness");default->empty(m.getReturnType());});serverField.set(null,server);
+            var console=proxy(org.bukkit.command.ConsoleCommandSender.class,(p,m,a)->switch(m.getName()){case "getName"->"Console";case "hasPermission","isOp","isPermissionSet"->true;default->empty(m.getReturnType());});
+            Server server=proxy(Server.class,(p,m,a)->switch(m.getName()){case "getName","getVersion","getBukkitVersion","getMinecraftVersion"->"API Fixture";case "getScheduler"->scheduler;case "getConsoleSender"->console;case "getOnlinePlayers"->List.of();case "isPrimaryThread"->true;case "getLogger"->java.util.logging.Logger.getLogger("AppApiHarness");default->empty(m.getReturnType());});serverField.set(null,server);
             SimplexAdminSuite plugin=Moderation790Harness.plugin(dir);Moderation790Harness.set(plugin,JavaPlugin.class,"isEnabled",true);Moderation790Harness.set(plugin,SimplexAdminSuite.class,"adminActor",new ThreadLocal<String>());Moderation790Harness.set(plugin,SimplexAdminSuite.class,"pendingInputs",new ConcurrentHashMap<>());Moderation790Harness.set(plugin,SimplexAdminSuite.class,"pendingActions",new ConcurrentHashMap<>());
+            Moderation790Harness.set(plugin,SimplexAdminSuite.class,"auditedConfig",new HashMap<String,String>());plugin.getConfig().set("prefix","Fixture prefix");plugin.moderationControl=new ModerationControl(plugin);
             plugin.adminAccess=new AdminAccessManager(plugin);plugin.adminUpdate=new AdminUpdateMenu(plugin);
             Moderation790Harness.set(plugin,SimplexAdminSuite.class,"unifiedMenu",new UnifiedAdminMenu(plugin));
             int port;try(var socket=new java.net.ServerSocket(0)){port=socket.getLocalPort();}
@@ -49,6 +51,7 @@ public final class AppApiIntegrationHarness {
             check(call("/v1/menu",read.token(),null).statusCode()==403,"read key cannot enter mutable menus");
             String action=json(SimplexAdminSuite.appMap("path","menu.action","values",SimplexAdminSuite.appMap("session","synthetic","revision","1","option","0")));
             check(call("/v1/prepare",read.token(),action).statusCode()==403,"read key cannot prepare mutations");
+            check(call("/v1/view?path=server.suite&command=clientsecurity%20off",read.token(),null).statusCode()==405,"generic Suite command never uses read-only GET");
             var schema=call("/v1/schema",full.token(),null);check(schema.statusCode()==200&&schema.body().contains("player.punish")&&schema.body().contains("menu.action")&&schema.body().contains("security.ultraunban"),"native command schema covers core services");
             var menu=object(DiscordBotManager.Json.parse(call("/v1/menu",full.token(),null).body()));check(menu.get("title").equals("Admin-Zentrale"),"existing menu rendered through delegated actor");
             List<?> options=(List<?>)menu.get("options");check(options.size()>=8,"real original navigation callback list");
@@ -58,6 +61,15 @@ public final class AppApiIntegrationHarness {
             var done=call("/v1/execute",full.token(),execution);check(done.statusCode()==200&&done.body().contains("Spieler"),"same existing menu callback executed once");check(call("/v1/execute",full.token(),execution).statusCode()==400,"replayed ticket rejected");
             var stalePlan=call("/v1/prepare",full.token(),prepared);String stale=String.valueOf(object(DiscordBotManager.Json.parse(stalePlan.body())).get("ticket"));check(call("/v1/execute",full.token(),json(Map.of("ticket",stale))).statusCode()==400,"stale menu revision rejected");
             check(client.send(HttpRequest.newBuilder(base.resolve("/v1/health")).header("Authorization","Bearer "+full.token()).header("Origin","https://browser.example").GET().build(),HttpResponse.BodyHandlers.ofString()).statusCode()==403,"browser Origin rejected");
+            var settings=object(DiscordBotManager.Json.parse(call("/v1/data/settings",full.token(),null).body()));
+            var prefix=((List<?>)settings.get("items")).stream().map(AppApiIntegrationHarness::object).filter(row->row.get("id").equals("prefix")).findFirst().orElseThrow();
+            check(prefix.get("revision") instanceof String,"configuration includes conflict revision");
+            String edit=json(SimplexAdminSuite.appMap("path","settings.update","values",SimplexAdminSuite.appMap("key","prefix","value","","expected",prefix.get("revision"))));
+            var editPlan=call("/v1/prepare",full.token(),edit);check(editPlan.statusCode()==200,"empty string setting can be prepared");String editTicket=String.valueOf(object(DiscordBotManager.Json.parse(editPlan.body())).get("ticket"));
+            var edited=call("/v1/execute",full.token(),json(Map.of("ticket",editTicket)));check(edited.statusCode()==200&&plugin.getConfig().getString("prefix").isEmpty(),"empty value uses real checked setter and persists");
+            check(call("/v1/prepare",full.token(),edit).statusCode()==409,"stale setting revision rejected");
+            String forbidden=json(SimplexAdminSuite.appMap("path","settings.update","values",SimplexAdminSuite.appMap("key","app-api.enabled","value","false","expected","irrelevant")));
+            check(call("/v1/prepare",full.token(),forbidden).statusCode()==403,"API access settings remain local");
             api.security.revoke(full.key().id());check(call("/v1/menu",full.token(),null).statusCode()==401,"revocation immediately denies remote menu");
             api.stop();check(!api.active(),"listener stops without changing Suite data");
             System.out.println("PASS "+checks+" production HTTPS/menu integration checks with synthetic Bukkit services");

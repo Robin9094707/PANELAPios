@@ -25,6 +25,7 @@ final class AppApiSecurity {
         }
         if(!state.containsKey("server-id")){state.setProperty("server-id",UUID.randomUUID().toString());save();}
     }
+    synchronized void clearTickets(){tickets.clear();}
     synchronized String serverId(){return state.getProperty("server-id");}
     synchronized List<Key> keys(){return List.copyOf(keys.values());}
     synchronized Issued issue(String label,String scope) throws Exception {

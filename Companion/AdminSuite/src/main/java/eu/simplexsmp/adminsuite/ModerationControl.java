@@ -651,6 +651,7 @@ final class ModerationControl implements Listener {
     private Object configValue(String key){
         if(protectedKey(key)||!configKeys().contains(key))throw new IllegalArgumentException("Unbekannter oder geschützter Konfigurationspfad.");return plugin.getConfig().get(key);
     }
+    void appConfigSet(CommandSender sender,String key,String value){ configSet(sender,key,value); }
     private void configSet(CommandSender sender,String key,String value){
         if(!allowed(sender,"settings.advanced"))throw new IllegalArgumentException("Erweiterte Einstellberechtigung fehlt.");
         if((key.equals("prefix")||key.startsWith("branding."))&&!plugin.adminAccess.master(sender))throw new IllegalArgumentException("Branding ist Hauptadmins vorbehalten.");

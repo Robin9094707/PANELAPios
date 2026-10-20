@@ -33,6 +33,7 @@ final class AppApiManager {
         this.plugin=plugin;serverName=Bukkit.getServer().getName();security=new AppApiSecurity(plugin.getDataFolder().toPath().resolve("app-api"));controller=new DiscordAdminController(plugin,plugin.discordRelay());menus=new AppApiMenus(plugin,security);
         for(Object command:controller.guildCommands())if(command instanceof Map<?,?> c&&"sasadmin".equals(c.get("name")))flatten("",c.get("options"));
         extra("menu.action","Suite-Menü bedienen","Alle Suite-Menüs",List.of(field("session","Menüsitzung",3,true),field("revision","Menüstand",3,true),field("option","Menüpunkt",3,true),field("input","Eingabe",3,false)));
+        extra("settings.update","Suite-Einstellung speichern","Einstellungen",List.of(field("key","Einstellung",3,true),field("value","Neuer Wert; leer = leeren",3,false),field("expected","Geladener Stand",3,true)));
         extra("player.vitals","Spielerwerte live ändern","Spieler",List.of(field("player","Spielername oder UUID",3,true),choice("field","Wert","health","food","saturation","level","exp","gamemode","invulnerable","allowFlight"),field("value","Neuer Wert",3,true)));
         extra("suite.command","Weitere Suite-Befehle","Werkzeuge",List.of(choice("root","Suite-Befehl","sas","delivery","shop","spcurrency","connection"),field("command","Argumente ohne /sas",3,true)));
     }
@@ -47,7 +48,7 @@ final class AppApiManager {
     private void extra(String id,String description,String group,List<?> options){actions.put(id,new LinkedHashMap<>(SimplexAdminSuite.appMap("id",id,"name",description,"description",description,"group",group,"scope",scope(id),"options",options)));}
     private static Map<String,Object> field(String id,String label,int type,boolean required){return SimplexAdminSuite.appMap("name",id,"description",label,"type",type,"required",required);}
     private static Map<String,Object> choice(String id,String label,String... values){var f=field(id,label,3,true);f.put("choices",Arrays.stream(values).map(v->SimplexAdminSuite.appMap("name",v,"value",v)).toList());return f;}
-    static String scope(String path){return Set.of("menu.action","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
+    static String scope(String path){return Set.of("settings.update","menu.action","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
     void reload(){
         stopListener();menus.clear();long rev=generation.get();
         if(!plugin.getConfig().getBoolean("app-api.enabled",false)){status="Ausgeschaltet";return;}
@@ -84,7 +85,7 @@ final class AppApiManager {
         fingerprint=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(keyStore.getCertificate("simplex-panel").getEncoded()));
         KeyManagerFactory km=KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());km.init(keyStore,password.toCharArray());SSLContext ssl=SSLContext.getInstance("TLS");ssl.init(km.getKeyManagers(),null,new SecureRandom());return ssl;
     }
-    synchronized void stopListener(){generation.incrementAndGet();HttpServer old=server;server=null;if(old!=null)old.stop(0);if(requests!=null)requests.shutdownNow();requests=null;}
+    synchronized void stopListener(){generation.incrementAndGet();security.clearTickets();HttpServer old=server;server=null;if(old!=null)old.stop(0);if(requests!=null)requests.shutdownNow();requests=null;}
     void stop(){stopListener();menus.clear();setup.shutdownNow();}
     boolean active(){return server!=null && plugin.isEnabled();}
     boolean remote(Object player){return active()&&menus.remote(player);}
@@ -104,11 +105,11 @@ final class AppApiManager {
                     case "/v1/schema"->SimplexAdminSuite.appMap("actions",new ArrayList<>(actions.values()));
                     case "/v1/view"->onMain(rev,()->{
                         DiscordAdminController.Request request=request(query.getOrDefault("path","dashboard"),new LinkedHashMap<>(query));
-                        if(controller.mutation(request)||Set.of("ai.ask","ai.propose").contains(request.path))throw new ApiError(405,"Diese Aktion benötigt Vorschau und Bestätigung.");
+                        if(controller.mutation(request)||Set.of("ai.ask","ai.propose","server.suite").contains(request.path))throw new ApiError(405,"Diese Aktion benötigt Vorschau und Bestätigung.");
                         return reply(controller.execute(request,actor(key)));
                     });
                     case "/v1/choices"->onMain(rev,()->controller.autocomplete(new DiscordAdminController.Request(query.getOrDefault("path",""),new LinkedHashMap<>(query)),query.getOrDefault("field",""),query.getOrDefault("q","")).stream().map(c->SimplexAdminSuite.appMap("name",c.name,"value",c.value)).toList());
-                    case "/v1/data/players","/v1/data/profile","/v1/data/alts","/v1/data/devices","/v1/data/ultrabans","/v1/data/snapshots","/v1/data/nbt-paths","/v1/data/settings","/v1/data/inventory","/v1/data/snapshot-content"->onMain(rev,()->plugin.appApiData(path.substring("/v1/data/".length()),query));
+                    case "/v1/data/players","/v1/data/profile","/v1/data/alts","/v1/data/devices","/v1/data/ultrabans","/v1/data/snapshots","/v1/data/nbt-paths","/v1/data/settings","/v1/data/inventory","/v1/data/snapshot-content"->onMain(rev,()->{Object data=plugin.appApiData(path.substring("/v1/data/".length()),query);if(path.endsWith("/settings")){Map<String,Object> envelope=object(data);for(Object entry:(List<?>)envelope.get("items")){Map<String,Object> item=object(entry);item.put("revision",AppApiSecurity.hash(DiscordBotManager.Json.stringify(item.get("value"))));}}return data;});
                     default->throw new ApiError(404,"API-Endpunkt nicht gefunden.");
                 };
             }else if(method.equals("POST")&&(path.equals("/v1/prepare")||path.equals("/v1/execute"))){
@@ -118,7 +119,7 @@ final class AppApiManager {
                     String action=String.valueOf(payload.getOrDefault("path",""));Map<String,Object> values=object(payload.get("values"));
                     DiscordAdminController.Request req=request(action,values);authorize(key,req);
                     String encoded=DiscordBotManager.Json.stringify(SimplexAdminSuite.appMap("path",action,"values",values));
-                    String summary=onMain(rev,()->controller.confirmationSummary(req));
+                    String summary=onMain(rev,()->{if(req.path.equals("settings.update"))checkSetting(req);return controller.confirmationSummary(req);});
                     result=SimplexAdminSuite.appMap("ticket",security.prepare(key,encoded,System.currentTimeMillis()),"summary",summary,"expiresIn",60);
                 }else{
                     String stored=security.consume(key,String.valueOf(payload.getOrDefault("ticket","")),System.currentTimeMillis());Map<String,Object> plan=object(DiscordBotManager.Json.parse(stored));DiscordAdminController.Request req=request(String.valueOf(plan.get("path")),object(plan.get("values")));authorize(key,req);
@@ -129,6 +130,7 @@ final class AppApiManager {
                         result=SimplexAdminSuite.appMap("ok",true,"title","KI-Vorschlag · noch nicht angewendet","description",onMain(rev,()->controller.confirmationSummary(proposed)),"proposal",SimplexAdminSuite.appMap("path",proposed.path,"values",proposed.values));
                     }else result=onMain(rev,()->{
                         authorize(key,req);
+                        if(req.path.equals("settings.update")){checkSetting(req);plugin.asAdmin(actor(key).auditName(),()->plugin.moderationControl.appConfigSet(Bukkit.getConsoleSender(),req.text("key"),req.text("value")));plugin.expansionAudit(actor(key).auditName(),null,"App-Einstellung",req.text("key"));return SimplexAdminSuite.appMap("ok",true,"title","Einstellung gespeichert","description",req.text("key")+" gespeichert. Moduländerungen bei Bedarf mit Suite-Reload anwenden.");}
                         if(req.path.equals("menu.action"))return menus.perform(key,req.values);
                         if(req.path.equals("suite.command")||req.path.equals("player.vitals")){Object[] out={null};plugin.asAdmin(actor(key).auditName(),()->out[0]=plugin.appApiMutation(req.path,req.values,actor(key).auditName()));return out[0];}
                         plugin.expansionAudit(actor(key).auditName(),null,"App-API-Aktion",req.path);return reply(controller.execute(req,actor(key)));
@@ -140,6 +142,12 @@ final class AppApiManager {
             String message=e instanceof ApiError||e instanceof IllegalArgumentException?e.getMessage():e instanceof TimeoutException?"Serverantwort dauert zu lange. Aktion nicht automatisch wiederholen; aktuellen Zustand prüfen.":"App-API momentan nicht verfügbar. Serverprotokoll und API-Status prüfen.";
             try{send(x,code,SimplexAdminSuite.appMap("message",message));}catch(Exception ignored){}
         }finally{x.close();}
+    }
+    private void checkSetting(DiscordAdminController.Request req){
+        String key=req.text("key");
+        if(key.startsWith("app-api.")||key.startsWith("admin-security.")||key.startsWith("console.")||ModerationControl.protectedKey(key)||plugin.moderationControl==null||!plugin.moderationControl.configKeys().contains(key))throw new ApiError(403,"Geschützte oder unbekannte Einstellung");
+        String current=AppApiSecurity.hash(DiscordBotManager.Json.stringify(plugin.getConfig().get(key)));
+        if(!current.equals(req.text("expected")))throw new ApiError(409,"Einstellung wurde zwischenzeitlich geändert. Neu laden und den Wert prüfen.");
     }
     private DiscordAdminController.Actor actor(AppApiSecurity.Key key){return new DiscordAdminController.Actor("app:"+key.id(),"Simplex Panel/"+key.label(),key.scope().equals("full"),"");}
     private void authorize(AppApiSecurity.Key key,DiscordAdminController.Request request){
