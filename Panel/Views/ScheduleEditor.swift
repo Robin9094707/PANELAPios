@@ -19,6 +19,10 @@ struct PanelTimeView: View {
             }
             Picker("Zeitzone des Panels", selection: $zone) { ForEach(zones, id: \.self) { Text($0.isEmpty ? "Unbekannt · bitte bestätigen" : $0).tag($0) } }
                 .onChange(of: zone) { _, value in UserDefaults.standard.set(value, forKey: ScheduleTime.zoneKey + api.base.absoluteString) }
+                .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+                    let selected = ScheduleTime.zone(for: api.base)?.identifier ?? ""
+                    if zone != selected { zone = selected }
+                }
         } footer: { Text("Die Standard-Client-API liefert keine Panel-Zeitzone und keine Spielserveruhr. Bestätige die tatsächliche Panel-Zeitzone beim Hoster. Diese Auswahl ändert nur die Anzeige und Eingabe in der App. Die Ausführung übernimmt das Panel.") }
     }
     func formatted(_ date: Date, zone: TimeZone) -> String { { let formatter = DateFormatter(); formatter.locale = Locale(identifier: "de_DE"); formatter.timeZone = zone; formatter.dateFormat = "HH:mm:ss z"; return formatter.string(from: date) }() }
