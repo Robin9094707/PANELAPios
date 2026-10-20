@@ -87,8 +87,13 @@ struct NBTEditor: View {
                 if let root = model.root {
                     if let health = root.child("Health")?.number {
                         Section("Spielerzustand") {
-                            HStack(spacing: 4) { ForEach(0..<10) { index in Image(systemName: health / 2 >= Double(index + 1) ? "heart.fill" : health / 2 > Double(index) ? "heart.lefthalf.filled" : "heart").foregroundStyle(.red) } }
-                            LabeledContent("Gesundheit", value: "\(health.formatted(.number.precision(.fractionLength(1)))) Punkte · \((health / 2).formatted(.number.precision(.fractionLength(1)))) Herzen")
+                            HStack(spacing: 4) { ForEach(0..<10) { index in
+                                ZStack {
+                                    Image(systemName: "heart").resizable().scaledToFit()
+                                    Image(systemName: "heart.fill").resizable().scaledToFit().mask(alignment: .leading) { Rectangle().frame(width: 18 * max(0, min(1, health / 2 - Double(index)))) }
+                                }.frame(width: 18, height: 18).foregroundStyle(.red).accessibilityHidden(true)
+                            } }
+                            LabeledContent("Gesundheit", value: "\(health.formatted(.number.precision(.fractionLength(1)))) Punkte · \((health / 2).formatted(.number.precision(.fractionLength(2)))) Herzen")
                             LabeledContent("Hunger", value: root.child("foodLevel")?.text ?? "–")
                             LabeledContent("Erfahrungslevel", value: root.child("XpLevel")?.text ?? "–")
                             LabeledContent("Dimension", value: root.child("Dimension")?.text ?? "–")
