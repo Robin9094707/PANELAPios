@@ -57,11 +57,16 @@ struct DatabaseDetail: View {
                     Button("Verbindungsdaten kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = "Host: \(db.host)\nPort: \(db.port)\nDatabase: \(db.name)\nUser: \(row["username"].string)" }
                     Button("Datenbank löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Datenbank löschen", detail: "Alle Tabellen und Daten dieser Datenbank werden endgültig gelöscht.", path: "servers/\(server.id)/databases/\(row["id"].string)", method: "DELETE", destructive: true, submit: "Endgültig löschen") }.requiresRequest(api, "servers/\(server.id)/databases/\(row["id"].string)", method: "DELETE")
                 }
-            }.panelScreen().navigationTitle(db.name).navigationBarTitleDisplayMode(.inline).privacySensitive().errorAlert($error)
+            }.panelScreen().refreshable { await reload() }.navigationTitle(db.name).navigationBarTitleDisplayMode(.inline).privacySensitive().errorAlert($error)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
                 .sheet(item: $operation) { op in OperationSheet(api: api, operation: op) { await changed(); if op.method == "DELETE" { dismiss() } else { value = .null; reveal = false; await password() } } }
         }
     }
     func copyRow(_ title: String, _ text: String) -> some View { HStack { VStack(alignment: .leading, spacing: 5) { Text(title).font(.caption).foregroundStyle(.secondary); Text(text.isEmpty ? "–" : text).textSelection(.enabled) }; Spacer(); if !text.isEmpty { Button("Kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }.labelStyle(.iconOnly).buttonStyle(.borderless) } } }
+    func reload() async { do {
+        let rows = try await api.list("servers/\(server.id)/databases", query: reveal ? ["include": "password"] : [:])
+        guard let found = rows.first(where: { $0["id"] == initial["id"] }) else { throw PanelError(message: "Datenbank nicht mehr vorhanden.") }
+        value = found
+    } catch { self.error = error.localizedDescription } }
     func password() async { do { let rows = try await api.list("servers/\(server.id)/databases", query: ["include": "password"]); guard let found = rows.first(where: { $0["id"] == initial["id"] }) else { throw PanelError(message: "Datenbank nicht mehr vorhanden.") }; value = found; if db.password.isEmpty { error = "Der Provider liefert kein Passwort oder dein Account besitzt dafür keine Berechtigung." } } catch { self.error = error.localizedDescription } }
 }

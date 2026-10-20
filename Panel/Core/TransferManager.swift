@@ -14,11 +14,13 @@ struct TransferRecord: Identifiable, Codable {
     var created = Date()
     var updated = Date()
     var issue: String?
+    var source: DownloadSource?
     var fraction: Double? { total > 0 ? min(1, max(0, Double(completed) / Double(total))) : nil }
-    var active: Bool { state == "running" || state == "pausing" }
+    var active: Bool { state == "running" || state == "pausing" || state == "resolving" }
     var title: String {
         switch state {
         case "running": return total > 0 && completed >= total ? "Server bestätigt …" : "Wird übertragen"
+        case "resolving": return "Download-Link erneuern …"
         case "pausing": return "Wird angehalten …"
         case "paused": return "Pausiert"
         case "completed": return "Abgeschlossen"
@@ -43,6 +45,7 @@ struct TransferRecord: Identifiable, Codable {
     private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
     private var saved = Date.distantPast
     private var activityUpdate = Date.distantPast
+    private var transientDemo = false
     private var activity: Activity<TransferActivity>?
     private init() {
         do {
@@ -52,6 +55,12 @@ struct TransferRecord: Identifiable, Codable {
             let manifest = Self.root.appendingPathComponent("manifest.json")
             if FileManager.default.fileExists(atPath: manifest.path) { records = try JSONDecoder().decode([TransferRecord].self, from: Data(contentsOf: manifest)) }
         } catch { storageError = "Übertragungsverlauf konnte nicht geladen werden: \(error.localizedDescription)" }
+        if ProcessInfo.processInfo.arguments.contains("--demo-paused-download") {
+            transientDemo = true
+            var record = TransferRecord(filename: "Demo-Download.zip", context: "Simplex SMP · /", upload: false)
+            record.state = "paused"; record.completed = 1024; record.total = 4096
+            records = [record]
+        }
         bridge.owner = self
         let config = URLSessionConfiguration.background(withIdentifier: Self.identifier)
         config.sessionSendsLaunchEvents = true; config.isDiscretionary = false
@@ -73,16 +82,19 @@ struct TransferRecord: Identifiable, Codable {
     func localFile(_ record: TransferRecord) -> URL { folder(record.id).appendingPathComponent(record.filename) }
     func hasResume(_ record: TransferRecord) -> Bool { FileManager.default.fileExists(atPath: folder(record.id).appendingPathComponent("resume.data").path) }
     func persist(force: Bool = false) {
+        guard !transientDemo else { return }
         guard force || Date().timeIntervalSince(saved) > 1 else { return }
         do { try JSONEncoder().encode(records).write(to: Self.root.appendingPathComponent("manifest.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]); saved = Date() }
         catch { storageError = "Übertragungsfortschritt konnte nicht gesichert werden: \(error.localizedDescription)" }
     }
-    @discardableResult func download(_ signed: String, filename: String, context: String) throws -> UUID {
+    @discardableResult func download(_ signed: String, filename: String, context: String, source: DownloadSource? = nil) throws -> UUID {
         guard let url = URL(string: signed), url.scheme == "https" else { throw PanelError(message: "Keine sichere Download-URL erhalten.") }
         let name = URL(fileURLWithPath: filename).lastPathComponent
-        guard !name.isEmpty, name != ".", name != "..", !["resume.data", "body.upload"].contains(name) else { throw PanelError(message: "Dieser Dateiname kann nicht lokal gespeichert werden.") }
-        let record = TransferRecord(filename: name, context: context, upload: false)
+        guard !name.isEmpty, name != ".", name != "..", !["resume.data", "body.upload", "request.url"].contains(name) else { throw PanelError(message: "Dieser Dateiname kann nicht lokal gespeichert werden.") }
+        var record = TransferRecord(filename: name, context: context, upload: false)
+        record.source = source
         try FileManager.default.createDirectory(at: folder(record.id), withIntermediateDirectories: true)
+        try Data(url.absoluteString.utf8).write(to: folder(record.id).appendingPathComponent("request.url"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         let task = session.downloadTask(with: url)
         begin(record, task: task); return record.id
     }
@@ -110,7 +122,9 @@ struct TransferRecord: Identifiable, Codable {
     func finish(_ id: UUID, response: URLResponse?, error: Error?, moved: Bool = false) {
         guard let i = records.firstIndex(where: { $0.id == id }) else { return }
         // A paused task's cancellation is expected. Resume-data delivery owns this transition.
-        if records[i].state == "pausing" || records[i].state == "paused" { return }
+        if records[i].state == "pausing" || records[i].state == "paused" {
+            if error != nil || !FileManager.default.fileExists(atPath: localFile(records[i]).path) { return }
+        }
         tasks[id] = nil
         if records[i].state == "cancelled" { try? FileManager.default.removeItem(at: folder(id).appendingPathComponent("body.upload")); waiters.removeValue(forKey: id)?.resume(throwing: CancellationError()); return }
         guard records[i].state != "completed" && records[i].state != "failed" else { return }
@@ -145,13 +159,38 @@ struct TransferRecord: Identifiable, Codable {
             }
         }
     }
-    func resume(_ record: TransferRecord) throws {
-        guard !record.upload, !record.active, let i = records.firstIndex(where: { $0.id == record.id }) else { return }
-        let data = try Data(contentsOf: folder(record.id).appendingPathComponent("resume.data"))
-        let task = session.downloadTask(withResumeData: data)
-        records[i].state = "running"; records[i].issue = nil; records[i].updated = Date()
+    func resume(_ record: TransferRecord, api: PanelAPI?, legacySource: DownloadSource? = nil, restart: Bool = false) async throws {
+        guard !record.upload, let index = records.firstIndex(where: { $0.id == record.id }), !records[index].active, records[index].state != "completed" else { return }
+        let source = records[index].source ?? legacySource
+        let resumeFile = folder(record.id).appendingPathComponent("resume.data")
+        let task: URLSessionDownloadTask
+        if !restart, let data = try? Data(contentsOf: resumeFile), !data.isEmpty {
+            task = session.downloadTask(withResumeData: data)
+            try? FileManager.default.removeItem(at: resumeFile)
+        } else {
+            if restart { try? FileManager.default.removeItem(at: resumeFile) }
+            records[index].state = "resolving"; records[index].issue = nil; persist(force: true)
+            do {
+                let signed: String
+                if let source {
+                    guard let api else { throw PanelError(message: "Öffne zuerst das Panel dieser Übertragung. Dann kann die App einen frischen Download-Link anfordern.") }
+                    signed = try await api.downloadURL(for: source)
+                } else if let data = try? Data(contentsOf: folder(record.id).appendingPathComponent("request.url")), let url = String(data: data, encoding: .utf8) { signed = url }
+                else { throw PanelError(message: "Bei diesem älteren Download wurde keine Quelle gespeichert. Öffne die Datei oder das Backup einmal neu zum Herunterladen; neue Übertragungen können hier direkt fortgesetzt oder neu gestartet werden.") }
+                guard let url = URL(string: signed), url.scheme == "https" else { throw PanelError(message: "Kein sicherer Download-Link erhalten.") }
+                guard let current = records.firstIndex(where: { $0.id == record.id }), records[current].state == "resolving" else { throw CancellationError() }
+                try Data(signed.utf8).write(to: folder(record.id).appendingPathComponent("request.url"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                records[current].completed = 0; records[current].total = -1; records[current].source = source
+                task = session.downloadTask(with: url)
+            } catch {
+                if let current = records.firstIndex(where: { $0.id == record.id }), records[current].state == "resolving" { records[current].state = "paused"; records[current].issue = error.localizedDescription; persist(force: true) }
+                throw error
+            }
+        }
+        guard let current = records.firstIndex(where: { $0.id == record.id }) else { task.cancel(); return }
+        records[current].state = "running"; records[current].issue = nil; records[current].updated = Date()
         tasks[record.id] = task; task.taskDescription = record.id.uuidString
-        persist(force: true); startActivity(records[i]); task.resume()
+        persist(force: true); startActivity(records[current]); task.resume()
     }
     func cancel(_ record: TransferRecord) {
         guard let i = records.firstIndex(where: { $0.id == record.id }) else { return }

@@ -4,10 +4,13 @@ struct ManageView: View {
     let api: PanelAPI
     let server: Server
     @State private var operation: Operation?
+    @EnvironmentObject private var store: AppStore
+    var live: LiveServer? = nil
     var prefix: String { "servers/\(server.id)" }
     var body: some View {
         List {
             Section("Minecraft") {
+                if let live { NavigationLink { PlayerManagerView(api: api, server: server, live: live) } label: { Label("Spieler-Manager", systemImage: "person.crop.circle.badge.checkmark") } }
                 NavigationLink { PluginsView(api: api, server: server) } label: { Label("Plugins & JAR-Dateien", systemImage: "puzzlepiece.extension") }.requiresAccess(api, server.id, "file.read")
                 NavigationLink { MinecraftPropertiesView(api: api, server: server) } label: { Label("Minecraft & Welt-Einstellungen", systemImage: "globe") }.requiresAccess(api, server.id, "file.read-content")
             }
@@ -33,7 +36,7 @@ struct ManageView: View {
             Section {
                 NavigationLink { JSONDetails(title: "Serverdetails", data: server.data) } label: { Label("Alle Serverinformationen", systemImage: "info.circle") }
             } footer: { Text("Aktionen verwenden ausschließlich die Client-API. Dein Provider legt die Berechtigungen, Ressourcenlimits und verfügbaren Funktionen fest.") }
-        }.panelScreen().sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
+        }.panelScreen().refreshable { await api.loadAccess(server: server.id); await store.refresh(); if let live { try? await live.refresh(api: api, server: server, minecraft: true) } }.sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
     }
 }
 
@@ -52,6 +55,7 @@ struct ResourcesView: View {
     @State private var error: String?
     @State private var operation: Operation?
     @State private var detail: DetailItem?
+    @State private var userEditor: DetailItem?
     var prefix: String { "servers/\(server.id)/" + (kind == .network && api.isKinetic ? "allocations" : kind.path) }
     var body: some View {
         List {
@@ -67,13 +71,14 @@ struct ResourcesView: View {
                         Menu { actions(row) } label: { Image(systemName: "ellipsis.circle").font(.title3).padding(6) }
                     }.padding(.vertical, 6)
                     if kind == .users {
-                        Text(row["permissions"].array.map(\.string).joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
+                        Text("\(row["permissions"].array.count) Berechtigungen").font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
         }.panelScreen().navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline).refreshable { await load() }.task { await load() }
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Hinzufügen", systemImage: "plus") { create() }.requiresRequest(api, prefix) } }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { await load() } }
+            .sheet(item: $userEditor) { item in SubuserEditor(api: api, server: server, initial: item.data) { await load() } }
             .sheet(item: $detail) { item in NavigationStack { JSONDetails(title: "Details", data: item.data).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { detail = nil } } } } }
             .errorAlert($error)
     }
@@ -90,7 +95,7 @@ struct ResourcesView: View {
             Button("Notiz bearbeiten", systemImage: "pencil") { operation = Operation(title: "Port-Notiz", path: prefix + "/\(id)", method: api.isKinetic ? "PATCH" : "POST", fields: [Field(key: "notes", label: "Notiz", value: row["notes"].string)]) }.requiresRequest(api, prefix + "/\(id)", method: api.isKinetic ? "PATCH" : "POST")
             if !row["is_default"].bool { Button("Als primär festlegen", systemImage: "star") { operation = Operation(title: "Primären Port ändern", path: prefix + "/\(id)" + (api.isKinetic ? "" : "/primary"), method: api.isKinetic ? "PATCH" : "POST", fixed: api.isKinetic ? ["primary": .bool(true)] : [:], submit: "Festlegen") }.requiresRequest(api, prefix + "/\(id)" + (api.isKinetic ? "" : "/primary"), method: api.isKinetic ? "PATCH" : "POST") }
         case .users:
-            Button("Berechtigungen bearbeiten", systemImage: "person.badge.key") { operation = Operation(title: "Berechtigungen", detail: "Ein Berechtigungsname pro Zeile, z. B. control.console oder file.read. Nur tatsächlich vergebene Rechte erlauben Aktionen.", path: prefix + "/\(id)", fields: [Field(key: "permissions", label: "Berechtigungen", value: row["permissions"].array.map(\.string).joined(separator: "\n"), kind: .strings)]) }.requiresRequest(api, prefix + "/\(id)", method: "POST")
+            Button("Berechtigungen bearbeiten", systemImage: "person.badge.key") { userEditor = DetailItem(data: row) }.requiresRequest(api, prefix + "/\(id)", method: "POST")
         }
         Button("Entfernen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Eintrag entfernen", detail: kind == .databases ? "Die Datenbank und alle darin enthaltenen Daten werden dauerhaft gelöscht." : "\(title(row)) wird entfernt.", path: prefix + "/\(id)", method: "DELETE", destructive: true, submit: "Entfernen") }.disabled(kind == .network && row["is_default"].bool).requiresRequest(api, prefix + "/\(id)", method: "DELETE")
     }
@@ -101,7 +106,7 @@ struct ResourcesView: View {
         case .network:
             operation = Operation(title: "Port zuweisen", detail: "Der Provider muss die automatische Zuweisung weiterer Ports unterstützen.", path: prefix, submit: "Port anfordern")
         case .users:
-            operation = Operation(title: "Mitbenutzer hinzufügen", path: prefix, fields: [Field(key: "email", label: "E-Mail-Adresse"), Field(key: "permissions", label: "Berechtigungen", value: "control.console\ncontrol.start\ncontrol.stop\nfile.read", kind: .strings, hint: "Ein Recht pro Zeile. Du kannst nur Rechte vergeben, die dein Account besitzt.")], submit: "Hinzufügen")
+            userEditor = DetailItem(data: .null)
         }
     }
     func load() async { do { rows = try await api.list(prefix); loaded = true } catch is CancellationError {} catch { self.error = error.localizedDescription } }

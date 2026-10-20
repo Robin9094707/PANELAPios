@@ -69,6 +69,25 @@ enum Vault {
         restoreConnectionIfNeeded()
         if !locked { await refresh() }
     }
+    func refreshPresence() async {
+        guard let api else { return }
+        let ids = servers.map(\.id)
+        for offset in stride(from: 0, to: ids.count, by: 3) {
+            guard !Task.isCancelled, self.api === api else { return }
+            await withTaskGroup(of: (String, String?).self) { group in
+                for id in ids[offset..<min(offset + 3, ids.count)] {
+                    group.addTask { @MainActor in
+                        if api.demo { return (id, id == "simplex1" ? "running" : "offline") }
+                        let result = try? await api.request("servers/\(id)/resources")
+                        return (id, result?.attributes["current_state"].string)
+                    }
+                }
+                for await (id, state) in group where self.api === api && !Task.isCancelled {
+                    presence[id] = ServerPresence(state: state?.isEmpty == false ? state! : "unknown")
+                }
+            }
+        }
+    }
     func pollPresence() async {
         guard let api else { return }
         while !Task.isCancelled && self.api === api {

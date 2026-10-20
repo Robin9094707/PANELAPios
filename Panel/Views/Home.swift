@@ -45,7 +45,7 @@ struct HomeView: View {
                 }.padding(.bottom, 60).padding(22).frame(maxWidth: 1100).frame(maxWidth: .infinity)
             }.panelScreen().navigationTitle("Panel").navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $search, prompt: "Server suchen")
-                .refreshable { await store.refresh() }
+                .refreshable { await store.refresh(); await store.refreshPresence() }.scrollBounceBehavior(.always)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Menu {
@@ -163,7 +163,7 @@ struct SettingsView: View {
                 }
                 if let api = store.api { Section("Account") { NavigationLink("Account & Sicherheit") { AccountView(api: api) } } }
                 Section {
-                    LabeledContent("Version", value: "1.3.0")
+                    LabeledContent("Version", value: "1.4.0")
                     Text("Unabhängiger Pterodactyl-Client. Funktionen und Limits richten sich nach deinem Hoster und deinen Panel-Berechtigungen.").font(.footnote).foregroundStyle(.secondary)
                 }
             }.panelScreen().navigationTitle("Einstellungen").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }

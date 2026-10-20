@@ -3,6 +3,7 @@ import SwiftUI
 struct TransfersView: View {
     @ObservedObject private var manager = TransferManager.shared
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: AppStore
     @AppStorage("transferActivities") private var activities = true
     @State private var share: ShareItem?
     @State private var error: String?
@@ -37,7 +38,11 @@ struct TransfersView: View {
                                     if !record.upload && record.state == "running" { Button("Pause", systemImage: "pause") { manager.pause(record) } }
                                     Button("Abbrechen", systemImage: "xmark", role: .destructive) { cancelling = record }
                                 } else {
-                                    if !record.upload && manager.hasResume(record) && record.state != "completed" { Button("Fortsetzen", systemImage: "play") { do { try manager.resume(record) } catch { self.error = error.localizedDescription } } }
+                                    if !record.upload && record.state != "completed" {
+                                        Button("Fortsetzen", systemImage: "play") { resume(record) }
+                                        if manager.hasResume(record) { Button("Neu laden", systemImage: "arrow.clockwise") { resume(record, restart: true) } }
+                                        if !manager.hasResume(record) { Text("Ohne Byte-Fortsetzung: startet erneut bei 0 %.").font(.caption2).foregroundStyle(.secondary) }
+                                    }
                                     if record.state == "completed" && !record.upload { Button("In Dateien sichern / Teilen", systemImage: "square.and.arrow.up") { share = ShareItem(url: manager.localFile(record)) } }
                                     Spacer(); Button("Entfernen", systemImage: "trash", role: .destructive) { removing = record }.labelStyle(.iconOnly)
                                 }
@@ -52,6 +57,12 @@ struct TransfersView: View {
                 .confirmationDialog("Lokale Übertragung und gespeicherte Datei entfernen?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) { Button("Lokal entfernen", role: .destructive) { if let removing { manager.remove(removing) }; removing = nil } }
                 .confirmationDialog("Übertragung abbrechen?", isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } }), titleVisibility: .visible) { Button("Abbrechen", role: .destructive) { if let cancelling { manager.cancel(cancelling) }; cancelling = nil } } message: { Text("Ein abgebrochener Upload kann eine unvollständige Datei auf dem Server hinterlassen.") }
         }
+    }
+    func resume(_ record: TransferRecord, restart: Bool = false) {
+        Task { do {
+            let source = store.api.flatMap { DownloadSource.legacy(context: record.context, filename: record.filename, api: $0, servers: store.servers) }
+            try await manager.resume(record, api: store.api, legacySource: source, restart: restart)
+        } catch { self.error = error.localizedDescription } }
     }
     func progress(_ r: TransferRecord) -> String {
         let amount = bytes(Double(r.completed)) + (r.total > 0 ? " / " + bytes(Double(r.total)) : "")

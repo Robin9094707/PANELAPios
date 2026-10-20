@@ -14,7 +14,7 @@ struct WidgetSettingsView: View {
                 Text("Wähle Server für die Widgets. Halte dann den Home-Bildschirm gedrückt, füge ein Panel-Widget hinzu und wähle unter ‚Widget bearbeiten‘ den gewünschten Server. Kleine, mittlere und Sperrbildschirm-Widgets werden unterstützt.").font(.footnote).foregroundStyle(.secondary)
                 Text("Messwerte tragen ihren Zeitstempel. iOS bestimmt das Aktualisierungsintervall. Ohne Hintergrundzugang werden die zuletzt in der App empfangenen Werte angezeigt. Spielerzahlen im Hintergrund benötigen einen passenden Provider-Endpunkt; Konsolenbefehle werden vom Widget nicht gesendet.").font(.footnote).foregroundStyle(.secondary)
             }
-            if WidgetStorage.folder == nil { Section { Text("Die aktuelle App-Signatur enthält keine nutzbare App Group. Signiere App und Widget-Erweiterung mit group.eu.simplexsmp.panel und der gemeinsamen Keychain-Gruppe.").foregroundStyle(.orange) } }
+            if WidgetStorage.folder == nil { Section { Text("Für diese Installation ist keine gemeinsame Widget-Gruppe erreichbar. Die App erkennt auch umbenannte Panel-Gruppen. Falls Signulous die App Group oder die Widget-Erweiterung entfernt, muss dies beim Signieren korrigiert werden; die App kann diese iOS-Berechtigung nicht nachträglich hinzufügen.").foregroundStyle(.orange) } }
             Section("Widget-Server") {
                 ForEach(records) { record in
                     VStack(alignment: .leading, spacing: 8) {

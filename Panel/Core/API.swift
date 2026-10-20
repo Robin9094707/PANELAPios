@@ -19,6 +19,7 @@ final class SameOriginRedirect: NSObject, URLSessionTaskDelegate {
 @MainActor
 final class PanelAPI {
     let access = ServerAccess()
+    let permissions = PermissionCatalogStore()
     let clock = PanelClock()
     let plugins = PluginCatalog()
     let base: URL

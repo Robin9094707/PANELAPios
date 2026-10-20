@@ -27,24 +27,14 @@ struct SyntaxEditor: UIViewRepresentable {
                 let point = CGPoint(x: 12, y: view.contentOffset.y + view.bounds.height / 2)
                 let position = view.closestPosition(to: point) ?? view.beginningOfDocument
                 let center = view.offset(from: view.beginningOfDocument, to: position)
-                let start = max(0, center - 16000); range = NSRange(location: start, length: min(32000, length - start))
+                let start = max(0, center - 16000); range = (view.text as NSString).lineRange(for: NSRange(location: start, length: min(32000, length - start)))
             }
             storage.beginEditing()
             let old = NSIntersectionRange(colored, NSRange(location: 0, length: length))
             if old.length > 0 { storage.addAttribute(.foregroundColor, value: UIColor.label, range: old) }
             storage.addAttribute(.foregroundColor, value: UIColor.label, range: range)
             if parent.colors {
-                let patterns: [(String, UIColor)] = [
-                    (#"(?m)^\s*[\w.\-\"']+(?=\s*[:=])"#, .systemTeal),
-                    (#"\b(?:true|false|null|yes|no)\b"#, .systemPurple),
-                    (#"(?<![\w])[-+]?\d+(?:\.\d+)?\b"#, .systemOrange),
-                    (#"\"(?:[^\"\\]|\\.)*\"|'(?:[^']|'')*'"#, .systemBlue),
-                    (#"(?m)(?:^|\s)#.*$"#, .secondaryLabel)
-                ]
-                let value = storage.string
-                for (pattern, color) in patterns {
-                    if let re = try? NSRegularExpression(pattern: pattern) { for match in re.matches(in: value, range: range) { storage.addAttribute(.foregroundColor, value: color, range: match.range) } }
-                }
+                SyntaxHighlight.apply(to: storage, range: range)
             }
             storage.endEditing(); colored = range
             view.selectedRange = selection

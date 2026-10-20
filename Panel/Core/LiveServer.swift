@@ -22,11 +22,18 @@ import Combine
     private var socket: URLSessionWebSocketTask?
     private var runID = UUID()
     private var active = false
+    private struct PlayerQuery {
+        let id: UUID
+        let player: String
+        let result: CheckedContinuation<String, Error>
+    }
+    private var playerQuery: PlayerQuery?
+    private var playerTimeout: Task<Void, Never>?
     var memory: Double { stats["memory_bytes"].double }
     var disk: Double { stats["disk_bytes"].double }
     var cpu: Double { stats["cpu_absolute"].double }
     var uptime: Double { stats["uptime"].double / 1000 }
-    func stop() { active = false; runID = UUID(); socket?.cancel(with: .goingAway, reason: nil); socket = nil; connected = false }
+    func stop() { completePlayerQuery(error: PanelError(message: "Live-Verbindung beendet.")); active = false; runID = UUID(); socket?.cancel(with: .goingAway, reason: nil); socket = nil; connected = false }
     func run(api: PanelAPI, server: Server, minecraft: Bool = false) async {
         stop(); active = true; let generation = UUID(); runID = generation
         await withTaskCancellationHandler {
@@ -176,6 +183,41 @@ import Combine
         if connected, let socket { try await send(event: "send command", args: [command], to: socket) }
         else { try await api.mutate("servers/\(server.id)/command", ["command": command]) }
     }
+    func refresh(api: PanelAPI, server: Server, minecraft: Bool) async throws {
+        let generation = runID
+        let result = try await api.request("servers/\(server.id)/resources").attributes
+        guard generation == runID, !Task.isCancelled else { return }
+        if !result["current_state"].string.isEmpty { state = result["current_state"].string }
+        stats = result["resources"]; sample(); issue = nil
+        if minecraft { await refreshPlayers(api: api, server: server); await requestTPS(api: api, server: server) }
+    }
+    func refreshPlayers(api: PanelAPI, server: Server) async {
+        if api.demo { return }
+        if state == "offline" { players = PlayerSnapshot(online: 0, maximum: playerCapacity, names: [], source: "Server offline"); return }
+        if api.isKinetic, let result = try? await api.request("servers/\(server.id)/players"), let decoded = PlayerSnapshot.decode(result) { players = decoded; if let maximum = decoded.maximum { playerCapacity = maximum }; playerIssue = nil; return }
+        if state == "running" && connected { do { try await sendCommand("list", api: api, server: server); playerIssue = nil } catch { playerIssue = error.localizedDescription } }
+    }
+    func queryPlayerValue(player: String, field: String, api: PanelAPI, server: Server) async throws -> String {
+        guard PlayerCommands.validName(player), ["Health", "foodLevel", "XpLevel", "playerGameType", "Pos", "Dimension"].contains(field) else { throw PanelError(message: "Ungültige Spielerabfrage.") }
+        guard playerQuery == nil else { throw PanelError(message: "Eine Spielerabfrage läuft bereits. Bitte kurz warten.") }
+        guard connected, state == "running", api.access.allows(server.id, "control.console") else { throw PanelError(message: "Live-Konsole und Berechtigung zum Senden von Befehlen erforderlich.") }
+        let id = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                playerQuery = PlayerQuery(id: id, player: player, result: continuation)
+                playerTimeout = Task { [weak self] in
+                    do { try await Task.sleep(for: .seconds(7)) } catch { return }
+                    self?.completePlayerQuery(id: id, error: PanelError(message: "Keine auswertbare Antwort für \(field). Der Spieler kann offline sein oder der Server unterdrückt Befehlsausgaben. Prüfe die Konsole."))
+                }
+                Task { do { try await sendCommand("minecraft:data get entity " + player + " " + field, api: api, server: server) } catch { completePlayerQuery(id: id, error: error) } }
+            }
+        } onCancel: { Task { @MainActor in self.completePlayerQuery(id: id, error: CancellationError()) } }
+    }
+    private func completePlayerQuery(id: UUID? = nil, value: String? = nil, error: Error? = nil) {
+        guard let query = playerQuery, id == nil || id == query.id else { return }
+        playerQuery = nil; playerTimeout?.cancel(); playerTimeout = nil
+        if let value { query.result.resume(returning: value) } else { query.result.resume(throwing: error ?? CancellationError()) }
+    }
     private func send(event: String, args: [String] = [], to socket: URLSessionWebSocketTask) async throws {
         let data = try JSONEncoder().encode(JSON.object(["event": .string(event), "args": .array(args.map(JSON.string))]))
         try await socket.send(.string(String(decoding: data, as: UTF8.self)))
@@ -187,6 +229,7 @@ import Combine
     }
     func receiveConsole(_ text: String) {
         for line in text.components(separatedBy: .newlines) {
+            if let query = playerQuery, let value = PlayerCommands.response(line, player: query.player) { completePlayerQuery(id: query.id, value: value) }
             if let parsed = TPSSnapshot.parse(line) { tps = parsed; tpsPending = false; tpsIssue = nil }
             if let parsed = PlayerSnapshot.parseLog(line) { players = parsed; playerCapacity = parsed.maximum; playerIssue = nil }
         }

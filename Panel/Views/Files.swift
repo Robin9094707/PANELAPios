@@ -160,7 +160,7 @@ struct FilesView: View {
         Task { defer { transfer = false }; do {
             guard !api.demo else { throw PanelError(message: "Downloads sind im Demomodus deaktiviert.") }
             let result = try await api.request(prefix + "/download", query: ["file": pathJoin(root, entry["name"].string)])
-            try TransferManager.shared.download(result.attributes["url"].string, filename: entry["name"].string, context: server.name + " · " + root)
+            try TransferManager.shared.download(BackupInfo.downloadURL(result, base: api.base), filename: entry["name"].string, context: server.name + " · " + root, source: DownloadSource(panel: api.base.absoluteString, server: server.id, kind: "file", resource: pathJoin(root, entry["name"].string)))
             showTransfers = true
         } catch { self.error = error.localizedDescription } }
     }

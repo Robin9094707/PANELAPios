@@ -5,10 +5,20 @@ struct ConsoleTextView: UIViewRepresentable {
     let text: String
     let fontSize: Double
     let follow: Bool
-    final class Coordinator { var previous = ""; var size = 0.0 }
+    var refresh: (() async -> Void)? = nil
+    final class Coordinator: NSObject {
+        var previous = ""
+        var size = 0.0
+        var refresh: (() async -> Void)?
+        @objc func pulled(_ sender: UIRefreshControl) {
+            Task { @MainActor in await refresh?(); sender.endRefreshing() }
+        }
+    }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
+        context.coordinator.refresh = refresh
+        let control = UIRefreshControl(); control.addTarget(context.coordinator, action: #selector(Coordinator.pulled(_:)), for: .valueChanged); view.refreshControl = control; view.alwaysBounceVertical = true
         view.isEditable = false; view.isSelectable = true; view.backgroundColor = .clear
         view.textContainer.widthTracksTextView = true; view.textContainer.lineFragmentPadding = 0
         view.textContainerInset = UIEdgeInsets(top: 12, left: 16, bottom: 12, right: 16)
@@ -17,6 +27,7 @@ struct ConsoleTextView: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: UITextView, context: Context) {
+        context.coordinator.refresh = refresh
         guard context.coordinator.previous != text || context.coordinator.size != fontSize else { return }
         let selection = view.selectedRange; let offset = view.contentOffset
         view.attributedText = ConsoleStyle.attributed(text, size: fontSize); context.coordinator.previous = text; context.coordinator.size = fontSize
@@ -27,6 +38,8 @@ struct ConsoleTextView: UIViewRepresentable {
 }
 struct PlayersCard: View {
     @ObservedObject var live: LiveServer
+    let api: PanelAPI
+    let server: Server
     @State private var showPlayers = false
     var body: some View {
         HStack(spacing: 14) {
@@ -37,11 +50,13 @@ struct PlayersCard: View {
             }
             Spacer()
             Button("Spielerübersicht", systemImage: "info.circle") { showPlayers = true }.labelStyle(.iconOnly).font(.title2).accessibilityIdentifier("showPlayers")
-        }.card().sheet(isPresented: $showPlayers) { PlayerListSheet(live: live) }
+        }.card().sheet(isPresented: $showPlayers) { PlayerListSheet(live: live, api: api, server: server) }
     }
 }
 struct PlayerListSheet: View {
     @ObservedObject var live: LiveServer
+    let api: PanelAPI
+    let server: Server
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
     var body: some View {
@@ -52,13 +67,14 @@ struct PlayerListSheet: View {
                     if let snapshot = live.players { LabeledContent("Kapazität", value: (snapshot.maximum ?? live.playerCapacity).map(String.init) ?? "Unbekannt"); LabeledContent("Quelle", value: snapshot.source); LabeledContent("Aktualisiert") { Text(snapshot.updated, style: .time) } }
                     if let issue = live.playerIssue { Text(issue).font(.caption).foregroundStyle(.secondary) }
                 }
+                Section { NavigationLink { PlayerManagerView(api: api, server: server, live: live) } label: { Label("Spieler verwalten", systemImage: "person.crop.circle.badge.checkmark") } }
                 Section("Online") {
                     ForEach((live.players?.names ?? []).filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }, id: \.self) { name in
                         HStack { Image(systemName: "person.crop.circle.fill").font(.title).foregroundStyle(name.hasPrefix(".") ? .blue : .teal); VStack(alignment: .leading) { Text(name).font(.headline).textSelection(.enabled); Text(name.hasPrefix(".") ? "Bedrock-Präfix" : "Spieler").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = name }.labelStyle(.iconOnly).buttonStyle(.borderless) }
                     }
                     if live.players?.names.isEmpty != false { Text("Keine Spielernamen verfügbar").foregroundStyle(.secondary) }
                 }
-            }.panelScreen().searchable(text: $search, prompt: "Spieler suchen").navigationTitle("Spieler").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
+            }.panelScreen().refreshable { await live.refreshPlayers(api: api, server: server) }.searchable(text: $search, prompt: "Spieler suchen").navigationTitle("Spieler").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
         }
     }
 }

@@ -27,7 +27,7 @@ struct ProviderHub: View {
                 link("Eingebundene Backups", "backups/mounted", "externaldrive")
                 Button("Startbefehl bearbeiten", systemImage: "terminal") { operation = Operation(title: "Startbefehl ändern", detail: "Der Provider muss eigene Startbefehle erlauben. Änderungen wirken beim nächsten Start.", path: "servers/\(server.id)/settings/start-command", method: "PUT", fields: [Field(key: "start_command", label: "Startbefehl", value: server.data["invocation"].string, kind: .multiline)]) }.requiresRequest(api, "servers/\(server.id)/settings/start-command", method: "PUT")
             }
-        }.panelScreen().navigationTitle("Kinetic").navigationBarTitleDisplayMode(.inline)
+        }.panelScreen().refreshable { await api.loadAccess(server: server.id) }.navigationTitle("Kinetic").navigationBarTitleDisplayMode(.inline)
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
     }
     func link(_ title: String, _ path: String, _ icon: String) -> some View { NavigationLink { ProviderCollection(api: api, server: server, title: title, path: path) } label: { Label(title, systemImage: icon) } }

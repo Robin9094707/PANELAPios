@@ -3,10 +3,11 @@ import Charts
 
 struct ServerView: View {
     let api: PanelAPI
-    let server: Server
+    private let initialServer: Server
+    var server: Server { store.servers.first { $0.id == initialServer.id } ?? initialServer }
     let initialFolder: String?
     init(api: PanelAPI, server: Server, initialFolder: String? = nil) {
-        self.api = api; self.server = server; self.initialFolder = initialFolder
+        self.api = api; self.initialServer = server; self.initialFolder = initialFolder
         _tab = State(initialValue: initialFolder == nil ? 0 : 2)
     }
     @EnvironmentObject private var store: AppStore
@@ -28,9 +29,9 @@ struct ServerView: View {
             Tab("Konsole", systemImage: "terminal", value: 1) { AccessBoundary(access: api.access, server: server.id, permission: "websocket.connect") { console } }
             Tab("Dateien", systemImage: "folder", value: 2) { AccessBoundary(access: api.access, server: server.id, permission: "file.read") { FilesView(api: api, server: server, root: initialFolder ?? "/") } }
             Tab("Backups", systemImage: "externaldrive.badge.timemachine", value: 3) { AccessBoundary(access: api.access, server: server.id, permission: "backup.read") { BackupsView(api: api, server: server) } }
-            Tab("Verwalten", systemImage: "square.grid.2x2", value: 4) { ManageView(api: api, server: server) }
+            Tab("Verwalten", systemImage: "square.grid.2x2", value: 4) { ManageView(api: api, server: server, live: live) }
         }.navigationTitle(server.name).navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { powerMenu } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Server aktualisieren", systemImage: "arrow.clockwise") { Task { await refreshServer() } } }; ToolbarItem(placement: .topBarTrailing) { powerMenu } }
             .task(id: "\(scenePhase)-\(workspace.isMinecraft(api, server))") {
                 if scenePhase == .active {
                     await api.loadAccess(server: server.id)
@@ -64,7 +65,7 @@ struct ServerView: View {
                 if let issue = live.issue, !live.connected { Label(issue, systemImage: "wifi.exclamationmark").font(.footnote).foregroundStyle(.orange).card() }
                 AccessSummary(access: api.access, api: api, server: server.id)
                 Toggle("Minecraft-Spielerübersicht", isOn: Binding(get: { workspace.isMinecraft(api, server) }, set: { workspace.setMinecraft($0, api, server) })).font(.subheadline)
-                if workspace.isMinecraft(api, server) { PlayersCard(live: live); TPSCard(live: live, api: api, server: server) }
+                if workspace.isMinecraft(api, server) { PlayersCard(live: live, api: api, server: server); TPSCard(live: live, api: api, server: server) }
                 if server.data["is_suspended"].bool || server.data["is_installing"].bool || server.data["is_node_under_maintenance"].bool {
                     Label(server.data["is_suspended"].bool ? "Server ist gesperrt" : server.data["is_installing"].bool ? "Installation läuft" : "Node wird gewartet", systemImage: "exclamationmark.triangle").foregroundStyle(.orange).card()
                 }
@@ -92,7 +93,11 @@ struct ServerView: View {
                     Text("CPU: 100 % entsprechen einem CPU-Kern. RAM- und Festplattenlimits werden vom Panel in MiB geliefert.").font(.caption).foregroundStyle(.secondary)
                 }.card()
             }.padding(20).frame(maxWidth: 1000).frame(maxWidth: .infinity)
-        }.panelScreen()
+        }.panelScreen().refreshable { await refreshServer() }.scrollBounceBehavior(.always)
+    }
+    func refreshServer() async {
+        await api.loadAccess(server: server.id); await store.refresh()
+        do { try await live.refresh(api: api, server: server, minecraft: workspace.isMinecraft(api, server)) } catch { self.error = error.localizedDescription }
     }
     func limitBytes(_ key: String) -> String { let limit = server.data["limits"][key].double; return limit > 0 ? "von " + bytes(limit * 1_048_576) : "Unbegrenzt" }
     func fraction(_ value: Double, _ key: String) -> Double? { let limit = server.data["limits"][key].double; return limit > 0 ? value / (limit * 1_048_576) : nil }
@@ -110,7 +115,7 @@ struct ServerView: View {
                 } label: { Image(systemName: "ellipsis.circle").padding(6) }
             }.padding(.horizontal, 16).padding(.vertical, 8)
             TextField("Ausgabe filtern", text: $filter).textFieldStyle(.roundedBorder).padding(.horizontal, 16).padding(.bottom, 8).autocorrectionDisabled().textInputAutocapitalization(.never)
-            ConsoleTextView(text: live.lines.filter { filter.isEmpty || $0.cleanedForSearch.localizedCaseInsensitiveContains(filter) }.joined(separator: "\n"), fontSize: fontSize, follow: follow)
+            ConsoleTextView(text: live.lines.filter { filter.isEmpty || $0.cleanedForSearch.localizedCaseInsensitiveContains(filter) }.joined(separator: "\n"), fontSize: fontSize, follow: follow, refresh: { await refreshServer() })
                 .frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1).background(.black.opacity(0.08))
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack {

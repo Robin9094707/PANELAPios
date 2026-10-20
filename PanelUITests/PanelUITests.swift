@@ -4,7 +4,7 @@ final class PanelUITests: XCTestCase {
     var app: XCUIApplication!
     override func setUpWithError() throws {
         continueAfterFailure = false
-        app = XCUIApplication(); app.launchArguments = ["--demo", "-AppleLanguages", "(de)", "-AppleLocale", "de_DE"]; app.launch()
+        app = XCUIApplication(); app.launchArguments = ["--demo", "--demo-paused-download", "-AppleLanguages", "(de)", "-AppleLocale", "de_DE"]; app.launch()
     }
     func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
@@ -17,6 +17,11 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Server-TPS"].waitForExistence(timeout: 10)); capture("02-Live-Dashboard")
         app.buttons["showPlayers"].tap()
         XCTAssertTrue(app.staticTexts["TadMC_YT"].waitForExistence(timeout: 10)); capture("02b-Spieler")
+        app.buttons["Spieler verwalten"].tap()
+        app.buttons["managePlayer-TadMC_YT"].tap()
+        XCTAssertTrue(app.staticTexts["Live-Werte"].waitForExistence(timeout: 10)); capture("16-Spieler-Livewerte")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["Fertig"].tap()
         app.tabBars.buttons["Konsole"].tap()
         XCTAssertTrue(app.textFields["consoleCommand"].waitForExistence(timeout: 10))
@@ -32,7 +37,8 @@ final class PanelUITests: XCTestCase {
         let properties = app.buttons.containing(.staticText, identifier: "server.properties").firstMatch
         XCTAssertTrue(properties.waitForExistence(timeout: 10)); capture("04-Dateien")
         app.buttons["Übertragungen"].tap()
-        XCTAssertTrue(app.switches["Live Activities & Dynamic Island"].waitForExistence(timeout: 10)); capture("15-Uebertragungen")
+        XCTAssertTrue(app.switches["Live Activities & Dynamic Island"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Fortsetzen"].waitForExistence(timeout: 10)); capture("15-Uebertragungen")
         app.buttons["Fertig"].tap()
         properties.tap()
         XCTAssertTrue(app.textViews["fileEditor"].waitForExistence(timeout: 10)); capture("05-Dateieditor")
@@ -56,6 +62,11 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Uhrzeit & Zeitzone"].waitForExistence(timeout: 10)); capture("13-Zeitplaene")
         app.buttons["Neuer Zeitplan"].tap()
         XCTAssertTrue(app.textFields["Name"].waitForExistence(timeout: 10)); capture("14-Zeitplan-Editor")
+        app.buttons["Abbrechen"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["Mitbenutzer"].tap()
+        app.buttons["Hinzufügen"].tap()
+        XCTAssertTrue(app.switches["permission-control.console"].waitForExistence(timeout: 10)); capture("17-Rechteauswahl")
         app.buttons["Abbrechen"].tap()
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["Plugins & JAR-Dateien"].tap()

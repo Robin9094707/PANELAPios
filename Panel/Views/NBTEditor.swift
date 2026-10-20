@@ -110,7 +110,7 @@ struct NBTEditor: View {
                         Button("Serverstatus aktualisieren", systemImage: "arrow.clockwise") { Task { await model.refreshState() } }
                     }
                 }
-            }.panelScreen().navigationTitle("NBT-Editor").navigationBarTitleDisplayMode(.inline).errorAlert($model.error)
+            }.panelScreen().refreshable { if !model.busy { if model.dirty { await model.refreshState() } else { await model.load() } } }.navigationTitle("NBT-Editor").navigationBarTitleDisplayMode(.inline).errorAlert($model.error)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { if model.dirty { discard = true } else { dismiss() } }.disabled(model.busy) } }
                 .task { await model.load() }
                 .confirmationDialog("NBT-Änderungen anwenden?", isPresented: $confirm, titleVisibility: .visible) { Button("Sichern & anwenden") { Task { await model.apply() } } } message: { Text("Die Originaldatei wird gesichert und danach ersetzt. Erfordert einen gestoppten Server.") }

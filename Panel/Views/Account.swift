@@ -21,7 +21,7 @@ struct AccountView: View {
                 NavigationLink { AccountKeysView(api: api, ssh: true) } label: { Label("SSH-Schlüssel", systemImage: "terminal") }
                 NavigationLink { ActivityView(api: api, path: "account/activity") } label: { Label("Account-Aktivitäten", systemImage: "clock.arrow.circlepath") }
             }
-        }.panelScreen().navigationTitle("Account").navigationBarTitleDisplayMode(.inline).task { await load() }.errorAlert($error)
+        }.panelScreen().navigationTitle("Account").navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }.errorAlert($error)
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { await load() } }
     }
     func load() async { do { account = try await api.request("account").attributes } catch { self.error = error.localizedDescription } }

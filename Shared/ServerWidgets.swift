@@ -25,7 +25,10 @@ struct WidgetServer: Identifiable, Codable, Hashable {
 }
 enum WidgetStorage {
     static let group = "group.eu.simplexsmp.panel"
-    static var folder: URL? { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) }
+    static var folder: URL? {
+        guard let group = SigningGroups.availableGroup else { return nil }
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)
+    }
     static func servers() -> [WidgetServer] {
         guard let folder else { return [] }
         return (try? JSONDecoder().decode([WidgetServer].self, from: Data(contentsOf: folder.appendingPathComponent("servers.json")))) ?? []
@@ -50,24 +53,39 @@ enum WidgetVault {
         guard status == errSecSuccess, let attributes = result as? [String: Any], let group = attributes[kSecAttrAccessGroup as String] as? String, let prefix = group.split(separator: ".").first else { return nil }
         return String(prefix) + ".eu.simplexsmp.panel.shared"
     }
-    static func query(_ panel: String) -> [String: Any]? {
-        guard let accessGroup else { return nil }
-        return [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: panel, kSecAttrAccessGroup as String: accessGroup]
+    private static var groups: [String] {
+        var values: [String] = []
+        // iOS also permits an entitled App Group as a keychain access group.
+        if let group = SigningGroups.availableGroup { values.append(group) }
+        if let group = accessGroup, !values.contains(group) { values.append(group) }
+        return values
+    }
+    private static func query(_ panel: String, group: String) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: panel, kSecAttrAccessGroup as String: group]
     }
     static func save(_ key: String, panel: String) throws {
-        guard var query = query(panel) else { throw NSError(domain: service, code: 1, userInfo: [NSLocalizedDescriptionKey: "Gemeinsamer Widget-Schlüsselbund nicht verfügbar. Prüfe die Signier-Berechtigungen."]) }
-        SecItemDelete(query as CFDictionary)
-        query[kSecValueData as String] = Data(key.utf8)
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else { throw NSError(domain: service, code: Int(status), userInfo: [NSLocalizedDescriptionKey: "Widget-Zugang konnte nicht gespeichert werden (\(status)). Die App muss mit der gemeinsamen Schlüsselbund-Berechtigung signiert sein."]) }
+        var failure: OSStatus = errSecMissingEntitlement
+        for group in groups {
+            var request = query(panel, group: group)
+            let data = Data(key.utf8)
+            let updated = SecItemUpdate(request as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+            if updated == errSecSuccess { return }
+            if updated != errSecItemNotFound { failure = updated; continue }
+            request[kSecValueData as String] = data; request[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            let status = SecItemAdd(request as CFDictionary, nil)
+            if status == errSecSuccess { return }
+            failure = status
+        }
+        throw NSError(domain: service, code: Int(failure), userInfo: [NSLocalizedDescriptionKey: "Der Widget-Schlüsselbund ist durch diese Signatur nicht freigegeben (\(failure)). Signiere App und Widget mit derselben App Group."])
     }
     static func read(_ panel: String) -> String? {
-        guard var query = query(panel) else { return nil }
-        query[kSecReturnData as String] = true; query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        for group in groups {
+            var request = query(panel, group: group)
+            request[kSecReturnData as String] = true; request[kSecMatchLimit as String] = kSecMatchLimitOne
+            var result: CFTypeRef?
+            if SecItemCopyMatching(request as CFDictionary, &result) == errSecSuccess, let data = result as? Data, let secret = String(data: data, encoding: .utf8) { return secret }
+        }
+        return nil
     }
-    static func delete(_ panel: String) { if let query = query(panel) { SecItemDelete(query as CFDictionary) } }
+    static func delete(_ panel: String) { for group in groups { SecItemDelete(query(panel, group: group) as CFDictionary) } }
 }

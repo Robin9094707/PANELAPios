@@ -18,6 +18,11 @@ enum Demo {
         return try NBTDocument(root: NBTNode(type: 10, name: "", children: [health, food, xp, bukkit]), compression: .gzip).encode()
     }
     static func response(_ path: String, query: [String: String] = [:]) -> JSON {
+        if path == "permissions" { return try! JSON.from(["attributes": ["permissions": [
+            "control": ["description": "Server und Konsole steuern.", "keys": ["console": "Konsolenbefehle an den Server senden.", "start": "Den Server starten.", "stop": "Den Server stoppen."]],
+            "file": ["description": "Dateiverwaltung.", "keys": ["read": "Ordnerinhalte ansehen.", "update": "Dateien bearbeiten."]],
+            "minecraft": ["name": "Provider-Spielerfunktionen", "description": "Zusätzliche Rechte dieses Beispielpanels.", "keys": ["manage": ["name": "Spieler verwalten", "description": "Provider-Spielerfunktionen verwenden."]]]
+        ]]]) }
         if path.isEmpty { return .object(["data": .array(servers.map { .object(["attributes": $0]) })]) }
         if path.contains("files/list"), query["directory"] == "/plugins" { return wrap([["name": "ExamplePlugin.jar", "is_file": true, "size": 4096], ["name": "ExamplePlugin", "is_file": false, "size": 0], ["name": "update", "is_file": false, "size": 0]]) }
         if path.contains("files/list"), query["directory"] == "/plugins/update" { return wrap([]) }

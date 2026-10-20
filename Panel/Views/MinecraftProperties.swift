@@ -12,6 +12,7 @@ struct MinecraftPropertiesView: View {
     @State private var editor: EditorItem?
     @State private var confirm = false
     @State private var saved = false
+    @State private var reloadConfirm = false
     var keys: [String] { original.keys.filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }.sorted() }
     var dirty: Bool { original.contains { (edits[$0.key] ?? $0.value.string) != $0.value.string } }
     var body: some View {
@@ -32,7 +33,9 @@ struct MinecraftPropertiesView: View {
                 if loaded && original.isEmpty { Text("Der Provider liefert keine bearbeitbaren Eigenschaften. Verwende server.properties.").foregroundStyle(.secondary) }
                 if dirty { Section { Button("Änderungen speichern", systemImage: "checkmark") { confirm = true }.disabled(busy).requiresAccess(api, server.id, "file.update") } }
             } else { Section { Text("Bei diesem Panel werden Minecraft-Einstellungen direkt in server.properties bearbeitet.").foregroundStyle(.secondary) } }
-        }.panelScreen().navigationTitle("Minecraft-Einstellungen").navigationBarTitleDisplayMode(.inline).task { if api.isKinetic || api.demo { await load() } }.errorAlert($error)
+        }.panelScreen().navigationTitle("Minecraft-Einstellungen").navigationBarTitleDisplayMode(.inline).task { if api.isKinetic || api.demo { await load() } }
+            .refreshable { if dirty { reloadConfirm = true } else if api.isKinetic || api.demo { await load() } }
+            .confirmationDialog("Änderungen verwerfen und neu laden?", isPresented: $reloadConfirm, titleVisibility: .visible) { Button("Verwerfen & neu laden", role: .destructive) { Task { await load() } } }.errorAlert($error)
             .sheet(item: $editor) { FileEditor(api: api, server: server, item: $0) { if api.isKinetic { Task { await load() } } } }
             .confirmationDialog("Minecraft-Einstellungen speichern?", isPresented: $confirm, titleVisibility: .visible) { Button("Speichern") { Task { await save() } } } message: { Text("Nur geänderte Werte werden übertragen. Ein Neustart kann nötig sein.") }
     }
