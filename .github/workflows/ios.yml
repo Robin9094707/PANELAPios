@@ -141,3 +141,46 @@ jobs:
           name: SimplexAdminSuite-unsigned-plugin
           path: Companion/AdminSuite/target/SimplexAdminSuite-8.3.0.jar
 
+
+  release:
+    name: Publish verified app update
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build, companion]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Panel-unsigned-IPA
+          path: build/release
+      - name: Publish versioned IPA and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ipa_files=(build/release/*-unsigned.ipa)
+          test "${#ipa_files[@]}" -eq 1
+          test -f "${ipa_files[0]}"
+          ipa_name=$(basename "${ipa_files[0]}")
+          ipa_version=${ipa_name#Simplex-Panel-}
+          ipa_version=${ipa_version%-unsigned.ipa}
+          [[ "$ipa_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          (cd build/release && shasum -a 256 -c SHA256SUMS.txt)
+          tag="app-v${ipa_version}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "This app version already has a release; increment the version before replacing it."
+            exit 1
+          fi
+          cat > build/release/RELEASE-NOTES.md <<'NOTES'
+          App-only update with customizable in-app dashboards, Java server icons, platform icons, console history and resource health indicators.
+          
+          Install over the existing app using the same signing identity and bundle ID. Do not uninstall first. The IPA is unsigned and needs your usual signing method. Admin Suite 8.3.0 is unchanged.
+          
+          Source backup: backup/v1.6.0-before-custom-workspaces.
+          NOTES
+          gh release create "$tag" "${ipa_files[0]}" build/release/SHA256SUMS.txt build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest

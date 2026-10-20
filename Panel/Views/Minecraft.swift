@@ -17,6 +17,15 @@ struct ConsoleAnchor {
     var initialized = false
     var anchor: ConsoleAnchor?
 }
+final class ConsoleUIKitView: UITextView {
+    var onResize: ((ConsoleUIKitView) -> Void)?
+    private var previousSize = CGSize.zero
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.size != previousSize, bounds.width > 0, bounds.height > 0 else { return }
+        previousSize = bounds.size; onResize?(self)
+    }
+}
 struct ConsoleTextView: UIViewRepresentable {
     let text: String
     let fontSize: Double
@@ -29,6 +38,7 @@ struct ConsoleTextView: UIViewRepresentable {
         var previous = ""
         var size = 0.0
         var active = true
+        var follow = true
         var jumpRevision = 0
         var applying = false
         let viewport: ConsoleViewportState
@@ -38,8 +48,18 @@ struct ConsoleTextView: UIViewRepresentable {
             Task { @MainActor in await refresh?(); sender.endRefreshing() }
         }
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
-            guard !applying, let view = scrollView as? UITextView else { return }
+            guard !applying, active, let view = scrollView as? UITextView, view.isTracking || view.isDragging || view.isDecelerating else { return }
             capture(view)
+        }
+        func resized(_ view: ConsoleUIKitView) {
+            guard !applying, viewport.initialized else { return }
+            applying = true
+            if active && follow && viewport.atBottom && viewport.selection.length == 0 {
+                let y = max(-view.adjustedContentInset.top, view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom)
+                view.setContentOffset(CGPoint(x: 0, y: y), animated: false)
+            } else { restore(view, text: previous) }
+            applying = false
+            if active { capture(view) }
         }
         func textViewDidChangeSelection(_ textView: UITextView) {
             guard !applying else { return }; viewport.selection = textView.selectedRange
@@ -73,7 +93,8 @@ struct ConsoleTextView: UIViewRepresentable {
     }
     func makeCoordinator() -> Coordinator { Coordinator(viewport) }
     func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
+        let view = ConsoleUIKitView()
+        view.onResize = { [weak coordinator = context.coordinator] view in coordinator?.resized(view) }
         view.delegate = context.coordinator; context.coordinator.refresh = refresh
         let control = UIRefreshControl(); control.addTarget(context.coordinator, action: #selector(Coordinator.pulled(_:)), for: .valueChanged); view.refreshControl = control
         view.isEditable = false; view.isSelectable = true; view.backgroundColor = .clear
@@ -89,9 +110,9 @@ struct ConsoleTextView: UIViewRepresentable {
         let changed = c.previous != text || c.size != fontSize
         let jump = c.jumpRevision != jumpRevision
         let resumed = active && !c.active
-        c.active = active; c.jumpRevision = jumpRevision
-        guard changed || jump else { return }
-        if !c.previous.isEmpty { c.capture(view) }
+        c.active = active; c.follow = follow; c.jumpRevision = jumpRevision
+        guard changed || jump || resumed else { return }
+        if !c.previous.isEmpty && !resumed && (view.isTracking || view.isDragging || view.isDecelerating) { c.capture(view) }
         let first = !viewport.initialized
         let shouldFollow = follow && active && !resumed && (first || viewport.atBottom) && viewport.selection.length == 0 && !view.isTracking && !view.isDragging && !view.isDecelerating && view.refreshControl?.isRefreshing != true
         let oldText = c.previous as NSString
@@ -114,7 +135,7 @@ struct ConsoleTextView: UIViewRepresentable {
         c.applying = false
         c.capture(view)
     }
-    static func dismantleUIView(_ view: UITextView, coordinator: Coordinator) { coordinator.capture(view); view.delegate = nil }
+    static func dismantleUIView(_ view: UITextView, coordinator: Coordinator) { if coordinator.active { coordinator.capture(view) }; (view as? ConsoleUIKitView)?.onResize = nil; view.delegate = nil }
 }
 struct PlayersCard: View {
     @ObservedObject var live: LiveServer
