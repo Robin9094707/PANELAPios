@@ -64,14 +64,15 @@ jobs:
         run: |
           mkdir -p build/export/Payload
           cp -R build/device/Build/Products/Release-iphoneos/Panel.app build/export/Payload/
+          test -f build/export/Payload/Panel.app/PlugIns/PanelWidgets.appex/PanelWidgets
           test -f build/export/Payload/Panel.app/Panel
           test ! -d build/export/Payload/Panel.app/_CodeSignature
           xcrun lipo build/export/Payload/Panel.app/Panel -verify_arch arm64
           plutil -lint build/export/Payload/Panel.app/Info.plist
           cd build/export
-          zip -qry Panel-1.2.2-unsigned.ipa Payload
-          unzip -t Panel-1.2.2-unsigned.ipa
-          shasum -a 256 Panel-1.2.2-unsigned.ipa > SHA256SUMS.txt
+          zip -qry Panel-1.3.0-unsigned.ipa Payload
+          unzip -t Panel-1.3.0-unsigned.ipa
+          shasum -a 256 Panel-1.3.0-unsigned.ipa > SHA256SUMS.txt
       - name: Extract UI test screenshots
         if: always()
         run: |
@@ -82,7 +83,7 @@ jobs:
         with:
           name: Panel-unsigned-IPA
           path: |
-            build/export/Panel-1.2.2-unsigned.ipa
+            build/export/Panel-1.3.0-unsigned.ipa
             build/export/SHA256SUMS.txt
             build/validation-proof.json
           if-no-files-found: error

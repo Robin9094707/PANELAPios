@@ -5,6 +5,8 @@ struct HomeView: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     @State private var add = false
     @State private var settings = false
+    @State private var transfers = false
+    @State private var widgets = false
     @State private var search = ""
     var filtered: [Server] { store.servers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.node.localizedCaseInsensitiveContains(search) }.sorted { a, b in
         guard let api = store.api else { return a.name < b.name }
@@ -52,11 +54,15 @@ struct HomeView: View {
                             if store.demo { Button("Demo verlassen") { store.exitDemo() } }
                         } label: { Label(store.demo ? "Demo" : store.active?.name ?? "Panels", systemImage: "square.stack") }
                     }
+                    ToolbarItem(placement: .topBarTrailing) { Button("Übertragungen", systemImage: "arrow.up.arrow.down.circle") { transfers = true } }
                     ToolbarItem(placement: .topBarTrailing) { Button("Einstellungen", systemImage: "slider.horizontal.3") { settings = true } }
                 }
                 .navigationDestination(for: Server.self) { server in if let api = store.api { ServerView(api: api, server: server).id("\(store.selected?.uuidString ?? "demo")-\(server.id)") } }
                 .sheet(isPresented: $add) { AddPanelView() }
                 .sheet(isPresented: $settings) { SettingsView() }
+                .sheet(isPresented: $transfers) { TransfersView() }
+                .sheet(isPresented: $widgets) { NavigationStack { WidgetSettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { widgets = false } } } } }
+                .onOpenURL { url in if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
                 .task(id: store.api.map { ObjectIdentifier($0) }) { await store.refresh(); await store.pollPresence() }
         }
     }
@@ -149,6 +155,7 @@ struct SettingsView: View {
             Form {
                 Section("Darstellung") { Picker("Design", selection: $appearance) { Text("System").tag("system"); Text("Dunkel").tag("dark"); Text("Hell").tag("light") } }
                 Section("Editor & Bedienung") { Toggle("Syntaxfarben im Texteditor", isOn: $syntaxColors); Toggle("Haptisches Feedback", isOn: $haptics) }
+                Section("Widgets & Übertragungen") { NavigationLink("Server-Widgets einrichten") { WidgetSettingsView() }; TransferLink() }
                 Section("Sicherheit") { Toggle("App mit Face ID / Gerätecode sperren", isOn: $store.biometricLock) }
                 Section("Gespeicherte Panels") {
                     ForEach(store.profiles) { p in HStack { VStack(alignment: .leading) { Text(p.name); Text(p.url).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Entfernen", systemImage: "trash", role: .destructive) { remove = p }.labelStyle(.iconOnly) } }
@@ -156,7 +163,7 @@ struct SettingsView: View {
                 }
                 if let api = store.api { Section("Account") { NavigationLink("Account & Sicherheit") { AccountView(api: api) } } }
                 Section {
-                    LabeledContent("Version", value: "1.2.2")
+                    LabeledContent("Version", value: "1.3.0")
                     Text("Unabhängiger Pterodactyl-Client. Funktionen und Limits richten sich nach deinem Hoster und deinen Panel-Berechtigungen.").font(.footnote).foregroundStyle(.secondary)
                 }
             }.panelScreen().navigationTitle("Einstellungen").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }

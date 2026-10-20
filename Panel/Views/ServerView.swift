@@ -38,6 +38,8 @@ struct ServerView: View {
                     await live.run(api: api, server: server, minecraft: workspace.isMinecraft(api, server))
                 }
             }
+            .onChange(of: live.lastUpdate) { _, _ in WidgetPublisher.publish(api: api, server: server, live: live) }
+            .onChange(of: live.players) { _, _ in WidgetPublisher.publish(api: api, server: server, live: live) }
             .onChange(of: live.state) { _, state in store.presence[server.id] = ServerPresence(state: state) }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
             .sheet(isPresented: $commandLibrary) { CommandLibrary(api: api, server: server) { command = $0 } }

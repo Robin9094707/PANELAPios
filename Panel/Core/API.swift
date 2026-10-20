@@ -19,6 +19,7 @@ final class SameOriginRedirect: NSObject, URLSessionTaskDelegate {
 @MainActor
 final class PanelAPI {
     let access = ServerAccess()
+    let clock = PanelClock()
     let plugins = PluginCatalog()
     let base: URL
     private let key: String
@@ -69,6 +70,7 @@ final class PanelAPI {
         else if let text { request.httpBody = Data(text.utf8); request.setValue("text/plain; charset=utf-8", forHTTPHeaderField: "Content-Type") }
         else if let body { request.httpBody = try JSONEncoder().encode(body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let (data, response) = try await session.data(for: request)
+        clock.observe(response)
         do { try Self.validate(data, response: response) }
         catch {
             if (response as? HTTPURLResponse)?.statusCode == 403,
@@ -145,6 +147,7 @@ final class PanelAPI {
         guard let text = String(data: data, encoding: .utf8), !text.contains("\0") else { throw PanelError(message: "Diese Datei ist binär. Öffne .dat/.nbt im NBT-Editor oder lade sie herunter.") }
         return text
     }
+    func shareWidgetCredential() throws { try WidgetVault.save(key, panel: base.absoluteString) }
     func upload(server: String, directory: String, file: URL) async throws {
         if demo { throw PanelError(message: "Uploads sind im Demomodus deaktiviert.") }
         let signed = try await request("servers/\(server)/files/upload").attributes["url"].string
@@ -155,6 +158,7 @@ final class PanelAPI {
         let staging = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: staging.path, contents: nil)
         defer { try? FileManager.default.removeItem(at: staging) }
+        try await Task.detached(priority: .userInitiated) {
         let writer = try FileHandle(forWritingTo: staging)
         let name = file.lastPathComponent.replacingOccurrences(of: "\"", with: "_").replacingOccurrences(of: "\r", with: "_").replacingOccurrences(of: "\n", with: "_")
         try writer.write(contentsOf: Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"files\"; filename=\"\(name)\"\r\nContent-Type: application/octet-stream\r\n\r\n".utf8))
@@ -164,10 +168,10 @@ final class PanelAPI {
             try writer.write(contentsOf: Data("\r\n--\(boundary)--\r\n".utf8))
             try reader.close(); try writer.close()
         } catch { try? reader.close(); try? writer.close(); throw error }
+        }.value
         var request = URLRequest(url: target); request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        let (data, response) = try await session.upload(for: request, fromFile: staging)
-        try Self.validate(data, response: response)
+        try await TransferManager.shared.upload(request, body: staging, filename: file.lastPathComponent, context: "\(base.host ?? "Panel") · \(server) · \(directory)")
     }
     func download(_ signed: String, filename: String) async throws -> URL {
         guard let url = URL(string: signed), url.scheme == "https" else { throw PanelError(message: "Keine sichere Download-URL erhalten.") }

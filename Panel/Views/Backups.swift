@@ -7,6 +7,7 @@ struct BackupsView: View {
     @State private var loaded = false
     @State private var error: String?
     @State private var operation: Operation?
+    @State private var showTransfers = false
     @State private var share: ShareItem?
     @State private var downloading = false
     var prefix: String { "servers/\(server.id)/backups" }
@@ -44,7 +45,8 @@ struct BackupsView: View {
                 while !Task.isCancelled { do { try await Task.sleep(for: .seconds(10)) } catch { break }; await load(silent: true) }
             }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { await load() } }
-            .sheet(item: $share) { ShareSheet(url: $0.url) }.errorAlert($error)
+            .sheet(item: $share) { ShareSheet(url: $0.url) }
+            .sheet(isPresented: $showTransfers) { TransfersView() }.errorAlert($error)
     }
     @ViewBuilder func actions(_ b: JSON) -> some View {
         let path = prefix + "/" + b["uuid"].string
@@ -64,7 +66,8 @@ struct BackupsView: View {
         Task { defer { downloading = false }; do {
             guard !api.demo else { throw PanelError(message: "Downloads sind im Demomodus deaktiviert.") }
             let response = try await api.request(prefix + "/\(backup["uuid"].string)/download")
-            share = ShareItem(url: try await api.download(response.attributes["url"].string, filename: backup["uuid"].string + ".tar.gz"))
+            try TransferManager.shared.download(response.attributes["url"].string, filename: backup["uuid"].string + ".tar.gz", context: server.name + " · Backup")
+            showTransfers = true
         } catch { self.error = error.localizedDescription } }
     }
 }

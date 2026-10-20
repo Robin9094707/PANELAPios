@@ -114,6 +114,7 @@ enum Vault {
         profiles.append(profile); selected = profile.id; demo = false; api = client; servers = rows.map { Server(data: $0) }; persist()
     }
     func remove(_ profile: PanelProfile) {
+        WidgetPublisher.remove(panel: profile.url)
         Vault.delete(profile.id); profiles.removeAll { $0.id == profile.id }
         if selected == profile.id { selected = profiles.first?.id; connectSelected() }
         persist()

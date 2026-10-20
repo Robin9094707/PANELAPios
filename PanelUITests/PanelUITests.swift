@@ -31,6 +31,9 @@ final class PanelUITests: XCTestCase {
         app.tabBars.buttons["Dateien"].tap()
         let properties = app.buttons.containing(.staticText, identifier: "server.properties").firstMatch
         XCTAssertTrue(properties.waitForExistence(timeout: 10)); capture("04-Dateien")
+        app.buttons["Übertragungen"].tap()
+        XCTAssertTrue(app.switches["Live Activities & Dynamic Island"].waitForExistence(timeout: 10)); capture("15-Uebertragungen")
+        app.buttons["Fertig"].tap()
         properties.tap()
         XCTAssertTrue(app.textViews["fileEditor"].waitForExistence(timeout: 10)); capture("05-Dateieditor")
         app.buttons["Editoroptionen"].tap()
@@ -49,6 +52,12 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Before update"].waitForExistence(timeout: 10)); capture("06-Backups")
         app.tabBars.buttons["Verwalten"].tap()
         XCTAssertTrue(app.buttons["Zeitpläne"].waitForExistence(timeout: 10)); capture("07-Verwalten")
+        app.buttons["Zeitpläne"].tap()
+        XCTAssertTrue(app.staticTexts["Uhrzeit & Zeitzone"].waitForExistence(timeout: 10)); capture("13-Zeitplaene")
+        app.buttons["Neuer Zeitplan"].tap()
+        XCTAssertTrue(app.textFields["Name"].waitForExistence(timeout: 10)); capture("14-Zeitplan-Editor")
+        app.buttons["Abbrechen"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["Plugins & JAR-Dateien"].tap()
         app.swipeUp()
         let pluginDetails = app.buttons["pluginDetails-ExamplePlugin.jar"]

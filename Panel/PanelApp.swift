@@ -1,6 +1,8 @@
 import SwiftUI
 
 @main struct PanelApp: App {
+    @UIApplicationDelegateAdaptor(PanelAppDelegate.self) private var appDelegate
+    @StateObject private var transfers = TransferManager.shared
     @StateObject private var store = AppStore()
     @StateObject private var workspace = WorkspaceStore()
     @Environment(\.scenePhase) private var scenePhase
@@ -16,7 +18,7 @@ import SwiftUI
                 .privacySensitive()
                 .overlay { if scenePhase == .background { PanelBackground().overlay { Image(systemName: "server.rack").font(.system(size: 60)).foregroundStyle(.teal) } } }
                 .onChange(of: scenePhase, initial: true) { _, phase in
-                    if phase == .background { store.lock() }
+                    if phase == .background { transfers.persist(force: true); store.lock() }
                     if phase == .active { Task { await store.resume() } }
                 }
         }

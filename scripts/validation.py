@@ -12,7 +12,7 @@ import urllib.request
 
 VALIDATED_SOURCE = "851f72c4b45f354463e95f5f419796e234f0c188"
 VALIDATED_RUN = 39377109031
-INPUTS = ["Panel", "PanelTests", "PanelUITests", "project.yml", "Config"]
+INPUTS = ["Shared", "PanelWidgets", "Panel", "PanelTests", "PanelUITests", "project.yml", "Config"]
 
 
 def api(path):

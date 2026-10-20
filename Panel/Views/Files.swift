@@ -22,6 +22,7 @@ struct FilesView: View {
     @State private var editor: EditorItem?
     @State private var importer = false
     @State private var transfer = false
+    @State private var showTransfers = false
     @State private var share: ShareItem?
     var prefix: String { "servers/\(server.id)/files" }
     var visible: [JSON] { Array(matches.prefix(displayCount)) }
@@ -32,7 +33,8 @@ struct FilesView: View {
                 HStack { Image(systemName: "magnifyingglass").foregroundStyle(.secondary); TextField("In diesem Ordner suchen", text: $search).autocorrectionDisabled().textInputAutocapitalization(.never) }
                 HStack { EditButton().buttonStyle(.borderless); Spacer(); Button(workspace.isPinned(api, server, root) ? "Lösen" : "Anpinnen", systemImage: "pin") { workspace.toggleFolder(api, server, root) }.buttonStyle(.borderless); fileTools.buttonStyle(.borderless) }
                 if root != "/" { NavigationLink("Übergeordneter Ordner") { FilesView(api: api, server: server, root: parentFolder(root)) } }
-                if transfer { Label("Übertragung läuft …", systemImage: "arrow.up.arrow.down").foregroundStyle(.teal) }
+                TransferLink()
+                if transfer { Text("Dateien werden vorbereitet oder übertragen …").font(.caption).foregroundStyle(.secondary) }
             }
             if loading && !loaded { ProgressView("Dateien laden …") }
             if loaded && visible.isEmpty { ContentUnavailableView("Keine Dateien", systemImage: "folder", description: Text("Erstelle eine Datei oder lade Dateien hoch.")) }
@@ -62,6 +64,7 @@ struct FilesView: View {
             .sheet(item: $mover) { FolderPicker(api: api, server: server, source: root, selection: $0) { selected = []; Task { await load() } } }
             .sheet(item: $nbt) { NBTEditor(api: api, server: server, path: $0.path) }
             .sheet(item: $share) { ShareSheet(url: $0.url) }
+            .sheet(isPresented: $showTransfers) { TransfersView() }
             .sheet(isPresented: $importer) {
                 FileImportPicker(multiple: true) { result in
                     importer = false
@@ -74,7 +77,7 @@ struct FilesView: View {
             Button("Hochladen", systemImage: "square.and.arrow.up") { importer = true }.requiresRequest(api, prefix + "/upload", method: "GET")
             Button("Neue Datei", systemImage: "doc.badge.plus") { createFile() }.requiresAccess(api, server.id, "file.update")
             Button("Neuer Ordner", systemImage: "folder.badge.plus") { operation = Operation(title: "Ordner erstellen", path: prefix + "/create-folder", fields: [Field(key: "name", label: "Ordnername")], fixed: ["root": .string(root)]) }.requiresRequest(api, prefix + "/create-folder", method: "POST")
-            Button("Von URL laden", systemImage: "link") { operation = Operation(title: "Datei von URL laden", detail: "Der Server lädt die Datei direkt von der angegebenen URL.", path: prefix + "/pull", fields: [Field(key: "url", label: "https://…")], fixed: ["directory": .string(root)]) }.requiresRequest(api, prefix + "/pull", method: "POST")
+            Button("Von URL laden", systemImage: "link") { operation = Operation(title: "Datei von URL laden", detail: "Der Server lädt die Datei direkt von der angegebenen URL. Die Standard-Client-API bestätigt nur die Übergabe und liefert keinen Prozentfortschritt. Prüfe anschließend den Zielordner. Für messbaren Fortschritt kannst du die Datei zuerst aufs iPhone laden und dann hochladen.", path: prefix + "/pull", fields: [Field(key: "url", label: "https://…")], fixed: ["directory": .string(root)]) }.requiresRequest(api, prefix + "/pull", method: "POST")
             Button("Aktualisieren", systemImage: "arrow.clockwise") { Task { await load() } }
         } label: { Label("Aktionen", systemImage: "plus.circle") }.disabled(transfer)
     }
@@ -140,10 +143,15 @@ struct FilesView: View {
     func upload(_ urls: [URL]) {
         transfer = true
         Task { defer { transfer = false }; do {
-            for url in urls {
-                let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
-                guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw PanelError(message: "Bitte Dateien auswählen. Ordner können nicht direkt hochgeladen werden.") }
-                try await api.upload(server: server.id, directory: root, file: url)
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for url in urls {
+                    group.addTask { @MainActor in
+                        let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
+                        guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw PanelError(message: "Bitte Dateien auswählen. Ordner können nicht direkt hochgeladen werden.") }
+                        try await api.upload(server: server.id, directory: root, file: url)
+                    }
+                }
+                try await group.waitForAll()
             }; await load()
         } catch { self.error = error.localizedDescription } }
     }
@@ -152,7 +160,8 @@ struct FilesView: View {
         Task { defer { transfer = false }; do {
             guard !api.demo else { throw PanelError(message: "Downloads sind im Demomodus deaktiviert.") }
             let result = try await api.request(prefix + "/download", query: ["file": pathJoin(root, entry["name"].string)])
-            share = ShareItem(url: try await api.download(result.attributes["url"].string, filename: entry["name"].string))
+            try TransferManager.shared.download(result.attributes["url"].string, filename: entry["name"].string, context: server.name + " · " + root)
+            showTransfers = true
         } catch { self.error = error.localizedDescription } }
     }
 }
