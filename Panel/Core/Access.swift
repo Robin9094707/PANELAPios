@@ -20,7 +20,7 @@ import SwiftUI
         return allows(requirement.server, requirement.permission)
     }
     func recordDenial(path: String, method: String) { denied.insert(method + " " + path) }
-    func clearDenials(server: String) { denied = denied.filter { !$0.contains(" servers/\(server)/") } }
+    func clearDenials(server: String) { denied = denied.filter { !$0.hasSuffix(" servers/\(server)") && !$0.contains(" servers/\(server)/") } }
     nonisolated static func requirement(_ path: String, method: String = "GET", body: JSON? = nil) -> (server: String, permission: String)? {
         let p = path.split(separator: "/").map(String.init)
         guard p.count > 2, p[0] == "servers" else { return nil }

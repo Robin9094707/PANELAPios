@@ -76,6 +76,11 @@ struct ConfigurationField: Identifiable {
         if let comment = value.range(of: " #") { suffix = String(value[comment.lowerBound...]); value = String(value[..<comment.lowerBound]) }
         let trimmed = value.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, !["null", "~"].contains(trimmed.lowercased()), trimmed.range(of: #"^[A-Za-z0-9 _./:@+-]+$"#, options: .regularExpression) != nil else { return nil }
+        // Bukkit commonly uses YAML 1.1 implicit types. Leave ambiguous scalars
+        // in the text editor instead of changing booleans/radix numbers/dates to strings.
+        let implicit = ["yes", "no", "on", "off", "y", "n", ".nan", ".inf", "+.inf", "-.inf"]
+        let special = #"^(?:[-+]?0[0-9_]+|[-+]?0[xXoObB][0-9a-fA-F_]+|[-+]?[0-9][0-9_]*_[0-9_]*|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}.*|[-+]?[0-9]+:[0-9:]+(?:\.[0-9]+)?)$"#
+        guard !implicit.contains(trimmed.lowercased()), trimmed.range(of: special, options: .regularExpression) == nil else { return nil }
         suffix = String(value.dropFirst(trimmed.count)) + suffix
         return (trimmed, suffix, false)
     }

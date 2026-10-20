@@ -19,7 +19,9 @@ final class UpdateFixTests: XCTestCase {
         access.recordDenial(path: "servers/shared/instances/1/swap", method: "POST")
         XCTAssertFalse(access.allows(path: "servers/shared/instances/1/swap", method: "POST"))
         XCTAssertTrue(access.allows(path: "servers/shared/instances/1/rename", method: "PATCH"))
+        access.recordDenial(path: "servers/shared", method: "GET")
         access.clearDenials(server: "shared")
+        XCTAssertTrue(access.allows(path: "servers/shared"))
         XCTAssertTrue(access.allows(path: "servers/shared/instances/1/swap", method: "POST"))
         XCTAssertTrue(ServerAccess().allows("shared", "file.delete")) // No rights leak into a new account.
     }
@@ -59,6 +61,8 @@ final class UpdateFixTests: XCTestCase {
         XCTAssertEqual(rows[0].path, "settings › title")
         XCTAssertEqual(try rows[0].replacement("New # title"), "  title: \"New # title\" # keep")
         XCTAssertEqual(try rows[1].replacement("true"), "  enabled: true")
+        let ambiguous = "flag: yes\nhex: 0xFF\noctal: 012\ndate: 2026-10-20\ntime: 12:34\nseparated: 1_000\nquoted: 'yes'\nboolean: true\ndecimal: 12.5\n"
+        XCTAssertEqual(ConfigurationField.parse(ambiguous, properties: false).map(\.key), ["quoted", "boolean", "decimal"])
     }
     @MainActor func testOldLiveRunCannotDisconnectNewRun() async throws {
         let api = PanelAPI(base: URL(string: "https://demo.invalid")!, key: "", demo: true)
