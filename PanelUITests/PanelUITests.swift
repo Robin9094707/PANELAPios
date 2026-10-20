@@ -54,8 +54,8 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["RecentOffline"].waitForExistence(timeout: 10))
         app.buttons.containing(.staticText, identifier: "RecentOffline").firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Letztes Gerät"].waitForExistence(timeout: 10))
-        let deviceRow = app.staticTexts["Letztes Gerät"]
-        XCTAssertTrue((deviceRow.value as? String) == "Samsung · Demo" || app.staticTexts["Samsung · Demo"].exists, deviceRow.debugDescription)
+        let deviceRow = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Letztes Gerät", "Samsung · Demo")).firstMatch
+        XCTAssertTrue(deviceRow.waitForExistence(timeout: 10))
         capture("21-Offline-Spieler")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.segmentedControls.buttons["Alle"].tap()
