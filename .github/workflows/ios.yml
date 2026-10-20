@@ -54,11 +54,16 @@ jobs:
       - name: Start synthetic pinned TLS fixture
         if: steps.validation.outputs.reuse != 'true'
         run: |
-          python3 scripts/suite_tls_fixture.py > build/tls-fixture.log 2>&1 &
+          nohup python3 scripts/suite_tls_fixture.py </dev/null > build/tls-fixture.log 2>&1 &
+          fixture_pid=$!
           for attempt in {1..20}; do
-            if curl -k -s --connect-timeout 1 https://127.0.0.1:49383/v1/health > /dev/null; then break; fi
+            if ! kill -0 "$fixture_pid" 2>/dev/null; then cat build/tls-fixture.log; exit 1; fi
+            if curl -k -f -s --connect-timeout 1 --max-time 3 -H 'Authorization: Bearer synthetic-tls-token' https://127.0.0.1:49383/v1/health > build/tls-health.json; then exit 0; fi
             sleep 1
           done
+          cat build/tls-fixture.log
+          echo "Synthetic TLS fixture failed its bounded readiness check"
+          exit 1
       - name: Test on simulator
         if: steps.validation.outputs.reuse != 'true'
         run: |
@@ -135,3 +140,4 @@ jobs:
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: Companion/AdminSuite/target/SimplexAdminSuite-8.3.0.jar
+

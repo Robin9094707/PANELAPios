@@ -37,6 +37,7 @@ final class PanelUITests: XCTestCase {
         app.buttons["Spieler, Geräte & Alt-Accounts"].tap()
         XCTAssertTrue(app.staticTexts["Gefundene Profile"].waitForExistence(timeout: 10))
         app.buttons.containing(.staticText, identifier: "TadMC_YT").firstMatch.tap()
+        for _ in 0..<6 { if app.staticTexts["Live-Spielerwerte"].isHittable { break }; app.swipeUp() }
         XCTAssertTrue(app.staticTexts["Live-Spielerwerte"].waitForExistence(timeout: 10)); capture("19-Suite-Spielerakte")
         for _ in 0..<6 { if app.buttons["Spielerakte & gespeicherte Daten"].isHittable { break }; app.swipeUp() }
         app.buttons["Spielerakte & gespeicherte Daten"].tap()
@@ -79,3 +80,4 @@ final class PanelUITests: XCTestCase {
         capture("08-Panel-verbinden")
     }
 }
+
