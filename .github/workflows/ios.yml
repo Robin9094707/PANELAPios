@@ -163,14 +163,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ipa_files=(build/release/*-unsigned.ipa)
+          shopt -s globstar nullglob
+          ipa_files=(build/release/**/*-unsigned.ipa)
           test "${#ipa_files[@]}" -eq 1
           test -f "${ipa_files[0]}"
           ipa_name=$(basename "${ipa_files[0]}")
           ipa_version=${ipa_name#Simplex-Panel-}
           ipa_version=${ipa_version%-unsigned.ipa}
           [[ "$ipa_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          (cd build/release && shasum -a 256 -c SHA256SUMS.txt)
+          ipa_directory=$(dirname "${ipa_files[0]}")
+          (cd "$ipa_directory" && shasum -a 256 -c SHA256SUMS.txt)
           tag="app-v${ipa_version}"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "This app version already has a release; increment the version before replacing it."
@@ -183,4 +185,4 @@ jobs:
           
           Source backup: backup/v1.6.0-before-custom-workspaces.
           NOTES
-          gh release create "$tag" "${ipa_files[0]}" build/release/SHA256SUMS.txt build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest
+          gh release create "$tag" "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest
