@@ -123,7 +123,7 @@ The pre-update source is retained in [`backup/v1.0.0-before-provider-update`](ht
 
 ## Build and unsigned IPA
 
-The `Build and test unsigned iOS app` GitHub Actions workflow generates the Xcode project using XcodeGen, runs XCTest and XCUITest on an iPhone simulator, builds the ARM64 Release app with code signing disabled, verifies its executable and packages `Payload/Panel.app` as an unsigned IPA. Artifacts include the IPA, SHA-256 and simulator test results/screenshots. Push to main or use **Run workflow**. For packaging/documentation-only changes, the workflow can reuse an authenticated successful simulator test step from commit `851f72c4b45f354463e95f5f419796e234f0c188`, but only after verifying that all app source, assets, tests, project settings and entitlements are byte-identical. Other changes to those inputs run the unit suite and the selected UI smoke tour. The release app is rebuilt; the artifact includes the precise validation scope in its proof.
+The `Build and test unsigned iOS app` GitHub Actions workflow generates the Xcode project using XcodeGen, runs XCTest and XCUITest on an iPhone simulator, builds the ARM64 Release app with code signing disabled, verifies its executable and packages `Payload/Panel.app` as an unsigned IPA. Artifacts include the IPA, SHA-256 and simulator test results/screenshots. Push to main or use **Run workflow**. For packaging/documentation-only changes or companion-only changes, the workflow can reuse an authenticated successful simulator test step from commit `91183d0162c554769966e2cb68538c39c82711d9`, but only after verifying that all app source, assets, tests, project settings and entitlements are byte-identical. Other changes to those inputs run the unit suite and the selected UI smoke tour. The release app is rebuilt; the artifact includes the precise validation scope in its proof.
 
 For local builds on a Mac with Xcode 26+:
 
@@ -133,10 +133,12 @@ xcodegen generate
 open Panel.xcodeproj
 ```
 
+Before running simulator tests locally, start `python3 scripts/suite_tls_fixture.py` in a second terminal. This loopback-only synthetic TLS server is required by the pinned certificate integration tests.
+
 An unsigned IPA must be signed using your own Apple signing method before iOS can install/run it. No signing certificate, provisioning profile, panel key or other secret is needed by the build workflow.
 
 ## Validation scope
 
-Automated tests cover API URL normalization and query encoding, authentication headers, plain-text file writes, pagination, HTTP errors/HTML protection pages, JSON mapping, allocations, console cleaning, Keychain persistence, player parsing/provider shapes, native database/property mapping, isolated favorites persistence, and one demo UI tour through console width, shortcuts, files, backups, Minecraft settings and databases. Simulator tests use local fixtures. Actual provider connectivity and destructive server actions require validation against your own account; a green build does not prove those integrations work on every modified provider panel.
+Automated tests cover API URL normalization and query encoding, authentication headers, plain-text file writes, pagination, HTTP errors/HTML protection pages, JSON mapping, allocations, console cleaning, Keychain persistence, player parsing/provider shapes, native database/property mapping, isolated favorites persistence, and one focused demo UI tour through console width, files, backups, Suite connection, live player values and alt-account evidence. Simulator tests use local fixtures. Actual provider connectivity and destructive server actions require validation against your own account; a green build does not prove those integrations work on every modified provider panel.
 
 API contracts are based on the upstream [Client API routes](https://github.com/pterodactyl/panel/blob/1.0-develop/routes/api-client.php). Credential-bearing panel requests only follow same-origin HTTPS redirects. Signed Wings upload/download URLs and short-lived WebSocket tokens are used without forwarding the Client API key. No analytics or app backend.
