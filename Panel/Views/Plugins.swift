@@ -24,7 +24,7 @@ struct PluginsView: View {
                 NavigationLink("Vorgemerkte Updates") { FilesView(api: api, server: server, root: "/plugins/update") }
                 Link("Paper-Anleitung für Plugin-Updates", destination: URL(string: "https://docs.papermc.io/paper/updating/#step-2-update-plugins")!)
             } footer: { Text("Standardpfad: /plugins/update. Falls update-folder in bukkit.yml angepasst wurde, verwende den Datei-Manager. Neue Plugins direkt unter /plugins bei gestopptem Server installieren.") }
-            Section("JAR-Dateien · \(jars.count)") {
+            Section {
                 ForEach(jars, id: \.["name"].string) { entry in
                     let name = entry["name"].string
                     VStack(alignment: .leading, spacing: 9) {
@@ -37,7 +37,7 @@ struct PluginsView: View {
                         }.buttonStyle(.borderless).font(.subheadline)
                     }.padding(.vertical, 5)
                 }
-            } footer: { Text("Die Anzeige basiert auf Dateien, nicht auf einer Abfrage geladener Plugins. Aktivieren und Deaktivieren wirkt nach einem Neustart.") }
+            } header: { Text("JAR-Dateien · \(jars.count)") } footer: { Text("Die Anzeige basiert auf Dateien, nicht auf einer Abfrage geladener Plugins. Aktivieren und Deaktivieren wirkt nach einem Neustart.") }
         }.panelScreen().navigationTitle("Plugins").navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }.errorAlert($error)
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { await load() } }
             .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .item]) { result in

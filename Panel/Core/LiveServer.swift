@@ -87,7 +87,8 @@ import Combine
         while !Task.isCancelled && active && runID == generation {
             do {
                 let result = try await api.request("servers/\(server.id)/resources").attributes
-                if !connected { stats = result["resources"]; state = result["current_state"].string; sample() }
+                if !result["current_state"].string.isEmpty { state = result["current_state"].string }
+                if !connected { stats = result["resources"]; sample() }
             } catch { if !connected { issue = error.localizedDescription } }
             try? await Task.sleep(for: .seconds(connected ? 20 : 5))
         }
