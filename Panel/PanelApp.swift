@@ -15,7 +15,10 @@ import SwiftUI
                 .errorAlert($store.error)
                 .privacySensitive()
                 .overlay { if scenePhase == .background { PanelBackground().overlay { Image(systemName: "server.rack").font(.system(size: 60)).foregroundStyle(.teal) } } }
-                .onChange(of: scenePhase) { _, phase in if phase == .background { store.lock() } }
+                .onChange(of: scenePhase, initial: true) { _, phase in
+                    if phase == .background { store.lock() }
+                    if phase == .active { Task { await store.resume() } }
+                }
         }
     }
 }

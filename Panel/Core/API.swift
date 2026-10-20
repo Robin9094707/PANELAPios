@@ -53,16 +53,17 @@ final class PanelAPI {
         c.queryItems = query.isEmpty ? nil : query.sorted(by: { $0.key < $1.key }).map { URLQueryItem(name: $0.key, value: $0.value) }
         return c.url!
     }
-    func raw(_ path: String, method: String = "GET", query: [String: String] = [:], body: JSON? = nil, text: String? = nil) async throws -> Data {
+    func raw(_ path: String, method: String = "GET", query: [String: String] = [:], body: JSON? = nil, text: String? = nil, binary: Data? = nil) async throws -> Data {
         if demo {
             guard method == "GET" else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }
-            return try JSONEncoder().encode(Demo.response(path))
+            return try JSONEncoder().encode(Demo.response(path, query: query))
         }
         var request = URLRequest(url: try url(path, query: query))
         request.httpMethod = method
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("Application/vnd.pterodactyl.v1+json", forHTTPHeaderField: "Accept")
-        if let text { request.httpBody = Data(text.utf8); request.setValue("text/plain; charset=utf-8", forHTTPHeaderField: "Content-Type") }
+        if let binary { request.httpBody = binary; request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type") }
+        else if let text { request.httpBody = Data(text.utf8); request.setValue("text/plain; charset=utf-8", forHTTPHeaderField: "Content-Type") }
         else if let body { request.httpBody = try JSONEncoder().encode(body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let (data, response) = try await session.data(for: request)
         try Self.validate(data, response: response)
@@ -85,10 +86,17 @@ final class PanelAPI {
         }
     }
     func request(_ path: String, method: String = "GET", query: [String: String] = [:], body: JSON? = nil) async throws -> JSON {
+        if !demo && method == "POST" && path.hasSuffix("/power"), let signal = body?["signal"].string {
+            let root = String(path.dropLast("/power".count))
+            let state = try await request(root + "/resources").attributes["current_state"].string
+            guard PowerPolicy.allows(signal, state: state) else { throw PanelError(message: "Die Aktion ist im aktuellen Serverstatus nicht verfügbar. Aktualisiere die Ansicht.") }
+        }
         let data = try await raw(path, method: method, query: query, body: body)
         if data.isEmpty { return .null }
-        guard let json = try? JSONDecoder().decode(JSON.self, from: data) else { throw PanelError(message: "Das Panel lieferte keine API-Daten. Verwende die URL des Pterodactyl-Panels, nicht die Hosting-Webseite.") }
-        return json
+        do {
+            if data.count > 262144 { return try await Task.detached(priority: .userInitiated) { try JSONDecoder().decode(JSON.self, from: data) }.value }
+            return try JSONDecoder().decode(JSON.self, from: data)
+        } catch { throw PanelError(message: "Das Panel lieferte keine API-Daten. Verwende die URL des Pterodactyl-Panels, nicht die Hosting-Webseite.") }
     }
     func list(_ path: String, query: [String: String] = [:]) async throws -> [JSON] {
         var rows: [JSON] = []; var page = 1
@@ -107,10 +115,19 @@ final class PanelAPI {
     func mutate(_ path: String, method: String = "POST", _ body: [String: Any] = [:]) async throws {
         _ = try await request(path, method: method, body: try JSON.from(body))
     }
+    func fileData(server: String, path: String, limit: Int = 8 * 1024 * 1024) async throws -> Data {
+        if demo && ["dat", "nbt"].contains(URL(fileURLWithPath: path).pathExtension) { return try Demo.playerData() }
+        if demo { return Data("# Simplex SMP\nserver-port=25565\nmotd=Welcome to Simplex SMP\nmax-players=60\nonline-mode=true\nview-distance=10\n".utf8) }
+        let signed = try await request("servers/\(server)/files/download", query: ["file": path]).attributes["url"].string
+        let local = try await download(signed, filename: URL(fileURLWithPath: path).lastPathComponent)
+        defer { try? FileManager.default.removeItem(at: local.deletingLastPathComponent()) }
+        let size = try local.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size <= limit else { throw PanelError(message: "Datei größer als das Editorlimit (\(bytes(Double(limit)))). Verwende Herunterladen.") }
+        return try Data(contentsOf: local, options: .mappedIfSafe)
+    }
     func fileText(server: String, path: String) async throws -> String {
-        if demo { return "# Simplex SMP\nserver-port=25565\nmotd=Welcome to Simplex SMP\nmax-players=100\nonline-mode=true\nview-distance=10\n" }
-        let data = try await raw("servers/\(server)/files/contents", query: ["file": path])
-        guard let text = String(data: data, encoding: .utf8), !text.contains("\0") else { throw PanelError(message: "Diese Datei ist binär. Lade sie zum Öffnen herunter.") }
+        let data = try await fileData(server: server, path: path)
+        guard let text = String(data: data, encoding: .utf8), !text.contains("\0") else { throw PanelError(message: "Diese Datei ist binär. Öffne .dat/.nbt im NBT-Editor oder lade sie herunter.") }
         return text
     }
     func upload(server: String, directory: String, file: URL) async throws {

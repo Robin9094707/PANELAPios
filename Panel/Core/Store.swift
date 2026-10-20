@@ -36,6 +36,9 @@ enum Vault {
 }
 
 @MainActor final class AppStore: ObservableObject {
+    private let defaults: UserDefaults
+    private let readSecret: (UUID) throws -> String
+    @Published var presence: [String: ServerPresence] = [:]
     @Published var profiles: [PanelProfile] = []
     @Published var selected: UUID?
     @Published var api: PanelAPI?
@@ -45,26 +48,60 @@ enum Vault {
     @Published var error: String?
     @Published var demo = false
     @Published var locked = false
-    @AppStorage("biometricLock") var biometricLock = false
+    @Published var biometricLock = false { didSet { defaults.set(biometricLock, forKey: "biometricLock") } }
     var active: PanelProfile? { profiles.first { $0.id == selected } }
-    init() {
-        profiles = (try? JSONDecoder().decode([PanelProfile].self, from: UserDefaults.standard.data(forKey: "profiles") ?? Data())) ?? []
-        if ProcessInfo.processInfo.arguments.contains("--demo") { startDemo(); return }
-        if let saved = UserDefaults.standard.string(forKey: "selectedPanel"), let id = UUID(uuidString: saved), profiles.contains(where: { $0.id == id }) { selected = id }
+    init(defaults: UserDefaults = .standard, readSecret: @escaping (UUID) throws -> String = Vault.read, launchDemo: Bool? = nil) {
+        self.defaults = defaults; self.readSecret = readSecret
+        biometricLock = defaults.bool(forKey: "biometricLock")
+        profiles = (try? JSONDecoder().decode([PanelProfile].self, from: defaults.data(forKey: "profiles") ?? Data())) ?? []
+        if launchDemo ?? ProcessInfo.processInfo.arguments.contains("--demo") { startDemo(); return }
+        if let saved = defaults.string(forKey: "selectedPanel"), let id = UUID(uuidString: saved), profiles.contains(where: { $0.id == id }) { selected = id }
         else { selected = profiles.first?.id }
         if biometricLock { locked = true }
         else { connectSelected() }
     }
+    func restoreConnectionIfNeeded() {
+        guard !locked, !demo else { return }
+        if active == nil { selected = profiles.first?.id }
+        if api == nil { connectSelected() }
+    }
+    func resume() async {
+        restoreConnectionIfNeeded()
+        if !locked { await refresh() }
+    }
+    func pollPresence() async {
+        guard let api else { return }
+        while !Task.isCancelled && self.api === api {
+            let ids = servers.map(\.id)
+            if ids.isEmpty { do { try await Task.sleep(for: .milliseconds(500)) } catch { return }; continue }
+            for batch in stride(from: 0, to: ids.count, by: 3) {
+                if Task.isCancelled { return }
+                let groupIDs = Array(ids[batch..<min(batch + 3, ids.count)])
+                await withTaskGroup(of: (String, String?).self) { group in
+                    for id in groupIDs { group.addTask { @MainActor in
+                        if api.demo { return (id, id == "simplex1" ? "running" : "offline") }
+                        let result = try? await api.request("servers/\(id)/resources")
+                        return (id, result?.attributes["current_state"].string)
+                    } }
+                    for await (id, state) in group {
+                        guard self.api === api, !Task.isCancelled else { continue }
+                        presence[id] = ServerPresence(state: state?.isEmpty == false ? state! : "unknown")
+                    }
+                }
+            }
+            do { try await Task.sleep(for: .seconds(15)) } catch { return }
+        }
+    }
     func persist() {
-        UserDefaults.standard.set(try? JSONEncoder().encode(profiles), forKey: "profiles")
-        UserDefaults.standard.set(selected?.uuidString, forKey: "selectedPanel")
+        defaults.set(try? JSONEncoder().encode(profiles), forKey: "profiles")
+        defaults.set(selected?.uuidString, forKey: "selectedPanel")
     }
     func connectSelected() {
         guard let p = active else { api = nil; servers = []; return }
-        do { api = PanelAPI(base: try PanelAPI.normalize(p.url), key: try Vault.read(p.id)); servers = [] }
-        catch { self.error = error.localizedDescription }
+        do { api = PanelAPI(base: try PanelAPI.normalize(p.url), key: try readSecret(p.id)); servers = []; error = nil }
+        catch { api = nil; servers = []; presence = [:]; self.error = error.localizedDescription }
     }
-    func select(_ id: UUID) { demo = false; selected = id; persist(); connectSelected() }
+    func select(_ id: UUID) { presence = [:]; demo = false; selected = id; persist(); connectSelected() }
     func add(name: String, address: String, key: String) async throws {
         let url = try PanelAPI.normalize(address)
         let token = key.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -88,7 +125,7 @@ enum Vault {
         defer { if refreshID == requestID { loading = false } }
         do {
             let result = try await api.list("").map { Server(data: $0) }
-            guard self.api === api, refreshID == requestID, !Task.isCancelled else { return }; servers = result
+            guard self.api === api, refreshID == requestID, !Task.isCancelled else { return }; servers = result; error = nil
         } catch {
             if !Task.isCancelled && self.api === api && refreshID == requestID { self.error = error.localizedDescription }
         }

@@ -27,7 +27,7 @@ extension View {
 }
 struct StatePill: View {
     let state: String
-    var color: Color { switch state { case "running": return .green; case "starting", "stopping": return .orange; case "offline": return .secondary; default: return .orange } }
+    var color: Color { switch state { case "running": return .green; case "starting", "stopping": return .yellow; case "offline": return .red; default: return .orange } }
     var title: String { switch state { case "running": return "Online"; case "starting": return "Startet"; case "stopping": return "Stoppt"; case "offline": return "Offline"; default: return "Unbekannt" } }
     var body: some View { HStack(spacing: 6) { Circle().fill(color).frame(width: 7, height: 7); Text(title).font(.caption.weight(.semibold)) }.padding(.horizontal, 10).padding(.vertical, 6).background(color.opacity(0.12), in: Capsule()) }
 }

@@ -69,9 +69,9 @@ jobs:
           xcrun lipo build/export/Payload/Panel.app/Panel -verify_arch arm64
           plutil -lint build/export/Payload/Panel.app/Info.plist
           cd build/export
-          zip -qry Panel-1.1.0-unsigned.ipa Payload
-          unzip -t Panel-1.1.0-unsigned.ipa
-          shasum -a 256 Panel-1.1.0-unsigned.ipa > SHA256SUMS.txt
+          zip -qry Panel-1.2.0-unsigned.ipa Payload
+          unzip -t Panel-1.2.0-unsigned.ipa
+          shasum -a 256 Panel-1.2.0-unsigned.ipa > SHA256SUMS.txt
       - name: Extract UI test screenshots
         if: always()
         run: |
@@ -82,7 +82,7 @@ jobs:
         with:
           name: Panel-unsigned-IPA
           path: |
-            build/export/Panel-1.1.0-unsigned.ipa
+            build/export/Panel-1.2.0-unsigned.ipa
             build/export/SHA256SUMS.txt
             build/validation-proof.json
           if-no-files-found: error

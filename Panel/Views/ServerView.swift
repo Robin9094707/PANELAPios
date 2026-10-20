@@ -9,6 +9,7 @@ struct ServerView: View {
         self.api = api; self.server = server; self.initialFolder = initialFolder
         _tab = State(initialValue: initialFolder == nil ? 0 : 2)
     }
+    @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var workspace: WorkspaceStore
     @State private var commandLibrary = false
     @StateObject private var live = LiveServer()
@@ -35,16 +36,17 @@ struct ServerView: View {
                 else { live.stop() }
             }
             .onDisappear { live.stop() }
+            .onChange(of: live.state) { _, state in store.presence[server.id] = ServerPresence(state: state) }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
             .sheet(isPresented: $commandLibrary) { CommandLibrary(api: api, server: server) { command = $0 } }
             .errorAlert($error)
     }
     var powerMenu: some View {
         Menu {
-            Button("Starten", systemImage: "play.fill") { power("start", title: "Server starten") }
-            Button("Neustarten", systemImage: "arrow.clockwise") { power("restart", title: "Server neustarten", destructive: true) }
-            Button("Stoppen", systemImage: "stop.fill", role: .destructive) { power("stop", title: "Server stoppen", destructive: true) }
-            Button("Beenden erzwingen", systemImage: "bolt.slash", role: .destructive) { power("kill", title: "Beenden erzwingen", destructive: true) }
+            Button("Starten", systemImage: "play.fill") { power("start", title: "Server starten") }.disabled(!PowerPolicy.allows("start", state: live.state))
+            Button("Neustarten", systemImage: "arrow.clockwise") { power("restart", title: "Server neustarten", destructive: true) }.disabled(!PowerPolicy.allows("restart", state: live.state))
+            Button("Stoppen", systemImage: "stop.fill", role: .destructive) { power("stop", title: "Server stoppen", destructive: true) }.disabled(!PowerPolicy.allows("stop", state: live.state))
+            Button("Beenden erzwingen", systemImage: "bolt.slash", role: .destructive) { power("kill", title: "Beenden erzwingen", destructive: true) }.disabled(!PowerPolicy.allows("kill", state: live.state))
         } label: { Image(systemName: "power").foregroundStyle(.teal).accessibilityLabel("Server steuern") }
     }
     func power(_ signal: String, title: String, destructive: Bool = false) {
@@ -57,7 +59,7 @@ struct ServerView: View {
                 HStack(spacing: 7) { Circle().fill(live.connected ? Color.green : Color.orange).frame(width: 6, height: 6); Text(live.connection); Spacer(); if let updated = live.lastUpdate { Text(updated, style: .time).monospacedDigit() } }.font(.caption).foregroundStyle(.secondary)
                 if let issue = live.issue, !live.connected { Label(issue, systemImage: "wifi.exclamationmark").font(.footnote).foregroundStyle(.orange).card() }
                 Toggle("Minecraft-Spielerübersicht", isOn: Binding(get: { workspace.isMinecraft(api, server) }, set: { workspace.setMinecraft($0, api, server) })).font(.subheadline)
-                if workspace.isMinecraft(api, server) { PlayersCard(live: live) }
+                if workspace.isMinecraft(api, server) { PlayersCard(live: live); TPSCard(live: live) }
                 if server.data["is_suspended"].bool || server.data["is_installing"].bool || server.data["is_node_under_maintenance"].bool {
                     Label(server.data["is_suspended"].bool ? "Server ist gesperrt" : server.data["is_installing"].bool ? "Installation läuft" : "Node wird gewartet", systemImage: "exclamationmark.triangle").foregroundStyle(.orange).card()
                 }
@@ -132,7 +134,7 @@ struct ServerView: View {
         sending = true
         Task { do {
             guard !api.demo else { throw PanelError(message: "Im Demomodus werden keine Befehle gesendet.") }
-            try await api.mutate("servers/\(server.id)/command", ["command": text]); command = ""
+            try await api.mutate("servers/\(server.id)/command", ["command": text]); command = ""; Feedback.success()
         } catch { self.error = error.localizedDescription }; sending = false }
     }
 }

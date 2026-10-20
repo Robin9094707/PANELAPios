@@ -9,8 +9,20 @@ enum Demo {
             "docker_image": "ghcr.io/pterodactyl/yolks:java_25", "relationships": ["allocations": ["data": [["attributes": ["ip": "simplexsmp.eu", "port": 25565, "is_default": true]]]]]])
     }
     static func wrap(_ rows: [[String: Any]]) -> JSON { try! JSON.from(["data": rows.map { ["attributes": $0] }]) }
-    static func response(_ path: String) -> JSON {
+    static func playerData() throws -> Data {
+        var health = NBTNode(type: 5, name: "Health"); try health.setText("14.5")
+        var food = NBTNode(type: 3, name: "foodLevel"); try food.setText("14")
+        var xp = NBTNode(type: 3, name: "XpLevel"); try xp.setText("12")
+        var name = NBTNode(type: 8, name: "lastKnownName"); try name.setText(".DemoPlayer")
+        let bukkit = NBTNode(type: 10, name: "bukkit", children: [name])
+        return try NBTDocument(root: NBTNode(type: 10, name: "", children: [health, food, xp, bukkit]), compression: .gzip).encode()
+    }
+    static func response(_ path: String, query: [String: String] = [:]) -> JSON {
         if path.isEmpty { return .object(["data": .array(servers.map { .object(["attributes": $0]) })]) }
+        if path.contains("files/list"), query["directory"] == "/plugins" { return wrap([["name": "ExamplePlugin.jar", "is_file": true, "size": 4096], ["name": "ExamplePlugin", "is_file": false, "size": 0], ["name": "update", "is_file": false, "size": 0]]) }
+        if path.contains("files/list"), query["directory"] == "/plugins/update" { return wrap([]) }
+        if path.contains("files/list"), query["directory"] == "/world" { return wrap([["name": "playerdata", "is_file": false, "size": 0], ["name": "level.dat", "is_file": true, "size": 800]]) }
+        if path.contains("files/list"), query["directory"] == "/world/playerdata" { return wrap([["name": "00000000-0000-0000-0000-000000000001.dat", "is_file": true, "size": 200]]) }
         if path.contains("files/list") { return wrap([
             ["name": "plugins", "is_file": false, "size": 0, "modified_at": "2026-10-19T20:37:00Z"],
             ["name": "world", "is_file": false, "size": 0], ["name": "server.properties", "is_file": true, "size": 1924],
@@ -20,6 +32,7 @@ enum Demo {
             ["uuid": "backup-2", "name": "Daily backup", "is_successful": true, "is_locked": false, "bytes": 12714000000, "completed_at": "2026-10-18T03:00:00Z", "created_at": "2026-10-18T02:58:00Z"]]) }
         if path.hasSuffix("allocations") { return wrap([["id": 1, "ip": "simplexsmp.eu", "port": 25565, "is_default": true, "notes": "Java"], ["id": 2, "ip": "simplexsmp.eu", "port": 19132, "is_default": false, "notes": "Bedrock"]]) }
         if path.hasSuffix("schedules") { return wrap([["id": 1, "name": "Daily backup", "is_active": true, "only_when_online": false, "cron": ["minute": "0", "hour": "4", "day_of_month": "*", "month": "*", "day_of_week": "*"], "relationships": ["tasks": ["data": [["attributes": ["id": 1, "action": "backup", "payload": "", "time_offset": 0, "continue_on_failure": false]]]]]]]) }
+        if path.hasSuffix("resources") { return try! JSON.from(["attributes": ["current_state": "running", "resources": ["memory_bytes": 8214000000, "cpu_absolute": 42, "disk_bytes": 23144000000]]]) }
         if path.hasSuffix("minecraft/properties") { return try! JSON.from(["properties": ["motd": "Simplex SMP", "difficulty": "normal", "gamemode": "survival", "max-players": 60, "online-mode": true, "level-name": "world", "view-distance": 10, "simulation-distance": 6]]) }
         if path.hasSuffix("databases") { return wrap([["id": "db1", "name": "s1_minecraft", "username": "u1_simplex", "connections_from": "%", "host": ["address": "db.example.net", "port": 3306], "relationships": ["password": ["attributes": ["password": "demo-password-only"]]]]]) }
         if path.hasSuffix("users") { return wrap([["uuid": "user1", "email": "team@example.net", "username": "Team", "permissions": ["control.console", "control.start", "file.read"]]]) }

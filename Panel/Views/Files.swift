@@ -6,8 +6,13 @@ struct FilesView: View {
     let api: PanelAPI
     let server: Server
     let root: String
+    @ObservedObject private var playerNames = PlayerNameCache.shared
     @EnvironmentObject private var workspace: WorkspaceStore
     @State private var entries: [JSON] = []
+    @State private var matches: [JSON] = []
+    @State private var displayCount = 200
+    @State private var mover: MoveSelection?
+    @State private var nbt: EditorItem?
     @State private var loading = false
     @State private var loaded = false
     @State private var error: String?
@@ -19,16 +24,14 @@ struct FilesView: View {
     @State private var transfer = false
     @State private var share: ShareItem?
     var prefix: String { "servers/\(server.id)/files" }
-    var visible: [JSON] { entries.filter { search.isEmpty || $0["name"].string.localizedCaseInsensitiveContains(search) }.sorted { a, b in
-        if a["is_file"].bool != b["is_file"].bool { return !a["is_file"].bool }; return a["name"].string.localizedStandardCompare(b["name"].string) == .orderedAscending
-    } }
+    var visible: [JSON] { Array(matches.prefix(displayCount)) }
     var body: some View {
         List(selection: $selected) {
             Section {
                 HStack { Label(root, systemImage: "folder").font(.system(.caption, design: .monospaced)).textSelection(.enabled); Spacer(); Text("\(entries.count)").foregroundStyle(.secondary) }
                 HStack { Image(systemName: "magnifyingglass").foregroundStyle(.secondary); TextField("In diesem Ordner suchen", text: $search).autocorrectionDisabled().textInputAutocapitalization(.never) }
                 HStack { EditButton().buttonStyle(.borderless); Spacer(); Button(workspace.isPinned(api, server, root) ? "Lösen" : "Anpinnen", systemImage: "pin") { workspace.toggleFolder(api, server, root) }.buttonStyle(.borderless); fileTools.buttonStyle(.borderless) }
-                if root != "/" { NavigationLink("Stammordner") { FilesView(api: api, server: server, root: "/") } }
+                if root != "/" { NavigationLink("Übergeordneter Ordner") { FilesView(api: api, server: server, root: parentFolder(root)) } }
                 if transfer { Label("Übertragung läuft …", systemImage: "arrow.up.arrow.down").foregroundStyle(.teal) }
             }
             if loading && !loaded { ProgressView("Dateien laden …") }
@@ -41,19 +44,23 @@ struct FilesView: View {
                     } else {
                         NavigationLink { FilesView(api: api, server: server, root: pathJoin(root, name)) } label: { fileRow(entry) }
                     }
-                }.tag(name).contextMenu { fileActions(entry) }
+                }.tag(name).onAppear { if visible.last?["name"].string == name && displayCount < matches.count { displayCount += 200 } }.contextMenu { fileActions(entry) }
                     .swipeActions { Button("Löschen", role: .destructive) { delete([name]) } }
             }
             if !selected.isEmpty {
                 Section("\(selected.count) ausgewählt") {
+                    Button("Auswahl verschieben", systemImage: "folder") { move(Array(selected)) }
                     Button("Auswahl komprimieren", systemImage: "archivebox") { compress(Array(selected)) }
                     Button("Auswahl löschen", systemImage: "trash", role: .destructive) { delete(Array(selected)) }
                 }
             }
         }.panelScreen().navigationTitle(root == "/" ? server.name : URL(fileURLWithPath: root).lastPathComponent)
-            .refreshable { await load() }.task { await load() }
+            .refreshable { await load() }.task { await load(); if root.contains("playerdata") || root.contains("players") { await playerNames.load(api, server) } }
+            .task(id: search) { do { try await Task.sleep(for: .milliseconds(180)); await filter() } catch {} }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { selected = []; await load() } }
             .sheet(item: $editor) { FileEditor(api: api, server: server, item: $0) { Task { await load() } } }
+            .sheet(item: $mover) { FolderPicker(api: api, server: server, source: root, selection: $0) { selected = []; Task { await load() } } }
+            .sheet(item: $nbt) { NBTEditor(api: api, server: server, path: $0.path) }
             .sheet(item: $share) { ShareSheet(url: $0.url) }
             .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .item], allowsMultipleSelection: true) { result in
                 switch result { case .success(let urls): upload(urls); case .failure(let e): error = e.localizedDescription }
@@ -72,7 +79,8 @@ struct FilesView: View {
         HStack(spacing: 14) {
             Image(systemName: entry["is_file"].bool ? "doc.text" : "folder.fill").font(.title3).foregroundStyle(entry["is_file"].bool ? Color.secondary : Color.teal).frame(width: 28)
             VStack(alignment: .leading, spacing: 4) {
-                Text(entry["name"].string).font(.body).lineLimit(2)
+                Text(playerNames.name(api, server, filename: entry["name"].string) ?? entry["name"].string).font(.body).lineLimit(2)
+                if playerNames.name(api, server, filename: entry["name"].string) != nil { Text(entry["name"].string).font(.caption2.monospaced()).foregroundStyle(.secondary) }
                 HStack { Text(entry["is_file"].bool ? bytes(entry["size"].double) : "Ordner"); if !entry["modified_at"].string.isEmpty { Text(entry["modified_at"].string.prefix(16).replacingOccurrences(of: "T", with: " ")) } }.font(.caption).foregroundStyle(.secondary)
             }
         }.padding(.vertical, 4)
@@ -86,23 +94,36 @@ struct FilesView: View {
             Button("Entpacken", systemImage: "archivebox") { operation = Operation(title: "Archiv entpacken", path: prefix + "/decompress", fixed: ["root": .string(root), "file": .string(name)], submit: "Entpacken") }
         }
         if !entry["is_file"].bool { Button("Ordner anpinnen", systemImage: "pin") { workspace.toggleFolder(api, server, pathJoin(root, name)) } }
-        Button("Umbenennen / verschieben", systemImage: "pencil.line") { rename(name) }
+        Button("Verschieben …", systemImage: "folder") { move([name]) }
+        Button("Umbenennen", systemImage: "pencil.line") { rename(name) }
         Button("Komprimieren", systemImage: "archivebox.fill") { compress([name]) }
         Button("Dateirechte", systemImage: "lock.doc") { chmod(name) }
         Button("Löschen", systemImage: "trash", role: .destructive) { delete([name]) }
     }
-    func load() async { loading = true; defer { loading = false }; do { entries = try await api.list(prefix + "/list", query: ["directory": root]); loaded = true } catch is CancellationError {} catch { self.error = error.localizedDescription } }
+    func filter() async {
+        let values = entries, term = search
+        let result = await Task.detached(priority: .userInitiated) { values.filter { term.isEmpty || $0["name"].string.localizedCaseInsensitiveContains(term) } }.value
+        guard term == search, !Task.isCancelled else { return }; matches = result; displayCount = 200
+    }
+    func load() async { loading = true; defer { loading = false }; do {
+        let values = try await api.list(prefix + "/list", query: ["directory": root])
+        entries = await Task.detached(priority: .userInitiated) { values.sorted { a, b in if a["is_file"].bool != b["is_file"].bool { return !a["is_file"].bool }; return a["name"].string.localizedStandardCompare(b["name"].string) == .orderedAscending } }.value
+        await filter(); loaded = true
+    } catch is CancellationError {} catch { self.error = error.localizedDescription } }
+    func move(_ names: [String]) { mover = MoveSelection(names: names, directories: Set(entries.filter { !$0["is_file"].bool }.map { $0["name"].string }).intersection(names)) }
     func open(_ entry: JSON) {
-        if entry["size"].double > 2 * 1024 * 1024 { error = "Der Texteditor öffnet Dateien bis 2 MiB. Größere Dateien kannst du herunterladen."; return }
-        editor = EditorItem(path: pathJoin(root, entry["name"].string))
+        if entry["size"].double > 8 * 1024 * 1024 { error = "Der Editor öffnet Dateien bis 8 MiB. Größere Dateien kannst du herunterladen."; return }
+        let path = pathJoin(root, entry["name"].string)
+        if ["dat", "nbt", "schem", "schematic"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()) { nbt = EditorItem(path: path) }
+        else { editor = EditorItem(path: path) }
     }
     func createFile() { editor = EditorItem(path: root, isNew: true) }
     func delete(_ names: [String]) { operation = Operation(title: "Dateien löschen", detail: "\(names.joined(separator: ", "))\n\nDateien und enthaltene Ordner werden dauerhaft gelöscht.", path: prefix + "/delete", fixed: ["root": .string(root), "files": .array(names.map(JSON.string))], destructive: true, submit: "Endgültig löschen") }
     func compress(_ names: [String]) { operation = Operation(title: "Archiv erstellen", path: prefix + "/compress", fixed: ["root": .string(root), "files": .array(names.map(JSON.string))], submit: "Komprimieren") }
     func rename(_ name: String) {
-        operation = Operation(title: "Umbenennen / verschieben", path: prefix + "/rename", method: "PUT", fields: [Field(key: "to", label: "Neuer Name oder Zielpfad", value: name, hint: "Relativ zum aktuellen Ordner. Ein absoluter Pfad beginnt mit /.")], transform: { values in
+        operation = Operation(title: "Umbenennen", path: prefix + "/rename", method: "PUT", fields: [Field(key: "to", label: "Neuer Name", value: name)], transform: { values in
             let target = values["to"]?.string ?? ""
-            guard !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PanelError(message: "Bitte einen Namen eingeben.") }
+            guard !target.contains("/"), ![".", ".."].contains(target), !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PanelError(message: "Bitte einen Namen eingeben.") }
             return .object(["root": .string(root), "files": .array([.object(["from": .string(name), "to": .string(target)])])])
         })
     }
@@ -145,6 +166,8 @@ struct FileEditor: View {
     @State private var saving = false
     @State private var error: String?
     @State private var discard = false
+    @State private var yamlForm = false
+    @AppStorage("syntaxColors") private var syntaxColors = true
     var dirty: Bool { text != original || item.isNew }
     var body: some View {
         NavigationStack {
@@ -152,13 +175,18 @@ struct FileEditor: View {
                 if item.isNew { TextField("Dateiname, z. B. config.yml", text: $name).textFieldStyle(.roundedBorder).padding().textInputAutocapitalization(.never).autocorrectionDisabled() }
                 if loading { Spacer(); ProgressView("Inhalt laden …"); Spacer() }
                 else if failed { ContentUnavailableView("Datei kann nicht geöffnet werden", systemImage: "doc.questionmark", description: Text("Lade sie herunter oder versuche es erneut.")) }
-                else { TextEditor(text: $text).font(.system(size: 14, design: .monospaced)).scrollContentBackground(.hidden).autocorrectionDisabled().textInputAutocapitalization(.never).padding(8).accessibilityIdentifier("fileEditor") }
-                HStack { Text("UTF-8"); Spacer(); Text("\(text.components(separatedBy: "\n").count) Zeilen · \(bytes(Double(text.utf8.count)))") }.font(.caption.monospaced()).foregroundStyle(.secondary).padding(12).background(.bar)
+                else { SyntaxEditor(text: $text, colors: syntaxColors).frame(maxWidth: .infinity, maxHeight: .infinity) }
+                HStack { Text("UTF-8"); Spacer(); Text(bytes(Double(text.utf8.count))) }.font(.caption.monospaced()).foregroundStyle(.secondary).padding(12).background(.bar)
             }.panelScreen().navigationTitle(item.isNew ? "Neue Datei" : URL(fileURLWithPath: item.path).lastPathComponent).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Schließen") { if dirty { discard = true } else { dismiss() } }.disabled(saving) }
+                    ToolbarItem(placement: .primaryAction) { Menu {
+                        Toggle("Syntaxfarben", isOn: $syntaxColors)
+                        if ["yml", "yaml"].contains(URL(fileURLWithPath: item.path).pathExtension.lowercased()) { Button("YAML-Werte als Formular", systemImage: "slider.horizontal.3") { yamlForm = true }.disabled(loading || failed) }
+                    } label: { Image(systemName: "textformat") } }
                     ToolbarItem(placement: .confirmationAction) { Button { save() } label: { if saving { ProgressView() } else { Text("Speichern").bold() } }.disabled(loading || failed || saving || (item.isNew && name.isEmpty) || !dirty) }
                 }.interactiveDismissDisabled(dirty || saving).errorAlert($error)
+                .sheet(isPresented: $yamlForm) { YAMLForm(text: $text) }
                 .confirmationDialog("Änderungen verwerfen?", isPresented: $discard, titleVisibility: .visible) { Button("Verwerfen", role: .destructive) { dismiss() } }
                 .task {
                     if item.isNew { loading = false; return }
