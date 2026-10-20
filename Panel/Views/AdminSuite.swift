@@ -11,6 +11,7 @@ import SwiftUI
     init(panel: PanelAPI, server: Server) { self.panel = panel; self.server = server }
     func load() async {
         guard !busy else { return }; busy = true; defer { busy = false }
+        if panel.demo && ProcessInfo.processInfo.arguments.contains("--demo-suite") { do { let record = SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: "https://suite.demo.invalid", fingerprint: "", serverIdentity: "synthetic-suite"); let client = try SuiteAPI(record, token: "", demo: true); health = try await client.health(); actions = try await client.request("schema")["actions"].array.map { SuiteAction(data: $0) }; api = client } catch { self.error = error.localizedDescription }; return }
         guard let record = SuiteConnections.shared.get(panel, server) else { api = nil; return }
         do { let client = try SuiteAPI(record); health = try await client.health(); actions = try await client.request("schema")["actions"].array.map { SuiteAction(data: $0) }; api = client }
         catch { api = nil; self.error = error.localizedDescription }
@@ -45,8 +46,9 @@ struct SuiteHubView: View {
                     NavigationLink { SuiteSettingsView(suite: api) } label: { Label("Suite-Einstellungen", systemImage: "slider.horizontal.3") }
                     NavigationLink { SuiteReadView(suite: api, path: "server.status", title: "Serverstatus") } label: { Label("Server & Neustartstatus", systemImage: "server.rack") }
                 }
+                if api.scope == "full" { Section("Vollständige Suite-Verwaltung") { NavigationLink { SuiteRemoteMenuView(suite: api) } label: { Label("Alle Suite-Menüs", systemImage: "square.grid.2x2.fill") } } }
                 Section("Alle Verwaltungsbereiche") {
-                    ForEach(Array(Set(model.actions.map(\.group))).sorted(), id: \.self) { group in NavigationLink { SuiteActionsView(suite: api, actions: model.actions.filter { $0.group == group }, title: group) } label: { Label(group, systemImage: symbol(group)) } }
+                    ForEach(Array(Set(model.actions.filter { $0.id != "menu.action" }.map(\.group))).sorted(), id: \.self) { group in NavigationLink { SuiteActionsView(suite: api, actions: model.actions.filter { $0.group == group && $0.id != "menu.action" }, title: group) } label: { Label(group, systemImage: symbol(group)) } }
                 }
                 Section { Button("Kopplung bearbeiten", systemImage: "key.horizontal") { settings = true }; Button("Verbindung aktualisieren", systemImage: "arrow.clockwise") { Task { await model.load() } } }
             }
@@ -138,7 +140,7 @@ struct SuiteActionView: View {
             .sheet(isPresented: Binding(get: { plan != nil }, set: { if !$0 && !busy { plan = nil } })) { if let plan { confirmation(plan) } }
             .sheet(isPresented: Binding(get: { choiceField != nil }, set: { if !$0 { choiceField = nil } })) { suggestionSheet }
     }
-    var canManage: Bool { suite.scope == "full" || (suite.scope == "manage" && action.data["scope"].string != "full" && !["moderation.config", "suite.command", "server.console", "server.suite", "server.reload", "server.trim"].contains(action.id)) }
+    var canManage: Bool { !suite.demo && (suite.scope == "full" || (suite.scope == "manage" && action.data["scope"].string != "full" && !["moderation.config", "suite.command", "server.console", "server.suite", "server.reload", "server.trim"].contains(action.id))) }
     @ViewBuilder func input(_ field: JSON) -> some View {
         let id = field["name"].string
         if !field["choices"].array.isEmpty {
@@ -187,4 +189,35 @@ struct SuiteLinkedPlayerView: View {
     var body: some View {
         Group { if let api = model.api { SuitePlayerView(suite: api, panel: panel, server: server, player: player, actions: model.actions) } else { List { if model.busy { ProgressView("Admin Suite verbinden …") }; Text("Moderation ist auf Admin Suite eingestellt. Bei Verbindungsproblemen wird keine andere Bannverwaltung automatisch verwendet.").font(.footnote).foregroundStyle(.secondary); Button("Erneut verbinden") { Task { await model.load() } }; NavigationLink("Kopplung prüfen") { SuiteHubView(panel: panel, server: server) } }.panelScreen().navigationTitle(player) } }.task { await model.load() }.errorAlert($model.error)
     }
+}
+
+struct SuiteRemoteMenuView: View {
+    let suite: SuiteAPI
+    @State private var menu: JSON = .null
+    @State private var input = ""
+    @State private var selected: JSON?
+    @State private var plan: JSON?
+    @State private var error: String?
+    @State private var busy = false
+    @State private var search = ""
+    var body: some View {
+        List {
+            Section { Label("Originale Suite-Verwaltung", systemImage: "square.grid.2x2.fill").font(.headline).foregroundStyle(.teal); Text("Diese Ansichten verwenden die vorhandenen Menüaktionen der Suite. Jede Auswahl erhält eine zusätzliche Bestätigung; Einstellungen und Spielerdaten bleiben in denselben Diensten.").font(.footnote).foregroundStyle(.secondary); Text(menu["notice"].string).font(.caption).foregroundStyle(.secondary) }
+            if menu["input"].bool { Section(menu["title"].string) { TextField("Eingabe", text: $input, axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled(); Button("Eingabe prüfen") { select(.object(["id": .string("input"), "name": .string("Eingabe übernehmen"), "detail": .string(input)])) }.disabled(busy) } }
+            Section(cleanConsole(menu["title"].string)) {
+                ForEach(menu["options"].array.filter { search.isEmpty || ($0["name"].string + $0["detail"].string).localizedCaseInsensitiveContains(search) }, id: \.["id"].string) { option in
+                    Button { select(option) } label: { VStack(alignment: .leading, spacing: 5) { Text(cleanConsole(option["name"].string)).font(.headline); if !option["detail"].string.isEmpty { Text(cleanConsole(option["detail"].string)).font(.caption).foregroundStyle(.secondary) } }.disabled(option["disabled"].bool || busy || suite.demo)
+                }
+                if busy { ProgressView("Suite-Menü verarbeiten …") }
+            }
+            if !menu["messages"].array.isEmpty { Section("Rückmeldung der Suite") { ForEach(Array(menu["messages"].array.enumerated()), id: \.offset) { _, value in SuiteFormattedText(text: value.string) } } }
+            Section { Button("Zur Admin-Zentrale", systemImage: "house") { select(.object(["id": .string("home"), "name": .string("Admin-Zentrale öffnen")])) }.disabled(busy || suite.demo); Button("Menüstand aktualisieren", systemImage: "arrow.clockwise") { Task { await load() } }.disabled(busy) }
+        }.panelScreen().navigationTitle("Suite-Menüs").navigationBarTitleDisplayMode(.inline).searchable(text: $search, prompt: "Menüpunkt suchen").task { await load() }.refreshable { await load() }.errorAlert($error)
+            .sheet(isPresented: Binding(get: { plan != nil }, set: { if !$0 && !busy { plan = nil; selected = nil } })) {
+                NavigationStack { List { Section { Text(cleanConsole(selected?["name"].string ?? "Menüaktion")).font(.headline); Text(cleanConsole(selected?["detail"].string ?? "")).textSelection(.enabled); Text("Die Auswahl wird im vorhandenen Suite-Menü ausgeführt. Bei abgelaufenem oder geändertem Menü wird sie abgelehnt.").font(.footnote).foregroundStyle(.secondary) }; Section { Button("Bestätigen & ausführen", role: .destructive) { Task { await execute() } }.disabled(busy); if busy { ProgressView() } } }.panelScreen().navigationTitle("Suite-Auswahl").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { plan = nil; selected = nil }.disabled(busy) } } }.interactiveDismissDisabled(busy)
+            }
+    }
+    func select(_ option: JSON) { selected = option; Task { busy = true; defer { busy = false }; do { let values: [String: JSON] = ["session": menu["session"], "revision": menu["revision"], "option": option["id"], "input": .string(option["id"].string == "input" ? input : "")]; plan = try await suite.prepare("menu.action", values: values) } catch { selected = nil; self.error = error.localizedDescription } } }
+    func load() async { guard !busy else { return }; busy = true; defer { busy = false }; do { menu = try await suite.request("menu"); if menu["input"].bool { input = menu["previous"].string } } catch { self.error = error.localizedDescription } }
+    func execute() async { guard let plan else { return }; busy = true; defer { busy = false; self.plan = nil; selected = nil }; do { menu = try await suite.execute(plan["ticket"].string); search = ""; if menu["input"].bool { input = menu["previous"].string }; Feedback.success() } catch { self.error = error.localizedDescription } }
 }

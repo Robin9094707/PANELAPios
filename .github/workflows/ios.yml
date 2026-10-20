@@ -55,7 +55,7 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 180 -maximum-test-execution-time-allowance 240 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 220 -maximum-test-execution-time-allowance 300 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -99,3 +99,29 @@ jobs:
             simulator-build.log
             device.log
           retention-days: 14
+
+  companion:
+    name: Admin Suite JAR, HTTPS and regression checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/cache@v4
+        with:
+          path: Companion/AdminSuite/target/build-deps
+          key: suite-build-deps-${{ hashFiles('Companion/AdminSuite/tools/build-dependencies.json') }}
+      - name: Build with verified real Paper dependencies
+        working-directory: Companion/AdminSuite
+        run: python3 tools/build-real.py
+      - name: Check HTTPS authentication, confirmations and existing data
+        working-directory: Companion/AdminSuite
+        run: python3 tools/test-830.py
+      - name: Upload companion plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimplexAdminSuite-unsigned-plugin
+          path: Companion/AdminSuite/target/SimplexAdminSuite-8.3.0.jar

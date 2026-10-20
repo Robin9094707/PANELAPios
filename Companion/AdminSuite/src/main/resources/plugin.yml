@@ -1,0 +1,723 @@
+name: SimplexAdminSuite
+main: eu.simplexsmp.adminsuite.SimplexAdminSuite
+version: 8.3.0
+api-version: '26.2'
+author: RJ
+website: https://simplexsmp.eu
+description: Crossplay-Admin-Suite mit Spielerprofilen, Moderation und Befehlsverwaltung.
+softdepend:
+  - BlueMap
+  - floodgate
+  - Geyser-Spigot
+  - LiteBans
+  - Lands
+  - ProVanish
+  - Vanish
+  - SimpleVanish
+  - PremiumVanish
+  - SuperVanish
+  - InvSeePlusPlus
+  - InvSee++
+  - InvSee
+  - SimplexHomes
+  - LuckPerms
+  - SimplexTrimmer
+commands:
+  checkhacks:
+    description: Java client translation/keybind probes; no CheckHacks plugin required.
+    aliases: [sascheckhacks, clientcheck]
+    usage: /checkhacks <player> [all|mod1,mod2|status|stop]
+    permission: simplexadminsuite.clientcheck
+  checklang:
+    description: Shows the locale reported by the client, not proof of language.
+    usage: /checklang <player>
+    permission: simplexadminsuite.clientcheck
+  chalerts:
+    description: Toggles client probe alerts for this staff session.
+    permission: simplexadminsuite.clientcheck.alerts
+  chreload:
+    description: Reloads client probe definitions.
+    permission: simplexadminsuite.clientsecurity.admin
+  shop:
+    description: Opens the points / item-payment shop with native crossplay menus.
+    usage: /shop [admin]
+  delivery:
+    description: Read and acknowledge your staff messages.
+    usage: /delivery [inbox|ack id|admin|status player|create player chat/menu priority title | message]
+    aliases: [quickdelivery, teammessages]
+  spcurrency:
+    description: Points API command bridge for trusted plugins and scripts.
+    usage: /spcurrency <balance|deposit|withdraw|set> <player> [amount] [reason]
+    permission: simplexadminsuite.points.admin
+  connection:
+    description: Admin connection diagnostics, sampled Java ping and disconnect history.
+    usage: /connection <player> [status|test|history] [page]
+    aliases: [sasconnection, connectioncheck]
+    permission: simplexadminsuite.connection
+  simplexprofile:
+    description: Your profile, statistics, language, feedback and sidebar settings.
+    aliases: [profile, profil, simplexprofil, settings, einstellungen]
+    usage: /profil [settings|history|stats|feedback]
+  feedback:
+    description: Send feedback to the server team or read replies.
+    usage: /feedback [message]
+  link:
+    description: Link your Minecraft account to Discord.
+    usage: /link [code|status|unlink]
+  unlink:
+    description: Unlink your Discord account with confirmation.
+    usage: /unlink
+  checkban:
+    description: Prüft LiteBans, interne und Minecraft-Bans.
+    usage: /checkban <Spieler oder UUID>
+    aliases: [sascheckban]
+  checkmute:
+    description: Prüft LiteBans und interne Mutes.
+    usage: /checkmute <Spieler oder UUID>
+    aliases: [sascheckmute]
+  xraybait:
+    description: Temporäre clientseitige Diamant-Köder, ohne Weltänderung.
+    usage: /xraybait <Spieler> [5-60] [wenig|viele] oder /xraybait stop [Spieler]
+  discord:
+    description: Öffnet die Discord-Einladung.
+    usage: /discord [Einladungscode oder Link]
+  setdiscord:
+    description: Ändert den öffentlichen Discord-Einladungslink.
+    usage: /setdiscord <Einladungscode oder Link>
+  vanish:
+    description: Integrierter Admin-Vanish mit Flugmodus.
+    usage: /vanish
+  simplexadmin:
+    description: Öffnet die Simplex Admin Suite.
+    usage: /simplexadmin [menu|connection|adminupdate|adminrights|watch|vpn|activity|scoreboard|playerdata|ai|fun|power|qol|worlds|trimmer|warps|rules|polls|points|channels|clientsecurity|discordstatus|alts|operations|nickname|help]
+    aliases: [adminsuite, adminmenu, admin, suite]
+    permission: simplexadminsuite.admin
+  sas:
+    description: Kurzcommand für die Simplex Admin Suite.
+    usage: /sas [menu|connection|adminupdate|adminrights|watch|vpn|activity|scoreboard|playerdata|ai|fun|power|qol|worlds|trimmer|warps|rules|polls|points|channels|clientsecurity|discordstatus|alts|operations|nickname|help]
+    aliases: [sa]
+    permission: simplexadminsuite.admin
+  report:
+    description: Report a player through the matching Java or Bedrock menu.
+    usage: /report
+    permission: simplexadminsuite.report
+  reports:
+    description: Öffnet die interne Report-Zentrale für Staff.
+    usage: /reports
+    permission: simplexadminsuite.reports
+  staff:
+    description: Öffnet den internen Staff-Arbeitsbereich.
+    usage: /staff
+    permission: simplexadminsuite.admin
+  staffmsg:
+    description: Sendet eine interne Nachricht an das Staff-Team.
+    usage: /staffmsg <Nachricht>
+    aliases: [staffchat, sc]
+    permission: simplexadminsuite.staffchat
+  warps:
+    description: Opens the public server warp menu or teleports to a named warp.
+    usage: /warps [warp]
+    aliases: [serverwarps]
+    permission: simplexadminsuite.warps.use
+  rules:
+    description: Opens the current server rules and required acceptance menu.
+    usage: /rules
+    permission: simplexadminsuite.rules.use
+  vote:
+    description: Opens the currently active server vote.
+    usage: /vote
+    aliases: [poll]
+    permission: simplexadminsuite.polls.use
+  points:
+    description: Shows your Simplex Points, rank, or leaderboard.
+    usage: /points [top]
+    aliases: [simplexpoints, spoints]
+    permission: simplexadminsuite.points.use
+  trimworld:
+    description: Öffnet den integrierten Welten-Trimmer für echte Server-Operatoren.
+    usage: /trimworld
+    aliases: [trimmer, weltentrimmer]
+  fart:
+    description: Let everyone know that your player farted.
+    usage: /fart [tiny|light|bubbly|medium|wet|long|trumpet|thunder|ultra|nuclear|random|toggle]
+    aliases: [toot]
+    permission: simplexadminsuite.fart.use
+  burp:
+    description: Let everyone know that your player burped.
+    usage: /burp [small|loud|deep|monster|random|toggle]
+    aliases: [belch]
+    permission: simplexadminsuite.burp.use
+  ask:
+    description: Ask the optional Simplex server assistant a contextual question.
+    usage: /ask <question>
+    permission: simplexadminsuite.ai.ask
+  aiadmin:
+    description: Verwaltet optionale OpenAI-Funktionen und bestätigungspflichtige KI-Vorschläge.
+    usage: /aiadmin [status|test|propose <Anweisung>|confirm <ID>|limit <Spieler> <Anzahl>]
+    permission: simplexadminsuite.ai.admin
+  aiconfirm:
+    description: Öffnet den accountgebundenen Bestätigungsdialog für einen KI-Vorschlag.
+    usage: /aiconfirm <ID>
+    permission: simplexadminsuite.ai.admin
+  scoreboard:
+    description: Shows scoreboard information or opens the admin scoreboard editor.
+    usage: /scoreboard [toggle|reset|title <Text>]
+    aliases: [sidebar, sb]
+  setdays:
+    description: Setzt die Ingame-Tage der Hauptweltgruppe.
+    usage: /setdays <Tage>
+    permission: simplexadminsuite.scoreboard.admin
+  setvanilladays:
+    description: Setzt die Ingame-Tage der optionalen Zweitweltgruppe.
+    usage: /setvanilladays <Tage>
+    aliases: [setdays2]
+    permission: simplexadminsuite.scoreboard.admin
+  sbreset:
+    description: Baut das native Scoreboard für alle Spieler neu auf.
+    usage: /sbreset
+    permission: simplexadminsuite.scoreboard.admin
+  playerdata:
+    description: Öffnet persistente Online-/24-Stunden-Spielerdaten inklusive NBT und Statistiken.
+    usage: /playerdata [Spieler]
+    aliases: [pdata, recentplayers]
+    permission: simplexadminsuite.playerdata
+  nickname:
+    description: Setzt oder entfernt einen rein visuellen Spielernickname.
+    usage: /nickname <Spieler> <Nickname|reset>
+    aliases: [nick, spitzname]
+    permission: simplexadminsuite.nickname
+  simplexvpn:
+    description: Verwaltet den integrierten VPN-/Proxy-Schutz, die Whitelist und das Protokoll.
+    usage: /simplexvpn [menu|status|an|aus|neu-laden|whitelist|spieler|prüfen|protokoll|cache]
+    aliases: [svpn]
+permissions:
+  simplexadminsuite.bluemap:
+    description: Manage persistent BlueMap visibility.
+    default: op
+  simplexadminsuite.bluemap.hidden:
+    description: Always hide this player from BlueMap; grant explicitly.
+    default: false
+  simplexadminsuite.clientcheck:
+    description: Start and inspect Java client probes.
+    default: op
+  simplexadminsuite.clientcheck.alerts:
+    description: Receive client probe results.
+    default: op
+  simplexadminsuite.shop.use:
+    default: true
+  simplexadminsuite.shop.admin:
+    default: op
+  simplexadminsuite.delivery.admin:
+    default: op
+  simplexadminsuite.connection:
+    description: Inspect connection diagnostics and retained disconnect reasons.
+    default: op
+  simplexadminsuite.commands.admin:
+    description: Spielerbefehle sperren und Befehlsvorschläge bereinigen.
+    default: op
+  simplexadminsuite.community.admin:
+    description: Feedback, profile history and bilingual expiring announcements.
+    default: op
+  simplexadminsuite.playerdata.edit:
+    default: op
+    description: Hunger, Sättigung, Gesundheit und XP online ändern.
+  simplexadminsuite.xraybait:
+    description: Temporäre X-Ray-Beobachtung mit Fake-Blöcken.
+    default: op
+  simplexadminsuite.*:
+    description: Alle Rechte der Simplex Admin Suite.
+    default: op
+    children:
+      simplexadminsuite.bluemap: true
+      simplexadminsuite.clientcheck: true
+      simplexadminsuite.clientcheck.alerts: true
+      simplexadminsuite.xraybait: true
+      simplexadminsuite.admin: true
+      simplexadminsuite.settings: true
+      simplexadminsuite.watch: true
+      simplexadminsuite.reload: true
+      simplexadminsuite.teleport: true
+      simplexadminsuite.bans: true
+      simplexadminsuite.mutes: true
+      simplexadminsuite.warns: true
+      simplexadminsuite.rights: true
+      simplexadminsuite.history: true
+      simplexadminsuite.snapshots: true
+      simplexadminsuite.homes: true
+      simplexadminsuite.data: true
+      simplexadminsuite.vanish: true
+      simplexadminsuite.playerdata.edit: true
+      simplexadminsuite.invsee: true
+      simplexadminsuite.freeze: true
+      simplexadminsuite.utilities: true
+      simplexadminsuite.gamemode: true
+      simplexadminsuite.notes: true
+      simplexadminsuite.reports: true
+      simplexadminsuite.staffchat: true
+      simplexadminsuite.maintenance: true
+      simplexadminsuite.chattoggle: true
+      simplexadminsuite.chat.bypass: true
+      simplexadminsuite.adminspy: true
+      simplexadminsuite.security: true
+      simplexadminsuite.stealth: true
+      simplexadminsuite.afk: true
+      simplexadminsuite.afk.bypass: true
+      simplexadminsuite.startmessages: true
+      simplexadminsuite.operations: true
+      simplexadminsuite.slowmode: true
+      simplexadminsuite.slowmode.bypass: true
+      simplexadminsuite.commandlock: true
+      simplexadminsuite.commandlock.bypass: true
+      simplexadminsuite.commandspy: true
+      simplexadminsuite.chatclear: true
+      simplexadminsuite.duty: true
+      simplexadminsuite.watchlist: true
+      simplexadminsuite.announcements: true
+      simplexadminsuite.diagnostics: true
+      simplexadminsuite.connection: true
+      simplexadminsuite.export: true
+      simplexadminsuite.restart: true
+      simplexadminsuite.discordstatus: true
+      simplexadminsuite.discord.links: true
+      simplexadminsuite.worlds: true
+      simplexadminsuite.warps.admin: true
+      simplexadminsuite.warps.use: true
+      simplexadminsuite.antispam: true
+      simplexadminsuite.antispam.bypass: true
+      simplexadminsuite.updates: true
+      simplexadminsuite.rules.use: true
+      simplexadminsuite.rules.admin: true
+      simplexadminsuite.rules.bypass: true
+      simplexadminsuite.polls.use: true
+      simplexadminsuite.polls.admin: true
+      simplexadminsuite.points.use: true
+      simplexadminsuite.points.admin: true
+      simplexadminsuite.trimmer: true
+      simplexadminsuite.qol: true
+      simplexadminsuite.qol.tasks: true
+      simplexadminsuite.qol.scheduler: true
+      simplexadminsuite.qol.incidents: true
+      simplexadminsuite.qol.health: true
+      simplexadminsuite.qol.macros: true
+      simplexadminsuite.qol.bulk: true
+      simplexadminsuite.qol.timeline: true
+      simplexadminsuite.powertools: true
+      simplexadminsuite.powertools.player: true
+      simplexadminsuite.powertools.moderation: true
+      simplexadminsuite.powertools.inventory: true
+      simplexadminsuite.powertools.history: true
+      simplexadminsuite.alt-rights: true
+      simplexadminsuite.laginspector: true
+      simplexadminsuite.discord.design: true
+      simplexadminsuite.fun.admin: true
+      simplexadminsuite.shop.admin: true
+      simplexadminsuite.delivery.admin: true
+      simplexadminsuite.fart.use: true
+      simplexadminsuite.fart.bypass: true
+      simplexadminsuite.burp.use: true
+      simplexadminsuite.burp.bypass: true
+      simplexadminsuite.check: true
+      simplexadminsuite.check.identifiers: true
+      simplexadminsuite.client.channels: true
+      simplexadminsuite.clientsecurity.admin: true
+      simplexadminsuite.clientsecurity.alerts: true
+      simplexadminsuite.afk.admin: true
+      simplexadminsuite.scoreboard.admin: true
+      simplexadminsuite.playerdata: true
+      simplexadminsuite.nickname: true
+      simplexadminsuite.ai.ask: true
+      simplexadminsuite.ai.admin: true
+      simplexadminsuite.ai.unlimited: true
+      simplexadminsuite.alts: true
+      simplexadminsuite.alts.link: true
+      simplexadminsuite.alts.cascade: true
+      simplexadminsuite.alts.identities: true
+      simplexadminsuite.ultraban: true
+      simplexadminsuite.ultraban.view: true
+      simplexadminsuite.ultraban.unban: true
+      simplexadminsuite.ultraban.reset: true
+      simplexadminsuite.ultraban.alerts: true
+      simplexadminsuite.vpn.admin: true
+      simplexadminsuite.vpn.view: true
+      simplexadminsuite.vpn.manage: true
+      simplexadminsuite.vpn.whitelist: true
+      simplexadminsuite.vpn.check: true
+      simplexadminsuite.vpn.logs: true
+
+  simplexadminsuite.vpn.admin:
+    description: Vollzugriff auf den integrierten VPN-/Proxy-Schutz.
+    default: op
+    children:
+      simplexadminsuite.vpn.view: true
+      simplexadminsuite.vpn.manage: true
+      simplexadminsuite.vpn.whitelist: true
+      simplexadminsuite.vpn.check: true
+      simplexadminsuite.vpn.logs: true
+  simplexadminsuite.vpn.view:
+    description: Darf VPN-Status sowie Java-/Bedrock-Menüs ansehen.
+    default: op
+  simplexadminsuite.vpn.manage:
+    description: Darf Schutz, Provider, Cache und Discord-Protokollkanal verwalten.
+    default: op
+  simplexadminsuite.vpn.whitelist:
+    description: Darf gespeicherte Spieler UUID-sicher zur VPN-Whitelist hinzufügen oder entfernen.
+    default: op
+  simplexadminsuite.vpn.check:
+    description: Darf IP-Adressen manuell über die aktiven VPN-Provider prüfen.
+    default: op
+  simplexadminsuite.vpn.logs:
+    description: Darf das lokale VPN-Erkennungsprotokoll einsehen.
+    default: op
+
+  # Kompatibilitätsrechte für bisherige SimplexVPNBlocker-Setups. Es existiert bewusst kein Bypass-Recht.
+  simplexvpn.admin:
+    description: Legacy-Vollzugriff auf die integrierte VPN-Verwaltung.
+    default: op
+    children:
+      simplexvpn.status: true
+      simplexvpn.reload: true
+      simplexvpn.whitelist: true
+      simplexvpn.check: true
+  simplexvpn.status:
+    description: Legacy-Recht für VPN-Status und Protokoll.
+    default: op
+  simplexvpn.reload:
+    description: Legacy-Recht zum Neuladen der VPN-Einstellungen.
+    default: op
+  simplexvpn.whitelist:
+    description: Legacy-Recht zur Verwaltung der VPN-Whitelist.
+    default: op
+  simplexvpn.check:
+    description: Legacy-Recht für manuelle VPN-IP-Prüfungen.
+    default: op
+
+  simplexadminsuite.client.channels:
+    description: Darf registrierte Java-Plugin-Kanäle und daraus abgeleitete Mod-Hinweise ansehen und neu scannen.
+    default: op
+  simplexadminsuite.clientsecurity.admin:
+    description: Darf Java-Kanalerfassung und die von Alt-Erkennung getrennte Client-Signaturdiagnose verwalten.
+    default: op
+  simplexadminsuite.clientsecurity.alerts:
+    description: Empfängt interne Benachrichtigungen über erkannte oder blockierte Java-Clients.
+    default: op
+  simplexadminsuite.afk.admin:
+    description: Darf Aktivitätsintelligenz, AFK-Qualität und Punkte-Schwellen verwalten.
+    default: op
+  simplexadminsuite.scoreboard.admin:
+    description: Darf Scoreboard, Weltgruppen und Ingame-Tage verwalten.
+    default: op
+  simplexadminsuite.playerdata:
+    description: Darf Online-/24-Stunden-Profile, NBT, Vanilla-Statistiken und Punktekonten ansehen.
+    default: op
+  simplexadminsuite.ai.ask:
+    description: Allows players to use the optional, rate-limited /ask server assistant.
+    default: true
+  simplexadminsuite.ai.admin:
+    description: Darf optionale OpenAI-Funktionen, Limits und bestätigungspflichtige KI-Vorschläge verwalten.
+    default: op
+  simplexadminsuite.ai.unlimited:
+    description: Umgeht das tägliche /ask-Nutzungslimit.
+    default: op
+
+  simplexadminsuite.fun.admin:
+    description: Darf Fun- und Community-Funktionen, Effekte, Cooldowns und Statistiken verwalten.
+    default: op
+  simplexadminsuite.fart.use:
+    description: Allows players to use /fart once per configured cooldown.
+    default: true
+  simplexadminsuite.fart.bypass:
+    description: Umgeht den /fart-Cooldown.
+    default: op
+  simplexadminsuite.burp.use:
+    description: Allows players to use /burp once per configured cooldown.
+    default: true
+  simplexadminsuite.burp.bypass:
+    description: Umgeht den /burp-Cooldown.
+    default: op
+
+  simplexadminsuite.worlds:
+    description: Darf geladene Welten, Uhrzeit, Wetter, Schlafquote und Gamerules verwalten.
+    default: op
+  simplexadminsuite.warps.use:
+    description: Allows players to open and use public server warps.
+    default: true
+  simplexadminsuite.warps.admin:
+    description: Darf öffentliche dimensionsgebundene Server-Warps verwalten.
+    default: op
+  simplexadminsuite.antispam:
+    description: Darf Anti-Spam-Einstellungen und das Block-Protokoll verwalten.
+    default: op
+  simplexadminsuite.antispam.bypass:
+    description: Umgeht den integrierten Anti-Spam- und Linkfilter.
+    default: op
+  simplexadminsuite.updates:
+    description: Darf offizielle Geyser- und Floodgate-Updates prüfen und bereitstellen.
+    default: op
+  simplexadminsuite.rules.use:
+    description: Allows players to view and accept the current server rules.
+    default: true
+  simplexadminsuite.rules.admin:
+    description: Darf englische Serverregeln, Versionen und Zustimmungspflicht verwalten.
+    default: op
+  simplexadminsuite.rules.bypass:
+    description: Muss Regelversionen nicht bestätigen.
+    default: op
+  simplexadminsuite.polls.use:
+    description: Allows players to participate in active server votes.
+    default: true
+  simplexadminsuite.polls.admin:
+    description: Darf englische Serverumfragen starten, beenden und auswerten.
+    default: op
+  simplexadminsuite.points.use:
+    description: Allows players to view their Simplex Points and leaderboard.
+    default: true
+  simplexadminsuite.points.admin:
+    description: Darf Simplex Points, Ränge, Nametags und Discord-Leaderboard konfigurieren.
+    default: op
+  simplexadminsuite.trimmer:
+    description: Deklariert den Trimmer-Befehl; jede Aktion prüft zusätzlich den echten OP-Status.
+    default: op
+
+  simplexadminsuite.qol:
+    description: Öffnet die native Admin-QoL-Zentrale 7.0 für Java und Bedrock.
+    default: op
+  simplexadminsuite.qol.tasks:
+    description: Verwaltet persistente Staff-Aufgaben, Übergaben, Prioritäten und Fälligkeiten.
+    default: op
+  simplexadminsuite.qol.scheduler:
+    description: Plant sicherheitsrelevante Serveraktionen; zusätzlich ist echter OP-Status erforderlich.
+    default: op
+  simplexadminsuite.qol.incidents:
+    description: Aktiviert Incident-Profile und stellt den ursprünglichen Serverzustand wieder her; OP-only.
+    default: op
+  simplexadminsuite.qol.health:
+    description: Zeigt und konfiguriert Health-Guard, Grenzwerte, Verlauf und Discord-Alerts.
+    default: op
+  simplexadminsuite.qol.macros:
+    description: Verwaltet geprüfte Konsolenmakros mit Bestätigung und Sperrliste; OP-only.
+    default: op
+  simplexadminsuite.qol.bulk:
+    description: Führt geprüfte serverweite Massenaktionen aus; OP-only.
+    default: op
+  simplexadminsuite.qol.timeline:
+    description: Liest die persistente gemeinsame Admin-QoL-Chronik.
+    default: op
+
+  simplexadminsuite.powertools:
+    description: Öffnet die native Admin-Kommandozentrale 7.0.
+    default: op
+  simplexadminsuite.powertools.player:
+    description: Nutzt erweiterte Live-Sitzungswerkzeuge für Spieler.
+    default: op
+  simplexadminsuite.powertools.moderation:
+    description: Verwaltet Quarantäne, persönliche Slowmodes und wiederherstellbare Moderationsprofile.
+    default: op
+  simplexadminsuite.powertools.inventory:
+    description: Nutzt bestätigte Inventar-, Enderchest-, Snapshot- und XP-Werkzeuge.
+    default: op
+  simplexadminsuite.powertools.history:
+    description: Liest die persistente Admin-Aktionschronik.
+    default: op
+  simplexadminsuite.alt-rights:
+    description: Verwaltet persistente Rechtevererbung für bestehende und zukünftige Alt-Konten.
+    default: op
+  simplexadminsuite.laginspector:
+    description: Startet den OP-geschützten budgetierten Lag-Hotspot-Scanner.
+    default: op
+  simplexadminsuite.discord.design:
+    description: Bearbeitet Discord-Statustexte, Felder, TPS-Schwellen und dynamische Farben.
+    default: op
+
+  simplexadminsuite.discordstatus:
+    description: Verwaltet Discord-Bot, Chat-Relay und die persistente Statusnachricht.
+    default: op
+  simplexadminsuite.check:
+    description: Öffnet die deutsche Online-/Offline-Clientprüfung für gespeicherte Spielerprofile.
+    default: op
+  simplexadminsuite.check.identifiers:
+    description: Darf rohe IPs und Bedrock-Gerätekennungen in der Clientprüfung sehen.
+    default: op
+  simplexadminsuite.report:
+    description: Allows players to open the public report menu and submit reports.
+    default: true
+  simplexadminsuite.reports:
+    description: Darf Reports und deren geschützte Beweisdaten einsehen und bearbeiten.
+    default: op
+  simplexadminsuite.staffchat:
+    description: Darf interne Staff-Nachrichten senden und empfangen.
+    default: op
+  simplexadminsuite.maintenance:
+    description: Darf den persistenten Server-Wartungsmodus verwalten.
+    default: op
+  simplexadminsuite.admin:
+    description: Öffnet die Admin-Suite und nutzt Basisfunktionen.
+    default: op
+  simplexadminsuite.reload:
+    description: Lädt Suite, Integrationen und Zeitpläne neu.
+    default: op
+  simplexadminsuite.teleport:
+    description: Teleportiert zu Spielern, letzten Orten oder holt Spieler heran.
+    default: op
+  simplexadminsuite.bans:
+    description: Verwaltet Bans, Tempbans, Entbannungen und Kicks.
+    default: op
+  simplexadminsuite.mutes:
+    description: Verwaltet Mutes, Tempmutes und Entstummungen.
+    default: op
+  simplexadminsuite.warns:
+    description: Verwaltet Warnungen.
+    default: op
+  simplexadminsuite.rights:
+    description: Verwaltet feingranulare Spielersperren.
+    default: op
+  simplexadminsuite.history:
+    description: Liest und durchsucht Chat- und Aktionsverläufe.
+    default: op
+  simplexadminsuite.snapshots:
+    description: Erstellt, lädt und löscht Inventar-Snapshots.
+    default: op
+  simplexadminsuite.homes:
+    description: Öffnet die optionale HomeAdmin-Integration.
+    default: op
+  simplexadminsuite.data:
+    description: Löscht entbehrliche gespeicherte Spielerdaten.
+    default: op
+  simplexadminsuite.vanish:
+    description: Nutzt die optionale Vanish-Integration.
+    default: op
+  simplexadminsuite.invsee:
+    description: Nutzt die optionale InvSee-Integration.
+    default: op
+  simplexadminsuite.freeze:
+    description: Friert Spieler ein oder gibt sie frei.
+    default: op
+  simplexadminsuite.utilities:
+    description: Heilt, sättigt und holt Spieler heran.
+    default: op
+  simplexadminsuite.gamemode:
+    description: Ändert den Spielmodus anderer Spieler.
+    default: op
+  simplexadminsuite.notes:
+    description: Verwaltet interne Teamnotizen zu Spielern.
+    default: op
+
+  simplexadminsuite.chattoggle:
+    description: Darf den globalen öffentlichen Chat aktivieren und deaktivieren.
+    default: op
+  simplexadminsuite.chat.bypass:
+    description: Darf trotz deaktiviertem globalen Chat schreiben.
+    default: op
+  simplexadminsuite.adminspy:
+    description: Darf AdminSpy für öffentlichen Chat und unterstützte Privatnachrichten verwenden.
+    default: op
+  simplexadminsuite.security:
+    description: Darf die Admin-Sicherheit einsehen und als OP konfigurieren.
+    default: op
+  simplexadminsuite.stealth:
+    description: Darf eigene Join-, Quit- und Sichtbarkeitseinstellungen verwalten.
+    default: op
+  simplexadminsuite.afk:
+    description: Darf das AFK-System konfigurieren.
+    default: op
+  simplexadminsuite.afk.bypass:
+    description: Wird nicht wegen langer AFK-Zeit entfernt.
+    default: op
+  simplexadminsuite.startmessages:
+    description: Darf öffentliche englische Startnachrichten anlegen und löschen.
+    default: op
+
+  simplexadminsuite.operations:
+    description: Öffnet die Einsatzleitstelle für erweiterte Live-Steuerung.
+    default: op
+  simplexadminsuite.slowmode:
+    description: Darf den öffentlichen Chat-Slowmode verwalten.
+    default: op
+  simplexadminsuite.slowmode.bypass:
+    description: Umgeht den öffentlichen Chat-Slowmode.
+    default: op
+  simplexadminsuite.commandlock:
+    description: Darf den temporären Befehls-Lockdown verwalten.
+    default: op
+  simplexadminsuite.commandlock.bypass:
+    description: Umgeht den Befehls-Lockdown.
+    default: op
+  simplexadminsuite.commandspy:
+    description: Darf nicht-sensible Spielerbefehle live überwachen.
+    default: op
+  simplexadminsuite.chatclear:
+    description: Darf den öffentlichen Chat leeren.
+    default: op
+  simplexadminsuite.duty:
+    description: Darf den eigenen Staff-Dienststatus verwalten.
+    default: op
+  simplexadminsuite.watchlist:
+    description: Darf die interne Beobachtungsliste verwalten und Warnungen sehen.
+    default: op
+  simplexadminsuite.announcements:
+    description: Darf automatische öffentliche Ankündigungen verwalten.
+    default: op
+  simplexadminsuite.diagnostics:
+    description: Darf Live-Diagnosen der Suite einsehen.
+    default: op
+  simplexadminsuite.export:
+    description: Darf Diagnoseberichte in den Pluginordner exportieren.
+    default: op
+  simplexadminsuite.restart:
+    description: Darf einen bestätigten Server-Neustart mit öffentlichem Countdown auslösen.
+    default: op
+
+  simplexadminsuite.alts:
+    description: Darf gewichtete Alt-Account-Treffer und technische Identitätsdaten einsehen.
+    default: op
+  simplexadminsuite.alts.link:
+    description: Darf Alt-Konten manuell bestätigen oder Fehlzuordnungen ignorieren.
+    default: op
+  simplexadminsuite.alts.cascade:
+    description: Darf starke, kaskadensichere Alt-Konten gemeinsam bestrafen.
+    default: op
+  simplexadminsuite.alts.identities:
+    description: Darf Identitätsban-Status und technische Beweiszusammenfassungen einsehen.
+    default: op
+  simplexadminsuite.ultraban:
+    description: Darf persistente Identitätsgruppen als Ultrabann sperren.
+    default: op
+  simplexadminsuite.ultraban.view:
+    description: Darf Ultrabann-Status, Gruppen und Evasion-Protokolle einsehen.
+    default: op
+  simplexadminsuite.ultraban.unban:
+    description: Darf komplette Ultrabann-Gruppen und alle Identitätsanker freigeben.
+    default: op
+  simplexadminsuite.ultraban.reset:
+    description: Darf gespeicherte Geräte-, IP- und Alt-Verknüpfungsdaten eines Profils zurücksetzen.
+    default: op
+  simplexadminsuite.ultraban.alerts:
+    description: Erhält Live-Warnungen und Join-Zusammenfassungen zu blockierten Ban-Evasion-Versuchen.
+    default: op
+
+  simplexadminsuite.settings:
+    description: Einstellungen der Admin-Zentrale 7.4 ändern (Konsolenfreigabe nur Hauptadmin/OP).
+    default: op
+  simplexadminsuite.watch:
+    description: Serverbeobachtbare Aktionen live in der Actionbar verfolgen.
+    default: op
+
+  simplexadminsuite.moderation.control:
+    description: Gemeinsame Moderationsverwaltung und globale Chatregeln.
+    default: op
+  simplexadminsuite.restrictions:
+    description: Einschränkungsvorlagen und Alt-Vererbung verwalten.
+    default: op
+  simplexadminsuite.devices.models:
+    description: Globale Bedrock-Gerätemodellsperren verwalten.
+    default: op
+  simplexadminsuite.settings.advanced:
+    description: Alle nicht geheimen Suite-Konfigurationswerte verwalten.
+    default: op
+
+  simplexadminsuite.discord.links:
+    description: Discord-Kontoverknüpfungen verwalten.
+    default: op
+
+  simplexadminsuite.detectors.bypass:
+    description: Exclude this player from optional observational security detectors
+    default: false

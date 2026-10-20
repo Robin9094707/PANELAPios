@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>eu.simplexsmp</groupId>
+    <artifactId>simplex-admin-suite</artifactId>
+    <version>8.3.0</version>
+    <name>Simplex Admin Suite</name>
+    <description>Crossplay-Admin-Suite mit Spielerprofilen, Moderation und Befehlsverwaltung.</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+        <paper.version>26.3.build.180-stable</paper.version>
+        <floodgate.version>2.2.5-SNAPSHOT</floodgate.version>
+        <junit.version>5.14.4</junit.version>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
+        <repository>
+            <id>opencollab</id>
+            <url>https://repo.opencollab.dev/main/</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <dependency><groupId>io.netty</groupId><artifactId>netty-transport</artifactId><version>4.1.118.Final</version><scope>provided</scope></dependency>
+        <dependency><groupId>org.xerial</groupId><artifactId>sqlite-jdbc</artifactId><version>3.53.4.0</version></dependency>
+        <dependency>
+            <groupId>io.papermc.paper</groupId>
+            <artifactId>paper-api</artifactId>
+            <version>${paper.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.geysermc.floodgate</groupId>
+            <artifactId>api</artifactId>
+            <version>${floodgate.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>SimplexAdminSuite-${project.version}</finalName>
+        <plugins>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.6.1</version>
+              <executions><execution><phase>package</phase><goals><goal>shade</goal></goals><configuration>
+                <createDependencyReducedPom>false</createDependencyReducedPom>
+                <artifactSet><includes><include>org.xerial:sqlite-jdbc</include></includes></artifactSet>
+                <filters><filter><artifact>*:*</artifact><excludes><exclude>META-INF/*.SF</exclude><exclude>META-INF/*.RSA</exclude><exclude>META-INF/*.DSA</exclude><exclude>module-info.class</exclude><exclude>org/sqlite/native/Linux/riscv64/**</exclude><exclude>org/sqlite/native/Linux/armv7/**</exclude><exclude>org/sqlite/native/Linux/arm/**</exclude><exclude>org/sqlite/native/Linux/x86/**</exclude><exclude>org/sqlite/native/Linux/ppc64/**</exclude><exclude>org/sqlite/native/Linux/armv6/**</exclude><exclude>org/sqlite/native/FreeBSD/**</exclude><exclude>org/sqlite/native/Linux-Musl/x86/**</exclude><exclude>org/sqlite/native/Windows/armv7/**</exclude><exclude>org/sqlite/native/Windows/x86/**</exclude></excludes></filter></filters>
+              </configuration></execution></executions></plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.15.0</version>
+                <configuration>
+                    <release>${maven.compiler.release}</release>
+                    <encoding>UTF-8</encoding>
+                    <showWarnings>true</showWarnings>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.6.0</version>
+                <configuration>
+                    <useModulePath>false</useModulePath>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Implementation-Title>Simplex Admin Suite</Implementation-Title>
+                            <Implementation-Version>${project.version}</Implementation-Version>
+                            <Built-By>RJ / Simplex SMP</Built-By>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

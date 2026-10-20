@@ -4,7 +4,7 @@ final class PanelUITests: XCTestCase {
     var app: XCUIApplication!
     override func setUpWithError() throws {
         continueAfterFailure = false
-        app = XCUIApplication(); app.launchArguments = ["--demo", "--demo-paused-download", "-AppleLanguages", "(de)", "-AppleLocale", "de_DE"]; app.launch()
+        app = XCUIApplication(); app.launchArguments = ["--demo", "--demo-paused-download", "--demo-suite", "-AppleLanguages", "(de)", "-AppleLocale", "de_DE"]; app.launch()
     }
     func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
@@ -60,9 +60,17 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Zeitpläne"].waitForExistence(timeout: 10)); capture("07-Verwalten")
         app.buttons["adminSuiteHub"].tap()
         XCTAssertTrue(app.staticTexts["Simplex Admin Suite"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["suite-connect"].exists)
-        XCTAssertFalse(app.buttons["suite-connect"].isEnabled)
-        capture("18-Admin-Suite-Kopplung")
+        capture("18-Admin-Suite")
+        app.buttons["Spieler, Geräte & Alt-Accounts"].tap()
+        XCTAssertTrue(app.staticTexts["Gefundene Profile"].waitForExistence(timeout: 10))
+        app.buttons.containing(.staticText, identifier: "TadMC_YT").firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Live-Spielerwerte"].waitForExistence(timeout: 10)); capture("19-Suite-Spielerakte")
+        app.swipeUp()
+        app.buttons["Alt-Accounts & Belege"].tap()
+        XCTAssertTrue(app.staticTexts[".BedrockDemo"].waitForExistence(timeout: 10)); capture("20-Suite-Alt-Accounts")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["Zeitpläne"].tap()
         XCTAssertTrue(app.staticTexts["Uhrzeit & Zeitzone"].waitForExistence(timeout: 10)); capture("13-Zeitplaene")

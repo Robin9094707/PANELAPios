@@ -17,7 +17,7 @@ struct PanelBackground: View {
     }
 }
 extension View {
-    func panelScreen() -> some View { self.scrollContentBackground(.hidden).background { PanelBackground() } }
+    func panelScreen() -> some View { self.scrollContentBackground(.hidden).background { PanelBackground() }.overlay { CopyFeedbackOverlay() } }
     func card() -> some View { self.padding(18).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24)).overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(.primary.opacity(0.06)) } }
     func errorAlert(_ error: Binding<String?>) -> some View {
         alert("Hinweis", isPresented: Binding(get: { error.wrappedValue != nil }, set: { if !$0 { error.wrappedValue = nil } })) {

@@ -1,0 +1,1072 @@
+# Simplex Admin Suite 7.11.0
+config-version: 56
+
+prefix: '&8[&bSimplexAdmin&8] &7'
+
+storage:
+  schema-version: 17
+  max-warnings: 80
+  max-notes: 80
+  max-chat-lines: 100
+  max-private-message-lines: 120
+  max-action-lines: 240
+
+floodgate:
+  # Floodgate/Geyser bleiben vollständig optional. Ohne Crossplay-API wird nur das Java-GUI genutzt.
+  enabled: true
+  prefer-bedrock-forms: true
+  open-form-on-admin-join: false
+  player-page-size: 18
+  history-page-size: 15
+  snapshot-page-size: 15
+  report-page-size: 16
+
+punishments:
+  # auto = LiteBans, falls vorhanden; sonst das interne System.
+  # Weitere Werte: internal, litebans, commands
+  provider: auto
+  default-temp-duration: '1d'
+  max-reason-length: 240
+  broadcast-actions: true
+  sync-warnings-to-litebans: true
+  kick-player-on-ban: true
+  commands:
+    ban: 'ban {player} {reason}'
+    tempban: 'tempban {player} {duration} {reason}'
+    unban: 'unban {player}'
+    mute: 'mute {player} {reason}'
+    tempmute: 'tempmute {player} {duration} {reason}'
+    unmute: 'unmute {player}'
+    kick: 'kick {player} {reason}'
+    warn: 'warn {player} {reason}'
+
+messages:
+  # Englische Basistexte; deutsche Spieler erhalten die lokalisierte Ausgabe.
+  internal-ban-login: |-
+    You are banned from this server.
+    Reason: {reason}
+    Remaining: {remaining}
+  internal-mute: 'You are muted. Reason: {reason}. Remaining: {remaining}.'
+  frozen: 'You have been frozen by staff.'
+  unfrozen: 'You are no longer frozen.'
+  healed: 'You have been healed and fed by staff.'
+  gamemode-changed: 'Your game mode was changed to {gamemode} by staff.'
+  broadcast-ban: '{player} has been banned by staff. Reason: {reason}'
+  broadcast-tempban: '{player} has been temporarily banned by staff for {duration}. Reason: {reason}'
+  broadcast-unban: '{player} has been unbanned by staff.'
+  broadcast-mute: '{player} has been muted by staff. Reason: {reason}'
+  broadcast-tempmute: '{player} has been temporarily muted by staff for {duration}. Reason: {reason}'
+  broadcast-unmute: '{player} has been unmuted by staff.'
+  broadcast-kick: '{player} has been removed by staff. Reason: {reason}'
+
+global-chat:
+  # English defaults; player-facing delivery is localized per recipient.
+  blocked-message: 'Global chat is currently disabled by staff.'
+  disabled-message: 'Global chat has been disabled by staff.'
+  enabled-message: 'Global chat has been enabled by staff.'
+
+warps:
+  # Player messages support DE/EN; admin menus remain German.
+  messages:
+    not-found: 'This server warp is not available.'
+    world-unavailable: "This warp's world is currently unavailable."
+    teleported: 'Teleported to {warp}.'
+    failed: 'Teleportation to {warp} failed.'
+
+reconnect-protection:
+  # A player who disconnects during the first 15 seconds must wait until the original window ends.
+  # After playing for at least 15 seconds, an immediate reconnect is allowed.
+  enabled: true
+  cooldown-seconds: 15
+  minimum-play-seconds: 15
+  message: |-
+    Simplex SMP
+    You can reconnect in {seconds} seconds.
+
+anti-spam:
+  enabled: true
+  minimum-interval-millis: 900
+  burst:
+    limit: 5
+    window-millis: 5000
+  duplicates:
+    enabled: true
+    window-millis: 15000
+  links:
+    block: true
+    strict-only-allowed-urls: true
+    allowed-domains: []
+    allowed-urls:
+      - 'https://discord.gg/2gAsymnXfd'
+  log:
+    max-entries: 500
+  # Player-facing cancellation messages support DE/EN.
+  messages:
+    too-fast: 'You are sending messages too quickly. Please slow down.'
+    burst: 'You are sending too many messages. Please wait a moment.'
+    duplicate: 'Please do not repeat the same message.'
+    link: 'Links are not allowed in public chat.'
+
+server-rules:
+  require-acceptance: true
+  default-rules:
+    - 'Be respectful to every player and staff member.'
+    - "Do not grief, steal, scam, or intentionally destroy other players' work."
+    - 'Do not use cheats, exploits, duplication bugs, or unauthorized modifications.'
+    - 'Do not spam, advertise, share prohibited links, or bypass the chat filter.'
+    - 'Follow staff instructions and report bugs instead of abusing them.'
+
+polls:
+  actionbar-enabled: true
+  max-history: 50
+
+simplex-points:
+  enabled: true
+  award-interval-minutes: 10
+  points-per-interval: 5
+  # Compact public Discord player rows omit points and ranks by default.
+  show-in-discord-status: false
+  discord-leaderboard: false
+  ranks:
+    - '0|Newcomer'
+    - '50|Explorer'
+    - '250|Regular'
+    - '1000|Veteran'
+    - '5000|Legend'
+
+# Local, explainable activity scoring. No cloud API is used for AFK or point eligibility.
+activity-intelligence:
+  enabled: true
+  window-seconds: 300
+  visual-active-score: 25
+  points-active-score: 48
+  # A real chat message always clears AFK immediately, while point progress still needs varied gameplay.
+  chat-clears-afk-seconds: 30
+  suspicious-detection:
+    enabled: true
+    minimum-consecutive-checkpoints: 3
+    force-afk: true
+    # Input-pattern hints are never relayed to Discord (including legacy settings).
+    discord-alerts: false
+    discord-cooldown-minutes: 60
+    player-warning-cooldown-minutes: 10
+    player-message: 'Your current input pattern does not count as active gameplay. You are marked AFK and Simplex Point progress is paused until varied, active play resumes.'
+    resumed-message: 'Active gameplay was detected again. Simplex Point progress has resumed.'
+
+scoreboard:
+  enabled: true
+  # Uses Paper's blank number format when supported, removing the red sidebar numbers on Java.
+  hide-java-score-numbers: true
+  update-ticks: 20
+  main-world: world
+  second-world:
+    enabled: true
+    name: survival2
+  title: '&x&0&0&A&8&E&8&ls&x&0&0&B&5&E&2&li&x&0&0&C&1&D&C&lm&x&0&0&C&E&D&6&lp&x&0&0&D&A&D&0&ll&x&0&0&E&7&C&A&le&x&0&0&F&3&C&4&lx&x&1&5&E&A&C&D&ls&x&2&A&E&1&D&6&lm&x&4&0&D&8&E&0&lp&x&5&5&C&F&E&7&l.&x&6&A&C&6&F&0&le&x&8&0&B&D&F&9&lu'
+  lines:
+    - '&8----------------'
+    - '&f ING-Days: &e{days}'
+    - '&f World: {world}'
+    - '&b Main: &f{main_players} &8• &2Vanilla: &f{second_players}'
+    - '&f Online: &b{online}&8/&7{max}'
+    - '&f Points: &b{points} SP'
+    - '&8----------------'
+    - '&9&lDC&8: &72gAsymnXfd'
+
+player-data:
+  # Extra absolute world roots can be supplied when worlds live outside the server root.
+  additional-world-folders: []
+
+# Every OpenAI feature is opt-in. The API key is stored in ai-secret.properties (owner-only where supported),
+# never in this normal config. OPENAI_API_KEY can be used instead.
+openai:
+  enabled: false
+  model: gpt-5.6-luna
+  # Optional for legacy or explicitly scoped credentials. Modern project keys normally need neither value.
+  organization-id: ''
+  project-id: ''
+  timeout-seconds: 8
+  moderation:
+    # Context model: enough room for reasoning AND the short final decision.
+    context-max-output-tokens: 2048
+    context-timeout-seconds: 12
+    enabled: false
+    fail-open: true
+    conflict-term-threshold: 1
+    conflict-terms:
+      - 'halt die klappe'
+      - 'shut up'
+      - 'idiot'
+      - 'hate you'
+      - 'report you'
+  ask:
+    enabled: true
+    default-daily-limit: 5
+    cooldown-seconds: 30
+    max-output-tokens: 500
+  admin-actions:
+    # The model can only draft an allowlisted proposal. Execution always requires a second,
+    # account-bound Java inventory or Bedrock form confirmation within five minutes.
+    enabled: false
+    # Used when an otherwise explicit temp-ban/temp-mute request contains no duration.
+    default-duration: 1d
+
+nameplates:
+  manage-player-list: true
+  # Chat display names and chat format are managed exclusively by the chat plugin.
+  manage-nametags: true
+  refresh-seconds: 2
+  log-conflicts: false
+  # Enable only if you want Suite to decorate another plugin's individual teams.
+  decorate-foreign-teams: false
+  # Simplex Points are intentionally never rendered above player names.
+  show-points: false
+  show-luckperms: true
+
+nicknames:
+  max-length: 24
+  allow-colors: true
+  show-in-player-list: true
+
+world-trimmer:
+  enabled: true
+  # The official MCA Selector release is downloaded only on an operator's explicit request.
+  tool:
+    repository: 'Querz/mcaselector'
+    minimum-version: '2.8'
+  # Conservative defaults for a 16 GiB Paper server. The child process never uses the tick thread.
+  performance:
+    heap: '3G'
+    process-threads: 2
+    write-threads: 1
+  default-threshold-ticks: 1200
+  minimum-threshold-ticks: 20
+  history-limit: 100
+  restart-after-failure: true
+  preflight:
+    minimum-free-space-gib: 2
+    refuse-loaded-chunks: true
+    # A failed unload is retried because Paper/plugin tickets can release chunks a few ticks late.
+    unload-retries: 3
+    unload-retry-delay-ticks: 20
+    # If chunks still remain, only the initiating real OP receives the explicit emergency popup.
+    allow-operator-bypass: true
+  # English defaults below are localized for German players.
+  messages:
+    scheduled: 'World trimming is scheduled. All players will be disconnected in {seconds} seconds.'
+    countdown: 'World trimming starts in {seconds} seconds.'
+    cancelled: 'The scheduled world trim has been cancelled.'
+    starting: 'World trimming is starting now. The server will restart automatically when it is complete.'
+    override-starting: 'World maintenance is continuing after an operator safety override. The server remains locked.'
+    override-waiting: 'World maintenance is waiting for the initiating server operator to complete a safety decision.'
+    maintenance: |-
+      World maintenance is in progress.
+
+      Target: {target}
+      Progress: {progress}%
+      Estimated time remaining: {eta}
+
+      Please reconnect after the automatic server restart.
+    recovery: 'World maintenance recovery is active. Please try again after a server operator has completed the safety check.'
+
+crossplay-updates:
+  auto-check: true
+  check-interval-hours: 24
+  last-check-at: 0
+  # Internal SHA-256 state prevents reinstalling the same development build.
+  known-hashes:
+    geyserspigot: ''
+    floodgate: ''
+
+operations:
+  # Public messages are intentionally English. Admin menu labels remain German.
+  default-slowmode-seconds: 0
+  slowmode-blocked: 'Please wait {seconds} seconds before sending another message.'
+  slowmode-changed-message: 'Chat slowmode is now {seconds} seconds.'
+  command-lockdown-blocked: 'Commands are temporarily restricted by staff.'
+  command-lockdown-enabled-message: 'Commands have been temporarily restricted by staff.'
+  command-lockdown-disabled-message: 'Command restrictions have been lifted by staff.'
+  chat-cleared-message: 'Public chat has been cleared by staff.'
+  restart:
+    # Der Admin-Bereich bleibt Deutsch; diese Meldungen sehen alle Spieler und bleiben Englisch.
+    countdown-seconds: 30
+    start-message: 'Server restart scheduled by staff. Restarting in {seconds} seconds.'
+    countdown-message: 'Server restarting in {seconds} seconds.'
+    now-message: 'Server is restarting now. Please reconnect shortly.'
+    title: 'SERVER RESTART'
+    subtitle: 'Restarting in {seconds} seconds'
+    now-title: 'RESTARTING NOW'
+    now-subtitle: 'Please reconnect shortly'
+  command-lockdown-whitelist:
+    - /help
+    - /msg
+    - /tell
+    - /w
+    - /r
+    - /report
+    - /spawn
+    - /home
+    - /tpa
+    - /tpaccept
+    - /tpdeny
+    - /login
+    - /register
+
+admin-qol:
+  # QoL-Daten liegen getrennt unter plugins/SimplexAdminSuite/admin-qol/.
+  scheduler:
+    # Nach einem Offline-Zeitraum werden fällige Jobs nur innerhalb dieses Fensters nachgeholt.
+    overdue-grace-minutes: 10
+  health-guard:
+    enabled: true
+    interval-seconds: 30
+    consecutive-samples: 3
+    tps-warning: 18.0
+    tps-critical: 15.0
+    memory-warning-percent: 85
+    memory-critical-percent: 95
+    loaded-chunks-warning: 10000
+    alert-cooldown-seconds: 300
+    discord-alerts: true
+
+# Spielerkontrollen bleiben update-sicher und werden atomar im etablierten Ordner admin-6/ gespeichert. Alle sichtbaren
+# Spielertexte bleiben Englisch; die Java-/Bedrock-Adminoberflächen sind Deutsch.
+player-controls:
+  personal-slowmode-message: 'Please wait {seconds} seconds before sending another message.'
+  chat-formatting-empty: 'Your message contained only chat formatting that is disabled for your account.'
+  private-messages-blocked: 'Your private-message permission is currently disabled on this server.'
+  mentions-blocked: 'Your player-mention permission is currently disabled on this server.'
+  food-blocked: 'Your food-use permission is currently disabled on this server.'
+  potions-blocked: 'Your potion permission is currently disabled on this server.'
+  projectiles-blocked: 'Your projectile permission is currently disabled on this server.'
+  vehicles-blocked: 'Your vehicle permission is currently disabled on this server.'
+  crafting-blocked: 'Your crafting permission is currently disabled on this server.'
+  enchanting-blocked: 'Your enchanting permission is currently disabled on this server.'
+  anvils-blocked: 'Your smithing and repair permission is currently disabled on this server.'
+  brewing-blocked: 'Your brewing permission is currently disabled on this server.'
+  explosives-blocked: 'Your explosives permission is currently disabled on this server.'
+  fire-blocked: 'Your fire permission is currently disabled on this server.'
+  enderchest-blocked: 'Your Ender Chest permission is currently disabled on this server.'
+  furnaces-blocked: 'Your furnace permission is currently disabled on this server.'
+  hoppers-blocked: 'Your hopper permission is currently disabled on this server.'
+  beacons-blocked: 'Your beacon permission is currently disabled on this server.'
+  beds-blocked: 'Your bed-use permission is currently disabled on this server.'
+  respawn-anchors-blocked: 'Your respawn-anchor permission is currently disabled on this server.'
+  item-frames-blocked: 'Your item-frame permission is currently disabled on this server.'
+  armor-stands-blocked: 'Your armor-stand permission is currently disabled on this server.'
+  signs-blocked: 'Your sign-editing permission is currently disabled on this server.'
+  books-blocked: 'Your book-editing permission is currently disabled on this server.'
+  fishing-blocked: 'Your fishing permission is currently disabled on this server.'
+  teleportation-blocked: 'Your teleportation permission is currently disabled on this server.'
+  jukeboxes-blocked: 'Your jukebox permission is currently disabled on this server.'
+  lecterns-blocked: 'Your lectern permission is currently disabled on this server.'
+  campfires-blocked: 'Your campfire permission is currently disabled on this server.'
+  shulkers-blocked: 'Your shulker-box permission is currently disabled on this server.'
+
+alt-rights:
+  # Wird nur verwendet, wenn ein Admin die riskantere Nur-IP-Vererbung je Profil
+  # ausdrücklich aktiviert. Starke Geräte-/XUID-Treffer nutzen weiterhin den im Menü
+  # gewählten Score (70-100). Ein aktueller reiner IP-Treffer erreicht 35 Punkte.
+  ip-only-minimum-score: 25
+
+lag-inspector:
+  # Für 16-GB-Paper-Server: maximal vier Millisekunden Arbeit und acht geladene
+  # Chunks pro Tick. Es werden niemals Chunks geladen oder komplette Blöcke gescannt.
+  chunks-per-tick: 8
+  max-main-thread-millis-per-tick: 4
+  max-loaded-chunks: 5000
+  max-hotspots: 100
+  timeout-seconds: 300
+  warning-score: 80
+  critical-score: 180
+  disabled-worlds: []
+
+watchlist:
+  max-reason-length: 240
+
+announcements:
+  max-length: 300
+  max-interval-minutes: 1440
+
+adminspy:
+  # Hiding from the tab list also suppresses join/quit messages for normal players.
+  complete-stealth-links-messages: true
+  private-message-aliases: [msg, tell, w, whisper, message, pm, m]
+  reply-aliases: [r, reply]
+
+admin-security:
+  enabled: true
+  # General bootstrap password for admins without a personal password.
+  # Change it from the server console with: sas password set <new password>
+  general-password: 'CHANGE-ME-BEFORE-USE'
+  minimum-password-length: 12
+  max-attempts: 3
+  timeout-seconds: 90
+  console-only-op: true
+  personal-passwords-enabled: true
+  kick-message: 'Admin authentication failed.'
+
+start-messages:
+  delay-seconds: 2
+  max-length: 300
+
+afk:
+  enabled: true
+  timeout-minutes: 5
+  show-in-player-list: true
+  # Added after the complete LuckPerms prefix/name/suffix chain and mirrored by Geyser.
+  player-list-suffix: ' &7[AFK]'
+  broadcast-away: true
+  broadcast-return: true
+  away-message: '{player} is now AFK.'
+  return-message: '{player} is no longer AFK.'
+  recent-chat-window-minutes: 10
+  kick-enabled: false
+  kick-after-minutes: 30
+  kick-message: 'You were removed for being AFK too long.'
+  show-above-name: true
+  mention-warning:
+    enabled: true
+    minimum-characters: 4
+    message: '{player} is probably AFK right now.'
+
+reports:
+  enabled: true
+  eligible-hours: 24
+  # Public report searches require a partial name. One character is accepted by default.
+  minimum-search-length: 1
+  default-include-evidence: true
+  minimum-description-length: 8
+  max-description-length: 500
+  max-staff-note-length: 500
+  cooldown-seconds: 120
+  max-open-per-reporter: 5
+  evidence:
+    max-chat-lines: 40
+    max-action-lines: 70
+    max-combat-lines: 60
+
+
+maintenance:
+  # Diese Meldung sehen alle entfernten oder abgewiesenen normalen Spieler und bleibt deshalb Englisch.
+  max-reason-length: 180
+  kick-title: 'Server maintenance is currently in progress.'
+  kick-footer: 'Please try again later.'
+
+staff-workspace:
+  # Operators and players with admin-menu access receive a German activity summary after joining.
+  join-summary-enabled: true
+  join-summary-delay-seconds: 10
+  max-messages: 250
+  max-message-length: 300
+  luckperms-refresh-minutes: 5
+  luckperms-max-profiles: 500
+
+
+
+# Java-only client channel inspection and conservative diagnostic similarity hints.
+# Minecraft does not expose a guaranteed complete installed-mod list. The suite therefore stores
+# exact registered plugin channels and labels mod names as inferred channel/brand signals. Since
+# 7.2.0 these values are structurally excluded from Alt scores, Alt graphs and Deep-Link chains.
+client-security:
+  probes:
+    sky-fallback: false
+    experimental-fast: false
+    mode: quiet
+    quiet-timeout-seconds: 3
+    quiet-fallback: true
+    show-progress: true
+    hold-player: true
+    darken-screen: true
+    max-session-seconds: 15
+    all-on-join: false
+    admin-result-summary: true
+    console-summary: true
+    history-max-scans-per-player: 256
+    diagnostics:
+      console: false # Legacy key; live raw-console output removed in 7.19.0.
+      max-entries-per-player: 256
+    discord-alerts: true
+    review-discord-only: true
+    review-inconclusive: false
+    inconclusive-review-after: 3
+    strike-window-days: 7
+    join-clients: [meteor-client, liquidbounce, wurst, freecam, xray-fabric, chestesp]
+    rules: {}
+    enabled: true
+    auto-on-join: true
+    confirm-positive: true
+    enforce-blocklist: false
+    blocked-clients: []
+    timeout-seconds: 10
+    cooldown-seconds: 30
+    between-sign-ticks: 5
+  enabled: true
+  debug: false
+  channels:
+    enabled: true
+    persist: true
+    initial-delay-ticks: 60
+    refresh-seconds: 30
+    # Paper defaults to a bounded registered-channel set; this additional storage limit prevents
+    # oversized profiles and never changes the channels held by the server itself.
+    max-stored: 128
+  similarity:
+    enabled: true
+    minimum-signals: 6
+    minimum-shared: 4
+    minimum-jaccard: 0.68
+
+vpn-protection:
+  # Vollständig integrierter PreLogin-Schutz. Es gibt bewusst weder Geo-Blocking noch einen
+  # automatischen OP-/Admin-Bypass. Whitelist-Einträge werden vor jeder externen API-Abfrage geprüft.
+  enabled: true
+  settings:
+    block-vpn: true
+    block-hosting-datacenter: true
+    block-on-single-high-confidence: true
+    min-positive-signals: 1
+    min-risk-score: 70
+    # Bei einem Komplettausfall aller Anbieter werden Spieler standardmäßig nicht fälschlich gekickt.
+    fail-open-if-all-apis-fail: true
+    api-timeout-ms: 2500
+    cache-minutes: 720
+    reconnect-cooldown-seconds: 10
+  logging:
+    log-all-joins: false
+    max-entries: 5000
+  bedrock:
+    name-prefixes: ['.', '*']
+  providers:
+    proxycheck:
+      enabled: true
+      url: 'https://proxycheck.io/v2/{ip}?vpn=1&asn=1&risk=1&node=1&tag=SimplexAdminSuite'
+      api-key: ''
+    ipapi-is:
+      enabled: true
+      url: 'https://api.ipapi.is/?q={ip}'
+      api-key: ''
+    ipwhois:
+      enabled: true
+      url: 'https://ipwho.is/{ip}?security=1'
+    ip-api:
+      enabled: true
+      url: 'http://ip-api.com/json/{ip}?fields=status,message,countryCode,query,proxy,hosting,mobile,as,isp,org'
+  # Englische Basistexte; bekannte deutsche Sprachprofile erhalten Übersetzungen.
+  messages:
+    java-vpn: |-
+      §8§m--------------------------------
+      §b§lSimplexSMP §8» §cVPN detected
+
+      §fVPNs, proxies, Tor or hosting networks are not allowed on SimplexSMP.
+      §7Please disable your VPN and try again.
+
+      §eIf this is a mistake, contact Discord support.
+      §8§m--------------------------------
+    java-cooldown: '§cPlease wait a moment before joining again. You were just blocked for VPN/proxy usage.'
+    bedrock-vpn: |-
+      Simplex SMP - VPN detected
+
+      VPNs, proxies, Tor or hosting networks are not allowed here. Please disable your VPN and try again. If this is a mistake, contact Discord support.
+    bedrock-cooldown: 'Simplex SMP - Please wait a moment before joining again. You were just blocked for VPN/proxy usage.'
+
+discord-bot:
+  statistics:
+    channel-id: "" # /serverstats create in Discord chooses a channel.
+  linking:
+    required: true # Discord -> Minecraft only; Minecraft -> Discord stays available.
+    code-ttl-seconds: 300
+    sync-nicknames: true
+  relay-ai:
+    enabled: false # optional; requires enabled/configured OpenAI module.
+    fail-open: true # pass messages on AI/API failure.
+  moderation-log:
+    # Empty category channels fall back to admin-channel-id for admin actions.
+    admin-channel-id: ''
+    punishments-channel-id: ''
+    bans-channel-id: ''
+    mutes-channel-id: ''
+    vanish-channel-id: ''
+    devices-channel-id: ''
+    ai-channel-id: ''
+    ghost-channel-id: ''
+    client-probes-channel-id: ''
+    alt-accounts-channel-id: ''
+    join-details-channel-id: ''
+  profile:
+    update-enabled: true
+    dynamic-statistics: true
+    update-interval-seconds: 900 # min. 600; unchanged descriptions are not sent again
+    description: 'Simplex SMP • Java & Bedrock crossplay. Live server status, maintenance updates, player chat and community information. Staff tools: moderation, ban groups, AI review logs, device rules, restrictions. Public messages in English; staff administration in German.'
+  # Optional full Discord bot. No external Discord library is bundled or downloaded.
+  # Create a bot application, enable the Message Content intent and enter token/IDs only through trusted admin interfaces.
+  enabled: false
+  token: ''
+  guild-id: ''
+  relay-channel-id: ''
+  status-channel-id: ''
+  # Native Discord administration. The guild owner and Discord Administrators have full access
+  # when enabled below. Additional Discord role IDs can be configured separately for full/read-only
+  # access. Empty channel lists allow commands in every guild channel.
+  admin:
+    command-sync-interval-seconds: 3600
+    enabled: true
+    allow-discord-administrator: true
+    role-ids: []
+    read-only-role-ids: []
+    allowed-channel-ids: []
+    audit-channel-id: ''
+    include-sensitive-identifiers: false
+    confirmation-seconds: 120
+    cooldown-millis: 750
+    inline:
+      enabled: true
+      prefix: '!sas'
+      # Normale Discord-Nachrichten können technisch nicht ephemer beantwortet werden. Deshalb
+      # bleiben Inline-Befehle gesperrt, bis mindestens ein privater Admin-Kanal eingetragen ist.
+      require-allowed-channel: true
+    # Vollzugriff ist zusätzlich opt-in, nur für Discord-Administratoren und nach Bestätigung.
+    # Ohne full-access gelten unverändert Allowlist und feste Sperrliste.
+    console:
+      enabled: false
+      full-access: false
+      feedback-seconds: 5
+      allow-role-users: false
+      allowlist:
+        - 'list'
+        - 'save-all flush'
+        - 'whitelist list'
+        - 'time query daytime'
+  # Eigenständiger deutscher Staff-Kanal für VPN-Erkennungen und Whitelist-Änderungen.
+  # Mit /sasadmin security vpn -> "Privaten Protokollkanal erstellen" kann der Bot ihn anlegen.
+  vpn-log:
+    enabled: true
+    channel-id: ''
+    role-id: ''
+    auto-channel-name: 'vpn-protokoll'
+    notify-blocked: true
+    notify-suspicious-allowed: true
+    notify-whitelist-changes: true
+    include-ip: true
+  # English Discord presence shown below the bot name. Placeholders: {players}, {max}, {tps},
+  # {progress}, {seconds}. Native admin actions temporarily show their current English activity.
+  presence:
+    welcome-new-players: true
+    welcome-duration-seconds: 60
+    enabled: true
+    healthy: 'Managing {players} players • {tps} TPS'
+    warning: 'Watching server stability • {tps} TPS'
+    critical: 'Responding to server load • {tps} TPS'
+    maintenance: 'Server maintenance • {players} online'
+    trimming: 'Trimming worlds • {progress}%'
+    restarting: 'Restarting server • {seconds}s'
+  relay:
+    enabled: true
+    minecraft-to-discord: true
+    discord-to-minecraft: true
+    chat: true
+    # Eigene Namen/Bilder im Discord-Chat; Bot benötigt "Webhooks verwalten".
+    # Ohne dieses Recht wird automatisch die normale Bot-Ausgabe verwendet.
+    player-webhooks: true
+    queue-capacity: 256
+    max-message-age-seconds: 120
+    first-joins: true
+    advancements: true
+    # "selected" nutzt die Liste; "all" meldet alle sichtbaren Fortschritte.
+    advancement-mode: selected
+    advancement-keys:
+      - 'minecraft:end/kill_dragon'
+      - 'minecraft:nether/summon_wither'
+      - 'minecraft:nether/create_beacon'
+      - 'minecraft:adventure/adventuring_time'
+      - 'minecraft:husbandry/bred_all_animals'
+      - 'minecraft:adventure/kill_all_mobs'
+    advancement-cooldown-seconds: 10
+    world-changes: false
+    world-change-cooldown-seconds: 60
+    # Discord-Anhänge als Dateinamen; Dateien werden nicht heruntergeladen.
+    attachments: true
+    sleep: true
+    sleep-cooldown-seconds: 30
+    avatars:
+      refresh-messages: 20
+      # Xbox-Gamerpics via PlayerDB/Xbox-XUID (kein privater Microsoft-Login nötig).
+      bedrock-enabled: true
+      cache-hours: 24
+      # {identifier}: Mojang-UUID, bei eindeutig erkannter Offline-UUID der Accountname.
+      java-url: 'https://mc-heads.net/avatar/{identifier}/128.png'
+    joins: true
+    quits: true
+    deaths: true
+    lifecycle: true
+    afk: true
+    polls: true
+    trimming: true
+    admin-qol: true
+    farts: true
+    burps: true
+  status:
+    update-interval-seconds: 10
+    max-player-lines: 30
+    # Vollständig über native Java- und Bedrock-Admin-Menüs bearbeitbar.
+    design:
+      server-name: 'Simplex SMP'
+      online-title: '🟢 {server} is online'
+      warning-title: '🟡 {server} stability warning'
+      critical-title: '🔴 {server} is under heavy load'
+      restarting-title: '🟠 {server} is restarting'
+      offline-title: '🔴 {server} is offline'
+      online-description: 'The server is online and accepting players.'
+      warning-description: 'Server performance is currently degraded. Gameplay may feel less responsive.'
+      critical-description: 'Server performance is currently unstable. Staff have been notified.'
+      restarting-description: 'The server is restarting. Players can reconnect shortly.'
+      offline-description: 'The server is currently shut down.'
+      footer: 'Persistent status • Java and Bedrock'
+      warning-tps: 18.5
+      critical-tps: 16.0
+      healthy-color: '#57F287'
+      warning-color: '#FEE75C'
+      critical-color: '#ED4245'
+      restarting-color: '#FEE75C'
+      offline-color: '#ED4245'
+      show-player-count: true
+      show-player-list: true
+      show-platform: true
+      show-tps: true
+      show-stability: true
+      show-leaderboard: false
+  alerts:
+    enabled: true
+    channel-id: ''
+    role-id: ''
+    include-ip: true
+    include-identifiers: true
+    chat-filter-actions: [MUTE_5M, KICK]
+
+discord-status:
+  # Legacy webhook status retained only for compatibility. Prefer discord-bot above.
+  enabled: false
+  webhook-url: ''
+  username: 'Simplex SMP Status'
+  avatar-url: ''
+  update-interval-seconds: 15
+  server-name: 'Simplex SMP'
+  display:
+    player-list: true
+    max-player-names: 30
+    tps: true
+    mspt: true
+    memory: true
+    cpu: true
+    uptime: true
+    worlds: true
+    server-version: true
+  text:
+    online-title: 'Live Server Status'
+    online-description: 'The server is online and accepting players.'
+    restarting-title: 'Server is restarting'
+    restarting-description: 'The server is restarting. Players can reconnect shortly.'
+    shutting-down-title: 'Server is shutting down'
+    shutting-down-description: 'The server is currently offline or shutting down.'
+
+discord-webhook:
+  enabled: false
+  url: ''
+  username: 'Simplex Admin Suite'
+
+
+# Additive community features. No existing PlayerProfile field is replaced or renamed.
+# All public/player-facing texts remain English; admin menus remain German.
+fun:
+  # When enabled, /fart and /burp use the same per-player cooldown timer.
+  shared-cooldown: false
+  fart:
+    enabled: true
+    cooldown-seconds: 300
+    minecraft-broadcast: true
+    discord-relay: true
+    global-sounds: true
+    sounds: true
+    particles: true
+    allow-player-variant-selection: true
+    disabled-message: 'The fart command is currently disabled by staff.'
+    cooldown-message: 'Your next fart is ready in {seconds} seconds.'
+    statistics:
+      total: 0
+      # Legacy counters remain for backwards compatibility.
+      light: 0
+      medium: 0
+      ultra: 0
+      variants:
+        tiny: 0
+        light: 0
+        bubbly: 0
+        medium: 0
+        wet: 0
+        long: 0
+        trumpet: 0
+        thunder: 0
+        ultra: 0
+        nuclear: 0
+  burp:
+    enabled: true
+    cooldown-seconds: 300
+    minecraft-broadcast: true
+    discord-relay: true
+    global-sounds: true
+    sounds: true
+    particles: true
+    allow-player-variant-selection: true
+    disabled-message: 'The burp command is currently disabled by staff.'
+    cooldown-message: 'Your next burp is ready in {seconds} seconds.'
+    statistics:
+      total: 0
+      small: 0
+      loud: 0
+      deep: 0
+      monster: 0
+
+snapshots:
+  auto-enabled: true
+  auto-interval-minutes: 30
+  max-per-player: 100
+  max-list-command: 100
+
+alt-detection:
+  enabled: true
+  # Strict correlation policy since 7.2.0: automatic Alt relations use only exact shared IP history
+  # and verified Bedrock device/XUID/self-signed identities. Java brand, protocol, locale, registered
+  # plugin channels, inferred mods, Bedrock model/OS and client-random IDs never create or score an edge.
+  # Manual links remain possible because they are an explicit staff decision.
+  analysis:
+    # Die Übersicht wird asynchron aufgebaut. Eine alte gemeinsame IP bleibt als forensische Kante
+    # erhalten; nur direkte Treffer ab diesem Score werden ohne Deep-Link-Hinweis angezeigt.
+    minimum-display-score: 25
+    # Begrenzter Cache pro Profil; 100 deckt Menüs und Ultrabann-Verknüpfungen vollständig ab.
+    max-cached-matches-per-profile: 100
+  cascade:
+    # A shared IP by itself never qualifies for automatic cascade punishment.
+    minimum-score: 70
+  bridge:
+    # Local HMAC-authenticated channel used by SimplexSentinelBridge in Geyser/extensions.
+    enabled: true
+    bind: '127.0.0.1'
+    port: 39092
+    allow-non-loopback: false
+    max-payload-bytes: 32768
+    max-clock-skew-seconds: 180
+    shared-secret: 'CHANGE-ME'
+  ultraban:
+    # Explicit identity-wide ban. Unlike normal cascade punishment, this intentionally includes
+    # the current exact IP and can therefore also affect family/shared-network accounts.
+    enabled: true
+    include-current-ip: true
+    include-ip-history-days: 14
+    # true ignoriert das darunterliegende Sicherheitslimit und nimmt alle bereits bekannten
+    # Konten mit passender aktueller/junger IP auf. Wegen gemeinsam genutzter Anschlüsse bewusst
+    # nur für den ausdrücklich ausgelösten Ultrabann aktivieren.
+    include-all-known-ip-linked-accounts: true
+    max-ip-linked-accounts: 100
+    # Standardmäßig übernehmen auch nur über IP gefundene Konten ihre bekannten und später neu
+    # erkannten Geräte-/XUID-/Self-Signed-IDs in dieselbe Ultrabann-Gruppe.
+    absorb-identities-from-ip-linked-accounts: true
+    include-client-random-id: false
+    alert-online-staff: true
+    alert-known-reconnects: false
+    max-evasion-events: 1000
+    event-retention-days: 180
+  identity-bans:
+    # Device/XUID/self-signed identities are safe defaults. Exact IP bans are disabled because
+    # families, mobile networks, VPN exits and carrier NAT can legitimately share addresses.
+    include-ip: false
+    include-client-random-id: false
+    # Wird ein künftiges Konto/Gerät über eine bestehende Identitätssperre erkannt, werden seine
+    # UUID und weiteren Geräteanker derselben Sperre hinzugefügt. Beim Entbannen der Quelle werden
+    # diese abgeleiteten Anker gemeinsam entfernt.
+    expand-identities-on-match: true
+    expand-identities-from-ip-match: true
+  messages:
+    # English defaults with DE/EN delivery.
+    identity-ban: |-
+      You are banned from this server.
+      Reason: {reason}
+      Remaining: {remaining}
+    ultra-ban: |-
+      You are permanently blocked by an identity-wide ban.
+      Reason: {reason}
+      Reference: {group}
+    device-blocked: |-
+      This device has been blocked.
+      Contact the server staff if you believe this is a mistake.
+    ip-blocked: |-
+      This network address has been blocked.
+      Contact the server staff if you believe this is a mistake.
+
+# Admin-Update 7.4: Alle Optionen auch unter /sas adminupdate (Java + Bedrock).
+admin-update:
+  # Java: Klick-/Navigationssound; Bedrock: nur Aktionen, keine zusätzlichen Button-Sounds.
+  feedback:
+    enabled: true
+    success-sound: 'entity.experience_orb.pickup'
+    error-sound: 'block.note_block.bass'
+    navigation-sound: 'ui.button.click'
+    delete-sound: 'block.fire.extinguish'
+    discard-sound: 'block.note_block.hat'
+    volume-percent: 65
+  welcome:
+    enabled: true
+    message: '&8[&aWelcome&8] &a@{player} is joining for the first time. Welcome to the server!'
+    sound: 'entity.player.levelup'
+    volume-percent: 50
+    pitch-percent: 125
+  verification:
+    enabled: true
+    timeout-seconds: 30
+    delay-ticks: 20
+    random-slot: true
+  vanish:
+    publish-metadata: true
+    packet-guard: true
+    hidden-target-commands: [tpa, tpahere, tp, teleport, msg, tell, w, whisper, message, pm, m]
+    lands-flight-bypass: true
+    flight: true
+    silent-interactions: true
+  watch:
+    enabled: true
+  alerts:
+    verification-timeout: false
+    vanish: false
+    cooldown-seconds: 30
+
+# 7.5: Public invite; existing values and storage remain in place.
+community:
+  discord-invite-code: "2gAsymnXfd"
+
+
+# 7.9.0 — sichere globale Nachrichtentexte, zusätzliche Moderation.
+moderation-control:
+  chat:
+    block-colors: true
+    block-formatting: true
+  silent-error: 'Failed to connect to the server. Connection timed out. Please try again later.'
+  text:
+    # Strenge Positivliste verhindert Textbefehle und unbekannte Plugin-Aliase.
+    allowed-commands: [spawn, tpa, tpaccept, tpdeny, back, list, help]
+
+# Zusatzdaten bleiben vollständig von Alt-Score, Deep-Link und automatischen Bans getrennt.
+# Einstellungen werden signiert innerhalb von bis zu 60 Sekunden an Bridge 1.5 übertragen.
+device-diagnostics:
+  enabled: true
+  cosmetics: true
+  party: false
+  misc: true
+  session-refresh: true
+  java-options: true
+  comparisons: true
+
+startup:
+  console-animation: true
+
+# 7.13 player profile expansion: legacy profile files are preserved.
+player-community:
+  history-per-player: 200
+  max-text-length: 1000
+  feedback:
+    retention-days: 7
+    cooldown-seconds: 60
+    max-per-player: 5
+  ai:
+    # Review every public message in enabled AI moderation modules.
+    # Explicit AI/moderation OFF always allows chat; this flag never activates it.
+    # While moderation is ON, a missing key holds messages when this is true.
+    # Freigegebene Moderation-API-Nachrichten gehen sofort durch.
+    # Strikte Prüfung betrifft fehlende API-Ergebnisse / KI-Ausfälle, nicht eine zweite Prüfung aller Nachrichten.
+    require-review: true
+
+# 7.14: empty deny list. Add commands yourself; balances/profile data remain untouched.
+command-management:
+  enabled: true
+  hide-unpermitted: true
+  blocked: []
+
+# 7.16: display identity only; plugin/data-folder identity is retained.
+branding:
+  display-name: 'Simplex Admin Suite'
+shop:
+  enabled: true
+# Quick Delivery uses 30 consecutive admitted online seconds.
+
+# 7.17 integrations never rename authentication profiles or alter UUIDs.
+integrations:
+  bluemap:
+    enabled: true
+  geyser-name-bridge:
+    enabled: true
+    show-nicknames: false
+qol-717:
+  chat-failure-policy-migrated: false
+
+# AdminSuite 8.0: independent Java observations, managed from Java/Floodgate menus.
+# These hints never trigger automatic kicks/bans or account links.
+security-detectors:
+  history-per-player: 100
+  join-grace-seconds: 15
+  staff-alerts: true
+  console-summary: false
+  alert-cooldown-seconds: 120
+  channel-fingerprint:
+    kick: false
+    enabled: false
+  anti-detection:
+    kick: false
+    enabled: false
+    # Only useful if a client actually advertises these namespaces; absence is not evidence.
+    privacy-namespaces: [badopsec, moddetectionpreventer, exploitpreventer]
+  autoclicker:
+    kick: false
+    enabled: false
+    combat-only: true
+    sample-size: 96
+    minimum-cps: 8
+    maximum-variation: 0.04
+    confirmation-windows: 3
+  freecam:
+    kick: false
+    enabled: false
+    line-of-sight: true
+    range-tolerance: 0.75
+    minimum-interactions: 4
+
+# AdminSuite 8.1: reversible exceptions, optional private telemetry and safe diagnostics.
+client-control:
+  client-log:
+    enabled: true  # existing client-probes channel, first now then 15-minute aggregates
+  alt-alerts:
+    enabled: false
+  join-log:
+    enabled: false  # separate private join-details channel, per UUID 10 seconds
+    include-checks: true
+  privacy:
+    full-ip: false  # explicit private Discord channel required, default pseudonym/masked
+  geo:
+    enabled: false  # HTTPS, coarse city only, max900/24h, no identity scoring/blocks
+  server-pack-status:
+    enabled: false  # client-reported server pack UUID/status, no local pack inventory
+restart-calendar:
+  enabled: false
+  timezone: Europe/Berlin
+  times: []
+  countdown-seconds: 60
+
+# Wartezeit nach erfolgreicher Freigabe; vorhandene Menüs werden abgewartet.
+quick-delivery:
+  delay-seconds: 30
+
+# Optional und standardmäßig aus. Bestehende Integrationen/Daten bleiben unverändert.
+app-api:
+  enabled: false
+  bind: 0.0.0.0
+  port: 39093
+  # tls: erzeugt ein eigenes Zertifikat; SHA-256-Fingerabdruck in der App hinterlegen.
+  # proxy: nur Loopback-Bindung erlaubt, davor eigenen HTTPS-Reverse-Proxy betreiben.
+  transport: tls

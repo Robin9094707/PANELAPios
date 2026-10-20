@@ -43,10 +43,12 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
 }
 @MainActor final class SuiteAPI {
     let connection: SuiteConnection
+    let demo: Bool
     private(set) var scope = "read"
     private let token: String
     private let session: URLSession
-    init(_ connection: SuiteConnection, token: String? = nil, session: URLSession? = nil) throws {
+    init(_ connection: SuiteConnection, token: String? = nil, session: URLSession? = nil, demo: Bool = false) throws {
+        self.demo = demo
         self.connection = connection; self.token = try token ?? Vault.read(connection.id)
         let url = try Self.endpoint(connection.endpoint)
         let config = URLSessionConfiguration.ephemeral; config.timeoutIntervalForRequest = 110; config.urlCache = nil
@@ -64,12 +66,20 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         return value
     }
     func request(_ path: String, method: String = "GET", query: [String: String] = [:], body: JSON? = nil) async throws -> JSON {
+        if demo { guard method == "GET" else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }; return SuiteDemo.response(path, query: query) }
         guard !path.contains(".."), !path.contains("://"), !path.contains("?") else { throw PanelError(message: "Ungültiger Suite-Pfad.") }
         var c = URLComponents(url: try Self.endpoint(connection.endpoint).appendingPathComponent("v1").appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         c.queryItems = query.isEmpty ? nil : query.sorted(by: { $0.key < $1.key }).map { URLQueryItem(name: $0.key, value: $0.value) }
         var request = URLRequest(url: c.url!); request.httpMethod = method; request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization"); request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body { request.httpBody = try JSONEncoder().encode(body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do { (data, response) = try await session.data(for: request) }
+        catch let error as URLError {
+            if Task.isCancelled { throw CancellationError() }
+            if [.serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot, .secureConnectionFailed, .cancelled].contains(error.code) { throw PanelError(message: "HTTPS-Verbindung konnte nicht bestätigt werden. Prüfe Adresse, Port und den SHA-256-Fingerabdruck aus /sas app fingerprint. Ein geändertes Zertifikat wird nicht automatisch akzeptiert.") }
+            throw error
+        }
         try PanelAPI.validate(data, response: response)
         guard data.count <= 8 * 1024 * 1024 else { throw PanelError(message: "Suite-Antwort zu groß.") }
         return try JSONDecoder().decode(JSON.self, from: data)

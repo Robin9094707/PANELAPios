@@ -11,3 +11,6 @@ __pycache__/
 # XcodeGen creates these from project.yml.
 Config/PanelInfo.plist
 Config/WidgetInfo.plist
+
+# Companion plugin build outputs and local dependencies.
+Companion/**/target/

@@ -36,7 +36,7 @@ struct ManageView: View {
             }
             Section {
                 NavigationLink { JSONDetails(title: "Serverdetails", data: server.data) } label: { Label("Alle Serverinformationen", systemImage: "info.circle") }
-            } footer: { Text("Aktionen verwenden ausschließlich die Client-API. Dein Provider legt die Berechtigungen, Ressourcenlimits und verfügbaren Funktionen fest.") }
+            } footer: { Text("Panel-Aktionen verwenden die Client-API. Die optionale Admin-Suite-Anbindung hat einen eigenen Zugang. Dein Provider legt die Berechtigungen, Ressourcenlimits und verfügbaren Funktionen fest.") }
         }.panelScreen().refreshable { await api.loadAccess(server: server.id); await store.refresh(); if let live { try? await live.refresh(api: api, server: server, minecraft: true) } }.sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
     }
 }

@@ -1,0 +1,473 @@
+#     ____ _               _    _   _            _
+#    / ___| |__   ___  ___| | _| | | | __ _  ___| | _____
+#    | |   | '_ \ / _ \/ __| |/ / |_| |/ _` |/ __| |/ / __|
+#    | |___| | | |  __/ (__|   <|  _  | (_| | (__|   <\__ \
+#    \____|_| |_|\___|\___|_|\_\_| |_|\__,_|\___|_|\_\___/
+#
+# CheckHacks 1.3.0 - checkhacks.yml
+# Define which mods to detect and how automatic checks behave.
+
+# ──────────────────────────────────────────────
+# HACK DEFINITIONS
+# Each entry needs:
+#   display-name: shown in alerts / web editor / discord
+#   key: translation or keybind key registered by the mod
+#   mode: METEOR | TRANSLATE | KEYBIND
+# ──────────────────────────────────────────────
+catalog-migrated-719: false
+# New optional definitions do not enter the existing join selection automatically.
+hacks:
+  meteor-client:
+    display-name: "Meteor Client"
+    key: "key.meteor-client.open-gui"
+    mode: METEOR
+
+  liquidbounce:
+    display-name: "LiquidBounce"
+    key: "liquidbounce.module.killaura.name"
+    mode: TRANSLATE
+
+  freecam:
+    display-name: "Freecam"
+    key: "key.freecam.toggle"
+    mode: KEYBIND
+
+  wurst:
+    display-name: "Wurst Client (-1.21)"
+    key: "key.wurst.zoom"
+    mode: KEYBIND
+
+  xray-fabric:
+    display-name: "XRay (Fabric)"
+    key: "xray.config.toggle"
+    mode: KEYBIND
+
+  chestesp:
+    display-name: "ChestESP"
+    key: "key.chestesp.toggle"
+    mode: KEYBIND
+
+  killaura-fabric:
+    display-name: "KillAura (Fabric)"
+    key: "key.killaura"
+    mode: KEYBIND
+
+  autofish:
+    display-name: "AutoFish"
+    key: "key.autofish.open_gui"
+    mode: KEYBIND
+
+  lumina:
+    display-name: "Lumina"
+    key: "key.lumina.open_click_gui"
+    mode: KEYBIND
+
+  autoswitch:
+    display-name: "AutoSwitch"
+    key: "key.autoswitch.toggle"
+    mode: KEYBIND
+
+  bleachhack:
+    display-name: "BleachHack"
+    key: "bleachhack.module.killaura"
+    mode: TRANSLATE
+
+  aristois:
+    display-name: "Aristois"
+    key: "emc.module.killaura.name"
+    mode: TRANSLATE
+
+  coffee:
+    display-name: "Coffee Client"
+    key: "coffee.module.killaura.name"
+    mode: TRANSLATE
+
+  world-downloader:
+    display-name: "World Downloader"
+    key: "key.wdl.startStop"
+    mode: TRANSLATE
+
+  autoclicker-fabric:
+    display-name: "AutoClicker (Fabric)"
+    key: "autoclicker-fabric.hud.holding"
+    mode: TRANSLATE
+
+  antiafk:
+    display-name: "AntiAFK"
+    key: "key.antiafk.toggle"
+    mode: TRANSLATE
+
+  auto-clicker-mc:
+    display-name: "Auto Clicker (p1k0chu)"
+    key: "key.auto-clicker_.toggle"
+    mode: KEYBIND
+
+  trouser-streak:
+    display-name: "Trouser Streak"
+    key: "addon.trouser-streak.name"
+    mode: TRANSLATE
+
+  ui-utils:
+    display-name: "Ui Utils"
+    key: "key.ui-utils.restore_screen"
+    mode: TRANSLATE
+
+  seeedcrackerx:
+    display-name: "SeedCrackerX"
+    key: "cracker.already"
+    mode: TRANSLATE
+
+  simple-world-downloader:
+    display-name: "Simple World Downloader"
+    key: "swd.screen.config.title"
+    mode: TRANSLATE
+
+  trouser-streak-newchunks:
+    display-name: "Trouser Streak (NewerNewChunks)"
+    key: "module.trouser-streak.NewerNewChunks.description"
+    mode: TRANSLATE
+
+  trouser-streak-anhero:
+    display-name: "Trouser Streak (AnHero)"
+    key: "module.trouser-streak.AnHero.description"
+    mode: TRANSLATE
+
+  glazed:
+    display-name: "Glazed"
+    key: "addon.glazed.name"
+    mode: TRANSLATE
+
+  litematica:
+    display-name: "Litematica"
+    key: "litematica.hotkey.name.openmainmenuscreen"
+    keys:
+      - "litematica.gui.button.change_menu.to_main_menu"
+      - "litematica.config.hotkeys.name.openGuiMainMenu"
+    mode: TRANSLATE
+    verification: UPSTREAM_VERIFIED_ALTERNATIVES
+    sources:
+      - "https://github.com/sakura-ryoko/litematica/blob/26.2/src/main/resources/assets/litematica/lang/en_us.json"
+
+  itemscroller:
+    display-name: "Item Scroller"
+    key: "itemscroller.hotkey.name.openconfigscreen"
+    mode: TRANSLATE
+
+  xaeros-minimap:
+    display-name: "Xaero's Minimap"
+    key: "gui.xaero_minimap"
+    mode: TRANSLATE
+
+  baritone:
+    display-name: "Baritone"
+    key: "baritone.setting.allowBreak"
+    mode: TRANSLATE
+
+
+# Optional extensions, researched 2026-10-13. See SIGNATURES-7.19.0.md.
+
+  meteor-client-commands:
+    display-name: "Meteor Client (Commands)"
+    key: "key.meteor-client.open-commands"
+    mode: METEOR
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  liquidbounce-enabled:
+    display-name: "LiquidBounce (Alternative)"
+    key: "liquidbounce.generic.enabled"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: UPSTREAM_VERIFIED
+    sources:
+      - "https://raw.githubusercontent.com/CCBlueX/LiquidBounce/nextgen/src/main/resources/resources/liquidbounce/lang/en_us.json"
+
+  liquidbounce-binds:
+    display-name: "LiquidBounce (Binds)"
+    key: "liquidbounce.command.binds.description"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: UPSTREAM_VERIFIED
+    sources:
+      - "https://raw.githubusercontent.com/CCBlueX/LiquidBounce/nextgen/src/main/resources/resources/liquidbounce/lang/en_us.json"
+
+  hypnotic-client:
+    display-name: "Hypnotic Client"
+    key: "key.hypnotic-client.open-click-gui"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  jex-client:
+    display-name: "Jex Client"
+    key: "jex.name"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  thunderhack:
+    display-name: "ThunderHack / Reborn (legacy)"
+    key: "descriptions.client.thundergui"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  cheatutils:
+    display-name: "CheatUtils"
+    key: "key.category.cheatutils.common"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: UPSTREAM_VERIFIED
+    sources:
+      - "https://raw.githubusercontent.com/Zergatul/cheatutils/26.3/common/resources/assets/cheatutils/lang/en_us.json"
+
+  autototem:
+    display-name: "AutoTotem"
+    key: "key.autototem.toggle"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: USER_SUPPLIED_UNVERIFIED
+    sources:
+      - "User supplied key; original mod registration not confirmed"
+
+  smartoffhand:
+    display-name: "SmartOffhand"
+    key: "key.smartoffhand.totem_swap"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: USER_SUPPLIED_UNVERIFIED
+    sources:
+      - "User supplied key; original mod registration not confirmed"
+
+  autoclicker-rinf:
+    display-name: "AutoClicker RINF"
+    key: "key.autoclicker-rinf.toggleacf"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  autoattack:
+    display-name: "AutoAttack"
+    key: "key.autoattack.afkAttack"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  quick-hotkeys-totem:
+    display-name: "Quick Hotkeys (Totem)"
+    key: "key.glitchifyed.quick_hotkeys.equip_totem"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  invutils-autotool:
+    display-name: "InvUtils (AutoTool)"
+    key: "key.p1x3lc0w.invutil.autoTool"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  autotools:
+    display-name: "AutoTools"
+    key: "key.autotools.get_tool"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  zergatul-freecam:
+    display-name: "Zergatul Freecam"
+    key: "key.zergatul.freecam.toggle"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  flymod:
+    display-name: "Fly Mod"
+    key: "key.flymod.toggle"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  flighthelper:
+    display-name: "FlightHelper"
+    key: "key.flighthelper.lockup"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  climbladdersfast:
+    display-name: "Climb Ladders Fast"
+    key: "key.climbladdersfast.toggle"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  stepup:
+    display-name: "StepUp"
+    key: "key.stepup.toggle"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  playerhighlighter:
+    display-name: "PlayerHighlighter"
+    key: "key.playerhighlighter.toggle"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  xray-fabric-open:
+    display-name: "XRay (Fabric) GUI"
+    key: "xray.config.open"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  xray-ate47:
+    display-name: "XRay (ATE47)"
+    key: "x13.mod.xray"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  see-through-lava:
+    display-name: "See Through Lava"
+    key: "text.autoconfig.seethroughlava.title"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  invmove:
+    display-name: "InvMove"
+    key: "keybind.invmove.toggleMove"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  tweakeroo:
+    display-name: "Tweakeroo"
+    key: "tweakeroo.gui.button.config_gui.tweaks"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: UPSTREAM_VERIFIED
+    sources:
+      - "https://raw.githubusercontent.com/sakura-ryoko/tweakeroo/26.2/src/main/resources/assets/tweakeroo/lang/en_us.json"
+
+  tweakermore:
+    display-name: "TweakerMore"
+    key: "tweakermore.hotkeys.category.main"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  preciseblockplacing:
+    display-name: "Precise Block Placing"
+    key: "key.preciseblockplacing.toggle_enabled"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  quickturn:
+    display-name: "Quick Turn"
+    key: "key.vekquickturn.quickturn"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  entity-outliner:
+    display-name: "Entity Outliner"
+    key: "key.entity-outliner.selector"
+    mode: KEYBIND
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  jsmacros:
+    display-name: "JsMacros"
+    key: "jsmacros.close"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: UPSTREAM_VERIFIED
+    sources:
+      - "https://raw.githubusercontent.com/JsMacros/JsMacros/main/src/main/resources/assets/jsmacros/lang/en_us.json"
+
+  macrokeybinds:
+    display-name: "Macro Keybinds"
+    key: "text.globalmacros.title"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: USER_SUPPLIED_UNVERIFIED
+    sources:
+      - "User supplied key; original mod registration not confirmed"
+
+  xaero-worldmap:
+    display-name: "Xaero's World Map"
+    key: "gui.xaero_open_map"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: HISTORICAL_OBSERVATION
+    sources:
+      - "https://github.com/JustAlittleWolf/ModDetectionPreventer/blob/1.20.4/CytooxienDetectedMods.md"
+
+  seed-finder:
+    display-name: "Seed Finder Mod"
+    key: "generator.seedfindermod.seed_finder_world"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: USER_SUPPLIED_UNVERIFIED
+    sources:
+      - "User supplied key; original mod registration not confirmed"
+
+  bridging-mod:
+    display-name: "Bridging Mod"
+    key: "config.bridgingmod.title"
+    mode: TRANSLATE
+    diagnostic-only: true
+    verification: USER_SUPPLIED_UNVERIFIED
+    sources:
+      - "User supplied key; original mod registration not confirmed"

@@ -1,0 +1,82 @@
+[
+  {
+    "name": "paper-api-26.3.build.180-stable.jar",
+    "sha256": "97e3e920eb4aa86bdb77f4b459d9792ac8e6124f4f5ecf4c49a4c2f24783bed1",
+    "url": "https://artifactory.papermc.io/ui/api/v1/download?repoKey=universe&path=io%2Fpapermc%2Fpaper%2Fpaper-api%2F26.3.build.180-stable%2Fpaper-api-26.3.build.180-stable.jar"
+  },
+  {
+    "name": "ecj-3.46.0.jar",
+    "url": "https://repo.maven.apache.org/maven2/org/eclipse/jdt/ecj/3.46.0/ecj-3.46.0.jar",
+    "sha256": "d0d43f8e2d7003e5efed612e2cbb5f01870043397d8f1bbe536fd9128f4fcbf7"
+  },
+  {
+    "name": "adventure-api-5.2.0.jar",
+    "url": "https://repo.maven.apache.org/maven2/net/kyori/adventure-api/5.2.0/adventure-api-5.2.0.jar",
+    "sha256": "7e52fe7190be3e87b3b3f71712cfa12315fcd27109f302a7b440c12f01fae827"
+  },
+  {
+    "name": "adventure-key-5.2.0.jar",
+    "url": "https://repo.maven.apache.org/maven2/net/kyori/adventure-key/5.2.0/adventure-key-5.2.0.jar",
+    "sha256": "0184d173200e2eef8fbc791f622d1d58fd459f8930c616b5a4fe79e83eda6c55"
+  },
+  {
+    "name": "adventure-text-serializer-plain-5.2.0.jar",
+    "url": "https://repo.maven.apache.org/maven2/net/kyori/adventure-text-serializer-plain/5.2.0/adventure-text-serializer-plain-5.2.0.jar",
+    "sha256": "f6424cc038a631b79cc4b74b6b353d5d007c99b38f9be482e0c2448a00eecd21"
+  },
+  {
+    "name": "adventure-text-minimessage-5.2.0.jar",
+    "url": "https://repo.maven.apache.org/maven2/net/kyori/adventure-text-minimessage/5.2.0/adventure-text-minimessage-5.2.0.jar",
+    "sha256": "e1871aba1511dbe49cff211c10f85682886014161e5d629318aa69583c31a2c0"
+  },
+  {
+    "name": "annotations-26.0.2.jar",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/26.0.2/annotations-26.0.2.jar",
+    "sha256": "2037be378980d3ba9333e97955f3b2cde392aa124d04ca73ce2eee6657199297"
+  },
+  {
+    "name": "slf4j-api-2.0.17.jar",
+    "url": "https://repo.maven.apache.org/maven2/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar",
+    "sha256": "7b751d952061954d5abfed7181c1f645d336091b679891591d63329c622eb832"
+  },
+  {
+    "name": "snakeyaml-2.2.jar",
+    "url": "https://repo.maven.apache.org/maven2/org/yaml/snakeyaml/2.2/snakeyaml-2.2.jar",
+    "sha256": "1467931448a0817696ae2805b7b8b20bfb082652bf9c4efaed528930dc49389b"
+  },
+  {
+    "name": "bungeecord-chat-1.21-R0.2-deprecated-build.21.jar",
+    "url": "https://artifactory.papermc.io/ui/api/v1/download?repoKey=universe&path=net%2Fmd-5%2Fbungeecord-chat%2F1.21-R0.2-deprecated%2Bbuild.21%2Fbungeecord-chat-1.21-R0.2-deprecated%2Bbuild.21.jar",
+    "sha256": "ce930b3ee048520a0ab538eb8d1627b301367fc1b300837235387aded6d89ba1"
+  },
+  {
+    "name": "sqlite-jdbc-3.53.4.0.jar",
+    "url": "https://repo.maven.apache.org/maven2/org/xerial/sqlite-jdbc/3.53.4.0/sqlite-jdbc-3.53.4.0.jar",
+    "sha256": "bcb1f51e36f940867e83342f9efbf5968ac44a6bef4d397bb4af7b17b45cd2fb"
+  },
+  {
+    "name": "guava-33.4.8-jre.jar",
+    "url": "https://repo.maven.apache.org/maven2/com/google/guava/guava/33.4.8-jre/guava-33.4.8-jre.jar",
+    "sha256": "f3d7f57f67fd622f4d468dfdd692b3a5e3909246c28017ac3263405f0fe617ed"
+  },
+  {
+    "name": "netty-common-4.1.118.Final.jar",
+    "url": "https://repo.maven.apache.org/maven2/io/netty/netty-common/4.1.118.Final/netty-common-4.1.118.Final.jar",
+    "sha256": "65cce901ecf0f9d6591cc7750772614ab401a84415dc9aec9da4d046f0f9a77c"
+  },
+  {
+    "name": "netty-transport-4.1.118.Final.jar",
+    "url": "https://repo.maven.apache.org/maven2/io/netty/netty-transport/4.1.118.Final/netty-transport-4.1.118.Final.jar",
+    "sha256": "ab3751e717daef9c8d91e4d74728a48730bd8530b72e2466b222b2ea3fb07db9"
+  },
+  {
+    "name": "netty-buffer-4.1.118.Final.jar",
+    "url": "https://repo.maven.apache.org/maven2/io/netty/netty-buffer/4.1.118.Final/netty-buffer-4.1.118.Final.jar",
+    "sha256": "0eea4e8666a9636a28722661d8ba5fa8564477e75fec6dd2ff3e324e361f8b3c"
+  },
+  {
+    "name": "adventure-text-serializer-legacy-5.2.0.jar",
+    "url": "https://repo.maven.apache.org/maven2/net/kyori/adventure-text-serializer-legacy/5.2.0/adventure-text-serializer-legacy-5.2.0.jar",
+    "sha256": "1231a0de417de66c59e2f2a3892ecca6b8d48621df6f1d9a2f81b01f57e328b7"
+  }
+]

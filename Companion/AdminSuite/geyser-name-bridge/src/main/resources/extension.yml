@@ -1,0 +1,6 @@
+id: simplexnamebridge
+name: SimplexNameBridge
+main: eu.simplexsmp.bridge.SimplexNameBridge
+api: 2.0.0
+version: 1.0.0
+authors: [RJ]
