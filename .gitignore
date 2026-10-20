@@ -7,3 +7,7 @@ xcuserdata/
 *.xcresult
 
 __pycache__/
+
+# XcodeGen creates these from project.yml.
+Config/PanelInfo.plist
+Config/WidgetInfo.plist

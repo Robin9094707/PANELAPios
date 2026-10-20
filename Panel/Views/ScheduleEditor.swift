@@ -52,7 +52,7 @@ struct ScheduleEditor: View {
         _name = State(initialValue: initial["name"].string); _minute = State(initialValue: m); _hour = State(initialValue: h); _day = State(initialValue: d); _month = State(initialValue: mo); _week = State(initialValue: w)
         let simple = Int(h) != nil && Int(m) != nil && d == "*" && mo == "*"
         _mode = State(initialValue: simple && w == "*" ? "daily" : simple && Int(w) != nil ? "weekly" : "advanced")
-        _weekday = State(initialValue: Int(w) ?? 1)
+        _weekday = State(initialValue: Int(w) == 7 ? 0 : Int(w) ?? 1)
         let zone = ScheduleTime.zone(for: api.base) ?? .gmt
         _zoneID = State(initialValue: ScheduleTime.zone(for: api.base)?.identifier ?? "")
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone

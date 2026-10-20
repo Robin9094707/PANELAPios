@@ -14,7 +14,6 @@ struct TransferRecord: Identifiable, Codable {
     var created = Date()
     var updated = Date()
     var issue: String?
-    var signedURL: String?
     var fraction: Double? { total > 0 ? min(1, max(0, Double(completed) / Double(total))) : nil }
     var active: Bool { state == "running" || state == "pausing" }
     var title: String {
@@ -82,8 +81,7 @@ struct TransferRecord: Identifiable, Codable {
         guard let url = URL(string: signed), url.scheme == "https" else { throw PanelError(message: "Keine sichere Download-URL erhalten.") }
         let name = URL(fileURLWithPath: filename).lastPathComponent
         guard !name.isEmpty, name != ".", name != "..", !["resume.data", "body.upload"].contains(name) else { throw PanelError(message: "Dieser Dateiname kann nicht lokal gespeichert werden.") }
-        var record = TransferRecord(filename: name, context: context, upload: false)
-        record.signedURL = signed
+        let record = TransferRecord(filename: name, context: context, upload: false)
         try FileManager.default.createDirectory(at: folder(record.id), withIntermediateDirectories: true)
         let task = session.downloadTask(with: url)
         begin(record, task: task); return record.id
@@ -92,7 +90,8 @@ struct TransferRecord: Identifiable, Codable {
         var record = TransferRecord(filename: filename, context: context, upload: true)
         try FileManager.default.createDirectory(at: folder(record.id), withIntermediateDirectories: true)
         let persistent = folder(record.id).appendingPathComponent("body.upload")
-        try FileManager.default.copyItem(at: body, to: persistent)
+        try FileManager.default.moveItem(at: body, to: persistent)
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: persistent.path)
         record.total = Int64((try persistent.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0)
         let task = session.uploadTask(with: request, fromFile: persistent)
         try await withCheckedThrowingContinuation { continuation in
@@ -128,7 +127,6 @@ struct TransferRecord: Identifiable, Codable {
         records[i].issue = failure?.localizedDescription; records[i].updated = Date()
         if failure == nil {
             if records[i].total > 0 { records[i].completed = records[i].total }
-            records[i].signedURL = nil
         }
         // Multipart upload bodies are retained only while iOS owns the active task.
         if records[i].upload { try? FileManager.default.removeItem(at: folder(id).appendingPathComponent("body.upload")) }
