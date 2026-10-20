@@ -34,7 +34,7 @@ struct PluginDetailsView: View {
                             NavigationLink {
                                 SyntaxEditor(text: .constant(descriptor.rawYAML), colors: true, editable: false).panelScreen().navigationTitle(descriptor.descriptorFile).navigationBarTitleDisplayMode(.inline)
                             } label: { Label(descriptor.descriptorFile, systemImage: "doc.text") }
-                            Button("Metadaten kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = descriptor.rawYAML }
+                            Button("Metadaten kopieren", systemImage: "doc.on.doc") { Clipboard.copy(descriptor.rawYAML) }
                         }
                     }
                     Section("Datei") {

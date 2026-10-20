@@ -16,6 +16,7 @@ import SwiftUI
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .errorAlert($store.error)
                 .privacySensitive()
+                .overlay { CopyFeedbackOverlay() }
                 .overlay { if scenePhase == .background { PanelBackground().overlay { Image(systemName: "server.rack").font(.system(size: 60)).foregroundStyle(.teal) } } }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     if phase == .background { transfers.persist(force: true); store.lock() }

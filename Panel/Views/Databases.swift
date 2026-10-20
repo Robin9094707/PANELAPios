@@ -49,12 +49,12 @@ struct DatabaseDetail: View {
                     copyRow("Erlaubte Quelladresse", row["connections_from"].string)
                 }
                 Section("Passwort") {
-                    if !db.password.isEmpty { HStack { Text(reveal ? db.password : "••••••••••••").font(.system(.body, design: .monospaced)).textSelection(.enabled); Spacer(); Button(reveal ? "Verbergen" : "Anzeigen", systemImage: reveal ? "eye.slash" : "eye") { reveal.toggle() }.labelStyle(.iconOnly); Button("Kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = db.password }.labelStyle(.iconOnly) } }
+                    if !db.password.isEmpty { HStack { Text(reveal ? db.password : "••••••••••••").font(.system(.body, design: .monospaced)).textSelection(.enabled); Spacer(); Button(reveal ? "Verbergen" : "Anzeigen", systemImage: reveal ? "eye.slash" : "eye") { reveal.toggle() }.labelStyle(.iconOnly); Button("Kopieren", systemImage: "doc.on.doc") { Clipboard.copy(db.password) }.labelStyle(.iconOnly) } }
                     else { Button("Passwort laden", systemImage: "key") { Task { await password() } }.requiresAccess(api, server.id, "database.view_password") }
                     Button("Passwort erneuern", systemImage: "arrow.clockwise", role: .destructive) { operation = Operation(title: "Passwort erneuern", detail: "Plugin-Konfigurationen müssen danach das neue Passwort verwenden.", path: "servers/\(server.id)/databases/\(row["id"].string)/rotate-password", destructive: true, submit: "Erneuern") }.requiresRequest(api, "servers/\(server.id)/databases/\(row["id"].string)/rotate-password", method: "POST")
                 }
                 Section {
-                    Button("Verbindungsdaten kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = "Host: \(db.host)\nPort: \(db.port)\nDatabase: \(db.name)\nUser: \(row["username"].string)" }
+                    Button("Verbindungsdaten kopieren", systemImage: "doc.on.doc") { Clipboard.copy("Host: \(db.host)\nPort: \(db.port)\nDatabase: \(db.name)\nUser: \(row["username"].string)") }
                     Button("Datenbank löschen", systemImage: "trash", role: .destructive) { operation = Operation(title: "Datenbank löschen", detail: "Alle Tabellen und Daten dieser Datenbank werden endgültig gelöscht.", path: "servers/\(server.id)/databases/\(row["id"].string)", method: "DELETE", destructive: true, submit: "Endgültig löschen") }.requiresRequest(api, "servers/\(server.id)/databases/\(row["id"].string)", method: "DELETE")
                 }
             }.panelScreen().refreshable { await reload() }.navigationTitle(db.name).navigationBarTitleDisplayMode(.inline).privacySensitive().errorAlert($error)
@@ -62,7 +62,7 @@ struct DatabaseDetail: View {
                 .sheet(item: $operation) { op in OperationSheet(api: api, operation: op) { await changed(); if op.method == "DELETE" { dismiss() } else { value = .null; reveal = false; await password() } } }
         }
     }
-    func copyRow(_ title: String, _ text: String) -> some View { HStack { VStack(alignment: .leading, spacing: 5) { Text(title).font(.caption).foregroundStyle(.secondary); Text(text.isEmpty ? "–" : text).textSelection(.enabled) }; Spacer(); if !text.isEmpty { Button("Kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }.labelStyle(.iconOnly).buttonStyle(.borderless) } } }
+    func copyRow(_ title: String, _ text: String) -> some View { HStack { VStack(alignment: .leading, spacing: 5) { Text(title).font(.caption).foregroundStyle(.secondary); Text(text.isEmpty ? "–" : text).textSelection(.enabled) }; Spacer(); if !text.isEmpty { Button("Kopieren", systemImage: "doc.on.doc") { Clipboard.copy(text) }.labelStyle(.iconOnly).buttonStyle(.borderless) } } }
     func reload() async { do {
         let rows = try await api.list("servers/\(server.id)/databases", query: reveal ? ["include": "password"] : [:])
         guard let found = rows.first(where: { $0["id"] == initial["id"] }) else { throw PanelError(message: "Datenbank nicht mehr vorhanden.") }

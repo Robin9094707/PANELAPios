@@ -29,6 +29,20 @@ Use the URL containing the web console, **not** the Minecraft game address or th
 
 The app is currently German. API error details may use the provider's language. Advanced rights and permission names follow Pterodactyl naming. Hosting billing, node administration and changing provider-assigned RAM/CPU limits are outside the Client API.
 
+## Version 1.5.0 — Simplex Panel + optional Admin Suite 8.3.0
+
+- Display name becomes **Simplex Panel**. Bundle IDs, panel profiles, original credential Keychain service, workspace data and widgets remain compatible.
+- Per-panel/per-server optional Admin Suite HTTPS connection, separate Keychain token, server identity check, exact SHA-256 certificate pinning for the plugin-generated certificate, system trust for publicly trusted HTTPS, and no redirects with credentials. Disconnect/revoke is independent of Pterodactyl.
+- Native German player directory with pagination/search; live health, hunger, XP, position and mode; real suite devices/diagnostics, alt-account evidence, Ultra groups/member overview and whole-group release. When enabled, the existing player manager routes moderation to the suite and never silently falls back after an error.
+- Complete current Discord administration command schema becomes native searchable grouped forms with choices, booleans, live autocomplete, and server-bound 60-second single-use confirmation tickets. Suite errors and service output are displayed without assuming success from HTTP 200. Advanced Suite-owned console commands are available separately with a full key; in-game-only commands still require an actual in-game player.
+- Existing inventory/enderchest inspection, typed snapshot content and existing create/restore/delete services; safe stored NBT file discovery links to the full existing offline NBT editor. Supported live values are updated on the server thread through Bukkit; arbitrary live playerdata file replacement is intentionally not performed.
+- Typed existing Suite configuration (booleans, numeric values, strings and lists); secret/authentication settings remain local. Existing Discord/OpenAI configuration is retained. Some modules require Suite reload after configuration changes.
+- Read/manage/full API key scopes, hashed server-side tokens, revocation only by a real local operator/console, no public HTTP backend, bounded requests/rates/threads, and audit attribution. Server API defaults to off. Direct TLS auto-generates a private EC certificate via the Java JDK keytool; match `/sas app fingerprint` in the app. A separate allocated TCP port is needed. Loopback-only backend mode supports your own HTTPS reverse proxy.
+- All explicit copy actions provide haptics and copy feedback; Suite copy buttons animate locally too.
+- Regression tests cover endpoint/pin validation, scoped persistence, wrong-server rejection, confirmation transport and credential redirects. Simulator tests cover setup; live hosting/network/signing and real Minecraft effects require testing on the user's server.
+
+Rollback: `backup/v1.4.0-before-adminsuite` preserves the prior app. Disable the plugin API with `/sas app disable`; remove the app connection. The optional API only adds `app-api` files/settings. Keep the existing plugin data folder and the original 8.2.0 JAR as a rollback backup. Gameplay/admin changes made through the app are real changes, so backing up the plugin data before installation is still necessary.
+
 ## Version 1.4.0 — player manager and provider fixes
 
 - Fix YAML syntax coloring crossing line boundaries after unmatched quotes or apostrophes in comments. String/comment lexing respects quoted `#` and viewport coloring covers complete lines.

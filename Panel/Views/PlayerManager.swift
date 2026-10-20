@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct PlayerManagerView: View {
+    @ObservedObject private var suiteConnections = SuiteConnections.shared
     let api: PanelAPI
     let server: Server
     @ObservedObject var live: LiveServer
@@ -21,7 +22,7 @@ struct PlayerManagerView: View {
             Section("Spieler · \(names.count)") {
                 ForEach(names, id: \.self) { name in
                     NavigationLink {
-                        PlayerDetailView(api: api, server: server, live: live, name: name, preferences: preferences, key: key)
+                        if let link = suiteConnections.get(api, server), link.useForModeration { SuiteLinkedPlayerView(panel: api, server: server, player: name) } else { PlayerDetailView(api: api, server: server, live: live, name: name, preferences: preferences, key: key) }
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "person.crop.circle.fill").font(.title).foregroundStyle(name.hasPrefix(".") ? .blue : .teal)
@@ -66,7 +67,7 @@ struct PlayerDetailView: View {
         List {
             Section {
                 HStack { Image(systemName: "person.crop.circle.fill").font(.system(size: 44)).foregroundStyle(.teal); VStack(alignment: .leading, spacing: 4) { Text(name).font(.title2.bold()).textSelection(.enabled); Label(online ? "Online" : "Zuletzt gesehen / offline", systemImage: online ? "circle.fill" : "circle").font(.caption).foregroundStyle(online ? Color.green : .secondary) } }
-                Button("Spielername kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = name }
+                Button("Spielername kopieren", systemImage: "doc.on.doc") { Clipboard.copy(name) }
             }
             Section {
                 HStack { Label("Live-Werte", systemImage: "waveform.path.ecg").font(.headline); Spacer(); if inspector.busy { ProgressView() } }

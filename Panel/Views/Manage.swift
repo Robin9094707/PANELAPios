@@ -9,6 +9,7 @@ struct ManageView: View {
     var prefix: String { "servers/\(server.id)" }
     var body: some View {
         List {
+            Section("Simplex Admin Suite") { NavigationLink { SuiteHubView(panel: api, server: server) } label: { Label("Admin Suite", systemImage: "shield.lefthalf.filled") }.accessibilityIdentifier("adminSuiteHub") }
             Section("Minecraft") {
                 if let live { NavigationLink { PlayerManagerView(api: api, server: server, live: live) } label: { Label("Spieler-Manager", systemImage: "person.crop.circle.badge.checkmark") } }
                 NavigationLink { PluginsView(api: api, server: server) } label: { Label("Plugins & JAR-Dateien", systemImage: "puzzlepiece.extension") }.requiresAccess(api, server.id, "file.read")

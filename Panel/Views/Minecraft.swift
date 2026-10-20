@@ -70,7 +70,7 @@ struct PlayerListSheet: View {
                 Section { NavigationLink { PlayerManagerView(api: api, server: server, live: live) } label: { Label("Spieler verwalten", systemImage: "person.crop.circle.badge.checkmark") } }
                 Section("Online") {
                     ForEach((live.players?.names ?? []).filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }, id: \.self) { name in
-                        HStack { Image(systemName: "person.crop.circle.fill").font(.title).foregroundStyle(name.hasPrefix(".") ? .blue : .teal); VStack(alignment: .leading) { Text(name).font(.headline).textSelection(.enabled); Text(name.hasPrefix(".") ? "Bedrock-Präfix" : "Spieler").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = name }.labelStyle(.iconOnly).buttonStyle(.borderless) }
+                        HStack { Image(systemName: "person.crop.circle.fill").font(.title).foregroundStyle(name.hasPrefix(".") ? .blue : .teal); VStack(alignment: .leading) { Text(name).font(.headline).textSelection(.enabled); Text(name.hasPrefix(".") ? "Bedrock-Präfix" : "Spieler").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Kopieren", systemImage: "doc.on.doc") { Clipboard.copy(name) }.labelStyle(.iconOnly).buttonStyle(.borderless) }
                     }
                     if live.players?.names.isEmpty != false { Text("Keine Spielernamen verfügbar").foregroundStyle(.secondary) }
                 }

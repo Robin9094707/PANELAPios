@@ -108,7 +108,7 @@ struct ServerView: View {
                 Spacer()
                 Menu {
                     Toggle("Automatisch scrollen", isOn: $follow)
-                    Button("Gefilterte Ausgabe kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = live.lines.filter { filter.isEmpty || $0.cleanedForSearch.localizedCaseInsensitiveContains(filter) }.map(cleanConsole).joined(separator: "\n") }
+                    Button("Gefilterte Ausgabe kopieren", systemImage: "doc.on.doc") { Clipboard.copy(live.lines.filter { filter.isEmpty || $0.cleanedForSearch.localizedCaseInsensitiveContains(filter) }.map(cleanConsole).joined(separator: "\n")) }
                     Button("Schrift vergrößern") { fontSize = min(22, fontSize + 1) }
                     Button("Schrift verkleinern") { fontSize = max(10, fontSize - 1) }
                     Button("Anzeige leeren", role: .destructive) { live.lines = [] }
