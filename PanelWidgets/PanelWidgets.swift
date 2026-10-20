@@ -74,6 +74,7 @@ enum WidgetNetwork {
 struct StatusWidgetView: View {
     let entry: ServerEntry
     @Environment(\.widgetFamily) private var family
+    @Environment(\.widgetRenderingMode) private var renderingMode
     var body: some View {
         Group {
             if let s = entry.server {
@@ -82,22 +83,51 @@ struct StatusWidgetView: View {
                 } else if family == .accessoryRectangular {
                     VStack(alignment: .leading) { Text(s.name).font(.headline); Text("\(s.online.map(String.init) ?? "–") / \(s.maximum.map(String.init) ?? "–") Spieler · \(s.stateTitle)"); if let date = s.playersUpdated { Text(date, style: .time).font(.caption2) } }.privacySensitive()
                 } else {
-                    VStack(alignment: .leading, spacing: 9) {
-                        HStack { Image(systemName: "server.rack").foregroundStyle(.teal); Text(s.name).font(.headline).lineLimit(1); Spacer(minLength: 0); Circle().fill(s.state == "running" ? Color.green : s.state == "offline" ? .red : .orange).frame(width: 8, height: 8) }
-                        HStack(alignment: .firstTextBaseline) { Text(s.online.map(String.init) ?? "–").font(.system(size: 34, weight: .bold, design: .rounded)); Text("/ \(s.maximum.map(String.init) ?? "–") Spieler").font(.caption).foregroundStyle(.secondary) }
-                        HStack { Text(s.stateTitle).font(.caption.weight(.semibold)); Spacer(); if let date = s.playersUpdated { Text(date, style: .time).font(.caption2).foregroundStyle(.secondary) } }
-                        if family == .systemMedium {
-                            Divider()
-                            HStack { Label(s.cpu.map { String(format: "%.1f %%", $0) } ?? "–", systemImage: "cpu"); Spacer(); Label(s.memory.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .memory) } ?? "–", systemImage: "memorychip"); Spacer(); if let tps = s.tps, let date = s.tpsUpdated, Date().timeIntervalSince(date) < 180 { Text(String(format: "%.1f TPS", tps)).foregroundStyle(tps >= 19 ? Color.green : tps >= 16 ? .orange : .red) } }.font(.caption)
-                        }
-                        if let issue = s.issue { Text(issue).font(.caption2).foregroundStyle(.orange).lineLimit(1) }
-                        else if let date = s.updated { Text("Ressourcen: \(date.formatted(date: .omitted, time: .shortened)) · kein Live-Wert").font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
-                        else { Text("Server in der App öffnen").font(.caption2).foregroundStyle(.secondary) }
-                    }.privacySensitive()
+                    homeContent(s)
+
                 }
             } else { VStack(alignment: .leading, spacing: 10) { Image(systemName: "server.rack").foregroundStyle(.teal); Text("Panel").font(.headline); Text("In der App unter Einstellungen → Server-Widgets einen Server hinzufügen.").font(.caption).foregroundStyle(.secondary) } }
-        }.containerBackground(for: .widget) { LinearGradient(colors: [Color.teal.opacity(0.16), Color.indigo.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing) }
+        }.containerBackground(for: .widget) {
+            if renderingMode == .fullColor { LinearGradient(colors: [Color.teal.opacity(0.16), Color.indigo.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing) }
+        }
             .widgetURL(URL(string: "panel://widgets"))
+    }
+    func homeContent(_ s: WidgetServer) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "server.rack").foregroundStyle(.teal).widgetAccentable()
+                Text(s.name).font(.headline).lineLimit(1)
+                Spacer(minLength: 0)
+                Circle().fill(renderingMode == .fullColor ? (s.state == "running" ? Color.green : s.state == "offline" ? .red : .orange) : Color.primary).frame(width: 8, height: 8)
+            }
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(s.online.map(String.init) ?? "–").font(.system(size: 34, weight: .bold, design: .rounded)).widgetAccentable()
+                        Text("/ \(s.maximum.map(String.init) ?? "–")").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text("Spieler · " + s.stateTitle).font(.caption)
+                    if let date = s.playersUpdated { Text("Spielerstand: \(date.formatted(date: .omitted, time: .shortened))").font(.caption2).foregroundStyle(.secondary) }
+                }
+                if family == .systemMedium {
+                    Spacer(minLength: 0)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label(s.cpu.map { String(format: "%.1f %% CPU", $0) } ?? "CPU –", systemImage: "cpu")
+                        Label(memory(s), systemImage: "memorychip")
+                        if let tps = s.tps, let date = s.tpsUpdated, Date().timeIntervalSince(date) < 180 { Text(String(format: "%.1f TPS", tps)).foregroundStyle(tps >= 19 ? Color.green : tps >= 16 ? .orange : .red).widgetAccentable() }
+                    }.font(.caption).lineLimit(1).minimumScaleFactor(0.75)
+                }
+            }
+            if let issue = s.issue { Text(issue).font(.caption2).foregroundStyle(.orange).lineLimit(1) }
+            else if let date = s.updated { Text("Ressourcen: \(date.formatted(date: .omitted, time: .shortened)) · letzter Stand").font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+            else { Text("Server in der App öffnen").font(.caption2).foregroundStyle(.secondary) }
+        }.privacySensitive()
+    }
+    func memory(_ s: WidgetServer) -> String {
+        guard let value = s.memory else { return "RAM –" }
+        let used = ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .memory)
+        guard let limit = s.memoryLimit, limit > 0 else { return used + " RAM" }
+        return used + " / " + ByteCountFormatter.string(fromByteCount: Int64(limit), countStyle: .memory)
     }
 }
 struct ServerStatusWidget: Widget {

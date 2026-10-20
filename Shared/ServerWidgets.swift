@@ -41,15 +41,15 @@ enum WidgetStorage {
 /// Determine the actual signing-team prefix without hard-coding a development team.
 enum WidgetVault {
     static let service = "eu.simplexsmp.panel.widget-credentials"
-    private static var accessGroup: String? = {
+    private static var accessGroup: String? {
         let account = UUID().uuidString
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service + ".probe", kSecAttrAccount as String: account, kSecValueData as String: Data(), kSecReturnAttributes as String: true]
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service + ".probe", kSecAttrAccount as String: account, kSecValueData as String: Data([0]), kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly, kSecReturnAttributes as String: true]
         var result: CFTypeRef?
         let status = SecItemAdd(query as CFDictionary, &result)
         defer { SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service + ".probe", kSecAttrAccount as String: account] as CFDictionary) }
         guard status == errSecSuccess, let attributes = result as? [String: Any], let group = attributes[kSecAttrAccessGroup as String] as? String, let prefix = group.split(separator: ".").first else { return nil }
         return String(prefix) + ".eu.simplexsmp.panel.shared"
-    }()
+    }
     static func query(_ panel: String) -> [String: Any]? {
         guard let accessGroup else { return nil }
         return [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: panel, kSecAttrAccessGroup as String: accessGroup]
