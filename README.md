@@ -29,6 +29,18 @@ Use the URL containing the web console, **not** the Minecraft game address or th
 
 The app is currently German. API error details may use the provider's language. Advanced rights and permission names follow Pterodactyl naming. Hosting billing, node administration and changing provider-assigned RAM/CPU limits are outside the Client API.
 
+## Version 1.7.0 — personal workspaces and console stability
+
+- Optional in-app cards for the panel home and each server workspace: add, hide and reorder through the layout button. Existing layouts are the defaults. The home server list stays reachable; resetting requires confirmation and affects only the current layout. Additional cards include fleet status, pinned servers, panel information, server health, RAM history and console shortcuts.
+- Java/Minecraft server cards read the existing root `server-icon.png` through the authenticated panel file API when permitted. Icons must be static 64×64 PNGs, max512KiB. Per-connection bounded memory caching, at most3 concurrent icon requests and silent fallback for missing/unreadable files keep browsing usable. Bedrock-only servers retain the placeholder. No public server-query service is used.
+- Last20 successfully transported console commands persist locally per panel/server. Older/newer buttons and hardware arrow keys restore the current draft. Selecting history only fills the input; Send is still required. Clear history has confirmation. Output pause, jump to end, filter, font sizing and copy remain local tools.
+- Console projection and ANSI rendering no longer rerun for each unrelated resource refresh. Scrollback stays bounded. The UIKit console tracks the visible paragraph and selection, follows new lines only while already at the bottom, and restores the viewport across foreground transitions/view reconstruction. A reconnect may still replay Wings' own recent log buffer.
+- Player rows and profiles use platform-specific iOS, Android, Windows, Xbox, PlayStation, Switch and Java icons. Reported OS takes precedence over the model; unambiguous model names provide a fallback. Unknown laptop models use a bounded cached devices lookup, never a guessed Windows label. Raw model information remains available.
+- RAM/CPU/disk indicators are green below70%, yellow from70%, red from90% of the panel limit. CPU100% means one core, not necessarily the account quota. The optional health card reports timestamp freshness and the worst known resource ratio; unknown/unlimited limits and stale/offline measurements do not receive a green health claim. TPS uses the existing command response and remains separately timestamped.
+- **App-only update:** Admin Suite8.3.0 is unchanged. All prior bundle IDs, entitlements, Keychain services, saved panels/Suite connections, workspace pins, shortcuts, widgets and transfer records remain compatible. New preferences use separate keys. Install over the existing app using the same signing identity and bundle ID; keep the installed app and its data.
+
+Rollback source: [`backup/v1.6.0-before-custom-workspaces`](https://github.com/Robin9094707/PANELAPios/tree/backup/v1.6.0-before-custom-workspaces), commit `a4a02b6935c844a03984d5fc96e8437097c7c558`. Reverting app source does not reverse real server actions.
+
 ## Version 1.6.0 — integrated player administration
 
 - Workspace cards open online players and player search directly. A connected Suite adds device-labelled online profiles, player search/actions and recent offline profiles to the server dashboard and management tab. The existing Liquid Glass design remains.

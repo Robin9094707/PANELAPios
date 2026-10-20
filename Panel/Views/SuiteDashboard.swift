@@ -17,7 +17,7 @@ struct SuiteDashboardCard: View {
                     HStack { Label("Online-Spieler", systemImage: "person.2.fill"); Spacer(); Image(systemName: "chevron.right").font(.caption) }
                 }.accessibilityIdentifier("showPlayers")
                 ForEach(Array(online.prefix(4)), id: \.["id"].string) { row in
-                    NavigationLink { SuitePlayerView(suite: suite, panel: model.panel, server: model.server, player: row["id"].string, actions: model.actions, initialProfile: row) } label: { SuitePlayerRow(row: row) }.buttonStyle(.plain)
+                    NavigationLink { SuitePlayerView(suite: suite, panel: model.panel, server: model.server, player: row["id"].string, actions: model.actions, initialProfile: row) } label: { SuitePlayerRow(row: row, suite: suite) }.buttonStyle(.plain)
                 }
                 if online.isEmpty { Text(model.updated == nil ? "Spielerdaten werden geladen …" : "Gerade niemand online").font(.subheadline).foregroundStyle(.secondary) }
                 if online.count > 4 { Text("Weitere Spieler in der Online-Liste").font(.caption).foregroundStyle(.secondary) }

@@ -22,6 +22,7 @@ final class PanelAPI {
     let permissions = PermissionCatalogStore()
     let clock = PanelClock()
     let plugins = PluginCatalog()
+    let serverIcons = ServerIconCache()
     let base: URL
     private let key: String
     var isKinetic: Bool { base.host?.lowercased() == "kineticpanel.net" || base.host?.lowercased().hasSuffix(".kineticpanel.net") == true }

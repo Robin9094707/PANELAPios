@@ -43,6 +43,7 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
 }
 @MainActor final class SuiteAPI {
     let connection: SuiteConnection
+    let platforms = SuitePlatformCache()
     let demo: Bool
     private(set) var scope = "read"
     private let token: String

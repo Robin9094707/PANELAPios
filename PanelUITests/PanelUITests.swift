@@ -70,6 +70,50 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["iPhone · Demo"].waitForExistence(timeout: 10))
         capture("22-Spielergeraete")
     }
+    func testDashboardCustomizationIsOptionalPersistentAndResetIsConfirmed() throws {
+        executionTimeAllowance = 300
+        let edit = app.buttons["editHomeLayout"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 15)); edit.tap()
+        let addFleet = app.buttons["add-card-fleet"]
+        if !addFleet.exists {
+            for _ in 0..<4 { if app.buttons["reset-dashboard"].isHittable { break }; app.swipeUp() }
+            app.buttons["reset-dashboard"].tap()
+            app.buttons["Layout zurücksetzen"].tap()
+        }
+        for _ in 0..<4 { if app.buttons["add-card-fleet"].isHittable { break }; app.swipeUp() }
+        app.buttons["add-card-fleet"].tap()
+        app.buttons["finish-dashboard"].tap()
+        app.terminate(); app.launch()
+        app.buttons["editHomeLayout"].tap()
+        XCTAssertTrue(app.buttons["hide-card-fleet"].waitForExistence(timeout: 10))
+        for _ in 0..<5 { if app.buttons["reset-dashboard"].isHittable { break }; app.swipeUp() }
+        app.buttons["reset-dashboard"].tap()
+        XCTAssertTrue(app.buttons["Layout zurücksetzen"].waitForExistence(timeout: 5))
+        app.buttons["Abbrechen"].tap()
+        for _ in 0..<4 { if app.buttons["hide-card-fleet"].isHittable { break }; app.swipeDown() }
+        XCTAssertTrue(app.buttons["hide-card-fleet"].exists)
+        for _ in 0..<5 { if app.buttons["reset-dashboard"].isHittable { break }; app.swipeUp() }
+        app.buttons["reset-dashboard"].tap()
+        app.buttons["Layout zurücksetzen"].tap()
+        app.buttons["finish-dashboard"].tap()
+        let server = app.buttons["server-simplex1"]
+        if !server.isHittable { app.swipeDown() }
+        XCTAssertTrue(server.waitForExistence(timeout: 10)); server.tap()
+        app.buttons["editServerLayout"].tap()
+        for _ in 0..<4 { if app.buttons["add-card-health"].isHittable { break }; app.swipeUp() }
+        app.buttons["add-card-health"].tap()
+        app.buttons["finish-dashboard"].tap()
+        for _ in 0..<9 { if app.staticTexts["Server-Gesundheit"].isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(app.staticTexts["Server-Gesundheit"].waitForExistence(timeout: 10)); capture("23-Health-Card")
+        app.buttons["editServerLayout"].tap()
+        for _ in 0..<6 { if app.buttons["reset-dashboard"].isHittable { break }; app.swipeUp() }
+        app.buttons["reset-dashboard"].tap(); app.buttons["Layout zurücksetzen"].tap()
+        app.buttons["finish-dashboard"].tap()
+        app.tabBars.buttons["Konsole"].tap()
+        XCTAssertTrue(app.buttons["consoleHistory"].waitForExistence(timeout: 10)); app.buttons["consoleHistory"].tap()
+        XCTAssertTrue(app.navigationBars["Befehlsverlauf"].waitForExistence(timeout: 5)); capture("24-Console-History")
+        app.buttons["Fertig"].tap()
+    }
     func testConnectionFormRequiresURLAndClientKey() throws {
         app.swipeUp()
         let connect = app.buttons["Eigenes Panel verbinden"]

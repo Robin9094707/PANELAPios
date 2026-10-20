@@ -9,6 +9,10 @@ struct HomeView: View {
     @State private var transfers = false
     @State private var widgets = false
     @State private var search = ""
+    @State private var editLayout = false
+    @State private var iconRevision = 0
+    @ObservedObject private var layouts = DashboardLayouts.shared
+    var layoutKey: String { "home:" + (store.api?.base.absoluteString ?? "none") + "|" + (store.demo ? "demo" : store.selected?.uuidString ?? "none") }
     var filtered: [Server] { store.servers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.node.localizedCaseInsensitiveContains(search) }.sorted { a, b in
         guard let api = store.api else { return a.name < b.name }
         let ap = workspace.favorites.contains(workspace.key(api, a)), bp = workspace.favorites.contains(workspace.key(api, b))
@@ -18,6 +22,42 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    if let api = store.api {
+                        ForEach(layouts.cards(layoutKey, scope: .home)) { card in homeCard(card, api: api) }
+                        if store.demo { Button("Eigenes Panel verbinden", systemImage: "plus") { add = true }.buttonStyle(.glassProminent).frame(maxWidth: .infinity) }
+                    } else { hero; welcome }
+                }.padding(.bottom, 60).padding(22).frame(maxWidth: 1100).frame(maxWidth: .infinity)
+            }.panelScreen().navigationTitle("Panel").navigationBarTitleDisplayMode(.inline)
+                .searchable(text: $search, prompt: "Server suchen")
+                .refreshable { iconRevision += 1; await store.refresh(); await store.refreshPresence() }.scrollBounceBehavior(.always)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Menu {
+                            ForEach(store.profiles) { p in Button { store.select(p.id) } label: { Label(p.name, systemImage: store.selected == p.id && !store.demo ? "checkmark.circle.fill" : "server.rack") } }
+                            Button("Panel hinzufügen", systemImage: "plus") { add = true }
+                            if store.demo { Button("Demo verlassen") { store.exitDemo() } }
+                        } label: { Label(store.demo ? "Demo" : store.active?.name ?? "Panels", systemImage: "square.stack") }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) { Button("Startseite anpassen", systemImage: "rectangle.3.group") { editLayout = true }.disabled(store.api == nil).accessibilityIdentifier("editHomeLayout") }
+                    ToolbarItem(placement: .topBarTrailing) { Button("Übertragungen", systemImage: "arrow.up.arrow.down.circle") { transfers = true } }
+                    ToolbarItem(placement: .topBarTrailing) { Button("Einstellungen", systemImage: "slider.horizontal.3") { settings = true } }
+                }
+                .navigationDestination(for: Server.self) { server in if let api = store.api { ServerView(api: api, server: server).id("\(store.selected?.uuidString ?? "demo")-\(server.id)") } }
+                .sheet(isPresented: $editLayout) { DashboardEditor(scope: .home, layoutKey: layoutKey) }
+                .sheet(isPresented: $add) { AddPanelView() }
+                .sheet(isPresented: $settings) { SettingsView() }
+                .sheet(isPresented: $transfers) { TransfersView() }
+                .sheet(isPresented: $widgets) { NavigationStack { WidgetSettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { widgets = false } } } } }
+                .onOpenURL { url in if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
+                .task(id: store.api.map { ObjectIdentifier($0) }) { await store.refresh(); await store.pollPresence() }
+        }
+    }
+    func isBedrockOnly(_ server: Server) -> Bool {
+        let container = server.data["container"]["image"].string.lowercased()
+        let invocation = server.data["invocation"].string.lowercased()
+        return container.contains("bedrock") || invocation.contains("bedrock_server")
+    }
+    var hero: some View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(store.demo ? "DEMO WORKSPACE" : "DEIN WORKSPACE").font(.caption.weight(.bold)).tracking(2).foregroundStyle(.teal)
@@ -27,9 +67,9 @@ struct HomeView: View {
                         Spacer(minLength: 0)
                         Image(systemName: "server.rack").font(.system(size: 32, weight: .light)).foregroundStyle(.teal).padding(20).glassEffect(.regular.tint(.teal.opacity(0.12)), in: .rect(cornerRadius: 25))
                     }.padding(.top, 16)
-                    if store.api == nil { welcome }
-                    else {
-                        if let api = store.api { pinnedFolders(api) }
+    }
+    var serverList: some View {
+        VStack(alignment: .leading, spacing: 18) {
                         HStack { Label("\(store.servers.count) Server", systemImage: "square.stack.3d.up").font(.subheadline.weight(.medium)); Spacer(); if store.loading { ProgressView() } }
                         if filtered.isEmpty {
                             ContentUnavailableView(search.isEmpty ? "Keine Server" : "Keine Treffer", systemImage: "server.rack", description: Text("Ziehe nach unten, um die Liste zu aktualisieren."))
@@ -37,7 +77,7 @@ struct HomeView: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
                             ForEach(filtered) { server in
                                 VStack(spacing: 12) {
-                                NavigationLink(value: server) { ServerCard(server: server, presence: store.presence[server.id], favorite: store.api.map { workspace.favorites.contains(workspace.key($0, server)) } ?? false) }.buttonStyle(.plain).accessibilityIdentifier("server-\(server.id)").contextMenu {
+                                NavigationLink(value: server) { ServerCard(server: server, api: store.api, iconEnabled: store.api.map { workspace.isMinecraft($0, server) && !$0.demo && !isBedrockOnly(server) } ?? false, iconRevision: iconRevision, presence: store.presence[server.id], favorite: store.api.map { workspace.favorites.contains(workspace.key($0, server)) } ?? false) }.buttonStyle(.plain).accessibilityIdentifier("server-\(server.id)").contextMenu {
                                     if let api = store.api { Button(workspace.favorites.contains(workspace.key(api, server)) ? "Server lösen" : "Server anpinnen", systemImage: "star") { workspace.toggleServer(api, server) } }
                                 }
                                 if let api = store.api, suiteConnections.get(api, server) != nil || store.demo && ProcessInfo.processInfo.arguments.contains("--demo-suite") {
@@ -50,31 +90,46 @@ struct HomeView: View {
                                 }
                             }
                         }
-                        if store.demo { Button("Eigenes Panel verbinden", systemImage: "plus") { add = true }.buttonStyle(.glassProminent).frame(maxWidth: .infinity) }
-                    }
-                }.padding(.bottom, 60).padding(22).frame(maxWidth: 1100).frame(maxWidth: .infinity)
-            }.panelScreen().navigationTitle("Panel").navigationBarTitleDisplayMode(.inline)
-                .searchable(text: $search, prompt: "Server suchen")
-                .refreshable { await store.refresh(); await store.refreshPresence() }.scrollBounceBehavior(.always)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Menu {
-                            ForEach(store.profiles) { p in Button { store.select(p.id) } label: { Label(p.name, systemImage: store.selected == p.id && !store.demo ? "checkmark.circle.fill" : "server.rack") } }
-                            Button("Panel hinzufügen", systemImage: "plus") { add = true }
-                            if store.demo { Button("Demo verlassen") { store.exitDemo() } }
-                        } label: { Label(store.demo ? "Demo" : store.active?.name ?? "Panels", systemImage: "square.stack") }
-                    }
-                    ToolbarItem(placement: .topBarTrailing) { Button("Übertragungen", systemImage: "arrow.up.arrow.down.circle") { transfers = true } }
-                    ToolbarItem(placement: .topBarTrailing) { Button("Einstellungen", systemImage: "slider.horizontal.3") { settings = true } }
-                }
-                .navigationDestination(for: Server.self) { server in if let api = store.api { ServerView(api: api, server: server).id("\(store.selected?.uuidString ?? "demo")-\(server.id)") } }
-                .sheet(isPresented: $add) { AddPanelView() }
-                .sheet(isPresented: $settings) { SettingsView() }
-                .sheet(isPresented: $transfers) { TransfersView() }
-                .sheet(isPresented: $widgets) { NavigationStack { WidgetSettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { widgets = false } } } } }
-                .onOpenURL { url in if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
-                .task(id: store.api.map { ObjectIdentifier($0) }) { await store.refresh(); await store.pollPresence() }
         }
+    }
+    @ViewBuilder func homeCard(_ card: DashboardCard, api: PanelAPI) -> some View {
+        switch card {
+        case .welcome: hero
+        case .folders: pinnedFolders(api)
+        case .servers: serverList
+        case .fleet:
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Server im Überblick", systemImage: card.symbol).font(.headline)
+                HStack(spacing: 24) {
+                    fleetCount("Online", count: store.servers.filter { store.presence[$0.id]?.state == "running" }.count, color: .green)
+                    fleetCount("Offline", count: store.servers.filter { store.presence[$0.id]?.state == "offline" }.count, color: .secondary)
+                    fleetCount("Weitere", count: store.servers.filter { !["running", "offline"].contains(store.presence[$0.id]?.state ?? "unknown") }.count, color: .orange)
+                }
+                Text("Statusabfrage etwa alle 15 Sekunden, solange die Startseite geöffnet ist. Unbekannte Zustände zählen unter Weitere.").font(.caption).foregroundStyle(.secondary)
+                if let updated = store.presence.values.map(\.updated).max() { HStack { Text("Letzte Antwort"); Spacer(); Text(updated, style: .time) }.font(.caption).foregroundStyle(.secondary) }
+            }.frame(maxWidth: .infinity, alignment: .leading).card()
+        case .favorites:
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Angepinnte Server", systemImage: "star.fill").font(.headline)
+                let favorites = filtered.filter { workspace.favorites.contains(workspace.key(api, $0)) }
+                ForEach(favorites) { server in
+                    NavigationLink(value: server) { HStack { Text(server.name); Spacer(); StatePill(state: store.presence[server.id]?.state ?? "unknown"); Image(systemName: "chevron.right").font(.caption) } }.buttonStyle(.plain)
+                }
+                if favorites.isEmpty { Text("Server über das Kontextmenü anpinnen.").font(.subheadline).foregroundStyle(.secondary) }
+            }.frame(maxWidth: .infinity, alignment: .leading).card()
+        case .account:
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Panel-Informationen", systemImage: card.symbol).font(.headline)
+                LabeledContent("Panel", value: store.demo ? "Demo" : store.active?.name ?? "Panel")
+                Text(api.base.absoluteString).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                LabeledContent("Server", value: String(store.servers.count))
+                NavigationLink("Account & Sicherheit") { AccountView(api: api) }
+            }.frame(maxWidth: .infinity, alignment: .leading).card()
+        default: EmptyView()
+        }
+    }
+    func fleetCount(_ title: String, count: Int, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) { Text(count, format: .number).font(.title.bold()).foregroundStyle(color); Text(title).font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
     }
     @ViewBuilder func pinnedFolders(_ api: PanelAPI) -> some View {
         let pins = workspace.folders.filter { pin in pin.panel == api.base.absoluteString && store.servers.contains(where: { $0.id == pin.serverID }) }
@@ -103,12 +158,15 @@ struct HomeView: View {
 }
 struct ServerCard: View {
     let server: Server
+    var api: PanelAPI? = nil
+    var iconEnabled = true
+    var iconRevision = 0
     var presence: ServerPresence? = nil
     var favorite = false
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Image(systemName: "cube.transparent.fill").font(.title).foregroundStyle(.teal).padding(12).background(.teal.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+                ServerIconView(api: api, server: server, enabled: iconEnabled, revision: iconRevision)
                 Spacer()
                 StatePill(state: presence?.state ?? "unknown")
             }
@@ -173,7 +231,7 @@ struct SettingsView: View {
                 }
                 if let api = store.api { Section("Account") { NavigationLink("Account & Sicherheit") { AccountView(api: api) } } }
                 Section {
-                    LabeledContent("Version", value: "1.4.0")
+                    LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")
                     Text("Unabhängiger Pterodactyl-Client. Funktionen und Limits richten sich nach deinem Hoster und deinen Panel-Berechtigungen.").font(.footnote).foregroundStyle(.secondary)
                 }
             }.panelScreen().navigationTitle("Einstellungen").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }

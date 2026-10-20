@@ -2,17 +2,27 @@ import SwiftUI
 
 struct SuitePlayerRow: View {
     let row: JSON
+    var suite: SuiteAPI? = nil
+    @State private var resolved: PlayerPlatform?
+    var platform: PlayerPlatform { resolved ?? PlayerPlatform.resolve(row) }
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: row["client"].string.uppercased() == "BEDROCK" ? "gamecontroller.fill" : "desktopcomputer").font(.title2).foregroundStyle(.teal).frame(width: 30)
+            PlayerPlatformIcon(platform: platform)
             VStack(alignment: .leading, spacing: 4) {
                 Text(row["name"].string).font(.headline)
-                Text(SuitePlayerPresentation.device(row)).font(.subheadline).foregroundStyle(.secondary)
+                Text(platform.title).font(.subheadline).foregroundStyle(.secondary)
+                if platform != .java { Text(SuitePlayerPresentation.device(row)).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 if !row["online"].bool, let date = SuitePlayerPresentation.date(row["lastSeen"]) { Text("Zuletzt online: " + date.formatted(.relative(presentation: .named))).font(.caption).foregroundStyle(.secondary) }
             }
             Spacer(minLength: 4)
             Label(row["online"].bool ? "Online" : "Offline", systemImage: "circle.fill").labelStyle(.iconOnly).font(.caption2).foregroundStyle(row["online"].bool ? Color.green : .secondary.opacity(0.5))
-        }.padding(.vertical, 3)
+        }.padding(.vertical, 3).task(id: row["id"].string + "|" + row["device"].string) {
+            resolved = nil
+            if PlayerPlatform.resolve(row) == .unknown, row["client"].string.uppercased() == "BEDROCK", let suite {
+                let value = await suite.platforms.platform(row["id"].string, suite: suite)
+                guard !Task.isCancelled else { return }; resolved = value
+            }
+        }
     }
 }
 struct SuitePlayersView: View {
@@ -38,7 +48,7 @@ struct SuitePlayersView: View {
             }
             Section(filter == .recent ? "Offline · zuletzt gesehen zuerst" : filter.rawValue) {
                 ForEach(visible, id: \.["id"].string) { row in
-                    NavigationLink { SuitePlayerView(suite: suite, panel: panel, server: server, player: row["id"].string, actions: actions, initialProfile: row) } label: { SuitePlayerRow(row: row) }
+                    NavigationLink { SuitePlayerView(suite: suite, panel: panel, server: server, player: row["id"].string, actions: actions, initialProfile: row) } label: { SuitePlayerRow(row: row, suite: suite) }
                 }
                 if directory.busy { ProgressView(filter == .recent ? "Letzte Aktivitäten aller Profile laden …" : "Spieler laden …") }
                 if visible.isEmpty && !directory.busy { ContentUnavailableView("Keine Spieler gefunden", systemImage: "person.crop.circle.badge.questionmark", description: Text("Suche nach einem Namen oder wechsle den Filter.")) }
@@ -61,16 +71,18 @@ struct SuitePlayerView: View {
     @State private var error: String?
     @State private var automatic = false
     @State private var updated: Date?
+    @State private var resolved: PlayerPlatform?
     var current: JSON { profile == .null ? initialProfile : profile }
     var live: JSON { current["live"] }
     var name: String { current["name"].string.isEmpty ? player : current["name"].string }
     var body: some View {
         List {
             Section {
-                HStack(spacing: 14) { Image(systemName: "person.crop.circle.fill").font(.system(size: 42)).foregroundStyle(.teal.gradient); VStack(alignment: .leading) { Text(name).font(.title2.bold()).textSelection(.enabled); Label(current["online"].bool ? "Online" : "Offline", systemImage: "circle.fill").font(.caption).foregroundStyle(current["online"].bool ? .green : .secondary) } }
+                HStack(spacing: 14) { PlayerPlatformIcon(platform: resolved ?? PlayerPlatform.resolve(current), size: 38); VStack(alignment: .leading) { Text(name).font(.title2.bold()).textSelection(.enabled); Label(current["online"].bool ? "Online" : "Offline", systemImage: "circle.fill").font(.caption).foregroundStyle(current["online"].bool ? .green : .secondary) } }
                 CopyButton(text: name, title: "Spielername kopieren")
                 CopyButton(text: player, title: "UUID kopieren")
                 LabeledContent("Client", value: current["client"].string)
+                LabeledContent("Plattform", value: (resolved ?? PlayerPlatform.resolve(current)).title)
                 LabeledContent(current["online"].bool ? "Aktuelles Gerät" : "Letztes Gerät", value: SuitePlayerPresentation.device(current))
                 if let date = SuitePlayerPresentation.date(current["lastSeen"]), !current["online"].bool { LabeledContent("Zuletzt online") { Text(date, format: .dateTime.day().month().year().hour().minute()) } }
                 if !current["version"].string.isEmpty { LabeledContent("Spielversion", value: current["version"].string) }
@@ -120,7 +132,9 @@ struct SuitePlayerView: View {
             }
         }.panelScreen().navigationTitle(name).navigationBarTitleDisplayMode(.inline).task(id: automatic) { await load(); while automatic && !Task.isCancelled { do { try await Task.sleep(for: .seconds(15)) } catch { return }; await load() } }.refreshable { await load() }.errorAlert($error)
     }
-    func load() async { do { profile = try await suite.data("profile", query: ["player": player]); updated = Date() } catch { if !Task.isCancelled { self.error = error.localizedDescription } } }
+    func load() async { do { profile = try await suite.data("profile", query: ["player": player]); updated = Date()
+        resolved = nil
+        if PlayerPlatform.resolve(profile) == .unknown, profile["client"].string.uppercased() == "BEDROCK" { resolved = await suite.platforms.platform(player, suite: suite) } } catch { if !Task.isCancelled { self.error = error.localizedDescription } } }
 }
 struct SuiteDataListView: View {
     let suite: SuiteAPI
@@ -136,7 +150,10 @@ struct SuiteDataListView: View {
             if rows.isEmpty { if loaded { ContentUnavailableView("Keine Daten vorhanden", systemImage: "tray") } else { ProgressView() } }
             ForEach(rows, id: \.["id"].string) { row in
                 Section {
-                    Text(row["name"].string).font(.headline).textSelection(.enabled)
+                    HStack {
+                        if kind == "devices" { PlayerPlatformIcon(platform: PlayerPlatform.resolve(row)) }
+                        Text(row["name"].string).font(.headline).textSelection(.enabled)
+                    }
                     if kind == "alts" {
                         HStack { Text(row["level"].string); Spacer(); Text("\(row["score"].int) / 100").font(.headline.monospacedDigit()).foregroundStyle(row["score"].int >= 85 ? .orange : .teal) }
                         ForEach(Array(row["evidence"].array.enumerated()), id: \.offset) { _, line in Text(line.string).font(.subheadline) }

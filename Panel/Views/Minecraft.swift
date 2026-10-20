@@ -1,24 +1,81 @@
 import SwiftUI
 import UIKit
 
+struct ConsoleAnchor {
+    let context: String
+    let delta: CGFloat
+    static func range(of context: String, in text: String) -> NSRange? {
+        guard !context.isEmpty else { return nil }
+        let range = (text as NSString).range(of: context, options: .backwards)
+        return range.location == NSNotFound ? nil : range
+    }
+}
+@MainActor final class ConsoleViewportState: ObservableObject {
+    var offset = CGPoint.zero
+    var selection = NSRange(location: 0, length: 0)
+    var atBottom = true
+    var initialized = false
+    var anchor: ConsoleAnchor?
+}
 struct ConsoleTextView: UIViewRepresentable {
     let text: String
     let fontSize: Double
     let follow: Bool
+    let viewport: ConsoleViewportState
+    var active = true
+    var jumpRevision = 0
     var refresh: (() async -> Void)? = nil
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, UITextViewDelegate {
         var previous = ""
         var size = 0.0
+        var active = true
+        var jumpRevision = 0
+        var applying = false
+        let viewport: ConsoleViewportState
         var refresh: (() async -> Void)?
+        init(_ viewport: ConsoleViewportState) { self.viewport = viewport }
         @objc func pulled(_ sender: UIRefreshControl) {
             Task { @MainActor in await refresh?(); sender.endRefreshing() }
         }
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            guard !applying, let view = scrollView as? UITextView else { return }
+            capture(view)
+        }
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            guard !applying else { return }; viewport.selection = textView.selectedRange
+        }
+        func capture(_ view: UITextView) {
+            guard !previous.isEmpty else { return }
+            viewport.offset = view.contentOffset; viewport.selection = view.selectedRange
+            viewport.atBottom = view.contentOffset.y + view.bounds.height >= view.contentSize.height + view.adjustedContentInset.bottom - 40
+            viewport.initialized = true
+            guard view.textStorage.length > 0 else { viewport.anchor = nil; return }
+            let point = CGPoint(x: 0, y: max(0, view.contentOffset.y - view.textContainerInset.top))
+            let glyph = view.layoutManager.glyphIndex(for: point, in: view.textContainer)
+            let char = min(view.textStorage.length - 1, view.layoutManager.characterIndexForGlyph(at: glyph))
+            let old = previous as NSString
+            guard char < old.length else { return }
+            let paragraph = old.paragraphRange(for: NSRange(location: char, length: 0))
+            let range = NSRange(location: paragraph.location, length: min(512, old.length - paragraph.location))
+            let rect = view.layoutManager.boundingRect(forGlyphRange: view.layoutManager.glyphRange(forCharacterRange: NSRange(location: paragraph.location, length: 1), actualCharacterRange: nil), in: view.textContainer)
+            viewport.anchor = ConsoleAnchor(context: old.substring(with: range), delta: view.contentOffset.y - rect.minY - view.textContainerInset.top)
+        }
+        func restore(_ view: UITextView, text: String) {
+            var y = viewport.offset.y
+            if let anchor = viewport.anchor, let range = ConsoleAnchor.range(of: anchor.context, in: text) {
+                let glyphs = view.layoutManager.glyphRange(forCharacterRange: NSRange(location: range.location, length: 1), actualCharacterRange: nil)
+                let rect = view.layoutManager.boundingRect(forGlyphRange: glyphs, in: view.textContainer)
+                y = rect.minY + view.textContainerInset.top + anchor.delta
+            }
+            let maxY = max(-view.adjustedContentInset.top, view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom)
+            view.setContentOffset(CGPoint(x: 0, y: min(maxY, max(-view.adjustedContentInset.top, y))), animated: false)
+        }
     }
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(viewport) }
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
-        context.coordinator.refresh = refresh
-        let control = UIRefreshControl(); control.addTarget(context.coordinator, action: #selector(Coordinator.pulled(_:)), for: .valueChanged); view.refreshControl = control; view.alwaysBounceVertical = true
+        view.delegate = context.coordinator; context.coordinator.refresh = refresh
+        let control = UIRefreshControl(); control.addTarget(context.coordinator, action: #selector(Coordinator.pulled(_:)), for: .valueChanged); view.refreshControl = control
         view.isEditable = false; view.isSelectable = true; view.backgroundColor = .clear
         view.textContainer.widthTracksTextView = true; view.textContainer.lineFragmentPadding = 0
         view.textContainerInset = UIEdgeInsets(top: 12, left: 16, bottom: 12, right: 16)
@@ -27,14 +84,37 @@ struct ConsoleTextView: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: UITextView, context: Context) {
-        context.coordinator.refresh = refresh
-        guard context.coordinator.previous != text || context.coordinator.size != fontSize else { return }
-        let selection = view.selectedRange; let offset = view.contentOffset
-        view.attributedText = ConsoleStyle.attributed(text, size: fontSize); context.coordinator.previous = text; context.coordinator.size = fontSize
-        if selection.length > 0 && NSMaxRange(selection) <= view.text.utf16.count { view.selectedRange = selection; view.setContentOffset(offset, animated: false) }
-        else if follow && !text.isEmpty && !view.isTracking && !view.isDragging && !view.isDecelerating && view.refreshControl?.isRefreshing != true { view.scrollRangeToVisible(NSRange(location: max(0, view.text.utf16.count - 1), length: 1)) }
-        else { view.setContentOffset(offset, animated: false) }
+        let c = context.coordinator
+        c.refresh = refresh
+        let changed = c.previous != text || c.size != fontSize
+        let jump = c.jumpRevision != jumpRevision
+        let resumed = active && !c.active
+        c.active = active; c.jumpRevision = jumpRevision
+        guard changed || jump else { return }
+        if !c.previous.isEmpty { c.capture(view) }
+        let first = !viewport.initialized
+        let shouldFollow = follow && active && !resumed && (first || viewport.atBottom) && viewport.selection.length == 0 && !view.isTracking && !view.isDragging && !view.isDecelerating && view.refreshControl?.isRefreshing != true
+        let oldText = c.previous as NSString
+        var selection = viewport.selection
+        if selection.length > 0, NSMaxRange(selection) <= oldText.length {
+            let selected = oldText.substring(with: selection)
+            selection = ConsoleAnchor.range(of: selected, in: text) ?? NSRange(location: 0, length: 0)
+        }
+        c.applying = true
+        if changed {
+            view.attributedText = ConsoleStyle.attributed(text, size: fontSize); c.previous = text; c.size = fontSize
+            view.layoutManager.ensureLayout(for: view.textContainer); view.layoutIfNeeded()
+        }
+        if NSMaxRange(selection) <= view.textStorage.length { view.selectedRange = selection }
+        if (jump || shouldFollow) && !text.isEmpty {
+            if jump { view.selectedRange = NSRange(location: view.textStorage.length, length: 0) }
+            let y = max(-view.adjustedContentInset.top, view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom)
+            view.setContentOffset(CGPoint(x: 0, y: y), animated: false)
+        } else { c.restore(view, text: text) }
+        c.applying = false
+        c.capture(view)
     }
+    static func dismantleUIView(_ view: UITextView, coordinator: Coordinator) { coordinator.capture(view); view.delegate = nil }
 }
 struct PlayersCard: View {
     @ObservedObject var live: LiveServer

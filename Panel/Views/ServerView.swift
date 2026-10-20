@@ -27,6 +27,17 @@ struct ServerView: View {
     @State private var follow = true
     @State private var filter = ""
     @State private var fontSize = 12.0
+    @ObservedObject private var layouts = DashboardLayouts.shared
+    @ObservedObject private var consoleHistory = ConsoleHistory.shared
+    @State private var editLayout = false
+    @State private var iconRevision = 0
+    @State private var historySheet = false
+    @State private var historyCursor = CommandHistoryCursor()
+    @StateObject private var viewport = ConsoleViewportState()
+    @State private var consoleText = ""
+    @State private var frozen = false
+    @State private var frozenLines: [String] = []
+    @State private var jumpRevision = 0
     var body: some View {
         TabView(selection: $tab) {
             Tab("Übersicht", systemImage: "gauge.with.dots.needle.67percent", value: 0) { overview }
@@ -35,7 +46,7 @@ struct ServerView: View {
             Tab("Backups", systemImage: "externaldrive.badge.timemachine", value: 3) { AccessBoundary(access: api.access, server: server.id, permission: "backup.read") { BackupsView(api: api, server: server) } }
             Tab("Verwalten", systemImage: "square.grid.2x2", value: 4) { ManageView(api: api, server: server, suite: suite, live: live) }
         }.navigationTitle(server.name).navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Server aktualisieren", systemImage: "arrow.clockwise") { Task { await refreshServer() } } }; ToolbarItem(placement: .topBarTrailing) { powerMenu } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Workspace anpassen", systemImage: "rectangle.3.group") { editLayout = true }.accessibilityIdentifier("editServerLayout") }; ToolbarItem(placement: .topBarTrailing) { Button("Server aktualisieren", systemImage: "arrow.clockwise") { Task { await refreshServer() } } }; ToolbarItem(placement: .topBarTrailing) { powerMenu } }
             .task(id: "\(scenePhase)-\(workspace.isMinecraft(api, server))") {
                 if scenePhase == .active {
                     await api.loadAccess(server: server.id)
@@ -54,6 +65,8 @@ struct ServerView: View {
             .onChange(of: live.lastUpdate) { _, _ in WidgetPublisher.publish(api: api, server: server, live: live) }
             .onChange(of: live.players) { _, _ in WidgetPublisher.publish(api: api, server: server, live: live) }
             .onChange(of: live.state) { _, state in store.presence[server.id] = ServerPresence(state: state) }
+            .sheet(isPresented: $editLayout) { DashboardEditor(scope: .server, layoutKey: layoutKey) }
+            .sheet(isPresented: $historySheet) { ConsoleHistorySheet(historyKey: historyKey) { command = $0; historyCursor = CommandHistoryCursor(); tab = 1 } }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
             .sheet(isPresented: $commandLibrary) { CommandLibrary(api: api, server: server) { command = $0 } }
             .errorAlert($error)
@@ -72,11 +85,45 @@ struct ServerView: View {
     var overview: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                HStack { VStack(alignment: .leading, spacing: 8) { Text(server.name).font(.largeTitle.bold()); Text(server.address).font(.system(.subheadline, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled) }; Spacer(); StatePill(state: live.state) }
+                ForEach(layouts.cards(layoutKey, scope: .server)) { card in overviewCard(card) }
+            }.padding(20).frame(maxWidth: 1000).frame(maxWidth: .infinity)
+        }.panelScreen().refreshable { await refreshServer() }.scrollBounceBehavior(.always)
+    }
+    var layoutKey: String { "server:" + api.base.absoluteString + "|" + (api.demo ? "demo:" : "") + server.id }
+    var historyKey: String { workspace.key(api, server) }
+    var commandEntries: [String] { consoleHistory.entries(historyKey) }
+    @ViewBuilder func overviewCard(_ card: DashboardCard) -> some View {
+        switch card {
+        case .identity: identityCard
+        case .players: playersSection
+        case .resources: resourceCards
+        case .cpuHistory: cpuCard
+        case .network: networkCard
+        case .health: healthCard
+        case .memoryHistory: memoryCard
+        case .shortcuts:
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Konsolen-Schnellzugriff", systemImage: "terminal").font(.headline)
+                Button("Konsole öffnen", systemImage: "terminal") { tab = 1 }.buttonStyle(.glass)
+                Button("Befehlsverlauf", systemImage: "clock.arrow.circlepath") { historySheet = true }
+                ForEach(workspace.shortcuts[workspace.key(api, server)] ?? []) { shortcut in
+                    Button(shortcut.name) { command = shortcut.command; tab = 1 }
+                }
+                Text("Shortcuts werden vor dem Senden im Eingabefeld geöffnet.").font(.caption).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading).card()
+        default: EmptyView()
+        }
+    }
+    var identityCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+                HStack { ServerIconView(api: api, server: server, enabled: workspace.isMinecraft(api, server) && !server.data["invocation"].string.lowercased().contains("bedrock_server") && !server.data["container"]["image"].string.lowercased().contains("bedrock"), revision: iconRevision); VStack(alignment: .leading, spacing: 8) { Text(server.name).font(.largeTitle.bold()); Text(server.address).font(.system(.subheadline, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled) }; Spacer(); StatePill(state: live.state) }
                 HStack(spacing: 7) { Circle().fill(live.connected ? Color.green : Color.orange).frame(width: 6, height: 6); Text(live.connection); Spacer(); if let updated = live.lastUpdate { Text(updated, style: .time).monospacedDigit() } }.font(.caption).foregroundStyle(.secondary)
                 if let issue = live.issue, !live.connected { Label(issue, systemImage: "wifi.exclamationmark").font(.footnote).foregroundStyle(.orange).card() }
                 AccessSummary(access: api.access, api: api, server: server.id)
                 Toggle("Minecraft-Spielerübersicht", isOn: Binding(get: { workspace.isMinecraft(api, server) }, set: { workspace.setMinecraft($0, api, server) })).font(.subheadline)
+        }
+    }
+    @ViewBuilder var playersSection: some View {
                 if suite.configured { SuiteDashboardCard(model: suite) }
                 if workspace.isMinecraft(api, server) {
                     if !suite.configured { PlayersCard(live: live, api: api, server: server, suite: suite) }
@@ -85,12 +132,16 @@ struct ServerView: View {
                 if server.data["is_suspended"].bool || server.data["is_installing"].bool || server.data["is_node_under_maintenance"].bool {
                     Label(server.data["is_suspended"].bool ? "Server ist gesperrt" : server.data["is_installing"].bool ? "Installation läuft" : "Node wird gewartet", systemImage: "exclamationmark.triangle").foregroundStyle(.orange).card()
                 }
+    }
+    var resourceCards: some View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 155), spacing: 14)], spacing: 14) {
-                    MetricCard(title: "Arbeitsspeicher", symbol: "memorychip", value: live.lastUpdate == nil ? "–" : bytes(live.memory), limit: limitBytes("memory"), fraction: fraction(live.memory, "memory"), tint: .teal)
-                    MetricCard(title: "CPU", symbol: "cpu", value: live.lastUpdate == nil ? "–" : String(format: "%.1f %%", live.cpu), limit: server.data["limits"]["cpu"].double > 0 ? "von \(server.data["limits"]["cpu"].string) %" : "Unbegrenzt", fraction: server.data["limits"]["cpu"].double > 0 ? live.cpu / server.data["limits"]["cpu"].double : nil, tint: .indigo)
-                    MetricCard(title: "Speicherplatz", symbol: "internaldrive", value: live.lastUpdate == nil ? "–" : bytes(live.disk), limit: limitBytes("disk"), fraction: fraction(live.disk, "disk"), tint: .blue)
+                    MetricCard(title: "Arbeitsspeicher", symbol: "memorychip", value: live.lastUpdate == nil ? "–" : bytes(live.memory), limit: limitBytes("memory"), fraction: live.lastUpdate == nil ? nil : fraction(live.memory, "memory"), tint: .teal)
+                    MetricCard(title: "CPU", symbol: "cpu", value: live.lastUpdate == nil ? "–" : String(format: "%.1f %%", live.cpu), limit: server.data["limits"]["cpu"].double > 0 ? "von \(server.data["limits"]["cpu"].string) %" : "Unbegrenzt", fraction: live.lastUpdate == nil ? nil : ResourceLoad.fraction(value: live.cpu, limit: server.data["limits"]["cpu"].double), tint: .indigo)
+                    MetricCard(title: "Speicherplatz", symbol: "internaldrive", value: live.lastUpdate == nil ? "–" : bytes(live.disk), limit: limitBytes("disk"), fraction: live.lastUpdate == nil ? nil : fraction(live.disk, "disk"), tint: .blue)
                     MetricCard(title: "Laufzeit", symbol: "clock", value: live.lastUpdate == nil ? "–" : Duration.seconds(live.uptime).formatted(.time(pattern: .hourMinuteSecond)), limit: live.state == "offline" ? "Server ist offline" : "seit dem letzten Start", fraction: nil, tint: .orange)
                 }
+    }
+    var cpuCard: some View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack { Text("CPU-Verlauf").font(.headline); Spacer(); Text("Live · letzte 120 Werte").font(.caption).foregroundStyle(.secondary) }
                     if live.history.isEmpty { ContentUnavailableView("Warte auf Messwerte", systemImage: "waveform.path.ecg").frame(height: 150) }
@@ -101,6 +152,8 @@ struct ServerView: View {
                         }.chartYScale(domain: 0...max(100, (live.history.map(\.cpu).max() ?? 100) * 1.1)).chartXAxis(.hidden).frame(height: 150).accessibilityLabel("CPU-Verlauf")
                     }
                 }.card()
+    }
+    var networkCard: some View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Netzwerk & Verbindung").font(.headline)
                     LabeledContent("Empfangen", value: bytes(live.stats["network"]["rx_bytes"].double))
@@ -108,11 +161,36 @@ struct ServerView: View {
                     LabeledContent("Node", value: server.node)
                     Text("CPU: 100 % entsprechen einem CPU-Kern. RAM- und Festplattenlimits werden vom Panel in MiB geliefert.").font(.caption).foregroundStyle(.secondary)
                 }.card()
-            }.padding(20).frame(maxWidth: 1000).frame(maxWidth: .infinity)
-        }.panelScreen().refreshable { await refreshServer() }.scrollBounceBehavior(.always)
+    }
+    var healthCard: some View {
+        let fractions = [fraction(live.memory, "memory"), ResourceLoad.fraction(value: live.cpu, limit: server.data["limits"]["cpu"].double), fraction(live.disk, "disk")]
+        let health = ServerHealth.assess(state: live.state, updated: live.lastUpdate, fractions: fractions)
+        return VStack(alignment: .leading, spacing: 14) {
+            Label("Server-Gesundheit", systemImage: "heart.text.square").font(.headline)
+            Label(health.title, systemImage: health.level == .high ? "exclamationmark.triangle.fill" : health.level == .unknown ? "questionmark.circle" : "checkmark.circle.fill").foregroundStyle(health.level.color)
+            Text(health.detail).font(.caption).foregroundStyle(.secondary)
+            LabeledContent("Status", value: live.state)
+            if let date = live.lastUpdate { LabeledContent("Letzter Messwert") { Text(date, style: .relative) } }
+            if let tps = live.tps, Date().timeIntervalSince(tps.updated) <= 75 {
+                LabeledContent("TPS · 1 Minute") { Text(tps.minute, format: .number.precision(.fractionLength(2))).foregroundStyle(TPSSnapshot.color(tps.minute)) }
+            }
+            if let issue = live.issue { Label(issue, systemImage: "wifi.exclamationmark").font(.caption).foregroundStyle(.orange) }
+        }.frame(maxWidth: .infinity, alignment: .leading).card()
+    }
+    var memoryCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack { Text("RAM-Verlauf").font(.headline); Spacer(); Text("Live · letzte 120 Werte").font(.caption).foregroundStyle(.secondary) }
+            if live.history.isEmpty { ContentUnavailableView("Warte auf Messwerte", systemImage: "memorychip").frame(height: 150) }
+            else {
+                Chart(live.history) { point in
+                    AreaMark(x: .value("Zeit", point.date), y: .value("RAM · GiB", point.memory / 1_073_741_824)).foregroundStyle(.teal.opacity(0.16))
+                    LineMark(x: .value("Zeit", point.date), y: .value("RAM · GiB", point.memory / 1_073_741_824)).foregroundStyle(.teal)
+                }.chartYScale(domain: .automatic(includesZero: true)).chartXAxis(.hidden).frame(height: 150).accessibilityLabel("RAM-Verlauf in GiB")
+            }
+        }.card()
     }
     func refreshServer() async {
-        guard !refreshing else { return }; refreshing = true; defer { refreshing = false }
+        guard !refreshing else { return }; iconRevision += 1; refreshing = true; defer { refreshing = false }
         // Independent sources start together; slow workspace lists do not block live stats.
         async let access: Void = api.loadAccess(server: server.id)
         async let workspaceRefresh: Void = store.refresh()
@@ -122,7 +200,7 @@ struct ServerView: View {
         _ = await (access, workspaceRefresh, suiteRefresh)
     }
     func limitBytes(_ key: String) -> String { let limit = server.data["limits"][key].double; return limit > 0 ? "von " + bytes(limit * 1_048_576) : "Unbegrenzt" }
-    func fraction(_ value: Double, _ key: String) -> Double? { let limit = server.data["limits"][key].double; return limit > 0 ? value / (limit * 1_048_576) : nil }
+    func fraction(_ value: Double, _ key: String) -> Double? { let limit = server.data["limits"][key].double; return ResourceLoad.fraction(value: value, limit: limit * 1_048_576) }
     var console: some View {
         VStack(spacing: 0) {
             HStack {
@@ -130,17 +208,25 @@ struct ServerView: View {
                 Spacer()
                 Menu {
                     Toggle("Automatisch scrollen", isOn: $follow)
-                    Button("Gefilterte Ausgabe kopieren", systemImage: "doc.on.doc") { Clipboard.copy(live.lines.filter { filter.isEmpty || $0.cleanedForSearch.localizedCaseInsensitiveContains(filter) }.map(cleanConsole).joined(separator: "\n")) }
+                    Toggle("Ausgabe pausieren", isOn: $frozen)
+                    Button("Zum Ende springen", systemImage: "arrow.down.to.line") { jumpRevision += 1 }
+                    Button("Befehlsverlauf", systemImage: "clock.arrow.circlepath") { historySheet = true }
+                    Button("Gefilterte Ausgabe kopieren", systemImage: "doc.on.doc") { Clipboard.copy(cleanConsole(consoleText)) }
                     Button("Schrift vergrößern") { fontSize = min(22, fontSize + 1) }
                     Button("Schrift verkleinern") { fontSize = max(10, fontSize - 1) }
-                    Button("Anzeige leeren", role: .destructive) { live.lines = [] }
+                    Button("Anzeige leeren", role: .destructive) { live.clearConsole(); frozenLines = []; consoleText = "" }
                 } label: { Image(systemName: "ellipsis.circle").padding(6) }
             }.padding(.horizontal, 16).padding(.vertical, 8)
             TextField("Ausgabe filtern", text: $filter).textFieldStyle(.roundedBorder).padding(.horizontal, 16).padding(.bottom, 8).autocorrectionDisabled().textInputAutocapitalization(.never)
-            ConsoleTextView(text: live.lines.filter { filter.isEmpty || $0.cleanedForSearch.localizedCaseInsensitiveContains(filter) }.joined(separator: "\n"), fontSize: fontSize, follow: follow, refresh: { await refreshServer() })
+            ConsoleTextView(text: consoleText, fontSize: fontSize, follow: follow && !frozen, viewport: viewport, active: scenePhase == .active, jumpRevision: jumpRevision, refresh: { await refreshServer() })
                 .frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1).background(.black.opacity(0.08))
+            if frozen { Label("Anzeige pausiert · Live-Ausgabe läuft im Hintergrund weiter", systemImage: "pause.circle").font(.caption).foregroundStyle(.orange).padding(8) }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack {
+                    Button("Älterer Befehl", systemImage: "arrow.up") { previousCommand() }.disabled(commandEntries.isEmpty).accessibilityIdentifier("history-older")
+                    Button("Neuerer Befehl", systemImage: "arrow.down") { nextCommand() }.disabled(historyCursor.index == nil).accessibilityIdentifier("history-newer")
+                    Button("Verlauf", systemImage: "clock.arrow.circlepath") { historySheet = true }.accessibilityIdentifier("consoleHistory")
+                    Button("Zum Ende", systemImage: "arrow.down.to.line") { jumpRevision += 1 }
                     Button("Shortcuts", systemImage: "bolt") { commandLibrary = true }.buttonStyle(.glass)
                     ForEach(workspace.shortcuts[workspace.key(api, server)] ?? []) { shortcut in
                         Button(shortcut.name) { command = shortcut.command }.buttonStyle(.glass)
@@ -154,11 +240,19 @@ struct ServerView: View {
             }.accessibilityLabel("Lokale Befehlsvorschläge und Shortcuts")
             HStack(spacing: 12) {
                 Text(">").font(.system(.body, design: .monospaced)).foregroundStyle(.teal)
-                TextField("Befehl eingeben …", text: $command).font(.system(.body, design: .monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never).submitLabel(.send).onSubmit(sendCommand).accessibilityIdentifier("consoleCommand").requiresAccess(api, server.id, "control.console")
+                TextField("Befehl eingeben …", text: $command).font(.system(.body, design: .monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never).submitLabel(.send).onSubmit(sendCommand).onKeyPress(.upArrow) { previousCommand(); return .handled }.onKeyPress(.downArrow) { nextCommand(); return .handled }.accessibilityIdentifier("consoleCommand").requiresAccess(api, server.id, "control.console")
                 Button(action: sendCommand) { if sending { ProgressView() } else { Image(systemName: "arrow.up").fontWeight(.bold) } }.buttonStyle(.glassProminent).disabled(sending || command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !live.connected).accessibilityLabel("Befehl senden").requiresAccess(api, server.id, "control.console")
             }.padding(16).background(.bar)
-        }.background { PanelBackground() }.safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 1) }
+        }.onAppear { updateConsoleText() }
+            .onChange(of: live.logRevision) { _, _ in if !frozen { updateConsoleText() } }
+            .onChange(of: filter) { _, _ in updateConsoleText() }
+            .onChange(of: frozen) { _, paused in if paused { frozenLines = live.lines }; updateConsoleText() }
+            .onChange(of: command) { _, text in historyCursor.edited(text) }
+            .background { PanelBackground() }.safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 1) }
     }
+    func updateConsoleText() { consoleText = (frozen ? frozenLines : live.lines).filter { filter.isEmpty || $0.cleanedForSearch.localizedCaseInsensitiveContains(filter) }.joined(separator: "\n") }
+    func previousCommand() { command = historyCursor.older(current: command, entries: commandEntries) }
+    func nextCommand() { guard historyCursor.index != nil else { return }; command = historyCursor.newer(entries: commandEntries) }
     func sendCommand() {
         var text = command.trimmingCharacters(in: .whitespacesAndNewlines)
         if workspace.isMinecraft(api, server) && text.hasPrefix("/") { text.removeFirst() }
@@ -166,7 +260,7 @@ struct ServerView: View {
         sending = true
         Task { do {
             guard !api.demo else { throw PanelError(message: "Im Demomodus werden keine Befehle gesendet.") }
-            try await live.sendCommand(text, api: api, server: server); command = ""; Feedback.success()
+            try await live.sendCommand(text, api: api, server: server); consoleHistory.remember(text, key: historyKey); command = ""; historyCursor = CommandHistoryCursor(); Feedback.success()
         } catch { self.error = error.localizedDescription }; sending = false }
     }
 }
@@ -177,12 +271,13 @@ struct MetricCard: View {
     let limit: String
     let fraction: Double?
     let tint: Color
+    var metricColor: Color { fraction == nil ? tint : ResourceLoad.level(fraction).color }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label(title, systemImage: symbol).font(.caption.weight(.semibold)).foregroundStyle(tint)
+            Label(title, systemImage: symbol).font(.caption.weight(.semibold)).foregroundStyle(metricColor)
             Text(value).font(.system(.title2, design: .rounded, weight: .bold)).monospacedDigit().minimumScaleFactor(0.65).lineLimit(1).contentTransition(.numericText())
             Text(limit).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            if let fraction { ProgressView(value: min(1, max(0, fraction))).tint(fraction > 0.9 ? .red : tint).accessibilityLabel(title) }
+            if let fraction { ProgressView(value: min(1, max(0, fraction))).tint(metricColor).accessibilityLabel(title + " · " + ResourceLoad.level(fraction).title) }
             else { Capsule().fill(tint.opacity(0.14)).frame(height: 4) }
         }.frame(maxWidth: .infinity, alignment: .leading).card()
     }
