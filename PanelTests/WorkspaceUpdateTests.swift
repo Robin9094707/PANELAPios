@@ -122,6 +122,18 @@ final class WorkspaceUpdateTests: XCTestCase {
         coordinator.restore(view, text: new)
         XCTAssertEqual(view.contentOffset.y, offset.y, accuracy: 1)
     }
+    func testConsoleSelectionDoesNotJumpToRepeatedWord() {
+        let old = (0..<180).map { "[INFO] line \($0)" }.joined(separator: "\n")
+        let marker = "[INFO] line 75"
+        let location = (old as NSString).range(of: marker).location
+        let selection = NSRange(location: location, length: 6)
+        XCTAssertEqual(ConsoleAnchor.selection(selection, old: old, new: old + "\n[INFO] new output"), selection)
+        let trimmed = old.components(separatedBy: "\n").dropFirst(20).joined(separator: "\n") + "\n[INFO] new output"
+        let restored = ConsoleAnchor.selection(selection, old: old, new: trimmed)
+        XCTAssertEqual(restored.location, (trimmed as NSString).range(of: marker).location)
+        XCTAssertEqual(restored.length, 6)
+        XCTAssertEqual(ConsoleAnchor.selection(selection, old: old, new: "[INFO] unrelated").length, 0)
+    }
     @MainActor func testClearingConsoleAdvancesRevisionAndRetainsResourceHistory() throws {
         let live = LiveServer()
         live.receiveConsole("one\ntwo")

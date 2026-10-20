@@ -4,6 +4,16 @@ import UIKit
 struct ConsoleAnchor {
     let context: String
     let delta: CGFloat
+    static func selection(_ selection: NSRange, old: String, new: String) -> NSRange {
+        let oldText = old as NSString
+        guard selection.length > 0, selection.location <= oldText.length, selection.length <= oldText.length - selection.location else { return NSRange(location: 0, length: 0) }
+        if new.hasPrefix(old) { return selection }
+        let start = max(0, selection.location - 96)
+        let end = min(oldText.length, NSMaxRange(selection) + 96)
+        let surrounding = oldText.substring(with: NSRange(location: start, length: end - start))
+        guard let match = range(of: surrounding, in: new) else { return NSRange(location: 0, length: 0) }
+        return NSRange(location: match.location + selection.location - start, length: selection.length)
+    }
     static func range(of context: String, in text: String) -> NSRange? {
         guard !context.isEmpty else { return nil }
         let range = (text as NSString).range(of: context, options: .backwards)
@@ -115,12 +125,7 @@ struct ConsoleTextView: UIViewRepresentable {
         if !c.previous.isEmpty && !resumed && (view.isTracking || view.isDragging || view.isDecelerating) { c.capture(view) }
         let first = !viewport.initialized
         let shouldFollow = follow && active && !resumed && (first || viewport.atBottom) && viewport.selection.length == 0 && !view.isTracking && !view.isDragging && !view.isDecelerating && view.refreshControl?.isRefreshing != true
-        let oldText = c.previous as NSString
-        var selection = viewport.selection
-        if selection.length > 0, NSMaxRange(selection) <= oldText.length {
-            let selected = oldText.substring(with: selection)
-            selection = ConsoleAnchor.range(of: selected, in: text) ?? NSRange(location: 0, length: 0)
-        }
+        let selection = ConsoleAnchor.selection(viewport.selection, old: c.previous, new: text)
         c.applying = true
         if changed {
             view.attributedText = ConsoleStyle.attributed(text, size: fontSize); c.previous = text; c.size = fontSize

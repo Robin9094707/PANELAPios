@@ -38,6 +38,7 @@ struct DashboardEditor: View {
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() }.accessibilityIdentifier("finish-dashboard") } }
                 .confirmationDialog("Standardlayout wiederherstellen?", isPresented: $reset, titleVisibility: .visible) {
                     Button("Layout zurücksetzen", role: .destructive) { layouts.reset(layoutKey) }.accessibilityIdentifier("confirm-reset-dashboard")
+                    Button("Abbrechen", role: .cancel) {}
                 } message: { Text("Deine Anordnung für diese Übersicht wird verworfen.") }
         }
     }
