@@ -51,6 +51,14 @@ jobs:
           xcrun simctl boot '${{ steps.simulator.outputs.id }}' || true
           xcrun simctl bootstatus '${{ steps.simulator.outputs.id }}' -b
           xcrun simctl status_bar '${{ steps.simulator.outputs.id }}' override --time '9:41' --batteryState charged --batteryLevel 100
+      - name: Start synthetic pinned TLS fixture
+        if: steps.validation.outputs.reuse != 'true'
+        run: |
+          python3 scripts/suite_tls_fixture.py > build/tls-fixture.log 2>&1 &
+          for attempt in {1..20}; do
+            if curl -k -s --connect-timeout 1 https://127.0.0.1:49383/v1/health > /dev/null; then break; fi
+            sleep 1
+          done
       - name: Test on simulator
         if: steps.validation.outputs.reuse != 'true'
         run: |

@@ -52,7 +52,8 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         self.connection = connection; self.token = try token ?? Vault.read(connection.id)
         let url = try Self.endpoint(connection.endpoint)
         let config = URLSessionConfiguration.ephemeral; config.timeoutIntervalForRequest = 110; config.urlCache = nil
-        self.session = session ?? URLSession(configuration: config, delegate: SuiteTransport(pin: try Self.pin(connection.fingerprint), host: url.host ?? ""), delegateQueue: nil)
+        let validatedPin = try Self.pin(connection.fingerprint)
+        self.session = session ?? URLSession(configuration: config, delegate: SuiteTransport(pin: validatedPin, host: url.host ?? ""), delegateQueue: nil)
     }
     nonisolated static func endpoint(_ text: String) throws -> URL {
         var url = try PanelAPI.normalize(text)
@@ -74,7 +75,11 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         if let body { request.httpBody = try JSONEncoder().encode(body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let data: Data
         let response: URLResponse
-        do { (data, response) = try await session.data(for: request) }
+        do {
+            let pin = try Self.pin(connection.fingerprint)
+            if pin.isEmpty { (data, response) = try await session.data(for: request) }
+            else { (data, response) = try await PinnedHTTPS.load(request, pin: pin) }
+        }
         catch let error as URLError {
             if Task.isCancelled { throw CancellationError() }
             if [.serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot, .secureConnectionFailed, .cancelled].contains(error.code) { throw PanelError(message: "HTTPS-Verbindung konnte nicht bestätigt werden. Prüfe Adresse, Port und den SHA-256-Fingerabdruck aus /sas app fingerprint. Ein geändertes Zertifikat wird nicht automatisch akzeptiert.") }
