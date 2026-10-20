@@ -31,9 +31,9 @@ struct PluginDetailsView: View {
                             if !descriptor.website.isEmpty { LabeledContent("Webseite", value: descriptor.website).font(.caption).textSelection(.enabled) }
                         }
                         Section("Vollständige Metadaten") {
-                            NavigationLink(descriptor.descriptorFile, systemImage: "doc.text") {
+                            NavigationLink {
                                 SyntaxEditor(text: .constant(descriptor.rawYAML), colors: true, editable: false).panelScreen().navigationTitle(descriptor.descriptorFile).navigationBarTitleDisplayMode(.inline)
-                            }
+                            } label: { Label(descriptor.descriptorFile, systemImage: "doc.text") }
                             Button("Metadaten kopieren", systemImage: "doc.on.doc") { UIPasteboard.general.string = descriptor.rawYAML }
                         }
                     }
