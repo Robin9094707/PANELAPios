@@ -78,7 +78,7 @@ final class PanelUITests: XCTestCase {
         if !addFleet.exists {
             for _ in 0..<4 { if app.buttons["reset-dashboard"].isHittable { break }; app.swipeUp() }
             app.buttons["reset-dashboard"].tap()
-            app.alerts.buttons["confirm-reset-dashboard"].tap()
+            app.alerts.buttons["confirm-reset-dashboard"].firstMatch.tap()
         }
         for _ in 0..<4 { if app.buttons["add-card-fleet"].isHittable { break }; app.swipeUp() }
         app.buttons["add-card-fleet"].tap()
@@ -88,13 +88,13 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.buttons["hide-card-fleet"].waitForExistence(timeout: 10))
         for _ in 0..<5 { if app.buttons["reset-dashboard"].isHittable { break }; app.swipeUp() }
         app.buttons["reset-dashboard"].tap()
-        XCTAssertTrue(app.alerts.buttons["confirm-reset-dashboard"].waitForExistence(timeout: 5))
-        app.alerts.buttons["cancel-reset-dashboard"].tap()
+        XCTAssertTrue(app.alerts.buttons["confirm-reset-dashboard"].firstMatch.waitForExistence(timeout: 5))
+        app.alerts.buttons["cancel-reset-dashboard"].firstMatch.tap()
         for _ in 0..<4 { if app.buttons["hide-card-fleet"].isHittable { break }; app.swipeDown() }
         XCTAssertTrue(app.buttons["hide-card-fleet"].exists)
         for _ in 0..<5 { if app.buttons["reset-dashboard"].isHittable { break }; app.swipeUp() }
         app.buttons["reset-dashboard"].tap()
-        app.alerts.buttons["confirm-reset-dashboard"].tap()
+        app.alerts.buttons["confirm-reset-dashboard"].firstMatch.tap()
         app.buttons["finish-dashboard"].tap()
         let server = app.buttons["server-simplex1"]
         if !server.isHittable { app.swipeDown() }
@@ -107,10 +107,15 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Server-Gesundheit"].waitForExistence(timeout: 10)); capture("23-Health-Card")
         app.buttons["editServerLayout"].tap()
         for _ in 0..<6 { if app.buttons["reset-dashboard"].isHittable { break }; app.swipeUp() }
-        app.buttons["reset-dashboard"].tap(); app.alerts.buttons["confirm-reset-dashboard"].tap()
+        app.buttons["reset-dashboard"].tap(); app.alerts.buttons["confirm-reset-dashboard"].firstMatch.tap()
         app.buttons["finish-dashboard"].tap()
         app.tabBars.buttons["Konsole"].tap()
-        XCTAssertTrue(app.buttons["consoleHistory"].waitForExistence(timeout: 10)); app.buttons["consoleHistory"].tap()
+        XCTAssertTrue(app.buttons["consoleHistory"].waitForExistence(timeout: 10))
+        for _ in 0..<3 {
+            if app.buttons["consoleHistory"].isHittable { break }
+            app.scrollViews.containing(.button, identifier: "consoleHistory").firstMatch.swipeLeft()
+        }
+        app.buttons["consoleHistory"].tap()
         XCTAssertTrue(app.navigationBars["Befehlsverlauf"].waitForExistence(timeout: 5)); capture("24-Console-History")
         app.buttons["Fertig"].tap()
     }
