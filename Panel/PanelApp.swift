@@ -6,13 +6,15 @@ import SwiftUI
     @StateObject private var store = AppStore()
     @StateObject private var workspace = WorkspaceStore()
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("theme.primary") private var themePrimary = "008F83"
+    @AppStorage("theme.secondary") private var themeSecondary = "7046BA"
     @AppStorage("appearance") private var appearance = "system"
     var body: some Scene {
         WindowGroup {
             Group {
                 if store.locked { UnlockView() }
                 else { HomeView() }
-            }.environmentObject(store).environmentObject(workspace).tint(.teal)
+            }.environmentObject(store).environmentObject(workspace).tint(Color.panelAccent)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .errorAlert($store.error)
                 .privacySensitive()

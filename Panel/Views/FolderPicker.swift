@@ -22,7 +22,7 @@ struct FolderPicker: View {
             List {
                 Section {
                     Text(selection.names.joined(separator: ", ")).font(.headline)
-                    Label(destination, systemImage: "folder.fill").font(.footnote.monospaced()).foregroundStyle(.teal).textSelection(.enabled)
+                    Label(destination, systemImage: "folder.fill").font(.footnote.monospaced()).foregroundStyle(Color.panelAccent).textSelection(.enabled)
                     if destination != "/" { Button("Übergeordneter Ordner", systemImage: "arrow.up") { destination = parentFolder(destination) } }
                     if loading { ProgressView() }
                 }

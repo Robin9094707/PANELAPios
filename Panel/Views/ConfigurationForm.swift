@@ -12,7 +12,7 @@ struct ConfigurationForm: View {
         NavigationStack {
             Form {
                 Section {
-                    Label(properties ? "Server-Eigenschaften" : "YAML-Einstellungen", systemImage: "slider.horizontal.3").font(.headline).foregroundStyle(.teal)
+                    Label(properties ? "Server-Eigenschaften" : "YAML-Einstellungen", systemImage: "slider.horizontal.3").font(.headline).foregroundStyle(Color.panelAccent)
                     Text("Schalter für Wahr/Falsch, Auswahlfelder für bekannte Minecraft-Eigenschaften und Eingabefelder für weitere Werte. Übernehmen ändert zuerst den Text; gespeichert wird erst mit Speichern im Editor. Komplexe YAML-Strukturen bleiben im Texteditor. Bis 500 Felder / 512 KiB.").font(.footnote).foregroundStyle(.secondary)
                 }
                 ForEach(rows.filter { search.isEmpty || $0.path.localizedCaseInsensitiveContains(search) }) { row in

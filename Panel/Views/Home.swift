@@ -23,6 +23,7 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     if let api = store.api {
+                        if api.amp != nil { NavigationLink { AMPApplicationsView(api: api) } label: { Label("Python App Runner & AMP-Anwendungen", systemImage: "terminal.fill").frame(maxWidth: .infinity, alignment: .leading).card() }.buttonStyle(.plain) }
                         ForEach(layouts.cards(layoutKey, scope: .home)) { card in homeCard(card, api: api) }
                         if store.demo { Button("Eigenes Panel verbinden", systemImage: "plus") { add = true }.buttonStyle(.glassProminent).frame(maxWidth: .infinity) }
                     } else { hero; welcome }
@@ -60,12 +61,12 @@ struct HomeView: View {
     var hero: some View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(store.demo ? "DEMO WORKSPACE" : "DEIN WORKSPACE").font(.caption.weight(.bold)).tracking(2).foregroundStyle(.teal)
+                            Text(store.demo ? "DEMO WORKSPACE" : "DEIN WORKSPACE").font(.caption.weight(.bold)).tracking(2).foregroundStyle(Color.panelAccent)
                             Text("Alles unter\nKontrolle.").font(.system(size: 39, weight: .bold, design: .rounded)).fixedSize(horizontal: false, vertical: true)
                             Text(store.demo ? "Beispieldaten · keine Verbindung zu echten Servern" : store.active?.url ?? "Verbinde dein Pterodactyl-Panel.").font(.subheadline).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
-                        Image(systemName: "server.rack").font(.system(size: 32, weight: .light)).foregroundStyle(.teal).padding(20).glassEffect(.regular.tint(.teal.opacity(0.12)), in: .rect(cornerRadius: 25))
+                        Image(systemName: "server.rack").font(.system(size: 32, weight: .light)).foregroundStyle(Color.panelAccent).padding(20).glassEffect(.regular.tint(.teal.opacity(0.12)), in: .rect(cornerRadius: 25))
                     }.padding(.top, 16)
     }
     var serverList: some View {
@@ -139,7 +140,7 @@ struct HomeView: View {
                 ForEach(pins) { pin in
                     if let server = store.servers.first(where: { $0.id == pin.serverID }) {
                         NavigationLink { ServerView(api: api, server: server, initialFolder: pin.path) } label: {
-                            HStack { Image(systemName: "folder.fill").foregroundStyle(.teal); VStack(alignment: .leading) { Text(pin.path); Text(server.name).font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").font(.caption) }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                            HStack { Image(systemName: "folder.fill").foregroundStyle(Color.panelAccent); VStack(alignment: .leading) { Text(pin.path); Text(server.name).font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").font(.caption) }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                         }.buttonStyle(.plain).contextMenu { Button("Lösen", systemImage: "pin.slash") { workspace.toggleFolder(api, server, pin.path) } }
                     }
                 }
@@ -195,7 +196,7 @@ struct AddPanelView: View {
             Form {
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
-                        Image(systemName: "link.circle.fill").font(.system(size: 42)).foregroundStyle(.teal)
+                        Image(systemName: "link.circle.fill").font(.system(size: 42)).foregroundStyle(Color.panelAccent)
                         Text("Verbinde dein Panel").font(.title2.bold())
                         Text("Verwende die HTTPS-Webadresse deines Pterodactyl- oder AMP-Panels.").foregroundStyle(.secondary)
                     }.padding(.vertical, 8)
@@ -231,7 +232,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Darstellung") { Picker("Design", selection: $appearance) { Text("System").tag("system"); Text("Dunkel").tag("dark"); Text("Hell").tag("light") } }
+                Section("Darstellung") { NavigationLink("Farben & App-Icon") { AppearanceSettingsView() }; Picker("Design", selection: $appearance) { Text("System").tag("system"); Text("Dunkel").tag("dark"); Text("Hell").tag("light") } }
                 Section("Editor & Bedienung") { Toggle("Syntaxfarben im Texteditor", isOn: $syntaxColors); Toggle("Haptisches Feedback", isOn: $haptics) }
                 Section("Widgets & Übertragungen") { NavigationLink("Server-Widgets einrichten") { WidgetSettingsView() }; TransferLink() }
                 Section("Sicherheit") { Toggle("App mit Face ID / Gerätecode sperren", isOn: $store.biometricLock) }

@@ -19,7 +19,7 @@ struct DatabasesView: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 let db = DatabaseInfo(value: row)
                 Button { selected = DetailItem(data: row) } label: {
-                    HStack(spacing: 14) { Image(systemName: "externaldrive.fill").font(.title2).foregroundStyle(.teal); VStack(alignment: .leading, spacing: 6) { Text(db.name).font(.headline); Text("\(db.host):\(db.port)").font(.caption.monospaced()).foregroundStyle(.secondary); Text(row["username"].string).font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").font(.caption) }
+                    HStack(spacing: 14) { Image(systemName: "externaldrive.fill").font(.title2).foregroundStyle(Color.panelAccent); VStack(alignment: .leading, spacing: 6) { Text(db.name).font(.headline); Text("\(db.host):\(db.port)").font(.caption.monospaced()).foregroundStyle(.secondary); Text(row["username"].string).font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").font(.caption) }
                 }.buttonStyle(.plain)
             }
             if !loading && rows.isEmpty { ContentUnavailableView("Keine Datenbanken", systemImage: "externaldrive") }

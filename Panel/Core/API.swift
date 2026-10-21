@@ -26,6 +26,7 @@ final class PanelAPI {
     let base: URL
     let amp: AMPAPI?
     var provider: PanelProvider { amp == nil ? .pterodactyl : .amp }
+    var widgetSecret: String { key }
     private let key: String
     var isKinetic: Bool { base.host?.lowercased() == "kineticpanel.net" || base.host?.lowercased().hasSuffix(".kineticpanel.net") == true }
     let demo: Bool

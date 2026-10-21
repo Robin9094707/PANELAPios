@@ -246,7 +246,7 @@ struct SuiteRemoteMenuView: View {
     @State private var search = ""
     var body: some View {
         List {
-            Section { Label("Originale Suite-Verwaltung", systemImage: "square.grid.2x2.fill").font(.headline).foregroundStyle(.teal); Text("Diese Ansichten verwenden die vorhandenen Menüaktionen der Suite. Jede Auswahl erhält eine zusätzliche Bestätigung; Einstellungen und Spielerdaten bleiben in denselben Diensten.").font(.footnote).foregroundStyle(.secondary); Text(menu["notice"].string).font(.caption).foregroundStyle(.secondary) }
+            Section { Label("Originale Suite-Verwaltung", systemImage: "square.grid.2x2.fill").font(.headline).foregroundStyle(Color.panelAccent); Text("Diese Ansichten verwenden die vorhandenen Menüaktionen der Suite. Jede Auswahl erhält eine zusätzliche Bestätigung; Einstellungen und Spielerdaten bleiben in denselben Diensten.").font(.footnote).foregroundStyle(.secondary); Text(menu["notice"].string).font(.caption).foregroundStyle(.secondary) }
             if menu["input"].bool { Section(menu["title"].string) { TextField("Eingabe", text: $input, axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled(); Button("Eingabe prüfen") { select(.object(["id": .string("input"), "name": .string("Eingabe übernehmen"), "detail": .string(input)])) }.disabled(busy) } }
             Section(cleanConsole(menu["title"].string)) {
                 ForEach(menu["options"].array.filter { search.isEmpty || ($0["name"].string + $0["detail"].string).localizedCaseInsensitiveContains(search) }, id: \.["id"].string) { option in

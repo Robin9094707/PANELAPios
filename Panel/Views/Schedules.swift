@@ -25,7 +25,7 @@ struct SchedulesView: View {
             ForEach(schedules, id: \.["id"].string) { schedule in
                 NavigationLink { ScheduleDetail(api: api, prefix: prefix, initial: schedule) } label: {
                     HStack(spacing: 14) {
-                        Image(systemName: "calendar.badge.clock").font(.title2).foregroundStyle(.teal)
+                        Image(systemName: "calendar.badge.clock").font(.title2).foregroundStyle(Color.panelAccent)
                         VStack(alignment: .leading, spacing: 6) {
                             Text(schedule["name"].string).font(.headline)
                             Text(ScheduleTime.display(schedule["next_run_at"].string)).font(.caption).foregroundStyle(.secondary)

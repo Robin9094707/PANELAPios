@@ -43,7 +43,7 @@ struct SubuserEditor: View {
                                 Toggle(isOn: Binding(get: { selected.contains(permission.id) }, set: { value in if value { selected.insert(permission.id) } else { selected.remove(permission.id) } })) {
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text(permission.title).font(.subheadline.weight(.semibold))
-                                        Text(permission.id).font(.system(.caption, design: .monospaced)).foregroundStyle(.teal)
+                                        Text(permission.id).font(.system(.caption, design: .monospaced)).foregroundStyle(Color.panelAccent)
                                         if !permission.description.isEmpty { Text(permission.description).font(.caption).foregroundStyle(.secondary) }
                                         if !access.allows(server.id, permission.id) { Label("Nicht zum Weitergeben freigegeben", systemImage: "lock").font(.caption2).foregroundStyle(.orange) }
                                     }.padding(.vertical, 3)

@@ -79,7 +79,7 @@ struct ServerIconView: View {
     var body: some View {
         Group {
             if let icon { Image(uiImage: icon).resizable().interpolation(.none).scaledToFit().frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityLabel("Server-Icon") }
-            else { Image(systemName: "cube.transparent.fill").font(.title).foregroundStyle(.teal).frame(width: 48, height: 48).accessibilityHidden(true) }
+            else { Image(systemName: "cube.transparent.fill").font(.title).foregroundStyle(Color.panelAccent).frame(width: 48, height: 48).accessibilityHidden(true) }
         }.padding(4).background(.teal.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
             .task(id: "\(api.map { String(describing: ObjectIdentifier($0)) } ?? "")|\(server.id)|\(enabled)|\(revision)") {
                 guard enabled, let api else { icon = nil; return }

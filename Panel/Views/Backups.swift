@@ -30,7 +30,7 @@ struct BackupsView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .top) {
-                            Image(systemName: backup["is_locked"].bool ? "lock.shield.fill" : "externaldrive.fill").font(.title2).foregroundStyle(.teal)
+                            Image(systemName: backup["is_locked"].bool ? "lock.shield.fill" : "externaldrive.fill").font(.title2).foregroundStyle(Color.panelAccent)
                             VStack(alignment: .leading, spacing: 5) { Text(backup["name"].string).font(.headline); Text(backup["created_at"].string.prefix(16).replacingOccurrences(of: "T", with: " ")).font(.caption).foregroundStyle(.secondary) }
                             Spacer()
                             Menu { actions(backup) } label: { Image(systemName: "ellipsis.circle").font(.title3).padding(4) }

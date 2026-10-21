@@ -68,7 +68,7 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -179,12 +179,12 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Adds CubeCoders AMP alongside existing Pterodactyl profiles: controller/direct-instance login, instance discovery and service controls, server power, console, resources, file management, native AMP settings, tasks and backups. Adds local Minecraft mod installation and identity-checked updates for Fabric, Quilt, Forge and NeoForge, with verified staging and previous-JAR backups.
+          Repairs AMP TimeSpan uptime and partial resource updates; missing values no longer appear as zero. Adds one-second foreground console polling and complete status reconciliation. Widgets add interactive refresh, single-server RAM/CPU/uptime, a direct fleet overview and a large online-player list for AMP and coupled Simplex servers.
 
-          Install over the existing app using the same signing identity and bundle ID. Do not uninstall first. Existing profiles default to Pterodactyl; saved app data is retained. The IPA is unsigned and needs your usual signing method. Admin Suite 8.3.0 is unchanged and remains Pterodactyl-only.
+          Widget storage supports App Groups, shared defaults and shared Keychain fallback. Both app and extension must keep a matching App Group or shared Keychain entitlement when re-signing; signing permissions cannot be created at runtime. A manual snapshot-code widget is available when neither shared entitlement survives. Background refresh requires granting the widget access in Settings → Server-Widgets. iOS controls automatic scheduling.
 
-          AMP requires an HTTPS panel URL and an AMP account with the relevant instance permissions. API/module availability and server compatibility still apply. Mod uploads/reads are limited to 128 MiB per JAR. No live customer AMP server was used during CI validation.
+          Adds native Python App Runner workspace, improved AMP settings, three original selectable icons and accessible accent-color customization. Existing profiles and app data are retained. Install over the existing app with the same signing identity and bundle ID; do not uninstall. The IPA is unsigned. Admin Suite is unchanged.
 
-          Source backup: backup/v1.8.0-before-amp.
+          Source backup: backup/v1.9.0-before-widgets-metrics. Live validation on the user's signed device and AMP installation remains necessary.
           NOTES
           gh release create "$tag" "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest

@@ -86,7 +86,7 @@ struct ServerView: View {
             Button("Neustarten", systemImage: "arrow.clockwise") { power("restart", title: "Server neustarten", destructive: true) }.disabled(!PowerPolicy.allows("restart", state: live.state)).requiresAccess(api, server.id, "control.restart")
             Button("Stoppen", systemImage: "stop.fill", role: .destructive) { power("stop", title: "Server stoppen", destructive: true) }.disabled(!PowerPolicy.allows("stop", state: live.state)).requiresAccess(api, server.id, "control.stop")
             Button("Beenden erzwingen", systemImage: "bolt.slash", role: .destructive) { power("kill", title: "Beenden erzwingen", destructive: true) }.disabled(!PowerPolicy.allows("kill", state: live.state)).requiresAccess(api, server.id, "control.stop")
-        } label: { Image(systemName: "power").foregroundStyle(.teal).accessibilityLabel("Server steuern") }
+        } label: { Image(systemName: "power").foregroundStyle(Color.panelAccent).accessibilityLabel("Server steuern") }
     }
     func power(_ signal: String, title: String, destructive: Bool = false) {
         operation = Operation(title: title, detail: signal == "kill" ? "Der Prozess wird sofort beendet. Nicht gespeicherte Daten können verloren gehen." : "Die Aktion wird für \(server.name) ausgeführt.", path: "servers/\(server.id)/power", fixed: ["signal": .string(signal)], destructive: destructive, submit: "Ausführen")
@@ -144,10 +144,10 @@ struct ServerView: View {
     }
     var resourceCards: some View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 155), spacing: 14)], spacing: 14) {
-                    MetricCard(title: "Arbeitsspeicher", symbol: "memorychip", value: live.lastUpdate == nil ? "–" : bytes(live.memory), limit: limitBytes("memory"), fraction: live.lastUpdate == nil ? nil : fraction(live.memory, "memory"), tint: .teal)
-                    MetricCard(title: "CPU", symbol: "cpu", value: live.lastUpdate == nil ? "–" : String(format: "%.1f %%", live.cpu), limit: server.data["limits"]["cpu"].double > 0 ? "von \(server.data["limits"]["cpu"].string) %" : "Unbegrenzt", fraction: live.lastUpdate == nil ? nil : ResourceLoad.fraction(value: live.cpu, limit: server.data["limits"]["cpu"].double), tint: .indigo)
+                    MetricCard(title: "Arbeitsspeicher", symbol: "memorychip", value: live.stats["memory_bytes"] == .null ? "–" : bytes(live.memory), limit: limitBytes("memory"), fraction: live.lastUpdate == nil ? nil : fraction(live.memory, "memory"), tint: Color.panelAccent)
+                    MetricCard(title: "CPU", symbol: "cpu", value: live.stats["cpu_absolute"] == .null ? "–" : String(format: "%.1f %%", live.cpu), limit: server.data["limits"]["cpu"].double > 0 ? "von \(server.data["limits"]["cpu"].string) %" : "Unbegrenzt", fraction: live.lastUpdate == nil ? nil : ResourceLoad.fraction(value: live.cpu, limit: server.data["limits"]["cpu"].double), tint: Color.panelSecondary)
                     MetricCard(title: "Speicherplatz", symbol: "internaldrive", value: live.lastUpdate == nil ? "–" : bytes(live.disk), limit: limitBytes("disk"), fraction: live.lastUpdate == nil ? nil : fraction(live.disk, "disk"), tint: .blue)
-                    MetricCard(title: "Laufzeit", symbol: "clock", value: live.lastUpdate == nil ? "–" : Duration.seconds(live.uptime).formatted(.time(pattern: .hourMinuteSecond)), limit: live.state == "offline" ? "Server ist offline" : "seit dem letzten Start", fraction: nil, tint: .orange)
+                    MetricCard(title: "Laufzeit", symbol: "clock", value: live.stats["uptime"] == .null ? "–" : Duration.seconds(live.uptime).formatted(.time(pattern: .hourMinuteSecond)), limit: live.state == "offline" ? "Server ist offline" : "seit dem letzten Start", fraction: nil, tint: .orange)
                 }
     }
     var cpuCard: some View {
@@ -157,7 +157,7 @@ struct ServerView: View {
                     else {
                         Chart(live.history) { point in
                             AreaMark(x: .value("Zeit", point.date), y: .value("CPU", point.cpu)).foregroundStyle(LinearGradient(colors: [.teal.opacity(0.25), .teal.opacity(0.01)], startPoint: .top, endPoint: .bottom)).interpolationMethod(.catmullRom)
-                            LineMark(x: .value("Zeit", point.date), y: .value("CPU", point.cpu)).foregroundStyle(.teal).interpolationMethod(.catmullRom)
+                            LineMark(x: .value("Zeit", point.date), y: .value("CPU", point.cpu)).foregroundStyle(Color.panelAccent).interpolationMethod(.catmullRom)
                         }.chartYScale(domain: 0...max(100, (live.history.map(\.cpu).max() ?? 100) * 1.1)).chartXAxis(.hidden).frame(height: 150).accessibilityLabel("CPU-Verlauf")
                     }
                 }.card()
@@ -193,7 +193,7 @@ struct ServerView: View {
             else {
                 Chart(live.history) { point in
                     AreaMark(x: .value("Zeit", point.date), y: .value("RAM · GiB", point.memory / 1_073_741_824)).foregroundStyle(.teal.opacity(0.16))
-                    LineMark(x: .value("Zeit", point.date), y: .value("RAM · GiB", point.memory / 1_073_741_824)).foregroundStyle(.teal)
+                    LineMark(x: .value("Zeit", point.date), y: .value("RAM · GiB", point.memory / 1_073_741_824)).foregroundStyle(Color.panelAccent)
                 }.chartYScale(domain: .automatic(includesZero: true)).chartXAxis(.hidden).frame(height: 150).accessibilityLabel("RAM-Verlauf in GiB")
             }
         }.card()
@@ -262,7 +262,7 @@ struct ServerView: View {
                 }.accessibilityLabel("Befehlsvorschläge")
             }
             HStack(spacing: 12) {
-                Text(">").font(.system(.body, design: .monospaced)).foregroundStyle(.teal)
+                Text(">").font(.system(.body, design: .monospaced)).foregroundStyle(Color.panelAccent)
                 TextField("Befehl eingeben …", text: $command).font(.system(.body, design: .monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never).submitLabel(.send).onSubmit(sendCommand).onKeyPress(.upArrow) { previousCommand(); return .handled }.onKeyPress(.downArrow) { nextCommand(); return .handled }.accessibilityIdentifier("consoleCommand").requiresAccess(api, server.id, "control.console")
                 Button(action: sendCommand) { if sending { ProgressView() } else { Image(systemName: "arrow.up").fontWeight(.bold) } }.buttonStyle(.glassProminent).disabled(sending || command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !live.connected).accessibilityLabel("Befehl senden").requiresAccess(api, server.id, "control.console")
             }.padding(16).background(.bar)

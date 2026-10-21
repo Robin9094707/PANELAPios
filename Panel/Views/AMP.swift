@@ -86,6 +86,7 @@ struct AMPManageView: View {
 struct AMPSettingsView: View {
     let api: PanelAPI
     let server: Server
+    var title = "AMP-Einstellungen"
     @State private var rows: [JSON] = []
     @State private var query = ""
     @State private var error: String?
@@ -106,20 +107,31 @@ struct AMPSettingsView: View {
                     }
                 }
             }
-        }.panelScreen().navigationTitle("AMP-Einstellungen").searchable(text: $query, prompt: "Version, Java, Minecraft …").task { await load() }.refreshable { await load() }.errorAlert($error)
+        }.panelScreen().navigationTitle(title).searchable(text: $query, prompt: "Einstellung oder Kategorie suchen").task { await load() }.refreshable { await load() }.errorAlert($error)
             .sheet(item: $selection) { item in
                 let row = item.data
-                ActionForm(title: row["Name"].string, detail: row["Description"].string + (row["RequiresRestart"].bool ? "\nServerneustart erforderlich." : ""), fields: [Field(key: "value", label: "Wert", value: row["CurrentValue"].string, kind: isSecret(row) ? .secret : row["InputType"].string.lowercased() == "checkbox" || row["ValType"].string == "Boolean" ? .toggle : .text)], submit: "Speichern") { values in
+                ActionForm(title: row["Name"].string, detail: row["Description"].string + (row["RequiresRestart"].bool ? "\nServerneustart erforderlich." : ""), fields: [settingField(row)], submit: "Speichern", allowed: !row["ReadOnly"].bool) { values in
                     guard !row["ReadOnly"].bool else { throw PanelError(message: "Diese Einstellung ist schreibgeschützt.") }
                     _ = try await api.amp?.call("Core/SetConfig", server: server.id, values: ["node": row["Node"], "value": .string(values["value"]?.string ?? "")]); await load()
                 }
             }
+    }
+    func settingField(_ row: JSON) -> Field {
+        let input = row["InputType"].string.lowercased(), type = row["ValType"].string.lowercased()
+        let kind: Field.Kind = isSecret(row) ? .secret : input == "checkbox" || type == "boolean" ? .toggle : input.contains("textarea") || type.contains("dictionary") || type.contains("list") || type.contains("[]") ? .multiline : .text
+        let current = row["CurrentValue"]
+        return Field(key: "value", label: "Wert", value: current.string.isEmpty && current != .null ? current.pretty : current.string, kind: kind, hint: row["EnumValues"].object.isEmpty ? row["Placeholder"].string : row["EnumValues"].object.map { $0.key + " = " + $0.value.string }.sorted().joined(separator: " · "), options: row["EnumValues"].object.keys.sorted())
     }
     func isSecret(_ row: JSON) -> Bool { row["InputType"].string.lowercased().contains("password") }
     func load() async {
         do {
             let result = try await api.amp?.call("Core/GetSettingsSpec", server: server.id) ?? .null
             rows = result.object.values.flatMap { $0.array }.filter { !$0["Node"].string.isEmpty }.sorted { $0["Node"].string < $1["Node"].string }
+            let missing = rows.filter { $0["CurrentValue"] == .null }.map { $0["Node"] }
+            if !missing.isEmpty, let current = try? await api.amp?.call("Core/GetConfigs", server: server.id, values: ["nodes": .array(missing)]) {
+                let byNode = Dictionary(current.array.map { ($0["Node"].string, $0) }, uniquingKeysWith: { _, next in next })
+                rows = rows.map { row in guard let value = byNode[row["Node"].string] else { return row }; var object = row.object; object["CurrentValue"] = value["CurrentValue"]; return .object(object) }
+            }
             loaded = true
         } catch { self.error = error.localizedDescription }
     }

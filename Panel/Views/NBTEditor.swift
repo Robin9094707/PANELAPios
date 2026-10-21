@@ -77,7 +77,7 @@ struct NBTEditor: View {
         NavigationStack {
             List {
                 Section {
-                    Label(model.playerName, systemImage: "person.crop.square.fill").font(.title2.bold()).foregroundStyle(.teal).textSelection(.enabled)
+                    Label(model.playerName, systemImage: "person.crop.square.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent).textSelection(.enabled)
                     HStack { Text("Server"); Spacer(); StatePill(state: model.state) }
                     Text("Du bearbeitest eine lokale Kopie. Anwenden ist bei gestopptem Server möglich und erstellt zuerst eine geprüfte Sicherung unter /.panel-nbt-backups. Kein automatischer Kick.").font(.footnote).foregroundStyle(.secondary)
                     if model.state != "offline" { Label("Serverdatei schreibgeschützt · zum Anwenden Server stoppen", systemImage: "lock.fill").font(.footnote).foregroundStyle(.orange) }
@@ -151,7 +151,7 @@ struct NBTEntry: View {
     }
     var row: some View {
         HStack {
-            Image(systemName: node.container ? "folder" : "slider.horizontal.3").foregroundStyle(.teal)
+            Image(systemName: node.container ? "folder" : "slider.horizontal.3").foregroundStyle(Color.panelAccent)
             VStack(alignment: .leading, spacing: 4) { Text(title).font(.headline); Text(node.container ? "\(node.typeName) · \(node.children.count) Einträge" : node.scalar.count > 4096 ? "\(node.typeName) · \(bytes(Double(node.scalar.count)))" : "\(node.typeName) · \(node.text)").font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(2) }
         }
     }

@@ -21,14 +21,14 @@ struct ModsView: View {
     var body: some View {
         List {
             Section {
-                Label("Minecraft Java Mods", systemImage: "shippingbox.fill").font(.title2.bold()).foregroundStyle(.teal)
+                Label("Minecraft Java Mods", systemImage: "shippingbox.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent)
                 Text("Fabric, Quilt, Forge und NeoForge; auch 1.20.1 sowie ältere und neuere Versionen. Wähle JARs passend zu deinem Server, Loader und deinen Abhängigkeiten. Die App prüft Mod-IDs, Loader und Version vor Updates. Änderungen benötigen einen gestoppten Server.").font(.footnote).foregroundStyle(.secondary)
                 Button("Neue Mod installieren / hochladen", systemImage: "plus.circle") { selected = nil; importer = true }.requiresAccess(api, server.id, "file.create")
                 NavigationLink("Alle Mod-Dateien") { FilesView(api: api, server: server, root: "/mods") }
                 NavigationLink("Gesicherte Mod-Versionen") { FilesView(api: api, server: server, root: "/simplex-mod-backups") }
                 Text("Wiederherstellung: Server stoppen, neue JAR aus /mods verschieben und die gesicherte JAR zurück nach /mods verschieben. Spielstände und Konfigurationen werden durch die Mod-Sicherung nicht zurückgesetzt.").font(.caption).foregroundStyle(.secondary)
                 if busy { ProgressView("Mod prüfen / übertragen …") }
-                if let notice { Label(notice, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.teal).textSelection(.enabled) }
+                if let notice { Label(notice, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(Color.panelAccent).textSelection(.enabled) }
             }
             if !loaded { ProgressView("Mods laden …") }
             if loaded && jars.isEmpty { Text("Keine Mod-JARs in /mods").foregroundStyle(.secondary) }
@@ -76,7 +76,7 @@ struct ModsView: View {
                     Button(name.hasSuffix(".disabled") ? "Aktivieren" : "Deaktivieren", systemImage: "power") { toggle(name) }.requiresAccess(api, server.id, "file.update")
                 } label: { Image(systemName: "ellipsis.circle").font(.title3) }
             }
-            if let descriptor { Text("\(descriptor.loader) · \(descriptor.version) · MC \(descriptor.minecraft)").font(.caption).foregroundStyle(.teal) }
+            if let descriptor { Text("\(descriptor.loader) · \(descriptor.version) · MC \(descriptor.minecraft)").font(.caption).foregroundStyle(Color.panelAccent) }
             else if let problem = errors[name] { Text(problem).font(.caption).foregroundStyle(.orange) }
             else { Text("Metadaten über Details laden · " + bytes(entry["size"].double)).font(.caption).foregroundStyle(.secondary) }
         }.padding(.vertical, 5)

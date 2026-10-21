@@ -18,11 +18,11 @@ struct MinecraftPropertiesView: View {
     var body: some View {
         List {
             Section {
-                Label("Minecraft & Welt", systemImage: "globe.europe.africa.fill").font(.title2.bold()).foregroundStyle(.teal)
+                Label("Minecraft & Welt", systemImage: "globe.europe.africa.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent)
                 Text("Server-Eigenschaften wie Schwierigkeit, Spielerlimit und Weltname. Änderungen greifen meist nach einem Neustart. Änderungen an Weltname oder Seed erzeugen keine Konvertierung bestehender Welten.").font(.footnote).foregroundStyle(.secondary)
                 Button("server.properties öffnen", systemImage: "doc.text") { editor = EditorItem(path: "/server.properties") }.requiresAccess(api, server.id, "file.read-content")
                 NavigationLink("Weltordner & Dateien") { FilesView(api: api, server: server, root: "/") }
-                if saved { Label("Gespeichert · bei Bedarf Server neu starten", systemImage: "checkmark.circle").foregroundStyle(.teal).font(.footnote) }
+                if saved { Label("Gespeichert · bei Bedarf Server neu starten", systemImage: "checkmark.circle").foregroundStyle(Color.panelAccent).font(.footnote) }
             }
             if api.isKinetic || api.demo {
                 if busy && !loaded { ProgressView("Eigenschaften laden …") }

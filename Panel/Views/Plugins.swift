@@ -23,11 +23,11 @@ struct PluginsView: View {
     var body: some View {
         List {
             Section {
-                Label("Paper-Plugins", systemImage: "puzzlepiece.extension.fill").font(.title2.bold()).foregroundStyle(.teal)
+                Label("Paper-Plugins", systemImage: "puzzlepiece.extension.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent)
                 Text("Neue Versionen als JAR im Paper-Updateordner vormerken. Paper übernimmt sie beim nächsten Neustart. Wähle zuerst das installierte Plugin. Die App vergleicht Namen, Einstiegsklasse und Version der beiden JARs. Laufzeitkompatibilität und Abhängigkeiten musst du zusätzlich prüfen.").font(.footnote).foregroundStyle(.secondary)
                 Text("Wähle unten beim gewünschten Plugin „Update-Datei hochladen“.").font(.footnote).foregroundStyle(.secondary)
                 if busy { ProgressView("Update übertragen …") }
-                if let message { Label(message, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.teal) }
+                if let message { Label(message, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(Color.panelAccent) }
                 NavigationLink("Plugin-Dateien & Konfigurationen") { FilesView(api: api, server: server, root: "/plugins") }
                 NavigationLink("Vorgemerkte Updates") { FilesView(api: api, server: server, root: updateDirectory) }
                 Link("Paper-Anleitung für Plugin-Updates", destination: URL(string: "https://docs.papermc.io/paper/updating/#step-2-update-plugins")!)

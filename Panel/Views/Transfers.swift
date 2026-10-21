@@ -22,13 +22,13 @@ struct TransfersView: View {
                     Section {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: record.upload ? "arrow.up.doc.fill" : "arrow.down.doc.fill").font(.title2).foregroundStyle(.teal)
+                                Image(systemName: record.upload ? "arrow.up.doc.fill" : "arrow.down.doc.fill").font(.title2).foregroundStyle(Color.panelAccent)
                                 VStack(alignment: .leading, spacing: 4) { Text(record.filename).font(.headline).textSelection(.enabled); Text(record.context).font(.caption).foregroundStyle(.secondary) }
                                 Spacer()
                                 if record.state == "completed" { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
                             }
                             if record.active {
-                                if let fraction = record.fraction { ProgressView(value: fraction).tint(.teal) }
+                                if let fraction = record.fraction { ProgressView(value: fraction).tint(Color.panelAccent) }
                                 else { ProgressView().frame(maxWidth: .infinity, alignment: .leading) }
                             }
                             HStack { Text(record.title); Spacer(); Text(progress(record)).monospacedDigit() }.font(.caption).foregroundStyle(record.state == "failed" ? Color.orange : .secondary)

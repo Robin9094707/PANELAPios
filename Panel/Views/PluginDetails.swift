@@ -14,7 +14,7 @@ struct PluginDetailsView: View {
             AccessBoundary(access: api.access, server: server.id, permission: "file.read-content") {
                 Form {
                     Section {
-                        Label(descriptor?.name ?? entry["name"].string, systemImage: "puzzlepiece.extension.fill").font(.title2.bold()).foregroundStyle(.teal)
+                        Label(descriptor?.name ?? entry["name"].string, systemImage: "puzzlepiece.extension.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent)
                         if let descriptor { LabeledContent("Version auf dem Server", value: descriptor.version).font(.headline) }
                         else if catalog.loading.contains(key) { ProgressView("Plugin-JAR lesen …") }
                         else { Button("Metadaten erneut lesen", systemImage: "arrow.clockwise") { Task { await catalog.load(api: api, server: server.id, entry: entry, retry: true) } } }
@@ -75,7 +75,7 @@ struct PluginListRow: View {
                 Image(systemName: "puzzlepiece.extension.fill").font(.title2).foregroundStyle(name.hasSuffix(".disabled") ? Color.secondary : Color.teal)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(metadata?.name ?? name).font(.headline).textSelection(.enabled)
-                    if let metadata { Text("Version \(metadata.version)").font(.subheadline.weight(.semibold)).foregroundStyle(.teal).textSelection(.enabled) }
+                    if let metadata { Text("Version \(metadata.version)").font(.subheadline.weight(.semibold)).foregroundStyle(Color.panelAccent).textSelection(.enabled) }
                     else if catalog.loading.contains(key) { Text("Version wird gelesen …").font(.caption).foregroundStyle(.secondary) }
                     else { Text("Version aus JAR-Details lesen").font(.caption).foregroundStyle(.secondary) }
                 }

@@ -23,5 +23,5 @@ struct CopyButton: View {
 }
 struct CopyFeedbackOverlay: View {
     @ObservedObject private var clipboard = ClipboardState.shared
-    var body: some View { VStack { if clipboard.copied { Label("Kopiert", systemImage: "checkmark.circle.fill").font(.subheadline.weight(.semibold)).foregroundStyle(.teal).padding(.horizontal, 20).padding(.vertical, 12).glassEffect(.regular, in: Capsule()).padding(.top, 12).transition(.move(edge: .top).combined(with: .opacity)) }; Spacer() }.allowsHitTesting(false).accessibilityHidden(true) }
+    var body: some View { VStack { if clipboard.copied { Label("Kopiert", systemImage: "checkmark.circle.fill").font(.subheadline.weight(.semibold)).foregroundStyle(Color.panelAccent).padding(.horizontal, 20).padding(.vertical, 12).glassEffect(.regular, in: Capsule()).padding(.top, 12).transition(.move(edge: .top).combined(with: .opacity)) }; Spacer() }.allowsHitTesting(false).accessibilityHidden(true) }
 }

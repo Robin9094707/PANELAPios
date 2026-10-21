@@ -27,48 +27,12 @@ struct ServerProvider: AppIntentTimelineProvider {
     func timeline(for configuration: ServerConfiguration, in context: Context) async -> Timeline<ServerEntry> {
         var record = selected(configuration)
         if let current = record, current.backgroundRefresh { record = await WidgetNetwork.refresh(current) }
-        return Timeline(entries: [ServerEntry(date: Date(), server: record)], policy: .after(Date().addingTimeInterval(30 * 60)))
+        return Timeline(entries: [ServerEntry(date: Date(), server: record)], policy: .after(Date().addingTimeInterval(15 * 60)))
     }
     func selected(_ configuration: ServerConfiguration) -> WidgetServer? {
         let records = WidgetStorage.servers()
         if let id = configuration.server?.id { return records.first { $0.id == id } }
         return records.first
-    }
-}
-private final class WidgetRedirect: NSObject, URLSessionTaskDelegate {
-    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
-}
-enum WidgetNetwork {
-    static func refresh(_ initial: WidgetServer) async -> WidgetServer {
-        var record = initial
-        guard let key = WidgetVault.read(record.panel), let base = URL(string: record.panel), base.scheme == "https" else { record.issue = "Widget-Zugang in der App erneuern"; return record }
-        let config = URLSessionConfiguration.ephemeral; config.timeoutIntervalForRequest = 10; config.timeoutIntervalForResource = 15
-        let session = URLSession(configuration: config, delegate: WidgetRedirect(), delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
-        func get(_ suffix: String) async throws -> [String: Any] {
-            let url = base.appendingPathComponent("api/client/servers").appendingPathComponent(record.serverID).appendingPathComponent(suffix)
-            var request = URLRequest(url: url); request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization"); request.setValue("application/json", forHTTPHeaderField: "Accept")
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw URLError(.badServerResponse) }
-            return value["attributes"] as? [String: Any] ?? value
-        }
-        do {
-            let result = try await get("resources")
-            guard let state = result["current_state"] as? String, let resources = result["resources"] as? [String: Any] else { throw URLError(.cannotParseResponse) }
-            record.state = state; record.cpu = (resources["cpu_absolute"] as? NSNumber)?.doubleValue; record.memory = (resources["memory_bytes"] as? NSNumber)?.doubleValue; record.disk = (resources["disk_bytes"] as? NSNumber)?.doubleValue
-            record.updated = Date(); record.issue = nil
-            if state == "offline" { record.online = 0; record.playersUpdated = Date(); record.tps = nil; record.tpsUpdated = nil }
-            let host = base.host?.lowercased() ?? ""
-            if state == "running", host == "kineticpanel.net" || host.hasSuffix(".kineticpanel.net"), var players = try? await get("players") {
-                if let data = players["data"] as? [String: Any] { players = data["attributes"] as? [String: Any] ?? data }
-                if let nested = players["players"] as? [String: Any] { players = nested }
-                let count = ["online", "count", "player_count", "online_count"].compactMap { (players[$0] as? NSNumber)?.intValue }.first
-                let names = players["players"] as? [Any] ?? players["online_players"] as? [Any]
-                if let count = count ?? names?.count { record.online = count; record.maximum = ["max", "max_players", "maximum"].compactMap { (players[$0] as? NSNumber)?.intValue }.first ?? record.maximum; record.playersUpdated = Date() }
-            }
-            // The extension never overwrites the shared manifest: the app owns configuration.
-        } catch { record.issue = "Aktualisierung fehlgeschlagen · letzter Stand" }
-        return record
     }
 }
 struct StatusWidgetView: View {
@@ -98,6 +62,7 @@ struct StatusWidgetView: View {
                 Image(systemName: "server.rack").foregroundStyle(.teal).widgetAccentable()
                 Text(s.name).font(.headline).lineLimit(1)
                 Spacer(minLength: 0)
+                WidgetRefreshButton(id: s.id)
                 Circle().fill(renderingMode == .fullColor ? (s.state == "running" ? Color.green : s.state == "offline" ? .red : .orange) : Color.primary).frame(width: 8, height: 8)
             }
             HStack(spacing: 16) {
@@ -109,11 +74,12 @@ struct StatusWidgetView: View {
                     Text("Spieler · " + s.stateTitle).font(.caption)
                     if let date = s.playersUpdated { Text("Spielerstand: \(date.formatted(date: .omitted, time: .shortened))").font(.caption2).foregroundStyle(.secondary) }
                 }
-                if family == .systemMedium {
+                if family == .systemMedium || family == .systemLarge {
                     Spacer(minLength: 0)
                     VStack(alignment: .leading, spacing: 6) {
                         Label(s.cpu.map { String(format: "%.1f %% CPU", $0) } ?? "CPU –", systemImage: "cpu")
                         Label(memory(s), systemImage: "memorychip")
+                        if let uptime = s.uptime { Label(Duration.seconds(uptime).formatted(.time(pattern: .hourMinuteSecond)), systemImage: "clock") }
                         if let tps = s.tps, let date = s.tpsUpdated, Date().timeIntervalSince(date) < 180 { Text(String(format: "%.1f TPS", tps)).foregroundStyle(tps >= 19 ? Color.green : tps >= 16 ? .orange : .red).widgetAccentable() }
                     }.font(.caption).lineLimit(1).minimumScaleFactor(0.75)
                 }
@@ -134,7 +100,7 @@ struct ServerStatusWidget: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "PanelServerStatus", intent: ServerConfiguration.self, provider: ServerProvider()) { entry in StatusWidgetView(entry: entry) }
             .configurationDisplayName("Server & Spieler").description("Spielerzahl, Serverstatus, CPU und RAM mit Zeitstempeln.")
-            .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular])
+            .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryCircular, .accessoryRectangular])
     }
 }
 struct TransferLiveWidget: Widget {
@@ -160,5 +126,5 @@ struct TransferLiveWidget: Widget {
     }
 }
 @main struct PanelWidgetBundle: WidgetBundle {
-    var body: some Widget { ServerStatusWidget(); TransferLiveWidget() }
+    var body: some Widget { ServerStatusWidget(); FleetWidget(); OnlinePlayersWidget(); RAMWidget(); CPUWidget(); UptimeWidget(); CopiedWidget(); TransferLiveWidget() }
 }

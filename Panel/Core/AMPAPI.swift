@@ -153,27 +153,15 @@ final class AMPRedirect: NSObject, URLSessionTaskDelegate {
         guard controller, let instance = instances[server] else { throw PanelError(message: "Instanzverwaltung benötigt den AMP-Controller.") }
         _ = try await call("ADSModule/" + endpoint, values: ["InstanceName": instance["InstanceName"]]); sessions[server] = nil; specs[server] = nil
     }
-    static func state(_ value: JSON) -> String {
-        switch value.string.lowercased() {
-        case "0", "stopped", "50", "sleeping": return "offline"
-        case "20", "ready", "running": return "running"
-        case "5", "7", "10", "30", "prestart", "configuring", "starting", "restarting": return "starting"
-        case "40", "45", "stopping", "preparingforsleep": return "stopping"
-        default: return "unknown"
-        }
-    }
-    static func resources(_ value: JSON) -> JSON {
-        let metrics = value["Metrics"]
-        func metric(_ names: [String]) -> JSON { for name in names { if metrics[name] != .null { return metrics[name] } }; return .null }
-        let memory = metric(["Memory Usage", "Memory", "RAM"]), cpu = metric(["CPU Usage", "CPU"]), disk = metric(["Disk Usage", "Disk"])
-        func bytesValue(_ metric: JSON) -> Double {
-            let unit = metric["Units"].string.lowercased()
-            let multiplier: Double = unit.contains("gb") || unit.contains("gib") ? 1_073_741_824 : unit.contains("kb") || unit.contains("kib") ? 1024 : unit.contains("mb") || unit.contains("mib") ? 1_048_576 : 1
-            return metric["RawValue"].double * multiplier
-        }
-        let parts = value["Uptime"].string.split(separator: ":").compactMap { Double($0) }
-        let uptime = parts.count == 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : 0
-        return .object(["current_state": .string(state(value["State"])), "resources": .object(["cpu_absolute": cpu["RawValue"], "memory_bytes": .number(bytesValue(memory)), "disk_bytes": .number(bytesValue(disk)), "uptime": .number(uptime * 1000)]), "amp_metrics": metrics])
+    static func state(_ value: JSON) -> String { AMPMetrics.state(value) }
+    static func resources(_ value: JSON) -> JSON { AMPMetrics.resources(value) }
+    var widgetCredential: String { credentials.encoded }
+    func activePlayers(server: String) async throws -> JSON {
+        let users = try await call("Core/GetUserList", server: server)
+        let status = try await call("Core/GetStatus", server: server)
+        let active = AMPMetrics.metric(status["Metrics"], words: ["Active Users", "Players"])
+        let names = users.object.values.map { $0.string }.filter { !$0.isEmpty }.sorted()
+        return .object(["online": .number(AMPMetrics.raw(active) ?? Double(names.count)), "maximum": active["MaxValue"], "players": .array(names.map(JSON.string))])
     }
     static func filePath(_ path: String) throws -> String {
         guard !path.contains("\\"), !path.contains("\0"), !path.split(separator: "/").contains("..") else { throw PanelError(message: "Ungültiger Dateipfad.") }
@@ -223,9 +211,13 @@ final class AMPRedirect: NSObject, URLSessionTaskDelegate {
         let id = parts[1], tail = parts.dropFirst(2).joined(separator: "/"), b = body ?? .null
         if tail.isEmpty { return .object(["attributes": .object([:])]) }
         switch tail {
+        case "players": return try await activePlayers(server: id)
         case "resources":
-            if controller, instances[id]?["Running"] == .bool(false) { return Self.resources(.object(["State": .number(0)])) }
-            return Self.resources(try await call("Core/GetStatus", server: id))
+            do { return Self.resources(try await call("Core/GetStatus", server: id)) }
+            catch {
+                if controller { _ = try await discover(); if instances[id]?["Running"] == .bool(false) { return Self.resources(.object(["State": .number(0), "Uptime": .number(0)])) } }
+                throw error
+            }
         case "command": return try await call("Core/SendConsoleMessage", server: id, values: ["message": b["command"]])
         case "power":
             let action = ["start": "Start", "stop": "Stop", "restart": "Restart", "kill": "Kill"][b["signal"].string]

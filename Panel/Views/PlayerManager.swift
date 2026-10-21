@@ -66,7 +66,7 @@ struct PlayerDetailView: View {
     var body: some View {
         List {
             Section {
-                HStack { Image(systemName: "person.crop.circle.fill").font(.system(size: 44)).foregroundStyle(.teal); VStack(alignment: .leading, spacing: 4) { Text(name).font(.title2.bold()).textSelection(.enabled); Label(online ? "Online" : "Zuletzt gesehen / offline", systemImage: online ? "circle.fill" : "circle").font(.caption).foregroundStyle(online ? Color.green : .secondary) } }
+                HStack { Image(systemName: "person.crop.circle.fill").font(.system(size: 44)).foregroundStyle(Color.panelAccent); VStack(alignment: .leading, spacing: 4) { Text(name).font(.title2.bold()).textSelection(.enabled); Label(online ? "Online" : "Zuletzt gesehen / offline", systemImage: online ? "circle.fill" : "circle").font(.caption).foregroundStyle(online ? Color.green : .secondary) } }
                 Button("Spielername kopieren", systemImage: "doc.on.doc") { Clipboard.copy(name) }
             }
             Section {

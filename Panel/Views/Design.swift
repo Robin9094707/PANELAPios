@@ -6,12 +6,14 @@ extension Color {
 }
 struct PanelBackground: View {
     @Environment(\.colorScheme) private var scheme
+    @AppStorage("theme.primary") private var themePrimary = "008F83"
+    @AppStorage("theme.secondary") private var themeSecondary = "7046BA"
     var body: some View {
         ZStack {
             (scheme == .dark ? Color(red: 0.025, green: 0.05, blue: 0.085) : Color(red: 0.94, green: 0.97, blue: 0.97))
             GeometryReader { geo in
-                Circle().fill(Color.teal.opacity(scheme == .dark ? 0.18 : 0.10)).frame(width: geo.size.width * 1.2).blur(radius: 95).offset(x: geo.size.width * 0.25, y: -180)
-                Circle().fill(Color.indigo.opacity(0.12)).frame(width: geo.size.width).blur(radius: 110).offset(x: -geo.size.width * 0.6, y: geo.size.height * 0.6)
+                Circle().fill(ThemeRGB(themePrimary).color.opacity(scheme == .dark ? 0.18 : 0.10)).frame(width: geo.size.width * 1.2).blur(radius: 95).offset(x: geo.size.width * 0.25, y: -180)
+                Circle().fill(ThemeRGB(themeSecondary).color.opacity(0.12)).frame(width: geo.size.width).blur(radius: 110).offset(x: -geo.size.width * 0.6, y: geo.size.height * 0.6)
             }.accessibilityHidden(true)
         }.ignoresSafeArea()
     }

@@ -120,30 +120,36 @@ import Combine
         _ = await (poll, playerPoll, tpsPoll)
     }
     private func streamAMP(_ amp: AMPAPI, api: PanelAPI, server: Server, minecraft: Bool, generation: UUID) async {
-        var failures = 0, lastPlayers = Date.distantPast
+        var failures = 0, lastPlayers = Date.distantPast, lastFullStatus = Date.distantPast
+        var latestStatus: JSON = .null
         while !Task.isCancelled && active && runID == generation {
             do {
                 let update = try await amp.call("Core/GetUpdates", server: server.id)
                 guard runID == generation, !Task.isCancelled else { return }
-                let status: JSON
-                if update["Status"]["State"] != .null { status = update["Status"] }
-                else { status = try await amp.call("Core/GetStatus", server: server.id) }
-                guard runID == generation, !Task.isCancelled else { return }
-                let resource = AMPAPI.resources(status)
-                state = resource["current_state"].string; stats = resource["resources"]; sample()
+                if latestStatus == .null || Date().timeIntervalSince(lastFullStatus) >= 5 {
+                    let full = try await amp.call("Core/GetStatus", server: server.id)
+                    guard runID == generation, !Task.isCancelled else { return }
+                    latestStatus = AMPMetrics.merge(latestStatus, full); lastFullStatus = Date()
+                }
+                latestStatus = AMPMetrics.merge(latestStatus, update["Status"])
+                let resource = AMPAPI.resources(latestStatus)
+                state = resource["current_state"].string
+                if state == "offline" { stats = resource["resources"] }
+                else { var merged = stats.object; merged.merge(resource["resources"].object, uniquingKeysWith: { _, new in new }); stats = .object(merged) }
+                sample()
                 for row in update["ConsoleEntries"].array {
                     let text = row["Contents"].string.isEmpty ? row.string : row["Contents"].string
                     if !text.isEmpty { receiveConsole(text) }
                 }
                 connected = true; connection = "AMP verbunden"; issue = nil; failures = 0
-                if minecraft, state == "running", Date().timeIntervalSince(lastPlayers) >= 30 {
+                if minecraft, state == "running", Date().timeIntervalSince(lastPlayers) >= 10 {
                     lastPlayers = Date(); await refreshPlayers(api: api, server: server)
                 }
             } catch {
                 if Task.isCancelled || runID != generation { return }
                 connected = false; connection = "AMP getrennt · erneuter Versuch"; issue = error.localizedDescription; failures += 1
             }
-            do { try await Task.sleep(for: .seconds(failures == 0 ? 2 : min(30, failures * 3))) } catch { return }
+            do { try await Task.sleep(for: .seconds(failures == 0 ? 1 : min(30, failures * 3))) } catch { return }
         }
     }
     private func polling(api: PanelAPI, server: Server, generation: UUID) async {
@@ -225,7 +231,7 @@ import Combine
     func refreshPlayers(api: PanelAPI, server: Server) async {
         if api.demo { return }
         if state == "offline" { players = PlayerSnapshot(online: 0, maximum: playerCapacity, names: [], source: "Server offline"); return }
-        if api.isKinetic, let result = try? await api.request("servers/\(server.id)/players"), let decoded = PlayerSnapshot.decode(result) { players = decoded; if let maximum = decoded.maximum { playerCapacity = maximum }; playerIssue = nil; return }
+        if (api.isKinetic || api.amp != nil), let result = try? await api.request("servers/\(server.id)/players"), let decoded = PlayerSnapshot.decode(result) { players = decoded; if let maximum = decoded.maximum { playerCapacity = maximum }; playerIssue = nil; return }
         if state == "running" && connected { do { try await sendCommand("list", api: api, server: server); playerIssue = nil } catch { playerIssue = error.localizedDescription } }
     }
     func queryPlayerValue(player: String, field: String, api: PanelAPI, server: Server) async throws -> String {

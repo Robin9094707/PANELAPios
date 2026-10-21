@@ -57,7 +57,7 @@ struct SuiteStatisticsDashboard: View {
     }
     var header: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Label("DEINE COMMUNITY", systemImage: "chart.bar.xaxis").font(.caption.weight(.bold)).tracking(2).foregroundStyle(.teal)
+            Label("DEINE COMMUNITY", systemImage: "chart.bar.xaxis").font(.caption.weight(.bold)).tracking(2).foregroundStyle(Color.panelAccent)
             Text("Statistiken").font(.system(.largeTitle, design: .rounded).bold()).accessibilityIdentifier("suiteStatisticsTitle")
             Text(server.name).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -78,7 +78,7 @@ struct SuiteStatisticsDashboard: View {
     }
     func countCard(_ title: String, count: Int, symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: symbol).foregroundStyle(.teal)
+            Image(systemName: symbol).foregroundStyle(Color.panelAccent)
             Text(count, format: .number).font(.system(.title, design: .rounded).bold()).monospacedDigit()
             Text(title).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading).card()
@@ -108,7 +108,7 @@ struct SuiteStatisticsDashboard: View {
                     Text(bucket.fraction, format: .percent.precision(.fractionLength(1))).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     Image(systemName: "chevron.right").font(.caption)
                 }
-                ProgressView(value: bucket.fraction).tint(.teal)
+                ProgressView(value: bucket.fraction).tint(Color.panelAccent)
             }.contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier("statistics-bucket-" + bucket.id)
     }
@@ -214,7 +214,7 @@ struct StatisticsRankingView: View {
                                 Text("\(bucket.count)").bold().monospacedDigit()
                                 Text(bucket.fraction, format: .percent.precision(.fractionLength(1))).font(.caption).foregroundStyle(.secondary)
                             }
-                            ProgressView(value: bucket.fraction).tint(.teal)
+                            ProgressView(value: bucket.fraction).tint(Color.panelAccent)
                         }.padding(.vertical, 4)
                     }.accessibilityIdentifier("statistics-bucket-" + bucket.id)
                 }

@@ -156,7 +156,7 @@ struct PlayersCard: View {
     @State private var showPlayers = false
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "person.2.fill").font(.title2).foregroundStyle(.teal)
+            Image(systemName: "person.2.fill").font(.title2).foregroundStyle(Color.panelAccent)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Spieler online").font(.headline)
                 Text(live.players.map { "\($0.online)" + (($0.maximum ?? live.playerCapacity).map { " von \($0)" } ?? " von ?") } ?? "Warte auf Spielerdaten …").font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
@@ -176,7 +176,7 @@ struct PlayerListSheet: View {
         NavigationStack {
             List {
                 Section {
-                    Label(live.players.map { "\($0.online) Spieler online" } ?? "Spielerdaten laden …", systemImage: "person.2.fill").font(.title2.bold()).foregroundStyle(.teal)
+                    Label(live.players.map { "\($0.online) Spieler online" } ?? "Spielerdaten laden …", systemImage: "person.2.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent)
                     if let snapshot = live.players { LabeledContent("Kapazität", value: (snapshot.maximum ?? live.playerCapacity).map(String.init) ?? "Unbekannt"); LabeledContent("Quelle", value: snapshot.source); LabeledContent("Aktualisiert") { Text(snapshot.updated, style: .time) } }
                     if let issue = live.playerIssue { Text(issue).font(.caption).foregroundStyle(.secondary) }
                 }
