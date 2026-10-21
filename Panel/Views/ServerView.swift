@@ -216,9 +216,11 @@ struct ServerView: View {
                 Label(live.connected ? "Live-Konsole" : "Verbindung getrennt", systemImage: live.connected ? "dot.radiowaves.left.and.right" : "wifi.slash").font(.caption).foregroundStyle(live.connected ? Color.teal : Color.orange)
                 Spacer()
                 Menu {
-                    Picker("Ausgabe-Kategorie", selection: $consoleCategory) {
-                        ForEach(ConsoleCategory.allCases) { category in Label(category.title, systemImage: category.symbol).tag(category).accessibilityIdentifier("console-category-" + category.rawValue) }
-                    }.pickerStyle(.inline)
+                    ForEach(ConsoleCategory.allCases) { category in
+                        Button(category.title, systemImage: consoleCategory == category ? "checkmark" : category.symbol) { consoleCategory = category }
+                            .accessibilityIdentifier("console-category-" + category.rawValue)
+                            .accessibilityValue(consoleCategory == category ? "Ausgewählt" : "")
+                    }
                 } label: { Image(systemName: consoleCategory == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill").padding(6) }
                     .accessibilityLabel("Konsolenfilter").accessibilityIdentifier("consoleFilterMenu")
                 Menu {

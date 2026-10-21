@@ -144,6 +144,8 @@ final class PanelUITests: XCTestCase {
             app.buttons["consoleFilterMenu"].tap()
             let choice = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "console-category-" + raw, title)).firstMatch
             XCTAssertTrue(choice.waitForExistence(timeout: 5)); choice.tap()
+            if !choice.waitForNonExistence(timeout: 2) { choice.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+            XCTAssertTrue(choice.waitForNonExistence(timeout: 5), "Category menu must close after selection")
             let predicate = NSPredicate { _, _ in (console.value as? String ?? "").contains(expected) }
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 10), .completed)
             XCTAssertFalse((console.value as? String ?? "").contains(other))
@@ -153,6 +155,10 @@ final class PanelUITests: XCTestCase {
         category("joins", "Spielerbeitritte", contains: "DemoGuest joined the game", excludes: "PLAYER_CHAT_ONLY")
         category("leaves", "Spieleraustritte", contains: "DemoGuest left the game", excludes: "joined the game")
         capture("25-Console-Filters")
+    }
+    func testStatisticsDeviceDrilldown() throws {
+        let server = app.buttons["server-simplex1"]
+        XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap()
         selectTab("Statistiken")
         XCTAssertTrue(app.staticTexts["suiteStatisticsTitle"].waitForExistence(timeout: 10)); capture("27-Statistics-Dashboard")
         let models = app.buttons["statistics-models"]
