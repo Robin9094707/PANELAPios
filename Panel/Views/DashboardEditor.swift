@@ -36,9 +36,9 @@ struct DashboardEditor: View {
                 } footer: { Text("Nur dieses Layout wird zurückgesetzt. Zugänge, Shortcuts, Dateien und andere Layouts bleiben erhalten.") }
             }.environment(\.editMode, .constant(.active)).panelScreen().navigationTitle(scope == .home ? "Startseite anpassen" : "Workspace anpassen").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() }.accessibilityIdentifier("finish-dashboard") } }
-                .confirmationDialog("Standardlayout wiederherstellen?", isPresented: $reset, titleVisibility: .visible) {
+                .alert("Standardlayout wiederherstellen?", isPresented: $reset) {
                     Button("Layout zurücksetzen", role: .destructive) { layouts.reset(layoutKey) }.accessibilityIdentifier("confirm-reset-dashboard")
-                    Button("Abbrechen", role: .cancel) {}
+                    Button("Abbrechen", role: .cancel) {}.accessibilityIdentifier("cancel-reset-dashboard")
                 } message: { Text("Deine Anordnung für diese Übersicht wird verworfen.") }
         }
     }
