@@ -15,7 +15,7 @@ struct ModsView: View {
     @State private var imported: URL?
     @State private var candidate: ModCandidate?
     @State private var detail: ModDetail?
-    @State private var operation: Operation?
+    @State private var toggleFile: String?
     @State private var staging: URL?
     var jars: [JSON] { entries.filter { $0["is_file"].bool && ($0["name"].string.hasSuffix(".jar") || $0["name"].string.hasSuffix(".jar.disabled")) }.sorted { $0["name"].string.localizedStandardCompare($1["name"].string) == .orderedAscending } }
     var body: some View {
@@ -37,7 +37,18 @@ struct ModsView: View {
             }
         }.panelScreen().navigationTitle("Mods").navigationBarTitleDisplayMode(.inline).disabled(busy).task { await load() }.refreshable { descriptors = [:]; errors = [:]; await load() }.errorAlert($error)
             .sheet(item: $detail) { value in NavigationStack { List { Section(value.value.name) { LabeledContent("Mod-IDs", value: value.value.ids.joined(separator: ", ")); LabeledContent("Version", value: value.value.version); LabeledContent("Loader", value: value.value.loader); LabeledContent("Minecraft", value: value.value.minecraft); LabeledContent("Umgebung", value: value.value.environment) }; Section("Metadaten") { Text(value.value.metadata).font(.caption.monospaced()).textSelection(.enabled) } }.navigationTitle("Mod-Details").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { detail = nil } } } } }
-            .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { descriptors = [:]; await load() } }
+            .sheet(isPresented: Binding(get: { toggleFile != nil }, set: { if !$0 { toggleFile = nil } })) {
+                if let name = toggleFile {
+                    ActionForm(title: name.hasSuffix(".disabled") ? "Mod aktivieren" : "Mod deaktivieren", detail: "Der Server muss gestoppt sein. Abhängige Mods können diese Mod benötigen. Die Änderung wirkt beim nächsten Start.", fields: [], destructive: true, submit: "Bestätigen") { _ in
+                        try await ModInstaller.stopped(api, server: server.id)
+                        let target = name.hasSuffix(".disabled") ? String(name.dropLast(".disabled".count)) : name + ".disabled"
+                        let rows = try await api.list("servers/\(server.id)/files/list", query: ["directory": "/mods"])
+                        guard !rows.contains(where: { $0["name"].string.caseInsensitiveCompare(target) == .orderedSame }) else { throw PanelError(message: "Zieldatei existiert bereits. Es wird nichts überschrieben.") }
+                        try await api.mutate("servers/\(server.id)/files/rename", method: "PUT", ["root": "/mods", "files": [["from": name, "to": target]]])
+                        descriptors = [:]; await load()
+                    }
+                }
+            }
             .sheet(isPresented: $importer, onDismiss: { if let imported { self.imported = nil; inspect(imported) } }) {
                 FileImportPicker { result in switch result { case .success(let urls): imported = urls.first; case .failure(let failure): error = failure.localizedDescription }; importer = false }.ignoresSafeArea()
             }
@@ -83,10 +94,7 @@ struct ModsView: View {
         do { let data = try await api.fileData(server: server.id, path: "/mods/" + name, limit: 128 * 1024 * 1024); descriptors[name] = try await Task.detached { try ModArchive.descriptor(data) }.value; errors[name] = nil }
         catch { errors[name] = error.localizedDescription }
     }
-    func toggle(_ name: String) {
-        let target = name.hasSuffix(".disabled") ? String(name.dropLast(".disabled".count)) : name + ".disabled"
-        operation = Operation(title: "Mod " + (name.hasSuffix(".disabled") ? "aktivieren" : "deaktivieren"), detail: "Server vorher stoppen. Die Änderung wirkt beim nächsten Start. Abhängige Mods können diese Mod benötigen.", path: "servers/\(server.id)/files/rename", method: "PUT", fixed: ["root": .string("/mods"), "files": .array([.object(["from": .string(name), "to": .string(target)])])], destructive: true)
-    }
+    func toggle(_ name: String) { toggleFile = name }
     func inspect(_ url: URL) {
         busy = true; notice = nil
         Task { defer { busy = false }; do {

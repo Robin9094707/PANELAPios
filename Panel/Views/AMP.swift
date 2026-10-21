@@ -140,7 +140,8 @@ struct AMPBackupsView: View {
                 Text("AMP verwaltet Backups über das Backup-Modul. Während der Erstellung kannst du den Fortschritt unter Verwalten → AMP → Aufgaben prüfen. Zum Wiederherstellen zuerst den Spielserver stoppen.").font(.footnote).foregroundStyle(.secondary)
             }
             if !loaded { ProgressView("Backups laden …") }
-            if loaded && rows.isEmpty { Text("Keine verfügbaren Backups").foregroundStyle(.secondary) }
+            if loaded && !supports("GetBackups") { Text("Für dieses AMP-Modul ist keine Backup-API verfügbar. Prüfe die Backup-Einrichtung im Webpanel.").foregroundStyle(.secondary) }
+            else if loaded && rows.isEmpty { Text("Keine verfügbaren Backups").foregroundStyle(.secondary) }
             ForEach(rows, id: \.["Id"].string) { row in
                 Section {
                     Text(row["Name"].string).font(.headline)

@@ -12,6 +12,8 @@ struct AMPCredentials: Codable {
     var token: String = ""
     var encoded: String { String(decoding: try! JSONEncoder().encode(self), as: UTF8.self) }
 }
+private enum AMPSessionExpired: Error { case expired }
+
 // Session-bearing POSTs may never follow redirects (including 307/308) to another origin.
 final class AMPRedirect: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
@@ -55,6 +57,9 @@ final class AMPRedirect: NSObject, URLSessionTaskDelegate {
         request.setValue("SimplexPanel/1.9 AMPAPI", forHTTPHeaderField: "User-Agent")
         request.httpBody = try JSONEncoder().encode(JSON.object(values))
         let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+            throw AMPSessionExpired.expired
+        }
         try PanelAPI.validate(data, response: response)
         guard data.count <= 16 * 1024 * 1024 else { throw PanelError(message: "AMP-Antwort zu groß.") }
         if data.isEmpty { return .null }
@@ -72,7 +77,9 @@ final class AMPRedirect: NSObject, URLSessionTaskDelegate {
                 guard !token.isEmpty else { throw PanelError(message: "AMP konnte die Instanz nicht öffnen. Prüfe Instanzstatus und Zugriffsrechte.") }
                 password = ""; user = credentials.username
             } else if !token.isEmpty { password = "" }
-            let result = try await post("Core/Login", scope: scope, values: ["username": .string(user), "password": .string(password), "token": .string(token.isEmpty ? otp : token), "rememberMe": .bool(scope.isEmpty)])
+            let result: JSON
+            do { result = try await post("Core/Login", scope: scope, values: ["username": .string(user), "password": .string(password), "token": .string(token.isEmpty ? otp : token), "rememberMe": .bool(scope.isEmpty)]) }
+            catch is AMPSessionExpired { throw PanelError(message: "AMP-Anmeldung abgelehnt. Zugangsdaten und gegebenenfalls 2FA-Code prüfen oder den Zugang erneut hinzufügen.") }
             guard result["success"].bool, !result["sessionID"].string.isEmpty else {
                 let reason = result["resultReason"].string
                 throw PanelError(message: "AMP-Anmeldung fehlgeschlagen. " + (reason.isEmpty ? "Benutzername, Passwort und gegebenenfalls 2FA-Code prüfen. Bei abgelaufenem Zugang in den Einstellungen neu anmelden." : reason))
@@ -102,7 +109,13 @@ final class AMPRedirect: NSObject, URLSessionTaskDelegate {
             let sessionID: String
             if let existing = sessions[target] { sessionID = existing } else { sessionID = try await login(target) }
             var body = values; body["SESSIONID"] = .string(sessionID)
-            let result = try await post(endpoint, scope: target, values: body)
+            let result: JSON
+            do { result = try await post(endpoint, scope: target, values: body) }
+            catch is AMPSessionExpired {
+                sessions[target] = nil
+                if attempt == 0 { continue }
+                throw PanelError(message: "AMP-Anmeldung abgelaufen. Bitte erneut anmelden.")
+            }
             if Self.expired(result), attempt == 0 { sessions[target] = nil; continue }
             if result["Status"] == .bool(false) || result["success"] == .bool(false) || result["Title"] == .string("UnauthorizedAccessException") || result["ExceptionType"] != .null || result["Message"] != .null && result["StackTrace"] != .null {
                 let reason = [result["Reason"].string, result["Message"].string, result["resultReason"].string].first { !$0.isEmpty } ?? "Aktion von AMP abgelehnt. Prüfe deine Berechtigungen."

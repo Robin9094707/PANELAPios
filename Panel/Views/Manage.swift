@@ -6,6 +6,7 @@ struct ManageView: View {
     @ObservedObject var suite: SuiteModel
     @State private var operation: Operation?
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var workspace: WorkspaceStore
     var live: LiveServer? = nil
     var prefix: String { "servers/\(server.id)" }
     var body: some View {
@@ -21,7 +22,7 @@ struct ManageView: View {
                 NavigationLink { SuiteHubView(panel: api, server: server, model: suite) } label: { Label("Admin Suite", systemImage: "shield.lefthalf.filled") }.accessibilityIdentifier("adminSuiteHub")
             }
             }
-            if api.amp == nil || server.data["invocation"].string.lowercased().contains("minecraft") {
+            if api.amp == nil || workspace.isMinecraft(api, server) {
             Section("Minecraft") {
                 if !suite.configured, let live { NavigationLink { PlayerManagerView(api: api, server: server, live: live) } label: { Label("Spieler-Manager", systemImage: "person.crop.circle.badge.checkmark") } }
                 NavigationLink { ModsView(api: api, server: server) } label: { Label("Mods & Mod-Updates", systemImage: "shippingbox") }.requiresAccess(api, server.id, "file.read")
