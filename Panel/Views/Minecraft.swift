@@ -128,7 +128,13 @@ struct ConsoleTextView: UIViewRepresentable {
         let selection = ConsoleAnchor.selection(viewport.selection, old: c.previous, new: text)
         c.applying = true
         if changed {
-            view.attributedText = ConsoleStyle.attributed(text, size: fontSize); c.previous = text; c.size = fontSize
+            if c.size == fontSize, !c.previous.isEmpty, text.hasPrefix(c.previous) {
+                let suffix = String(text.dropFirst(c.previous.count))
+                view.textStorage.beginEditing()
+                view.textStorage.append(ConsoleStyle.attributed(suffix, size: fontSize))
+                view.textStorage.endEditing()
+            } else { view.attributedText = ConsoleStyle.attributed(text, size: fontSize) }
+            c.previous = text; c.size = fontSize
             view.layoutManager.ensureLayout(for: view.textContainer); view.layoutIfNeeded()
         }
         if NSMaxRange(selection) <= view.textStorage.length { view.selectedRange = selection }

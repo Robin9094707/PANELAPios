@@ -29,6 +29,19 @@ Use the URL containing the web console, **not** the Minecraft game address or th
 
 The app is currently German. API error details may use the provider's language. Advanced rights and permission names follow Pterodactyl naming. Hosting billing, node administration and changing provider-assigned RAM/CPU limits are outside the Client API.
 
+## Version 1.8.0 — console filters and native statistics
+
+- A centered icon-only console action row keeps history navigation, history, tail, pause and shortcuts visible. VoiceOver retains complete labels. Typed Minecraft command suggestions remain readable separately.
+- Combine a text search with All, Chat, Errors/stacktraces, Warnings, Joins, Leaves, Commands or Other. Standard Paper/Java log headers, unsigned chat and common German join/leave messages are recognized; custom plugin formats may remain under Other. Text inside a chat message does not become an error merely because it contains ERROR. Raw ANSI formatting is retained.
+- Parsed line/category caches run outside the main actor. Bursts coalesce at about10 updates/s without starving continuous output; ordinary append-only updates extend native text storage instead of reparsing the whole scrollback. Existing selection/viewport restoration, bounded logs, output pause and per-server history remain.
+- A Suite-only Statistics tab presents deduplicated profile counts, Java/Bedrock distribution, activity, versions, moderation and Points. Platform/model/version/input/language categories open matching profiles and their existing actions. Compact iPhones use the native More tab for the additional destinations; no existing feature is removed.
+- The existing8.3.0 API has no dedicated Discord-statistics endpoint. Base charts use all paginated player records. Device metadata can be loaded on demand at at most2 requests/s; Java OS is not inferred. Recorded online peaks and hourly charts read the existing `/plugins/SimplexAdminSuite/server-statistics.properties` through the panel only when file-read rights allow it (2MiB/12s bounds). Missing/stale histories remain labelled; absent hours are gaps. UUID counts across recorded worlds are separate from current Suite-profile totals.
+- No estimates for unavailable total playtime, AFK time, session totals or Discord-link counts. Public Discord online counts may exclude vanished players while the admin profile API includes them. Metadata is client-reported; categories count one latest-known value per profile, not physical devices or unique people.
+- Long action/menu labels wrap. Selected choices, device fields, model names and setting previews remain fully readable instead of single-line/two-line clipping. A server-provided shortened title cannot be expanded beyond its returned content.
+- **App-only update:** Admin Suite8.3.0 and all credential/workspace/layout/history/transfer/widget storage and bundle IDs are unchanged. Install with the same signer and bundle ID over the existing app, without uninstalling.
+
+Rollback source: [`backup/v1.7.0-before-console-statistics`](https://github.com/Robin9094707/PANELAPios/tree/backup/v1.7.0-before-console-statistics), commit `4bb9ca49ad5cd23a92e1b6c95d90c277ea319671`.
+
 ## Version 1.7.0 — personal workspaces and console stability
 
 - Optional in-app cards for the panel home and each server workspace: add, hide and reorder through the layout button. Existing layouts are the defaults. The home server list stays reachable; resetting requires confirmation and affects only the current layout. Additional cards include fleet status, pinned servers, panel information, server health, RAM history and console shortcuts.

@@ -6,6 +6,15 @@ final class PanelUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication(); app.launchArguments = ["--demo", "--demo-paused-download", "--demo-suite", "-AppleLanguages", "(de)", "-AppleLocale", "de_DE"]; app.launch()
     }
+    func selectTab(_ title: String) {
+        let direct = app.tabBars.buttons[title]
+        if direct.exists { direct.tap(); return }
+        let more = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["More", "Mehr"])).firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 10)); more.tap()
+        let item = app.staticTexts[title].firstMatch
+        if !item.waitForExistence(timeout: 3) { more.tap() }
+        XCTAssertTrue(item.waitForExistence(timeout: 10)); item.tap()
+    }
     func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
@@ -16,21 +25,21 @@ final class PanelUITests: XCTestCase {
         server.tap()
         XCTAssertTrue(app.buttons["showPlayers"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Server-TPS"].waitForExistence(timeout: 10)); capture("02-Live-Dashboard")
-        app.tabBars.buttons["Konsole"].tap()
+        selectTab("Konsole")
         XCTAssertTrue(app.textFields["consoleCommand"].waitForExistence(timeout: 10))
         let console = app.textViews["consoleOutput"]
         XCTAssertTrue(console.waitForExistence(timeout: 10))
         XCTAssertGreaterThan(console.frame.width, app.frame.width * 0.9)
         XCTAssertGreaterThan(console.frame.height, 100); capture("03-Konsole")
-        app.tabBars.buttons["Dateien"].tap()
+        selectTab("Dateien")
         let properties = app.buttons.containing(.staticText, identifier: "server.properties").firstMatch
         XCTAssertTrue(properties.waitForExistence(timeout: 10)); capture("04-Dateien")
         properties.tap()
         XCTAssertTrue(app.textViews["fileEditor"].waitForExistence(timeout: 10)); capture("05-Dateieditor")
         app.buttons["Schließen"].tap()
-        app.tabBars.buttons["Backups"].tap()
+        selectTab("Backups")
         XCTAssertTrue(app.staticTexts["Before update"].waitForExistence(timeout: 10)); capture("06-Backups")
-        app.tabBars.buttons["Verwalten"].tap()
+        selectTab("Verwalten")
         XCTAssertTrue(app.buttons["adminSuiteHub"].waitForExistence(timeout: 10)); capture("07-Verwalten")
         app.buttons["adminSuiteHub"].tap()
         XCTAssertTrue(app.staticTexts["Simplex Admin Suite"].waitForExistence(timeout: 10)); capture("18-Admin-Suite")
@@ -53,9 +62,9 @@ final class PanelUITests: XCTestCase {
         app.segmentedControls.buttons["Zuletzt online"].tap()
         XCTAssertTrue(app.staticTexts["RecentOffline"].waitForExistence(timeout: 10))
         app.buttons.containing(.staticText, identifier: "RecentOffline").firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["Letztes Gerät"].waitForExistence(timeout: 10))
-        let deviceRow = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Letztes Gerät", "Samsung · Demo")).firstMatch
+        let deviceRow = app.descendants(matching: .any)["player-device"].firstMatch
         XCTAssertTrue(deviceRow.waitForExistence(timeout: 10))
+        XCTAssertTrue(deviceRow.label.contains("Letztes Gerät") && deviceRow.label.contains("Samsung · Demo"))
         capture("21-Offline-Spieler")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.segmentedControls.buttons["Alle"].tap()
@@ -109,7 +118,7 @@ final class PanelUITests: XCTestCase {
         for _ in 0..<6 { if app.buttons["reset-dashboard"].isHittable { break }; app.swipeUp() }
         app.buttons["reset-dashboard"].tap(); app.alerts.buttons["confirm-reset-dashboard"].firstMatch.tap()
         app.buttons["finish-dashboard"].tap()
-        app.tabBars.buttons["Konsole"].tap()
+        selectTab("Konsole")
         XCTAssertTrue(app.buttons["consoleHistory"].waitForExistence(timeout: 10))
         for _ in 0..<3 {
             if app.buttons["consoleHistory"].isHittable { break }
@@ -118,6 +127,44 @@ final class PanelUITests: XCTestCase {
         app.buttons["consoleHistory"].tap()
         XCTAssertTrue(app.navigationBars["Befehlsverlauf"].waitForExistence(timeout: 5)); capture("24-Console-History")
         app.buttons["Fertig"].tap()
+    }
+    func testConsoleCategoriesCompactActionsAndStatisticsDrilldown() throws {
+        executionTimeAllowance = 300
+        app.terminate(); app.launchArguments.append("--demo-console-filters"); app.launch()
+        let server = app.buttons["server-simplex1"]
+        XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap()
+        selectTab("Konsole")
+        let console = app.textViews["consoleOutput"]
+        XCTAssertTrue(console.waitForExistence(timeout: 10))
+        for id in ["consoleHistory", "consoleEnd", "consolePause", "consoleShortcuts"] {
+            XCTAssertTrue(app.buttons[id].isHittable, id)
+            XCTAssertLessThan(app.buttons[id].frame.width, 70, id)
+        }
+        func category(_ raw: String, _ title: String, contains expected: String, excludes other: String) {
+            app.buttons["consoleFilterMenu"].tap()
+            let choice = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "console-category-" + raw, title)).firstMatch
+            XCTAssertTrue(choice.waitForExistence(timeout: 5)); choice.tap()
+            let predicate = NSPredicate { _, _ in (console.value as? String ?? "").contains(expected) }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 10), .completed)
+            XCTAssertFalse((console.value as? String ?? "").contains(other))
+        }
+        category("chat", "Chat", contains: "PLAYER_CHAT_ONLY", excludes: "DEMO_ERROR_ONLY")
+        category("errors", "Fehler & Stacktraces", contains: "DEMO_ERROR_ONLY", excludes: "PLAYER_CHAT_ONLY")
+        category("joins", "Spielerbeitritte", contains: "DemoGuest joined the game", excludes: "PLAYER_CHAT_ONLY")
+        category("leaves", "Spieleraustritte", contains: "DemoGuest left the game", excludes: "joined the game")
+        capture("25-Console-Filters")
+        selectTab("Statistiken")
+        XCTAssertTrue(app.staticTexts["suiteStatisticsTitle"].waitForExistence(timeout: 10))
+        let models = app.buttons["statistics-models"]
+        for _ in 0..<6 { if models.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(models.waitForExistence(timeout: 10)); models.tap()
+        let iphone = app.buttons["statistics-bucket-models|iphone · demo"].firstMatch
+        XCTAssertTrue(iphone.waitForExistence(timeout: 10)); iphone.tap()
+        XCTAssertTrue(app.staticTexts["statistics-group-title"].waitForExistence(timeout: 10))
+        let player = app.buttons.containing(.staticText, identifier: ".BedrockDemo").firstMatch
+        XCTAssertTrue(player.waitForExistence(timeout: 10)); capture("26-Statistics-Device-Players")
+        player.tap()
+        XCTAssertTrue(app.buttons["Alle Geräte anzeigen"].waitForExistence(timeout: 10))
     }
     func testConnectionFormRequiresURLAndClientKey() throws {
         app.swipeUp()

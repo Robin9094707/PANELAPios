@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum PlayerPlatform: String, CaseIterable {
+enum PlayerPlatform: String, CaseIterable, Sendable {
     case java, ios, android, windows, xbox, playstation, nintendoSwitch, mac, linux, unknown
     var title: String {
         switch self {
@@ -54,6 +54,18 @@ enum PlayerPlatform: String, CaseIterable {
         return .unknown
     }
     private static func match(_ raw: String) -> Self? {
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        switch normalized {
+        case "1", "ANDROID", "4", "AMAZON", "FIREOS", "FIRE_OS": return .android
+        case "2", "IOS", "I_OS": return .ios
+        case "3", "OSX", "MACOS", "MAC_OS": return .mac
+        case "7", "8", "WINDOWS_10", "WIN10", "WINDOWS_32", "WIN32", "UWP": return .windows
+        case "11", "PLAYSTATION", "PS4", "PS5": return .playstation
+        case "12", "NX", "SWITCH", "NINTENDO": return .nintendoSwitch
+        case "13", "XBOX": return .xbox
+        case "15", "LINUX": return .linux
+        default: break
+        }
         let value = raw.lowercased().replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
         if value.contains("playstation") || value == "ps4" || value == "ps5" { return .playstation }
         if value.contains("xbox") { return .xbox }

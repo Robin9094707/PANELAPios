@@ -86,7 +86,7 @@ struct SuiteHubView: View {
                 Text("Alternativ: /sas app im Java- oder Bedrock-Adminmenü. Abschalten mit /sas app disable; die übrige Suite läuft weiter. Die App zeigt vor Änderungen eine serverseitig gebundene Bestätigung. Ein read-Schlüssel kann ausschließlich lesen.").font(.footnote).foregroundStyle(.secondary)
             }
             }
-        }.panelScreen().navigationTitle("Admin Suite").navigationBarTitleDisplayMode(.inline).task { await model.load() }.refreshable { await model.load(force: true) }.errorAlert($model.error)
+        }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Admin Suite").navigationBarTitleDisplayMode(.inline).task { await model.load() }.refreshable { await model.load(force: true) }.errorAlert($model.error)
             .sheet(isPresented: $settings) { SuiteConnectionView(panel: panel, server: server) { await model.load(force: true) } }
     }
     func scopeName(_ value: String) -> String { switch value { case "full": return "Vollzugriff"; case "manage": return "Spieler & Moderation"; default: return "Nur lesen" } }
@@ -112,7 +112,7 @@ struct SuiteConnectionView: View {
                 Section { Text("Bei direkt erzeugtem Zertifikat den Fingerabdruck aus /sas app fingerprint eintragen. Bei öffentlich gültigem HTTPS-Zertifikat darf er leer bleiben. Ein geänderter Fingerabdruck wird niemals automatisch akzeptiert.").font(.footnote).foregroundStyle(.secondary) }
                 Section { Button { Task { await connect() } } label: { if busy { ProgressView("Prüfen …") } else { Label("Prüfen & sicher speichern", systemImage: "checkmark.shield") } }.disabled(busy || endpoint.isEmpty || token.isEmpty || panel.demo) }
                 if existing != nil { Section { Button("Lokale Kopplung entfernen", role: .destructive) { remove = true }.disabled(busy) } }
-            }.panelScreen().navigationTitle("Suite verbinden").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() }.disabled(busy) } }.errorAlert($error)
+            }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Suite verbinden").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() }.disabled(busy) } }.errorAlert($error)
                 .task { if let record = existing { endpoint = record.endpoint; fingerprint = record.fingerprint; token = (try? Vault.read(record.id)) ?? "" } }
                 .confirmationDialog("Kopplung auf diesem Gerät entfernen?", isPresented: $remove, titleVisibility: .visible) { Button("Entfernen", role: .destructive) { if let record = existing { SuiteConnections.shared.remove(record) }; Task { await saved(); dismiss() } } } message: { Text("Der Schlüssel bleibt serverseitig gültig, bis du ihn mit /sas app revoke widerrufst.") }
         }.interactiveDismissDisabled(busy)
@@ -140,12 +140,12 @@ struct SuiteActionsView: View {
             ForEach(Array(Set(filtered.map(\.group))).sorted(), id: \.self) { group in
                 Section(group.isEmpty ? "Weitere Funktionen" : group) {
                     ForEach(filtered.filter { $0.group == group }) { action in
-                        NavigationLink(action.title) { SuiteActionView(suite: suite, action: action) }
+                        NavigationLink { SuiteActionView(suite: suite, action: action) } label: { Text(action.title).lineLimit(nil).fixedSize(horizontal: false, vertical: true) }
                     }
                 }
             }
             if filtered.isEmpty { ContentUnavailableView.search(text: search) }
-        }.panelScreen().navigationTitle(title).searchable(text: $search, prompt: "Funktion suchen")
+        }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle(title).searchable(text: $search, prompt: "Funktion suchen")
     }
 }
 struct SuiteActionView: View {
@@ -163,12 +163,12 @@ struct SuiteActionView: View {
     @State private var choiceGeneration = UUID()
     var body: some View {
         Form {
-            Section { Text(action.title).font(.title3.bold()); Text("Änderungen werden zuerst geprüft und erst nach deiner Bestätigung einmalig ausgeführt.").font(.footnote).foregroundStyle(.secondary) }
+            Section { Text(action.title).font(.title3.bold()).fixedSize(horizontal: false, vertical: true); Text("Änderungen werden zuerst geprüft und erst nach deiner Bestätigung einmalig ausgeführt.").font(.footnote).foregroundStyle(.secondary) }
             ForEach(action.fields, id: \.["name"].string) { field in
                 Section {
                     input(field)
                     if field["autocomplete"].bool { Button("Vorschläge laden", systemImage: "magnifyingglass") { choiceField = field; choiceQuery = values[field["name"].string]?.string ?? "" } }
-                } header: { Text(field["description"].string + (field["required"].bool ? " *" : "")) }
+                } header: { Text(field["description"].string + (field["required"].bool ? " *" : "")).fixedSize(horizontal: false, vertical: true) }
             }
             Section {
                 Button("Nur anzeigen", systemImage: "eye") { Task { await read() } }.disabled(busy)
@@ -177,7 +177,7 @@ struct SuiteActionView: View {
                 if busy { ProgressView("Suite verarbeitet …") }
             }
             if let result { SuiteReplyContent(data: result) }
-        }.panelScreen().navigationTitle(action.title).navigationBarTitleDisplayMode(.inline).errorAlert($error)
+        }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle(action.title).navigationBarTitleDisplayMode(.inline).errorAlert($error)
             .task { values = preset; for field in action.fields where values[field["name"].string] == nil { let id = field["name"].string; if field["type"].int == 5 { values[id] = .bool(false) }; if let first = field["choices"].array.first, field["required"].bool { values[id] = first["value"] } } }
             .sheet(isPresented: Binding(get: { plan != nil }, set: { if !$0 && !busy { plan = nil } })) { if let plan { confirmation(plan) } }
             .sheet(isPresented: Binding(get: { choiceField != nil }, set: { if !$0 { choiceField = nil } })) { suggestionSheet }
@@ -189,23 +189,24 @@ struct SuiteActionView: View {
             Picker(field["description"].string, selection: Binding(get: { values[id]?.string ?? "" }, set: { text in values[id] = field["choices"].array.first { $0["value"].string == text }?["value"] ?? .string(text) })) {
                 if !field["required"].bool { Text("Nicht angeben").tag("") }
                 ForEach(field["choices"].array, id: \.["value"].string) { Text($0["name"].string).tag($0["value"].string) }
-            }.pickerStyle(.menu)
-        } else if field["type"].int == 5 { Toggle(field["description"].string, isOn: Binding(get: { values[id]?.bool ?? false }, set: { values[id] = .bool($0) })) }
+            }.pickerStyle(.menu).labelsHidden()
+            if let selected = field["choices"].array.first(where: { $0["value"].string == values[id]?.string }) { Text(selected["name"].string).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+        } else if field["type"].int == 5 { Toggle(field["description"].string, isOn: Binding(get: { values[id]?.bool ?? false }, set: { values[id] = .bool($0) })).fixedSize(horizontal: false, vertical: true) }
         else { TextField(field["description"].string, text: Binding(get: { values[id]?.string ?? "" }, set: { values[id] = .string($0) }), axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(field["type"].int == 4 ? .numbersAndPunctuation : .default) }
     }
     var payload: [String: JSON] { values.filter { $0.value != .null && (!$0.value.string.isEmpty || $0.value == .bool(false) || action.id == "settings.update" && $0.key == "value") } }
     func read() async { busy = true; defer { busy = false }; do { result = try await suite.view(action.id, values: payload) } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
     func prepare() async { busy = true; defer { busy = false }; do { plan = try await suite.prepare(action.id, values: payload) } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
     func confirmation(_ prepared: JSON) -> some View {
-        NavigationStack { List { Section { Text(action.title).font(.headline); SuiteFormattedText(text: prepared["summary"].string); Text("Bestätigung ist 60 Sekunden gültig. Bei Zeitüberschreitung zuerst den Serverzustand prüfen.").font(.footnote).foregroundStyle(.secondary) }; Section { Button("Jetzt ausführen", role: .destructive) { Task { busy = true; do { result = try await suite.execute(prepared["ticket"].string); if result?["ok"].bool == true { Feedback.success() } } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }; busy = false; plan = nil } }.disabled(busy); if busy { ProgressView("Wird ausgeführt …") } } }.panelScreen().navigationTitle("Aktion bestätigen").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { plan = nil }.disabled(busy) } } }.interactiveDismissDisabled(busy)
+        NavigationStack { List { Section { Text(action.title).font(.headline); SuiteFormattedText(text: prepared["summary"].string); Text("Bestätigung ist 60 Sekunden gültig. Bei Zeitüberschreitung zuerst den Serverzustand prüfen.").font(.footnote).foregroundStyle(.secondary) }; Section { Button("Jetzt ausführen", role: .destructive) { Task { busy = true; do { result = try await suite.execute(prepared["ticket"].string); if result?["ok"].bool == true { Feedback.success() } } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }; busy = false; plan = nil } }.disabled(busy); if busy { ProgressView("Wird ausgeführt …") } } }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Aktion bestätigen").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { plan = nil }.disabled(busy) } } }.interactiveDismissDisabled(busy)
     }
     var suggestionSheet: some View {
-        NavigationStack { List { ForEach(choices, id: \.["value"].string) { item in Button(item["name"].string) { if let field = choiceField { values[field["name"].string] = item["value"] }; choiceField = nil } } }.panelScreen().navigationTitle("Vorschläge").searchable(text: $choiceQuery).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { choiceField = nil } } }.task(id: choiceQuery) { let revision = UUID(); choiceGeneration = revision; do { try await Task.sleep(for: .milliseconds(250)); var q = payload.mapValues(\.string); q["path"] = action.id; q["field"] = choiceField?["name"].string ?? ""; q["q"] = choiceQuery; let response = try await suite.request("choices", query: q); if choiceGeneration == revision { choices = response.array } } catch is CancellationError {} catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } } }
+        NavigationStack { List { ForEach(choices, id: \.["value"].string) { item in Button(item["name"].string) { if let field = choiceField { values[field["name"].string] = item["value"] }; choiceField = nil } } }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Vorschläge").searchable(text: $choiceQuery).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { choiceField = nil } } }.task(id: choiceQuery) { let revision = UUID(); choiceGeneration = revision; do { try await Task.sleep(for: .milliseconds(250)); var q = payload.mapValues(\.string); q["path"] = action.id; q["field"] = choiceField?["name"].string ?? ""; q["q"] = choiceQuery; let response = try await suite.request("choices", query: q); if choiceGeneration == revision { choices = response.array } } catch is CancellationError {} catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } } }
     }
 }
 struct SuiteFormattedText: View {
     let text: String
-    var body: some View { Text((try? AttributedString(markdown: cleanConsole(text), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(cleanConsole(text))).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }
+    var body: some View { Text((try? AttributedString(markdown: cleanConsole(text), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(cleanConsole(text))).lineLimit(nil).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }
 }
 struct SuiteReplyContent: View {
     let data: JSON
@@ -218,7 +219,7 @@ struct SuiteReadView: View {
     var values: [String: JSON] = [:]
     @State private var result: JSON = .null
     @State private var error: String?
-    var body: some View { List { if result != .null { SuiteReplyContent(data: result) } else { ProgressView() } }.panelScreen().navigationTitle(title).navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }.errorAlert($error) }
+    var body: some View { List { if result != .null { SuiteReplyContent(data: result) } else { ProgressView() } }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle(title).navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }.errorAlert($error) }
     func load() async { do { result = try await suite.view(path, values: values) } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
 }
 
@@ -229,7 +230,7 @@ struct SuiteLinkedPlayerView: View {
     @StateObject private var model: SuiteModel
     init(panel: PanelAPI, server: Server, player: String) { self.panel = panel; self.server = server; self.player = player; _model = StateObject(wrappedValue: SuiteModel(panel: panel, server: server)) }
     var body: some View {
-        Group { if let api = model.api { SuitePlayerView(suite: api, panel: panel, server: server, player: player, actions: model.actions) } else { List { if model.busy { ProgressView("Admin Suite verbinden …") }; Text("Moderation ist auf Admin Suite eingestellt. Bei Verbindungsproblemen wird keine andere Bannverwaltung automatisch verwendet.").font(.footnote).foregroundStyle(.secondary); Button("Erneut verbinden") { Task { await model.load(force: true) } }; NavigationLink("Kopplung prüfen") { SuiteHubView(panel: panel, server: server) } }.panelScreen().navigationTitle(player) } }.task { await model.load() }.errorAlert($model.error)
+        Group { if let api = model.api { SuitePlayerView(suite: api, panel: panel, server: server, player: player, actions: model.actions) } else { List { if model.busy { ProgressView("Admin Suite verbinden …") }; Text("Moderation ist auf Admin Suite eingestellt. Bei Verbindungsproblemen wird keine andere Bannverwaltung automatisch verwendet.").font(.footnote).foregroundStyle(.secondary); Button("Erneut verbinden") { Task { await model.load(force: true) } }; NavigationLink("Kopplung prüfen") { SuiteHubView(panel: panel, server: server) } }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle(player) } }.task { await model.load() }.errorAlert($model.error)
     }
 }
 
@@ -249,16 +250,16 @@ struct SuiteRemoteMenuView: View {
             if menu["input"].bool { Section(menu["title"].string) { TextField("Eingabe", text: $input, axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled(); Button("Eingabe prüfen") { select(.object(["id": .string("input"), "name": .string("Eingabe übernehmen"), "detail": .string(input)])) }.disabled(busy) } }
             Section(cleanConsole(menu["title"].string)) {
                 ForEach(menu["options"].array.filter { search.isEmpty || ($0["name"].string + $0["detail"].string).localizedCaseInsensitiveContains(search) }, id: \.["id"].string) { option in
-                    Button { select(option) } label: { VStack(alignment: .leading, spacing: 5) { Text(cleanConsole(option["name"].string)).font(.headline); if !option["detail"].string.isEmpty { Text(cleanConsole(option["detail"].string)).font(.caption).foregroundStyle(.secondary) } } }.disabled(option["disabled"].bool || busy || suite.demo)
+                    Button { select(option) } label: { VStack(alignment: .leading, spacing: 5) { Text(cleanConsole(option["name"].string)).font(.headline).fixedSize(horizontal: false, vertical: true); if !option["detail"].string.isEmpty { Text(cleanConsole(option["detail"].string)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) } } }.disabled(option["disabled"].bool || busy || suite.demo)
                         .contextMenu { if menu["inventory"].bool { Button("Rechtsklick") { select(option, click: "right") }; Button("Umschalt + Linksklick") { select(option, click: "shift-left") }; Button("Umschalt + Rechtsklick") { select(option, click: "shift-right") } } }
                 }
                 if busy { ProgressView("Suite-Menü verarbeiten …") }
             }
             if !menu["messages"].array.isEmpty { Section("Rückmeldung der Suite") { ForEach(Array(menu["messages"].array.enumerated()), id: \.offset) { _, value in SuiteFormattedText(text: value.string) } } }
             Section { Button("Zur Admin-Zentrale", systemImage: "house") { select(.object(["id": .string("home"), "name": .string("Admin-Zentrale öffnen")])) }.disabled(busy || suite.demo); Button("Menüstand aktualisieren", systemImage: "arrow.clockwise") { Task { await load() } }.disabled(busy) }
-        }.panelScreen().navigationTitle("Suite-Menüs").navigationBarTitleDisplayMode(.inline).searchable(text: $search, prompt: "Menüpunkt suchen").task { await load() }.refreshable { await load() }.errorAlert($error)
+        }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Suite-Menüs").navigationBarTitleDisplayMode(.inline).searchable(text: $search, prompt: "Menüpunkt suchen").task { await load() }.refreshable { await load() }.errorAlert($error)
             .sheet(isPresented: Binding(get: { plan != nil }, set: { if !$0 && !busy { plan = nil; selected = nil } })) {
-                NavigationStack { List { Section { Text(cleanConsole(selected?["name"].string ?? "Menüaktion")).font(.headline); Text(["left": "Linksklick", "right": "Rechtsklick", "shift-left": "Umschalt + Linksklick", "shift-right": "Umschalt + Rechtsklick"][selectedClick] ?? selectedClick).font(.caption).foregroundStyle(.secondary); Text(cleanConsole(selected?["detail"].string ?? "")).textSelection(.enabled); Text("Die Auswahl wird im vorhandenen Suite-Menü ausgeführt. Bei abgelaufenem oder geändertem Menü wird sie abgelehnt.").font(.footnote).foregroundStyle(.secondary) }; Section { Button("Bestätigen & ausführen", role: .destructive) { Task { await execute() } }.disabled(busy); if busy { ProgressView() } } }.panelScreen().navigationTitle("Suite-Auswahl").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { plan = nil; selected = nil }.disabled(busy) } } }.interactiveDismissDisabled(busy)
+                NavigationStack { List { Section { Text(cleanConsole(selected?["name"].string ?? "Menüaktion")).font(.headline); Text(["left": "Linksklick", "right": "Rechtsklick", "shift-left": "Umschalt + Linksklick", "shift-right": "Umschalt + Rechtsklick"][selectedClick] ?? selectedClick).font(.caption).foregroundStyle(.secondary); Text(cleanConsole(selected?["detail"].string ?? "")).textSelection(.enabled); Text("Die Auswahl wird im vorhandenen Suite-Menü ausgeführt. Bei abgelaufenem oder geändertem Menü wird sie abgelehnt.").font(.footnote).foregroundStyle(.secondary) }; Section { Button("Bestätigen & ausführen", role: .destructive) { Task { await execute() } }.disabled(busy); if busy { ProgressView() } } }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Suite-Auswahl").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { plan = nil; selected = nil }.disabled(busy) } } }.interactiveDismissDisabled(busy)
             }
     }
     func select(_ option: JSON, click: String = "left") { selected = option; selectedClick = click; Task { busy = true; defer { busy = false }; do { let values: [String: JSON] = ["session": menu["session"], "revision": menu["revision"], "option": option["id"], "click": .string(click), "input": .string(option["id"].string == "input" ? input : "")]; plan = try await suite.prepare("menu.action", values: values) } catch { selected = nil; self.error = error.localizedDescription } } }

@@ -2,6 +2,16 @@ import Foundation
 
 /// Synthetic read-only fixture for the existing demo mode and UI smoke tour.
 enum SuiteDemo {
+    static let consoleFilterLines = [
+        "[12:00:00 INFO]: <DemoGuest> PLAYER_CHAT_ONLY joined the game ERROR",
+        "[12:00:01 ERROR]: DEMO_ERROR_ONLY",
+        "    at demo.Plugin.run(Plugin.java:42)",
+        "Caused by: java.lang.IllegalStateException: synthetic failure",
+        "[12:00:02 WARN]: DEMO_WARNING_ONLY",
+        "[12:00:03 INFO]: DemoGuest joined the game",
+        "[12:00:04 INFO]: DemoGuest left the game",
+        "[12:00:05 INFO]: DemoGuest issued server command: /list"
+    ]
     static let player = "00000000-0000-0000-0000-000000000001"
     static func field(_ name: String, _ label: String) -> JSON { .object(["name": .string(name), "description": .string(label), "type": .number(3), "required": .bool(true)]) }
     static func response(_ path: String, query: [String: String]) -> JSON {
@@ -21,7 +31,9 @@ enum SuiteDemo {
             if query["player"] == "bedrock-demo" { return otherProfile(online: true) }
             return profile(detail: true)
         case "data/alts": return .object(["items": .array([.object(["id": .string("00000000-0000-0000-0000-000000000002"), "name": .string(".BedrockDemo"), "score": .number(90), "level": .string("Starker Hinweis"), "safe": .bool(true), "evidence": .array([.string("Synthetische bestätigte Kontoverknüpfung")])])])])
-        case "data/devices": return .object(["items": .array([.object(["id": .string("synthetic-device"), "name": .string("iPhone · Demo"), "platform": .string("BEDROCK"), "os": .string("iOS"), "version": .string("26.3"), "language": .string("de_DE"), "input": .string("Touch"), "blocked": .bool(false)])])])
+        case "data/devices":
+            if query["player"] == "offline-demo" { return .object(["items": .array([.object(["id": .string("synthetic-android-device"), "name": .string("Samsung · Demo"), "platform": .string("BEDROCK"), "os": .string("Android"), "language": .string("de_DE"), "input": .string("Touch"), "lastSeen": .number(Date().addingTimeInterval(-300).timeIntervalSince1970 * 1000)])])]) }
+            return .object(["items": .array([.object(["id": .string("synthetic-device"), "name": .string("iPhone · Demo"), "platform": .string("BEDROCK"), "os": .string("iOS"), "version": .string("26.3"), "language": .string("de_DE"), "input": .string("Touch"), "blocked": .bool(false)])])])
         case "data/ultrabans": return .object(["items": .array([.object(["id": .string("UB-DEMO"), "name": .string("DemoAccount"), "active": .bool(true), "mode": .string("ultra"), "reason": .string("Synthetischer Testfall"), "attempts": .number(3), "members": .array([.object(["id": .string(player), "name": .string("DemoAccount"), "relation": .string("Ausgangskonto")])])])]), "total": .number(1), "next": .number(-1)])
         case "data/snapshots", "data/nbt-paths", "data/inventory", "data/settings": return .object(["items": .array([])])
         case "view": return .object(["ok": .bool(true), "title": .string("Demo-Suite"), "description": .string("Synthetische Daten. Reale Serveraktionen sind im Demomodus gesperrt.")])

@@ -56,7 +56,7 @@ jobs:
         run: |
           nohup python3 scripts/suite_tls_fixture.py </dev/null > build/tls-fixture.log 2>&1 &
           fixture_pid=$!
-          for attempt in {1..20}; do
+          for attempt in {1..40}; do
             if ! kill -0 "$fixture_pid" 2>/dev/null; then cat build/tls-fixture.log; exit 1; fi
             if curl -k -f -s --connect-timeout 1 --max-time 3 -H 'Authorization: Bearer synthetic-tls-token' https://127.0.0.1:49383/v1/health > build/tls-health.json; then exit 0; fi
             sleep 1
@@ -68,7 +68,7 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -only-testing:PanelUITests/PanelUITests/testIntegratedSuitePlayersSearchDevicesAndOffline -only-testing:PanelUITests/PanelUITests/testDashboardCustomizationIsOptionalPersistentAndResetIsConfirmed -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -only-testing:PanelUITests/PanelUITests/testIntegratedSuitePlayersSearchDevicesAndOffline -only-testing:PanelUITests/PanelUITests/testDashboardCustomizationIsOptionalPersistentAndResetIsConfirmed -only-testing:PanelUITests/PanelUITests/testConsoleCategoriesCompactActionsAndStatisticsDrilldown -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -179,10 +179,10 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          App-only update with customizable in-app dashboards, Java server icons, platform icons, console history and resource health indicators.
+          App-only update with compact console icons, chat/error/join/leave filters, faster log rendering, wrapping Suite labels and native statistics with device-to-player navigation.
           
           Install over the existing app using the same signing identity and bundle ID. Do not uninstall first. The IPA is unsigned and needs your usual signing method. Admin Suite 8.3.0 is unchanged.
           
-          Source backup: backup/v1.6.0-before-custom-workspaces.
+          Source backup: backup/v1.7.0-before-console-statistics.
           NOTES
           gh release create "$tag" "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest

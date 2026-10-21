@@ -51,7 +51,7 @@ import Combine
             playerCapacity = minecraft ? 60 : nil
             tps = minecraft ? TPSSnapshot(minute: 20, five: 19.98, fifteen: 20) : nil
             players = minecraft ? PlayerSnapshot(online: 2, maximum: 60, names: ["TadMC_YT", ".niex2277"], source: "Demo") : nil
-            if lines.isEmpty { lines = ["[22:37:00 INFO]: Starting minecraft server", "[22:37:02 INFO]: Loading properties", "[22:37:05 INFO]: \u{1B}[32mSimplex SMP is ready\u{1B}[0m", "[22:37:06 INFO]: Done (4.218s)! For help, type \"help\"", "[22:37:14 INFO]: MissCaitlyn joined the game"]; logRevision &+= 1 }
+            if lines.isEmpty { lines = ["[22:37:00 INFO]: Starting minecraft server", "[22:37:02 INFO]: Loading properties", "[22:37:05 INFO]: \u{1B}[32mSimplex SMP is ready\u{1B}[0m", "[22:37:06 INFO]: Done (4.218s)! For help, type \"help\"", "[22:37:14 INFO]: MissCaitlyn joined the game"]; if ProcessInfo.processInfo.arguments.contains("--demo-console-filters") { lines += SuiteDemo.consoleFilterLines }; logRevision &+= 1 }
             while !Task.isCancelled && active && runID == generation {
                 stats = try! JSON.from(["memory_bytes": 8_214_000_000.0, "cpu_absolute": Double.random(in: 34...62), "disk_bytes": 23_144_000_000.0, "uptime": 12_814_000, "network": ["rx_bytes": 2_124_000, "tx_bytes": 8_124_000]])
                 sample(); try? await Task.sleep(for: .seconds(2))

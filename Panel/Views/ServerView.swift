@@ -34,7 +34,10 @@ struct ServerView: View {
     @State private var historySheet = false
     @State private var historyCursor = CommandHistoryCursor()
     @StateObject private var viewport = ConsoleViewportState()
-    @State private var consoleText = ""
+    @StateObject private var consoleProjection = ConsoleProjection()
+    @State private var consoleCategory = ConsoleCategory.all
+    @State private var consoleEpoch = 0
+    var consoleText: String { consoleProjection.result.text }
     @State private var frozen = false
     @State private var frozenLines: [String] = []
     @State private var jumpRevision = 0
@@ -43,6 +46,9 @@ struct ServerView: View {
             Tab("Übersicht", systemImage: "gauge.with.dots.needle.67percent", value: 0) { overview }
             Tab("Konsole", systemImage: "terminal", value: 1) { AccessBoundary(access: api.access, server: server.id, permission: "websocket.connect") { console } }
             Tab("Dateien", systemImage: "folder", value: 2) { AccessBoundary(access: api.access, server: server.id, permission: "file.read") { FilesView(api: api, server: server, root: initialFolder ?? "/") } }
+            if suite.configured {
+                Tab("Statistiken", systemImage: "chart.bar.xaxis", value: 5) { SuiteStatisticsView(model: suite, live: live) }
+            }
             Tab("Backups", systemImage: "externaldrive.badge.timemachine", value: 3) { AccessBoundary(access: api.access, server: server.id, permission: "backup.read") { BackupsView(api: api, server: server) } }
             Tab("Verwalten", systemImage: "square.grid.2x2", value: 4) { ManageView(api: api, server: server, suite: suite, live: live) }
         }.navigationTitle(server.name).navigationBarTitleDisplayMode(.inline)
@@ -62,6 +68,9 @@ struct ServerView: View {
                     await suite.load(force: true)
                 }
             }
+            .onChange(of: suite.configured) { _, configured in if !configured && tab == 5 { tab = 0 } }
+            .onChange(of: tab) { _, value in if value == 1 { updateConsoleText() } else { consoleProjection.stop() } }
+            .onChange(of: scenePhase) { _, phase in if phase == .active && tab == 1 { updateConsoleText() } else if phase != .active { consoleProjection.stop() } }
             .onChange(of: live.lastUpdate) { _, _ in WidgetPublisher.publish(api: api, server: server, live: live) }
             .onChange(of: live.players) { _, _ in WidgetPublisher.publish(api: api, server: server, live: live) }
             .onChange(of: live.state) { _, state in store.presence[server.id] = ServerPresence(state: state) }
@@ -207,6 +216,12 @@ struct ServerView: View {
                 Label(live.connected ? "Live-Konsole" : "Verbindung getrennt", systemImage: live.connected ? "dot.radiowaves.left.and.right" : "wifi.slash").font(.caption).foregroundStyle(live.connected ? Color.teal : Color.orange)
                 Spacer()
                 Menu {
+                    Picker("Ausgabe-Kategorie", selection: $consoleCategory) {
+                        ForEach(ConsoleCategory.allCases) { category in Label(category.title, systemImage: category.symbol).tag(category).accessibilityIdentifier("console-category-" + category.rawValue) }
+                    }.pickerStyle(.inline)
+                } label: { Image(systemName: consoleCategory == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill").padding(6) }
+                    .accessibilityLabel("Konsolenfilter").accessibilityIdentifier("consoleFilterMenu")
+                Menu {
                     Toggle("Automatisch scrollen", isOn: $follow)
                     Toggle("Ausgabe pausieren", isOn: $frozen)
                     Button("Zum Ende springen", systemImage: "arrow.down.to.line") { jumpRevision += 1 }
@@ -214,43 +229,54 @@ struct ServerView: View {
                     Button("Gefilterte Ausgabe kopieren", systemImage: "doc.on.doc") { Clipboard.copy(cleanConsole(consoleText)) }
                     Button("Schrift vergrößern") { fontSize = min(22, fontSize + 1) }
                     Button("Schrift verkleinern") { fontSize = max(10, fontSize - 1) }
-                    Button("Anzeige leeren", role: .destructive) { live.clearConsole(); frozenLines = []; consoleText = "" }
+                    Button("Anzeige leeren", role: .destructive) { live.clearConsole(); frozenLines = []; consoleEpoch += 1; updateConsoleText() }
                 } label: { Image(systemName: "ellipsis.circle").padding(6) }
             }.padding(.horizontal, 16).padding(.vertical, 8)
-            TextField("Ausgabe filtern", text: $filter).textFieldStyle(.roundedBorder).padding(.horizontal, 16).padding(.bottom, 8).autocorrectionDisabled().textInputAutocapitalization(.never)
+            HStack {
+                TextField("Ausgabe durchsuchen", text: $filter).textFieldStyle(.roundedBorder).autocorrectionDisabled().textInputAutocapitalization(.never).accessibilityIdentifier("consoleSearch")
+                if !filter.isEmpty { Button("Suche leeren", systemImage: "xmark.circle.fill") { filter = "" }.labelStyle(.iconOnly) }
+            }.padding(.horizontal, 16).padding(.bottom, 4)
+            HStack { Label(consoleCategory.title, systemImage: consoleCategory.symbol); Spacer(); Text("\(consoleProjection.result.shown) / \(consoleProjection.result.total) Zeilen").monospacedDigit() }
+                .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.bottom, 6)
             ConsoleTextView(text: consoleText, fontSize: fontSize, follow: follow && !frozen, viewport: viewport, active: scenePhase == .active, jumpRevision: jumpRevision, refresh: { await refreshServer() })
                 .frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1).background(.black.opacity(0.08))
             if frozen { Label("Anzeige pausiert · Live-Ausgabe läuft im Hintergrund weiter", systemImage: "pause.circle").font(.caption).foregroundStyle(.orange).padding(8) }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack {
-                    Button("Älterer Befehl", systemImage: "arrow.up") { previousCommand() }.disabled(commandEntries.isEmpty).accessibilityIdentifier("history-older")
-                    Button("Neuerer Befehl", systemImage: "arrow.down") { nextCommand() }.disabled(historyCursor.index == nil).accessibilityIdentifier("history-newer")
-                    Button("Verlauf", systemImage: "clock.arrow.circlepath") { historySheet = true }.accessibilityIdentifier("consoleHistory")
-                    Button("Zum Ende", systemImage: "arrow.down.to.line") { jumpRevision += 1 }
-                    Button("Shortcuts", systemImage: "bolt") { commandLibrary = true }.buttonStyle(.glass)
-                    ForEach(workspace.shortcuts[workspace.key(api, server)] ?? []) { shortcut in
-                        Button(shortcut.name) { command = shortcut.command }.buttonStyle(.glass)
-                    }
-                    if workspace.isMinecraft(api, server) {
-                        ForEach(CommandLibrary.suggestions.filter { command.isEmpty ? ["list", "tps", "save-all"].contains($0) : $0.hasPrefix(command.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) && $0 != command }, id: \.self) { suggestion in
+            HStack(spacing: 8) {
+                Button("Älterer Befehl", systemImage: "arrow.up") { previousCommand() }.disabled(commandEntries.isEmpty).accessibilityIdentifier("history-older")
+                Button("Neuerer Befehl", systemImage: "arrow.down") { nextCommand() }.disabled(historyCursor.index == nil).accessibilityIdentifier("history-newer")
+                Button("Befehlsverlauf", systemImage: "clock.arrow.circlepath") { historySheet = true }.accessibilityIdentifier("consoleHistory")
+                Button("Zum Ende springen", systemImage: "arrow.down.to.line") { jumpRevision += 1 }.accessibilityIdentifier("consoleEnd")
+                Button(frozen ? "Ausgabe fortsetzen" : "Ausgabe pausieren", systemImage: frozen ? "play.fill" : "pause.fill") { frozen.toggle() }.accessibilityIdentifier("consolePause")
+                Button("Befehls-Shortcuts", systemImage: "bolt") { commandLibrary = true }.accessibilityIdentifier("consoleShortcuts")
+            }.labelStyle(.iconOnly).buttonStyle(.glass).controlSize(.regular)
+                .frame(maxWidth: .infinity).padding(.horizontal, 12).padding(.vertical, 8)
+                .accessibilityIdentifier("consoleActions")
+            if workspace.isMinecraft(api, server) && !command.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        ForEach(Array(CommandLibrary.suggestions.filter { $0.hasPrefix(command.trimmingCharacters(in: CharacterSet(charactersIn: "/"))) && $0 != command }.prefix(4)), id: \.self) { suggestion in
                             Button(suggestion) { command = suggestion }.buttonStyle(.glass)
                         }
-                    }
-                }.padding(.horizontal, 12).padding(.vertical, 8)
-            }.accessibilityLabel("Lokale Befehlsvorschläge und Shortcuts")
+                    }.padding(.horizontal, 12).padding(.bottom, 6)
+                }.accessibilityLabel("Befehlsvorschläge")
+            }
             HStack(spacing: 12) {
                 Text(">").font(.system(.body, design: .monospaced)).foregroundStyle(.teal)
                 TextField("Befehl eingeben …", text: $command).font(.system(.body, design: .monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never).submitLabel(.send).onSubmit(sendCommand).onKeyPress(.upArrow) { previousCommand(); return .handled }.onKeyPress(.downArrow) { nextCommand(); return .handled }.accessibilityIdentifier("consoleCommand").requiresAccess(api, server.id, "control.console")
                 Button(action: sendCommand) { if sending { ProgressView() } else { Image(systemName: "arrow.up").fontWeight(.bold) } }.buttonStyle(.glassProminent).disabled(sending || command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !live.connected).accessibilityLabel("Befehl senden").requiresAccess(api, server.id, "control.console")
             }.padding(16).background(.bar)
-        }.onAppear { updateConsoleText() }
+        }.onAppear { updateConsoleText() }.onDisappear { consoleProjection.stop() }
             .onChange(of: live.logRevision) { _, _ in if !frozen { updateConsoleText() } }
             .onChange(of: filter) { _, _ in updateConsoleText() }
-            .onChange(of: frozen) { _, paused in if paused { frozenLines = live.lines }; updateConsoleText() }
+            .onChange(of: consoleCategory) { _, _ in updateConsoleText() }
+            .onChange(of: frozen) { _, paused in consoleEpoch += 1; if paused { frozenLines = live.lines }; updateConsoleText() }
             .onChange(of: command) { _, text in historyCursor.edited(text) }
             .background { PanelBackground() }.safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 1) }
     }
-    func updateConsoleText() { consoleText = (frozen ? frozenLines : live.lines).filter { filter.isEmpty || $0.cleanedForSearch.localizedCaseInsensitiveContains(filter) }.joined(separator: "\n") }
+    func updateConsoleText() {
+        guard tab == 1, scenePhase == .active else { return }
+        consoleProjection.request(frozen ? frozenLines : live.lines, category: consoleCategory, query: filter, context: consoleEpoch)
+    }
     func previousCommand() { command = historyCursor.older(current: command, entries: commandEntries) }
     func nextCommand() { guard historyCursor.index != nil else { return }; command = historyCursor.newer(entries: commandEntries) }
     func sendCommand() {

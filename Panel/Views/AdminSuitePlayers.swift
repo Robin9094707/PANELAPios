@@ -9,9 +9,9 @@ struct SuitePlayerRow: View {
         HStack(spacing: 12) {
             PlayerPlatformIcon(platform: platform)
             VStack(alignment: .leading, spacing: 4) {
-                Text(row["name"].string).font(.headline)
+                Text(row["name"].string).font(.headline).fixedSize(horizontal: false, vertical: true)
                 Text(platform.title).font(.subheadline).foregroundStyle(.secondary)
-                if platform != .java { Text(SuitePlayerPresentation.device(row)).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                if platform != .java { Text(SuitePlayerPresentation.device(row)).font(.caption).foregroundStyle(.secondary).lineLimit(nil).fixedSize(horizontal: false, vertical: true) }
                 if !row["online"].bool, let date = SuitePlayerPresentation.date(row["lastSeen"]) { Text("Zuletzt online: " + date.formatted(.relative(presentation: .named))).font(.caption).foregroundStyle(.secondary) }
             }
             Spacer(minLength: 4)
@@ -54,7 +54,7 @@ struct SuitePlayersView: View {
                 if visible.isEmpty && !directory.busy { ContentUnavailableView("Keine Spieler gefunden", systemImage: "person.crop.circle.badge.questionmark", description: Text("Suche nach einem Namen oder wechsle den Filter.")) }
                 if directory.next >= 0 && !directory.busy && filter != .online { Button("Weitere Spieler laden") { Task { await load(reset: false) } } }
             }
-        }.panelScreen().navigationTitle("Spieler").searchable(text: $search, prompt: "Name oder UUID").textInputAutocapitalization(.never).autocorrectionDisabled()
+        }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Spieler").searchable(text: $search, prompt: "Name oder UUID").textInputAutocapitalization(.never).autocorrectionDisabled()
             .task(id: search + "|" + filter.rawValue) { do { try await Task.sleep(for: .milliseconds(250)); await load(reset: true) } catch {} }
             .refreshable { await load(reset: true) }.errorAlert($directory.error)
     }
@@ -83,7 +83,7 @@ struct SuitePlayerView: View {
                 CopyButton(text: player, title: "UUID kopieren")
                 LabeledContent("Client", value: current["client"].string)
                 LabeledContent("Plattform", value: (resolved ?? PlayerPlatform.resolve(current)).title)
-                LabeledContent(current["online"].bool ? "Aktuelles Gerät" : "Letztes Gerät", value: SuitePlayerPresentation.device(current))
+                SuiteDetailRow(title: current["online"].bool ? "Aktuelles Gerät" : "Letztes Gerät", value: SuitePlayerPresentation.device(current)).accessibilityIdentifier("player-device")
                 if let date = SuitePlayerPresentation.date(current["lastSeen"]), !current["online"].bool { LabeledContent("Zuletzt online") { Text(date, format: .dateTime.day().month().year().hour().minute()) } }
                 if !current["version"].string.isEmpty { LabeledContent("Spielversion", value: current["version"].string) }
                 LabeledContent("Simplex Points", value: current["points"].string)
@@ -163,7 +163,7 @@ struct SuiteDataListView: View {
                         if !row["lore"].array.isEmpty { ForEach(Array(row["lore"].array.enumerated()), id: \.offset) { _, value in Text(cleanConsole(value.string)).font(.caption) } }
                     } else {
                         if let date = SuitePlayerPresentation.date(row["lastSeen"]) { LabeledContent("Zuletzt verwendet") { Text(date, format: .dateTime.day().month().year().hour().minute()) } }
-                        ForEach([("platform", "Plattform"), ("os", "Betriebssystem"), ("version", "Spielversion"), ("language", "Sprache"), ("input", "Eingabe")], id: \.0) { key, label in LabeledContent(label, value: row[key].string.isEmpty ? "Nicht erfasst" : row[key].string) }
+                        ForEach([("platform", "Plattform"), ("os", "Betriebssystem"), ("version", "Spielversion"), ("language", "Sprache"), ("input", "Eingabe")], id: \.0) { key, label in SuiteDetailRow(title: label, value: row[key].string.isEmpty ? "Nicht erfasst" : row[key].string) }
                         Label(row["blocked"].bool ? "Gesperrt" : "Nicht gesperrt", systemImage: row["blocked"].bool ? "lock.fill" : "checkmark.shield").foregroundStyle(row["blocked"].bool ? .orange : .teal)
                         ForEach(row["diagnostics"].object.keys.sorted(), id: \.self) { key in LabeledContent(key, value: row["diagnostics"][key].string).font(.caption).textSelection(.enabled) }
                         if let action = actions.first(where: { $0.id == "player.devices" }) { NavigationLink("Gerät verwalten") { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player), "identifier": row["id"]]) } }
@@ -249,7 +249,7 @@ struct SuiteSettingsView: View {
     var body: some View {
         List {
             Section { Text("Vorhandene Suite-Einstellungen werden nach ihrem tatsächlichen Typ dargestellt. Zugangsschlüssel und geschützte Authentifizierung bleiben lokal. Nach Änderungen ist je nach Modul ein Suite-Reload nötig.").font(.footnote).foregroundStyle(.secondary) }
-            ForEach(rows.filter { search.isEmpty || ($0["name"].string + $0["id"].string).localizedCaseInsensitiveContains(search) }, id: \.["id"].string) { row in NavigationLink { SuiteSettingEditor(suite: suite, setting: row) } label: { VStack(alignment: .leading, spacing: 5) { HStack { Text(row["name"].string); Spacer(); if row["kind"].string == "bool" { Image(systemName: row["value"].bool ? "checkmark.circle.fill" : "circle").foregroundStyle(row["value"].bool ? .teal : .secondary) } }; Text(row["id"].string).font(.caption).foregroundStyle(.secondary); if row["kind"].string != "bool" { Text(row["value"].array.isEmpty ? row["value"].string : "\(row["value"].array.count) Einträge").font(.caption).lineLimit(2) } } } }
+            ForEach(rows.filter { search.isEmpty || ($0["name"].string + $0["id"].string).localizedCaseInsensitiveContains(search) }, id: \.["id"].string) { row in NavigationLink { SuiteSettingEditor(suite: suite, setting: row) } label: { VStack(alignment: .leading, spacing: 5) { HStack { Text(row["name"].string); Spacer(); if row["kind"].string == "bool" { Image(systemName: row["value"].bool ? "checkmark.circle.fill" : "circle").foregroundStyle(row["value"].bool ? .teal : .secondary) } }; Text(row["id"].string).font(.caption).foregroundStyle(.secondary); if row["kind"].string != "bool" { Text(row["value"].array.isEmpty ? row["value"].string : "\(row["value"].array.count) Einträge").font(.caption).lineLimit(nil).fixedSize(horizontal: false, vertical: true) } } } }
         }.panelScreen().navigationTitle("Suite-Einstellungen").searchable(text: $search).task { await load() }.refreshable { await load() }.errorAlert($error)
     }
     func load() async { do { rows = try await suite.data("settings")["items"].array } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }

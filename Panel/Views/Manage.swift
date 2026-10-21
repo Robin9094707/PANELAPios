@@ -15,6 +15,7 @@ struct ManageView: View {
                     NavigationLink { IntegratedPlayersView(model: suite, live: live, initialFilter: .online) } label: { Label("Online-Spieler & Geräte", systemImage: "person.2.fill") }
                     NavigationLink { IntegratedPlayersView(model: suite, live: live) } label: { Label("Spieler suchen & Aktion ausführen", systemImage: "magnifyingglass") }
                     NavigationLink { IntegratedPlayersView(model: suite, live: live, initialFilter: .recent) } label: { Label("Zuletzt online", systemImage: "clock.arrow.circlepath") }
+                    NavigationLink { SuiteStatisticsView(model: suite, live: live) } label: { Label("Statistiken & Geräteverteilung", systemImage: "chart.bar.xaxis").fixedSize(horizontal: false, vertical: true) }.accessibilityIdentifier("serverStatistics")
                 }
                 NavigationLink { SuiteHubView(panel: api, server: server, model: suite) } label: { Label("Admin Suite", systemImage: "shield.lefthalf.filled") }.accessibilityIdentifier("adminSuiteHub")
             }
