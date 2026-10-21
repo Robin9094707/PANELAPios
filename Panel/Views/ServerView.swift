@@ -250,7 +250,6 @@ struct ServerView: View {
                 Button("Befehls-Shortcuts", systemImage: "bolt") { commandLibrary = true }.accessibilityIdentifier("consoleShortcuts")
             }.labelStyle(.iconOnly).buttonStyle(.glass).controlSize(.regular)
                 .frame(maxWidth: .infinity).padding(.horizontal, 12).padding(.vertical, 8)
-                .accessibilityIdentifier("consoleActions")
             if workspace.isMinecraft(api, server) && !command.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack {

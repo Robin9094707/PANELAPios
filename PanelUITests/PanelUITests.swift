@@ -154,7 +154,7 @@ final class PanelUITests: XCTestCase {
         category("leaves", "Spieleraustritte", contains: "DemoGuest left the game", excludes: "joined the game")
         capture("25-Console-Filters")
         selectTab("Statistiken")
-        XCTAssertTrue(app.staticTexts["suiteStatisticsTitle"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["suiteStatisticsTitle"].waitForExistence(timeout: 10)); capture("27-Statistics-Dashboard")
         let models = app.buttons["statistics-models"]
         for _ in 0..<6 { if models.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(models.waitForExistence(timeout: 10)); models.tap()
