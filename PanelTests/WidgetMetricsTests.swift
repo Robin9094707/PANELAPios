@@ -41,4 +41,24 @@ final class WidgetMetricsTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(color.readable(dark: false).contrast(ThemeRGB("F0F8F8")), 4.5)
         }
     }
+    @MainActor func testWidgetRefreshReadsResourcesAndPlayerNamesWithoutCommands() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubProtocol.self]
+        var routes: [String] = []
+        StubProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer synthetic-widget-token")
+            routes.append(request.url!.path)
+            if request.url!.path.hasSuffix("/resources") { return (200, Data(#"{"attributes":{"current_state":"running","resources":{"memory_bytes":1073741824,"cpu_absolute":12.5,"uptime":45000}}}"#.utf8)) }
+            if request.url!.path.hasSuffix("/players") { return (200, Data(#"{"online":2,"players":[{"name":"RJ"},{"name":"MissCaitlyn"}]}"#.utf8)) }
+            XCTFail("Unexpected widget route"); return (404, Data())
+        }
+        defer { StubProtocol.handler = nil }
+        let source = WidgetServer(panel: "https://panel.example", serverID: "abc", name: "Simplex", backgroundRefresh: true)
+        let result = await WidgetNetwork.refresh(source, session: URLSession(configuration: config), credential: WidgetCredential(provider: "pterodactyl", secret: "synthetic-widget-token"))
+        XCTAssertEqual(result.memory, 1_073_741_824); XCTAssertEqual(result.uptime, 45)
+        XCTAssertEqual(result.playerNames, ["RJ", "MissCaitlyn"]); XCTAssertNil(result.issue)
+        XCTAssertEqual(routes.count, 2)
+        XCTAssertFalse(routes.contains { $0.contains("command") || $0.contains("power") })
+    }
+
 }

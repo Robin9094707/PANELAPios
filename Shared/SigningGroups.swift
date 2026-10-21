@@ -39,7 +39,12 @@ enum SigningGroups {
         }
         return result
     }
+    static let signedEntitlements: [String: Any] = {
+        guard let executable = Bundle.main.executableURL, let data = try? Data(contentsOf: executable, options: .mappedIfSafe) else { return [:] }
+        return binaryEntitlements(data)
+    }()
     static var profile: [String: Any] {
+        if !signedEntitlements.isEmpty { return signedEntitlements }
         let bundle = Bundle.main.bundleURL
         var urls = [bundle.appendingPathComponent("embedded.mobileprovision")]
         if bundle.pathExtension == "appex" { urls.append(bundle.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("embedded.mobileprovision")) }
@@ -51,8 +56,10 @@ enum SigningGroups {
     }
     static var declaredCandidates: [String] {
         let values = profile["com.apple.security.application-groups"] as? [String] ?? []
+        let actual = signedEntitlements["com.apple.security.application-groups"] as? [String] ?? []
+        let entitled = actual.filter { $0.hasPrefix("group.") && !$0.contains("*") && $0.range(of: #"^[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil }
         let safe = values.filter { $0.hasPrefix("group.") && $0.lowercased().contains("panel") && $0.range(of: #"^[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil }
-        return Array(Set(candidates(values) + safe)).sorted { a, b in if a == canonical { return true }; if b == canonical { return false }; return a < b }
+        return Array(Set(candidates(values) + safe + entitled)).sorted { a, b in if a == canonical { return true }; if b == canonical { return false }; return a < b }
     }
     static let availableGroup: String? = {
         if FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: canonical) != nil { return canonical }

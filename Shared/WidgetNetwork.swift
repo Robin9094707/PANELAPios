@@ -9,13 +9,13 @@ private final class WidgetRedirect: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }
 enum WidgetNetwork {
-    static func refresh(_ initial: WidgetServer) async -> WidgetServer {
+    static func refresh(_ initial: WidgetServer, session suppliedSession: URLSession? = nil, credential suppliedCredential: WidgetCredential? = nil) async -> WidgetServer {
         var record = initial
         guard initial.backgroundRefresh else { return record }
-        guard let secret = WidgetVault.read(record.id) ?? WidgetVault.read(record.panel), let base = URL(string: record.panel), base.scheme == "https", base.user == nil, base.password == nil else { record.issue = "Widget-Zugang in der App erneuern"; return record }
+        guard let secret = suppliedCredential.map({ String(decoding: try! JSONEncoder().encode($0), as: UTF8.self) }) ?? WidgetVault.read(record.id) ?? WidgetVault.read(record.panel), let base = URL(string: record.panel), base.scheme == "https", base.user == nil, base.password == nil else { record.issue = "Widget-Zugang in der App erneuern"; return record }
         let credential = (try? JSONDecoder().decode(WidgetCredential.self, from: Data(secret.utf8))) ?? WidgetCredential(provider: "pterodactyl", secret: secret)
         let config = URLSessionConfiguration.ephemeral; config.timeoutIntervalForRequest = 8; config.timeoutIntervalForResource = 12; config.urlCache = nil
-        let session = URLSession(configuration: config, delegate: WidgetRedirect(), delegateQueue: nil)
+        let session = suppliedSession ?? URLSession(configuration: config, delegate: WidgetRedirect(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         func load(_ request: URLRequest, pin: String = "") async throws -> JSON {
             let data: Data, response: URLResponse
