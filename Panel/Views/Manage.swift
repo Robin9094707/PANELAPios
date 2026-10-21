@@ -10,6 +10,7 @@ struct ManageView: View {
     var prefix: String { "servers/\(server.id)" }
     var body: some View {
         List {
+            if api.amp == nil {
             Section("Simplex Admin Suite") {
                 if suite.configured, let live {
                     NavigationLink { IntegratedPlayersView(model: suite, live: live, initialFilter: .online) } label: { Label("Online-Spieler & Geräte", systemImage: "person.2.fill") }
@@ -19,12 +20,18 @@ struct ManageView: View {
                 }
                 NavigationLink { SuiteHubView(panel: api, server: server, model: suite) } label: { Label("Admin Suite", systemImage: "shield.lefthalf.filled") }.accessibilityIdentifier("adminSuiteHub")
             }
+            }
+            if api.amp == nil || server.data["invocation"].string.lowercased().contains("minecraft") {
             Section("Minecraft") {
                 if !suite.configured, let live { NavigationLink { PlayerManagerView(api: api, server: server, live: live) } label: { Label("Spieler-Manager", systemImage: "person.crop.circle.badge.checkmark") } }
+                NavigationLink { ModsView(api: api, server: server) } label: { Label("Mods & Mod-Updates", systemImage: "shippingbox") }.requiresAccess(api, server.id, "file.read")
                 NavigationLink { PluginsView(api: api, server: server) } label: { Label("Plugins & JAR-Dateien", systemImage: "puzzlepiece.extension") }.requiresAccess(api, server.id, "file.read")
                 NavigationLink { MinecraftPropertiesView(api: api, server: server) } label: { Label("Minecraft & Welt-Einstellungen", systemImage: "globe") }.requiresAccess(api, server.id, "file.read-content")
             }
+            }
             if api.isKinetic { Section("Provider-Funktionen") { NavigationLink { ProviderHub(api: api, server: server) } label: { Label("Kinetic-Erweiterungen", systemImage: "sparkles") } } }
+            if api.amp != nil { Section("AMP") { NavigationLink { AMPManageView(api: api, server: server) } label: { Label("Instanz, Einstellungen & Aufgaben", systemImage: "server.rack") } } }
+            if api.amp == nil {
             Section("Server verwalten") {
                 NavigationLink { SchedulesView(api: api, server: server) } label: { Label("Zeitpläne", systemImage: "calendar.badge.clock") }.requiresAccess(api, server.id, "schedule.read")
                 NavigationLink { DatabasesView(api: api, server: server) } label: { Label("Datenbanken", systemImage: "externaldrive.connected.to.line.below") }.requiresAccess(api, server.id, "database.read")
@@ -42,6 +49,7 @@ struct ManageView: View {
                 LabeledContent("Host", value: server.data["sftp_details"]["ip"].string).textSelection(.enabled)
                 LabeledContent("Port", value: server.data["sftp_details"]["port"].string)
                 Text("Der SFTP-Benutzername und das Passwort richten sich nach deinem Panel-Account. Der Client-API-Schlüssel ist kein SFTP-Passwort.").font(.caption).foregroundStyle(.secondary)
+            }
             }
             Section {
                 NavigationLink { JSONDetails(title: "Serverdetails", data: server.data) } label: { Label("Alle Serverinformationen", systemImage: "info.circle") }

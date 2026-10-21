@@ -49,7 +49,7 @@ struct ServerView: View {
             if suite.configured {
                 Tab("Statistiken", systemImage: "chart.bar.xaxis", value: 5) { SuiteStatisticsView(model: suite, live: live) }
             }
-            Tab("Backups", systemImage: "externaldrive.badge.timemachine", value: 3) { AccessBoundary(access: api.access, server: server.id, permission: "backup.read") { BackupsView(api: api, server: server) } }
+            Tab("Backups", systemImage: "externaldrive.badge.timemachine", value: 3) { AccessBoundary(access: api.access, server: server.id, permission: "backup.read") { if api.amp != nil { AMPBackupsView(api: api, server: server) } else { BackupsView(api: api, server: server) } } }
             Tab("Verwalten", systemImage: "square.grid.2x2", value: 4) { ManageView(api: api, server: server, suite: suite, live: live) }
         }.navigationTitle(server.name).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Workspace anpassen", systemImage: "rectangle.3.group") { editLayout = true }.accessibilityIdentifier("editServerLayout") }; ToolbarItem(placement: .topBarTrailing) { Button("Server aktualisieren", systemImage: "arrow.clockwise") { Task { await refreshServer() } } }; ToolbarItem(placement: .topBarTrailing) { powerMenu } }

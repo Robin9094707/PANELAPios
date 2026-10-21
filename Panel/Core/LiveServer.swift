@@ -58,6 +58,10 @@ import Combine
             }
             return
         }
+        if let amp = api.amp {
+            await streamAMP(amp, api: api, server: server, minecraft: minecraft, generation: generation)
+            return
+        }
         // REST fallback and WebSocket run together; cancellation tears both down.
         async let poll: Void = polling(api: api, server: server, generation: generation)
         async let playerPoll: Void = pollingPlayers(api: api, server: server, enabled: minecraft, generation: generation)
@@ -114,6 +118,33 @@ import Combine
         }
         if runID == generation { socket?.cancel(with: .goingAway, reason: nil); connected = false }
         _ = await (poll, playerPoll, tpsPoll)
+    }
+    private func streamAMP(_ amp: AMPAPI, api: PanelAPI, server: Server, minecraft: Bool, generation: UUID) async {
+        var failures = 0, lastPlayers = Date.distantPast
+        while !Task.isCancelled && active && runID == generation {
+            do {
+                let update = try await amp.call("Core/GetUpdates", server: server.id)
+                guard runID == generation, !Task.isCancelled else { return }
+                let status: JSON
+                if update["Status"]["State"] != .null { status = update["Status"] }
+                else { status = try await amp.call("Core/GetStatus", server: server.id) }
+                guard runID == generation, !Task.isCancelled else { return }
+                let resource = AMPAPI.resources(status)
+                state = resource["current_state"].string; stats = resource["resources"]; sample()
+                for row in update["ConsoleEntries"].array {
+                    let text = row["Contents"].string.isEmpty ? row.string : row["Contents"].string
+                    if !text.isEmpty { receiveConsole(text) }
+                }
+                connected = true; connection = "AMP verbunden"; issue = nil; failures = 0
+                if minecraft, state == "running", Date().timeIntervalSince(lastPlayers) >= 30 {
+                    lastPlayers = Date(); await refreshPlayers(api: api, server: server)
+                }
+            } catch {
+                if Task.isCancelled || runID != generation { return }
+                connected = false; connection = "AMP getrennt · erneuter Versuch"; issue = error.localizedDescription; failures += 1
+            }
+            do { try await Task.sleep(for: .seconds(failures == 0 ? 2 : min(30, failures * 3))) } catch { return }
+        }
     }
     private func polling(api: PanelAPI, server: Server, generation: UUID) async {
         while !Task.isCancelled && active && runID == generation {

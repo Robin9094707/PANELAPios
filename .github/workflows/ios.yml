@@ -179,10 +179,12 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          App-only update with compact console icons, chat/error/join/leave filters, faster log rendering, wrapping Suite labels and native statistics with device-to-player navigation.
-          
-          Install over the existing app using the same signing identity and bundle ID. Do not uninstall first. The IPA is unsigned and needs your usual signing method. Admin Suite 8.3.0 is unchanged.
-          
-          Source backup: backup/v1.7.0-before-console-statistics.
+          Adds CubeCoders AMP alongside existing Pterodactyl profiles: controller/direct-instance login, instance discovery and service controls, server power, console, resources, file management, native AMP settings, tasks and backups. Adds local Minecraft mod installation and identity-checked updates for Fabric, Quilt, Forge and NeoForge, with verified staging and previous-JAR backups.
+
+          Install over the existing app using the same signing identity and bundle ID. Do not uninstall first. Existing profiles default to Pterodactyl; saved app data is retained. The IPA is unsigned and needs your usual signing method. Admin Suite 8.3.0 is unchanged and remains Pterodactyl-only.
+
+          AMP requires an HTTPS panel URL and an AMP account with the relevant instance permissions. API/module availability and server compatibility still apply. Mod uploads/reads are limited to 128 MiB per JAR. No live customer AMP server was used during CI validation.
+
+          Source backup: backup/v1.8.0-before-amp.
           NOTES
           gh release create "$tag" "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest

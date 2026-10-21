@@ -6,6 +6,16 @@ struct PanelProfile: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var name: String
     var url: String
+    var provider: PanelProvider = .pterodactyl
+    enum CodingKeys: String, CodingKey { case id, name, url, provider }
+    init(id: UUID = UUID(), name: String, url: String, provider: PanelProvider = .pterodactyl) {
+        self.id = id; self.name = name; self.url = url; self.provider = provider
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id); name = try c.decode(String.self, forKey: .name); url = try c.decode(String.self, forKey: .url)
+        provider = try c.decodeIfPresent(PanelProvider.self, forKey: .provider) ?? .pterodactyl
+    }
 }
 enum Vault {
     private static let service = "eu.simplexsmp.panel.credentials"
@@ -117,7 +127,12 @@ enum Vault {
     }
     func connectSelected() {
         guard let p = active else { api = nil; servers = []; return }
-        do { api = PanelAPI(base: try PanelAPI.normalize(p.url), key: try readSecret(p.id)); servers = []; error = nil }
+        do {
+            let secret = try readSecret(p.id)
+            let amp = p.provider == .amp ? try AMPAPI(base: AMPAPI.normalize(p.url), secret: secret) : nil
+            amp?.persistCredential = { try Vault.save($0, id: p.id) }
+            api = PanelAPI(base: try PanelAPI.normalize(p.url), key: secret, amp: amp); servers = []; error = nil
+        }
         catch { api = nil; servers = []; presence = [:]; self.error = error.localizedDescription }
     }
     func select(_ id: UUID) { presence = [:]; demo = false; selected = id; persist(); connectSelected() }
@@ -130,7 +145,21 @@ enum Vault {
         let rows = try await client.list("")
         let profile = PanelProfile(name: name.isEmpty ? url.host! : name, url: url.absoluteString)
         try Vault.save(token, id: profile.id)
-        profiles.append(profile); selected = profile.id; demo = false; api = client; servers = rows.map { Server(data: $0) }; persist()
+        profiles.append(profile); selected = profile.id; demo = false; api = client; servers = rows.map { Server(data: $0) }; presence = [:]; persist()
+    }
+    func addAMP(name: String, address: String, username: String, password: String, otp: String) async throws {
+        let url = try AMPAPI.normalize(address)
+        guard !username.trimmingCharacters(in: .whitespaces).isEmpty, !password.isEmpty else { throw PanelError(message: "AMP-Benutzername und Passwort eingeben.") }
+        let secret = AMPCredentials(username: username.trimmingCharacters(in: .whitespaces), password: password).encoded
+        let profile = PanelProfile(name: name.isEmpty ? url.host! : name, url: url.absoluteString, provider: .amp)
+        let amp = try AMPAPI(base: url, secret: secret, otp: otp)
+        try Vault.save(secret, id: profile.id)
+        amp.persistCredential = { try Vault.save($0, id: profile.id) }
+        do {
+            let client = PanelAPI(base: url, key: "", amp: amp)
+            let rows = try await client.list("")
+            profiles.append(profile); selected = profile.id; demo = false; api = client; servers = rows.map { Server(data: $0) }; presence = [:]; persist()
+        } catch { Vault.delete(profile.id); throw error }
     }
     func remove(_ profile: PanelProfile) {
         WidgetPublisher.remove(panel: profile.url)

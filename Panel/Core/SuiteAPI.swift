@@ -16,7 +16,7 @@ struct SuiteConnection: Codable, Identifiable, Equatable {
     @Published private(set) var values: [SuiteConnection]
     private let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) { self.defaults = defaults; values = (try? JSONDecoder().decode([SuiteConnection].self, from: defaults.data(forKey: "adminSuite.connections.v1") ?? Data())) ?? [] }
-    func get(_ api: PanelAPI, _ server: Server) -> SuiteConnection? { values.first { $0.panel == api.base.absoluteString && $0.server == server.id } }
+    func get(_ api: PanelAPI, _ server: Server) -> SuiteConnection? { guard api.amp == nil else { return nil }; return values.first { $0.panel == api.base.absoluteString && $0.server == server.id } }
     func save(_ record: SuiteConnection, token: String) throws {
         try Vault.save(token, id: record.id)
         var next = values; next.removeAll { $0.panel == record.panel && $0.server == record.server }; next.append(record)

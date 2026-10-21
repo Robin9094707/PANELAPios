@@ -123,7 +123,7 @@ struct HomeView: View {
                 LabeledContent("Panel", value: store.demo ? "Demo" : store.active?.name ?? "Panel")
                 Text(api.base.absoluteString).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 LabeledContent("Server", value: String(store.servers.count))
-                NavigationLink("Account & Sicherheit") { AccountView(api: api) }
+                NavigationLink(api.amp == nil ? "Account & Sicherheit" : "AMP-Zugang") { if api.amp != nil { AMPAccountView(api: api) } else { AccountView(api: api) } }
             }.frame(maxWidth: .infinity, alignment: .leading).card()
         default: EmptyView()
         }
@@ -185,6 +185,9 @@ struct AddPanelView: View {
     @State private var name = ""
     @State private var url = ""
     @State private var key = ""
+    @State private var provider = PanelProvider.pterodactyl
+    @State private var username = ""
+    @State private var otp = ""
     @State private var error: String?
     @State private var busy = false
     var body: some View {
@@ -194,22 +197,29 @@ struct AddPanelView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Image(systemName: "link.circle.fill").font(.system(size: 42)).foregroundStyle(.teal)
                         Text("Verbinde dein Panel").font(.title2.bold())
-                        Text("Verwende die Webadresse, mit der du die Pterodactyl-Konsole im Browser öffnest.").foregroundStyle(.secondary)
+                        Text("Verwende die HTTPS-Webadresse deines Pterodactyl- oder AMP-Panels.").foregroundStyle(.secondary)
                     }.padding(.vertical, 8)
                 }
+                Section("Anbieter") { Picker("Panel", selection: $provider) { ForEach(PanelProvider.allCases) { Text($0.title).tag($0) } }.disabled(busy) }
                 Section {
                     TextField("Name, z. B. Kinetic", text: $name)
                     TextField("https://panel.example.com", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("panelURL")
+                    if provider == .amp {
+                        TextField("AMP-Benutzername", text: $username).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        SecureField("AMP-Passwort", text: $key).privacySensitive()
+                        TextField("2FA-Code, falls aktiviert", text: $otp).keyboardType(.numberPad).privacySensitive()
+                    } else {
                     SecureField("Client-API-Schlüssel (ptlc_…)", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive().accessibilityIdentifier("apiKey")
-                } header: { Text("Zugang") } footer: { Text("Im Panel: Account → API Credentials → Create API Key. Verwende einen Client-Schlüssel. Application-Schlüssel sind für die Administration des gesamten Panels gedacht.") }
+                    }
+                } header: { Text("Zugang") } footer: { Text(provider == .amp ? "1. AMP-Adresse eintragen: zentraler Controller oder direkte Instanz. 2. Mit deinem AMP-Account anmelden, bei 2FA den aktuellen Code ergänzen. 3. Der Account braucht Zugriff auf die Instanzen sowie Rechte für Konsole, Dateien und Steuerung. Die API-Dokumentation findest du unter deiner Panel-Adresse + /API." : "Im Panel: Account → API Credentials → Create API Key. Verwende einen Client-Schlüssel. Application-Schlüssel sind für die Administration des gesamten Panels gedacht.") }
                 Section {
-                    Button { connect() } label: { HStack { Spacer(); if busy { ProgressView() }; Text(busy ? "Verbindung prüfen …" : "Verbinden").bold(); Spacer() } }.disabled(busy || url.isEmpty || key.isEmpty)
-                } footer: { Text("Nur HTTPS. Dein Schlüssel wird ausschließlich an dieses Panel gesendet und lokal im iOS-Schlüsselbund gespeichert.") }
+                    Button { connect() } label: { HStack { Spacer(); if busy { ProgressView() }; Text(busy ? "Verbindung prüfen …" : "Verbinden").bold(); Spacer() } }.disabled(busy || url.isEmpty || key.isEmpty || (provider == .amp && username.isEmpty))
+                } footer: { Text("Nur HTTPS. Zugangsdaten werden ausschließlich an dein Panel gesendet und im iOS-Schlüsselbund gespeichert. AMP-Dauertokens ersetzen nach Möglichkeit das Passwort.") }
             }.panelScreen().navigationTitle("Panel hinzufügen").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() }.disabled(busy) } }.errorAlert($error).interactiveDismissDisabled(busy)
         }
     }
-    func connect() { busy = true; Task { do { try await store.add(name: name, address: url, key: key); key = ""; dismiss() } catch { self.error = error.localizedDescription }; busy = false } }
+    func connect() { busy = true; Task { do { if provider == .amp { try await store.addAMP(name: name, address: url, username: username, password: key, otp: otp) } else { try await store.add(name: name, address: url, key: key) }; key = ""; otp = ""; dismiss() } catch { self.error = error.localizedDescription }; busy = false } }
 }
 struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
@@ -226,13 +236,13 @@ struct SettingsView: View {
                 Section("Widgets & Übertragungen") { NavigationLink("Server-Widgets einrichten") { WidgetSettingsView() }; TransferLink() }
                 Section("Sicherheit") { Toggle("App mit Face ID / Gerätecode sperren", isOn: $store.biometricLock) }
                 Section("Gespeicherte Panels") {
-                    ForEach(store.profiles) { p in HStack { VStack(alignment: .leading) { Text(p.name); Text(p.url).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Entfernen", systemImage: "trash", role: .destructive) { remove = p }.labelStyle(.iconOnly) } }
+                    ForEach(store.profiles) { p in HStack { VStack(alignment: .leading) { Text(p.name); Text(p.provider.title + " · " + p.url).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Entfernen", systemImage: "trash", role: .destructive) { remove = p }.labelStyle(.iconOnly) } }
                     if store.profiles.isEmpty { Text("Noch kein Panel gespeichert").foregroundStyle(.secondary) }
                 }
-                if let api = store.api { Section("Account") { NavigationLink("Account & Sicherheit") { AccountView(api: api) } } }
+                if let api = store.api { Section("Account") { NavigationLink(api.amp == nil ? "Account & Sicherheit" : "AMP-Zugang") { if api.amp != nil { AMPAccountView(api: api) } else { AccountView(api: api) } } } }
                 Section {
                     LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")
-                    Text("Unabhängiger Pterodactyl-Client. Funktionen und Limits richten sich nach deinem Hoster und deinen Panel-Berechtigungen.").font(.footnote).foregroundStyle(.secondary)
+                    Text("Unabhängiger Client für Pterodactyl und CubeCoders AMP. Funktionen und Limits richten sich nach deinem Hoster und deinen Panel-Berechtigungen.").font(.footnote).foregroundStyle(.secondary)
                 }
             }.panelScreen().navigationTitle("Einstellungen").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
                 .confirmationDialog("Gespeicherten Zugang entfernen?", isPresented: Binding(get: { remove != nil }, set: { if !$0 { remove = nil } }), titleVisibility: .visible) {

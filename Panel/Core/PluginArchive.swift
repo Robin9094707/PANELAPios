@@ -56,6 +56,13 @@ struct PluginDescriptor: Equatable, Sendable {
 }
 enum PluginArchive {
     static func descriptor(_ data: Data) throws -> PluginDescriptor {
+        let descriptors = try metadata(data, names: ["plugin.yml", "paper-plugin.yml"])
+        guard let yaml = descriptors["paper-plugin.yml"] ?? descriptors["plugin.yml"] else { throw PanelError(message: "Die JAR enthält weder plugin.yml noch paper-plugin.yml. Keine Paper/Bukkit-Plugin-Datei.") }
+        var descriptor = try PluginDescriptor.parse(yaml)
+        descriptor.descriptorFile = descriptors["paper-plugin.yml"] != nil ? "paper-plugin.yml" : "plugin.yml"
+        return descriptor
+    }
+    static func metadata(_ data: Data, names: Set<String>) throws -> [String: String] {
         guard data.count >= 22 && data.count <= 128 * 1024 * 1024 else { throw PanelError(message: "Keine gültige Plugin-JAR oder größer als 128 MiB.") }
         func n(_ offset: Int, _ count: Int) throws -> Int { guard offset >= 0 && offset + count <= data.count else { throw PanelError(message: "Beschädigtes ZIP-Verzeichnis.") }; return Int(data.uintLE(offset, count)) }
         var end: Int?
@@ -69,7 +76,7 @@ enum PluginArchive {
             let nameCount = try n(cursor + 28, 2), extra = try n(cursor + 30, 2), comment = try n(cursor + 32, 2)
             guard cursor + 46 + nameCount + extra + comment <= data.count else { throw PanelError(message: "Abgeschnittener ZIP-Eintrag.") }
             let name = String(decoding: data[cursor + 46..<cursor + 46 + nameCount], as: UTF8.self)
-            if ["plugin.yml", "paper-plugin.yml"].contains(name) {
+            if names.contains(name) {
                 guard descriptors[name] == nil, try n(cursor + 8, 2) & 1 == 0 else { throw PanelError(message: "Mehrdeutige oder verschlüsselte Plugin-Metadaten.") }
                 let packed = try n(cursor + 20, 4), size = try n(cursor + 24, 4), method = try n(cursor + 10, 2), local = try n(cursor + 42, 4), crc = try n(cursor + 16, 4)
                 guard size <= 1024 * 1024, packed <= 2 * 1024 * 1024, try n(local, 4) == 0x04034b50 else { throw PanelError(message: "Plugin-Metadaten zu groß oder beschädigt.") }
@@ -82,10 +89,7 @@ enum PluginArchive {
             }
             cursor += 46 + nameCount + extra + comment
         }
-        guard let yaml = descriptors["paper-plugin.yml"] ?? descriptors["plugin.yml"] else { throw PanelError(message: "Die JAR enthält weder plugin.yml noch paper-plugin.yml. Keine Paper/Bukkit-Plugin-Datei.") }
-        var descriptor = try PluginDescriptor.parse(yaml)
-        descriptor.descriptorFile = descriptors["paper-plugin.yml"] != nil ? "paper-plugin.yml" : "plugin.yml"
-        return descriptor
+        return descriptors
     }
     static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 }

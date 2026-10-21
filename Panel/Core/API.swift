@@ -24,12 +24,14 @@ final class PanelAPI {
     let plugins = PluginCatalog()
     let serverIcons = ServerIconCache()
     let base: URL
+    let amp: AMPAPI?
+    var provider: PanelProvider { amp == nil ? .pterodactyl : .amp }
     private let key: String
     var isKinetic: Bool { base.host?.lowercased() == "kineticpanel.net" || base.host?.lowercased().hasSuffix(".kineticpanel.net") == true }
     let demo: Bool
     private let session: URLSession
-    init(base: URL, key: String, demo: Bool = false, session: URLSession? = nil) {
-        self.base = base; self.key = key; self.demo = demo
+    init(base: URL, key: String, demo: Bool = false, session: URLSession? = nil, amp: AMPAPI? = nil) {
+        self.base = base; self.key = key; self.demo = demo; self.amp = amp
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 30; config.timeoutIntervalForResource = 3600
         config.urlCache = nil
@@ -64,6 +66,7 @@ final class PanelAPI {
             return try JSONEncoder().encode(Demo.response(path, query: query))
         }
         guard access.allows(path: path, method: method, body: body) else { throw PanelError(message: "Keine Berechtigung für diese Aktion.") }
+        if let amp { return try JSONEncoder().encode(try await amp.request(path, method: method, query: query, body: body, text: text, binary: binary)) }
         var request = URLRequest(url: try url(path, query: query))
         request.httpMethod = method
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
@@ -140,6 +143,7 @@ final class PanelAPI {
         _ = try await request(path, method: method, body: try JSON.from(body))
     }
     func fileData(server: String, path: String, limit: Int = 8 * 1024 * 1024) async throws -> Data {
+        if let amp { return try await amp.fileData(server: server, path: path, limit: limit) }
         if demo && ["dat", "nbt"].contains(URL(fileURLWithPath: path).pathExtension) { return try Demo.playerData() }
         if demo { return Data("# Simplex SMP\nserver-port=25565\nmotd=Welcome to Simplex SMP\nmax-players=60\nonline-mode=true\nview-distance=10\n".utf8) }
         let signed = try await request("servers/\(server)/files/download", query: ["file": path]).attributes["url"].string
@@ -154,9 +158,15 @@ final class PanelAPI {
         guard let text = String(data: data, encoding: .utf8), !text.contains("\0") else { throw PanelError(message: "Diese Datei ist binär. Öffne .dat/.nbt im NBT-Editor oder lade sie herunter.") }
         return text
     }
-    func shareWidgetCredential() throws { try WidgetVault.save(key, panel: base.absoluteString) }
+    func shareWidgetCredential() throws { guard amp == nil else { throw PanelError(message: "AMP-Widgets verwenden die letzten Messwerte aus der App.") }; try WidgetVault.save(key, panel: base.absoluteString) }
     func upload(server: String, directory: String, file: URL) async throws {
         if demo { throw PanelError(message: "Uploads sind im Demomodus deaktiviert.") }
+        if let amp {
+            let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard size <= 128 * 1024 * 1024 else { throw PanelError(message: "AMP-Uploadlimit: 128 MiB pro Datei.") }
+            let data = try await Task.detached { try Data(contentsOf: file, options: .mappedIfSafe) }.value
+            try await amp.write(server: server, path: pathJoin(directory, file.lastPathComponent), data: data); return
+        }
         let signed = try await request("servers/\(server)/files/upload").attributes["url"].string
         guard var c = URLComponents(string: signed), c.scheme == "https" else { throw PanelError(message: "Keine sichere Upload-URL erhalten.") }
         var q = c.queryItems ?? []; q.append(URLQueryItem(name: "directory", value: directory)); c.queryItems = q

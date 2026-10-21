@@ -96,14 +96,16 @@ struct FilesView: View {
         if entry["is_file"].bool {
             Button("Bearbeiten", systemImage: "pencil") { open(entry) }.requiresAccess(api, server.id, "file.read-content")
             Button("Herunterladen", systemImage: "square.and.arrow.down") { download(entry) }.requiresAccess(api, server.id, "file.read-content")
+            if api.amp == nil {
             Button("Kopieren", systemImage: "doc.on.doc") { operation = Operation(title: "Datei kopieren", path: prefix + "/copy", fixed: ["location": .string(pathJoin(root, name))], submit: "Kopieren") }.requiresRequest(api, prefix + "/copy", method: "POST")
+            }
             Button("Entpacken", systemImage: "archivebox") { operation = Operation(title: "Archiv entpacken", path: prefix + "/decompress", fixed: ["root": .string(root), "file": .string(name)], submit: "Entpacken") }.requiresRequest(api, prefix + "/decompress", method: "POST")
         }
         if !entry["is_file"].bool { Button("Ordner anpinnen", systemImage: "pin") { workspace.toggleFolder(api, server, pathJoin(root, name)) } }
         Button("Verschieben …", systemImage: "folder") { move([name]) }.requiresAccess(api, server.id, "file.update")
         Button("Umbenennen", systemImage: "pencil.line") { rename(name) }.requiresAccess(api, server.id, "file.update")
         Button("Komprimieren", systemImage: "archivebox.fill") { compress([name]) }.requiresAccess(api, server.id, "file.archive")
-        Button("Dateirechte", systemImage: "lock.doc") { chmod(name) }.requiresAccess(api, server.id, "file.update")
+        if api.amp == nil { Button("Dateirechte", systemImage: "lock.doc") { chmod(name) }.requiresAccess(api, server.id, "file.update") }
         Button("Löschen", systemImage: "trash", role: .destructive) { delete([name]) }.requiresAccess(api, server.id, "file.delete")
     }
     func filter() async {
@@ -159,6 +161,13 @@ struct FilesView: View {
         transfer = true
         Task { defer { transfer = false }; do {
             guard !api.demo else { throw PanelError(message: "Downloads sind im Demomodus deaktiviert.") }
+            if let amp = api.amp {
+                let data = try await amp.fileData(server: server.id, path: pathJoin(root, entry["name"].string), limit: 128 * 1024 * 1024)
+                let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let file = folder.appendingPathComponent(URL(fileURLWithPath: entry["name"].string).lastPathComponent)
+                try data.write(to: file); share = ShareItem(url: file); return
+            }
             let result = try await api.request(prefix + "/download", query: ["file": pathJoin(root, entry["name"].string)])
             try TransferManager.shared.download(BackupInfo.downloadURL(result, base: api.base), filename: entry["name"].string, context: server.name + " · " + root, source: DownloadSource(panel: api.base.absoluteString, server: server.id, kind: "file", resource: pathJoin(root, entry["name"].string)))
             showTransfers = true

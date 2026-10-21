@@ -33,7 +33,7 @@ struct WidgetSettingsView: View {
             .sheet(item: $pending) { server in
                 NavigationStack {
                     Form {
-                        Section { Text(server.name).font(.headline); Toggle("Im Hintergrund per API aktualisieren", isOn: $background) } footer: { Text("Dafür wird dein Client-Schlüssel zusätzlich im gemeinsamen iOS-Schlüsselbund für die Widget-Erweiterung gespeichert. Widgets können Serverdaten auch bei gesperrtem Gerät anzeigen. Die App-Sperre sperrt diese ausdrücklich freigegebenen Widget-Daten nicht.") }
+                        Section { Text(server.name).font(.headline); Toggle("Im Hintergrund per API aktualisieren", isOn: $background).disabled(store.api?.amp != nil) } footer: { Text("Dafür wird dein Client-Schlüssel zusätzlich im gemeinsamen iOS-Schlüsselbund für die Widget-Erweiterung gespeichert. Widgets können Serverdaten auch bei gesperrtem Gerät anzeigen. Die App-Sperre sperrt diese ausdrücklich freigegebenen Widget-Daten nicht.") }
                         Button("Widget-Server speichern") { Task { await add(server) } }
                     }.panelScreen().navigationTitle("Widget einrichten").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { pending = nil } } }
                 }.presentationDetents([.medium, .large])
