@@ -15,7 +15,7 @@ final class SecurityLogOutbox implements AutoCloseable {
     private final Function<Message,Boolean> send;
     private final Consumer<String> errors;
     private final Predicate<String> enabled;
-    private long inFlight=-1, lastWarning;
+    private long inFlight=-1, lastWarning, epoch;
     private volatile String storageError="", deliveryState="Bereit";
     private volatile long lastSuccess, nextAttempt;
     private final ScheduledExecutorService worker=Executors.newSingleThreadScheduledExecutor(r->{Thread t=new Thread(r,"Simplex-private-dossiers");t.setDaemon(true);return t;});
@@ -56,8 +56,9 @@ final class SecurityLogOutbox implements AutoCloseable {
     }
     private void tick(){
         for(int batch=0;batch<8&&!Thread.currentThread().isInterrupted();batch++)try{
-            long id=-1;int attempt=0;Message message=null;
+            long id=-1, deliveryEpoch;int attempt=0;Message message=null;
             synchronized(this){
+                deliveryEpoch=epoch;
                 try(PreparedStatement s=db.prepareStatement("SELECT * FROM pending WHERE due<=? ORDER BY due,id")){
                     s.setLong(1,System.currentTimeMillis());try(ResultSet r=s.executeQuery()){while(r.next()){
                         if(!enabled.test(r.getString("channel")))continue;
@@ -71,7 +72,7 @@ final class SecurityLogOutbox implements AutoCloseable {
             boolean delivered=false;
             try{delivered=Boolean.TRUE.equals(send.apply(message));}catch(RuntimeException e){deliveryState="Versandfehler: "+e.getClass().getSimpleName();}
             long due=System.currentTimeMillis()+Math.min(900000,5000L*(1L<<Math.min(8,attempt)));
-            synchronized(this){try(PreparedStatement s=db.prepareStatement(delivered?"DELETE FROM pending WHERE id=?":"UPDATE pending SET due=?,attempt=? WHERE id=?")){
+            synchronized(this){if(deliveryEpoch!=epoch){inFlight=-1;continue;}try(PreparedStatement s=db.prepareStatement(delivered?"DELETE FROM pending WHERE id=?":"UPDATE pending SET due=?,attempt=? WHERE id=?")){
                 if(delivered)s.setLong(1,id);else{s.setLong(1,due);s.setInt(2,Math.min(10000,attempt+1));s.setLong(3,id);}s.executeUpdate();
             }finally{inFlight=-1;}}
             if(delivered){lastSuccess=System.currentTimeMillis();deliveryState="Versand erfolgreich";nextAttempt=0;}
@@ -84,7 +85,7 @@ final class SecurityLogOutbox implements AutoCloseable {
         }catch(SQLException e){return SimplexAdminSuite.appMap("pending",-1,"storageError","SQLite-Fehler "+e.getErrorCode());}
     }
     synchronized void retry(){try(Statement s=db.createStatement()){s.executeUpdate("UPDATE pending SET due=0,attempt=0");nextAttempt=System.currentTimeMillis();}catch(SQLException e){throw new IllegalArgumentException("Protokollspeicher nicht verfügbar");}}
-    synchronized boolean clear(){try(Statement s=db.createStatement()){s.executeUpdate("DELETE FROM pending");return true;}catch(SQLException e){return false;}}
+    synchronized boolean clear(){try(Statement s=db.createStatement()){s.executeUpdate("DELETE FROM pending");epoch++;return true;}catch(SQLException e){return false;}}
     synchronized int pending(){return ((Number)status().get("pending")).intValue();}
     @Override public void close(){worker.shutdownNow();try{worker.awaitTermination(25,TimeUnit.SECONDS);}catch(InterruptedException e){Thread.currentThread().interrupt();}synchronized(this){try{db.close();}catch(SQLException e){errors.accept("Protokollwarteschlange konnte nicht geschlossen werden");}}}
 }

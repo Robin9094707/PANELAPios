@@ -34,6 +34,12 @@ public final class Outbox840Harness {
             pause(box);box.enqueue(message("old"));Thread sender=new Thread(()->{try{tick(box);}catch(Exception e){throw new RuntimeException(e);}});sender.start();check(started.await(3,TimeUnit.SECONDS),"sender started");
             check(box.enqueue(message("new")),"new observation accepted during HTTP request");check(box.pending()==2,"in-flight row cannot coalesce with newer observation");finish.countDown();sender.join(5000);check(!sender.isAlive(),"bounded send completes");check(box.pending()==0,"newer observation delivered separately, not lost to old ACK");
         }
+        CountDownLatch oldStarted=new CountDownLatch(1),oldFinish=new CountDownLatch(1);AtomicInteger deliveries=new AtomicInteger();
+        try(SecurityLogOutbox box=new SecurityLogOutbox(dir.resolve("clear-race.db"),m->{if(deliveries.incrementAndGet()==1){oldStarted.countDown();try{oldFinish.await(5,TimeUnit.SECONDS);}catch(InterruptedException e){Thread.currentThread().interrupt();}return true;}return false;},errors::add)){
+            pause(box);box.enqueue(message("before-clear"));Thread sender=new Thread(()->{try{tick(box);}catch(Exception e){throw new RuntimeException(e);}});sender.start();check(oldStarted.await(3,TimeUnit.SECONDS),"old HTTP send started");
+            check(box.clear(),"explicit manual clear succeeds");check(box.enqueue(message("after-clear")),"new event accepted after clear");oldFinish.countDown();sender.join(5000);
+            check(box.pending()==1,"old HTTP ACK cannot delete a reused row ID after explicit clear");
+        }
         ClientEventWindow window=new ClientEventWindow(10000);var event=new ClientEventWindow.Event(UUID.randomUUID(),"Player","event","detail","{}",0);var first=window.offer(event);window.requeue(first,0);check(window.flush(59999).isEmpty(),"failed immediate delivery waits full 60 seconds");check(window.flush(60000).size()==1,"retained window retries at 60 seconds");
         System.out.println("PASS "+checks+" SQLite/queue/migration/retry/ACK regression checks");
     }

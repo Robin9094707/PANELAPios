@@ -11,6 +11,16 @@ A native SwiftUI client for **your own Pterodactyl hosting account**, with Liqui
 
 Use the URL containing the web console, **not** the Minecraft game address or the provider's billing/marketing website. The app supports standard Pterodactyl 1.x Client API endpoints. Providers can disable endpoints or place browser challenges in front of the API; these restrictions cannot be bypassed by the app. Permissions and limits are enforced by the panel.
 
+## Version 2.1.0 / Admin Suite 8.4.0
+
+The Suite hub and Statistics tab now open **Server & Betrieb** with structured Minecraft TPS/MSPT, JVM RAM/uptime, saved playtime/AFK/session totals, world settings, installed plugin versions and private Discord outbox diagnostics. Older Suite versions retain their existing navigation through feature detection.
+
+Full-access Suite keys can change loaded-world time, weather, difficulty, PvP and autosave or retry saved private logs through the existing single-use confirmation flow. Read/manage keys cannot perform these new operations. API keys, HTTPS pins and existing app/server data are retained.
+
+Admin Suite repairs failed-delivery backoff, sender exceptions and ACK races, coalesces repeated pending observations and preserves the existing SQLite queue during upgrade. Invalid Discord permissions or channel configuration remain visible in diagnostics; private-channel validation is mandatory.
+
+The GitHub workflow builds and tests both products and publishes the unsigned IPA, plugin JAR and complete plugin source after success. Installation/API details: [Admin Suite 8.4.0](Companion/AdminSuite/UPDATE-8.4.0.md). Source rollback: [`backup/before-suite-8.4-panel-2.1`](https://github.com/Robin9094707/PANELAPios/tree/backup/before-suite-8.4-panel-2.1).
+
 ## Features
 
 - Server list across saved panel accounts, search and pull to refresh
