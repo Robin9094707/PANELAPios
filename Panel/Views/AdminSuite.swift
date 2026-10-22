@@ -75,6 +75,11 @@ struct SuiteHubView: View {
                     NavigationLink { SuiteReadView(suite: api, path: "server.status", title: "Serverstatus") } label: { Label("Server & Neustartstatus", systemImage: "server.rack") }
                 }
                 
+                if model.health["features"].array.contains(.string("overview")) {
+                    Section("Serverbetrieb & Statistiken") {
+                        NavigationLink { SuiteOperationsView(suite: api, actions: model.actions) } label: { Label("Server, Statistiken & Discord-Protokolle", systemImage: "chart.xyaxis.line") }
+                    }
+                }
                 Section("Weitere Funktionen") {
                     NavigationLink { SuiteActionsView(suite: api, actions: model.actions.filter { !["menu.action", "settings.update"].contains($0.id) }, title: "Alle Funktionen") } label: { Label("Alle Funktionen durchsuchen", systemImage: "magnifyingglass") }
                     if api.scope == "full" { NavigationLink { SuiteRemoteMenuView(suite: api) } label: { Label("Originale Suite-Menüs", systemImage: "square.grid.2x2") } }

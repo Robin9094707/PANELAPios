@@ -17,6 +17,7 @@ struct SuiteStatisticsView: View {
                 }.panelScreen()
             }
         }.navigationTitle("Statistiken").navigationBarTitleDisplayMode(.inline).task { await model.load() }
+            .toolbar { if let suite = model.api, model.health["features"].array.contains(.string("overview")) { ToolbarItem(placement: .topBarTrailing) { NavigationLink { SuiteOperationsView(suite: suite, actions: model.actions) } label: { Image(systemName: "server.rack") }.accessibilityLabel("Server & Betrieb") } } }
     }
 }
 struct SuiteStatisticsDashboard: View {

@@ -8272,6 +8272,22 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     Object appApiData(String route, Map<String,String> q) {
         String query=q.getOrDefault("q","").toLowerCase(Locale.ROOT);
         int offset;try{offset=Math.max(0,Integer.parseInt(q.getOrDefault("offset","0")));}catch(Exception e){offset=0;}
+        if(route.equals("log-status"))return securityHub==null?appMap("available",false,"discord","Client-Protokollmodul nicht aktiv"):securityHub.logStatus();
+        if(route.equals("plugins"))return appMap("items",Arrays.stream(Bukkit.getPluginManager().getPlugins()).map(p->appMap("id",p.getName(),"name",p.getName(),"version",p.getDescription().getVersion(),"enabled",p.isEnabled(),"authors",p.getDescription().getAuthors())).toList());
+        if(route.equals("worlds"))return appMap("items",Bukkit.getWorlds().stream().map(w->appMap("id",w.getUID().toString(),"name",w.getName(),"environment",w.getEnvironment().name(),"players",w.getPlayers().size(),"chunks",w.getLoadedChunks().length,"time",w.getTime(),"days",w.getFullTime()/24000,"difficulty",w.getDifficulty().name(),"storm",w.hasStorm(),"thunder",w.isThundering(),"pvp",w.getPVP(),"autosave",w.isAutoSave(),"border",w.getWorldBorder().getSize())).toList());
+        if(route.equals("overview")){
+            Runtime runtime=Runtime.getRuntime();double mspt=-1;try{Object value=Bukkit.class.getMethod("getAverageTickTime").invoke(null);if(value instanceof Number n)mspt=n.doubleValue();}catch(ReflectiveOperationException ignored){}
+            return appMap("at",System.currentTimeMillis(),"tps",discordAdminTps(),"mspt",mspt,"ramUsed",runtime.totalMemory()-runtime.freeMemory(),"ramMax",runtime.maxMemory(),"uptime",System.currentTimeMillis()-suiteBootTime,"online",Bukkit.getOnlinePlayers().size(),"maxPlayers",serverMaxPlayers(),"worlds",Bukkit.getWorlds().size(),"version",getDescription().getVersion());
+        }
+        if(route.equals("statistics")){
+            long play=0,afk=0,sessions=0,points=0;int warnings=0,bans=0,mutes=0,recent=0,new24=0;long now=System.currentTimeMillis();
+            Map<String,Integer> platforms=new java.util.TreeMap<>(),versions=new java.util.TreeMap<>(),models=new java.util.TreeMap<>();
+            List<PlayerProfile> profiles=database.sortedProfiles();
+            for(PlayerProfile p:profiles){ServerStatistics.Profile v=p.statisticsSnapshot();play+=v.play();afk+=v.afk();sessions+=v.sessions();points+=v.points();warnings+=v.warnings();if(v.banned())bans++;if(v.muted())mutes++;if(v.lastSeen()>=now-86400000)recent++;if(v.firstSeen()>=now-86400000)new24++;
+                platforms.merge(v.platform().isBlank()?"Unbekannt":v.platform(),1,Integer::sum);versions.merge(v.version().isBlank()?"Unbekannt":v.version(),1,Integer::sum);if(!v.model().isBlank())models.merge(v.model(),1,Integer::sum);
+            }
+            return appMap("at",now,"profiles",profiles.size(),"playMillis",play,"afkMillis",afk,"sessions",sessions,"points",points,"warnings",warnings,"bans",bans,"mutes",mutes,"recent24h",recent,"new24h",new24,"platforms",platforms,"versions",versions,"models",models,"discordPages",serverStatistics==null?List.of():serverStatistics.payloads());
+        }
         if(route.equals("players")) {
             List<Map<String,Object>> rows=new ArrayList<>();
             List<PlayerProfile> profiles=database.sortedProfiles();profiles.sort(Comparator.comparing((PlayerProfile p)->Bukkit.getPlayer(p.uuid)==null).thenComparing(p->p.name.toLowerCase(Locale.ROOT)));
@@ -8341,6 +8357,18 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         }return row;
     }
     Object appApiMutation(String route,Map<String,Object> values,String actor){
+        if(route.equals("logs.retry")){if(securityHub==null)throw new IllegalArgumentException("Client-Protokollmodul nicht aktiv");securityHub.retryLogs();expansionAudit(actor,null,"App-Protokollversand","Erneut versuchen");return appMap("ok",true,"title","Versand erneut geplant","description","Gespeicherte Ereignisse werden automatisch erneut geprüft und versendet.");}
+        if(route.equals("world.update")){
+            String name=String.valueOf(values.getOrDefault("world","")),field=String.valueOf(values.get("field")),value=String.valueOf(values.get("value"));World world=Bukkit.getWorld(name);if(world==null)try{world=Bukkit.getWorld(UUID.fromString(name));}catch(IllegalArgumentException ignored){}if(world==null)throw new IllegalArgumentException("Welt ist nicht geladen");
+            switch(field){
+                case "time"->{long n=Long.parseLong(value);if(n<0||n>23999)throw new IllegalArgumentException("Zeit 0–23999 erforderlich");world.setTime(n);}
+                case "weather"->{if(!Set.of("clear","rain","thunder").contains(value))throw new IllegalArgumentException("clear, rain oder thunder erforderlich");world.setStorm(!value.equals("clear"));world.setThundering(value.equals("thunder"));}
+                case "difficulty"->world.setDifficulty(org.bukkit.Difficulty.valueOf(value.toUpperCase(Locale.ROOT)));
+                case "pvp","autosave"->{if(!Set.of("true","false").contains(value))throw new IllegalArgumentException("true oder false erforderlich");if(field.equals("pvp"))world.setPVP(Boolean.parseBoolean(value));else world.setAutoSave(Boolean.parseBoolean(value));}
+                default->throw new IllegalArgumentException("Unbekannte Welteinstellung");
+            }
+            expansionAudit(actor,null,"App-Welteinstellung",world.getName()+" · "+field+"="+value);return appMap("ok",true,"title","Welt aktualisiert","description",world.getName()+" · "+field+" = "+value);
+        }
         if(route.equals("player.vitals")){
             PlayerProfile p=database.find(String.valueOf(values.getOrDefault("player","")));Player target=p==null?null:Bukkit.getPlayer(p.uuid);
             if(target==null)throw new IllegalArgumentException("Spieler muss online sein. Offline-NBT wird hier nicht überschrieben.");

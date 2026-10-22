@@ -950,19 +950,21 @@ final class DiscordBotManager {
     }
     /** Dossiers only leave the server after checking explicit private channel overwrites. */
     private volatile long privateDossierBlockedUntil;
+    private volatile String privateDossierState="Noch kein Versand";
+    String privateDossierStatus(){return !enabled()?"Discord-Bot deaktiviert":!configured()?"Bot-Token oder Server-ID fehlt":!running.get()?"Discord-Bot nicht gestartet":privateDossierState;}
     boolean sendSecurityDossier(SecurityLogOutbox.Message message){
-        if(System.currentTimeMillis()<privateDossierBlockedUntil)return false;
+        if(System.currentTimeMillis()<privateDossierBlockedUntil){privateDossierState="Discord-Ratenlimit; automatischer Wiederholungsversuch";return false;}
         if(!enabled()||!configured()||!running.get()||!message.channel().matches("[0-9]{15,22}"))return false;
         try{
             HttpResponse<String> check=featureRequest("GET","/channels/"+message.channel(),null);
-            Object parsed=Json.parse(check.body());if(check.statusCode()!=200||!(parsed instanceof Map<?,?> channel)||!guildId().equals(string(channel.get("guild_id")))||!Set.of(0,5).contains(intValue(channel.get("type"),-1)))return false;
+            Object parsed=Json.parse(check.body());if(check.statusCode()!=200||!(parsed instanceof Map<?,?> channel)||!guildId().equals(string(channel.get("guild_id")))||!Set.of(0,5).contains(intValue(channel.get("type"),-1))){privateDossierState="Protokollkanal nicht erreichbar (HTTP "+check.statusCode()+"); Kanal-ID und Bot-Rechte prüfen";return false;}
             Set<String> users=new HashSet<>();users.add(applicationId);if(guildOwnerId!=null)users.add(guildOwnerId);
-            if(!PrivateLogChannel.allowed(channel,guildId(),new HashSet<>(plugin.getConfig().getStringList("discord-bot.admin.role-ids")),users)){lastError="Privater Protokollkanal: @everyone sperren und nur konfigurierte Admin-Rollen freigeben";return false;}
+            if(!PrivateLogChannel.allowed(channel,guildId(),new HashSet<>(plugin.getConfig().getStringList("discord-bot.admin.role-ids")),users)){privateDossierState=lastError="Privater Protokollkanal: @everyone sperren und nur konfigurierte Admin-Rollen freigeben";return false;}
             String boundary="SAS-"+UUID.randomUUID();String payload=Json.stringify(mapOf("allowed_mentions",mapOf("parse",List.of()),"embeds",List.of(mapOf("title",cleanText(message.title(),250),"description",RelayText.discord(message.summary(),3800),"color",0x5865F2,"timestamp",java.time.Instant.now().toString())),"attachments",List.of(mapOf("id",0,"filename","client-details.json","description","Vom Server beobachtete Client-Daten; keine bewiesene Geräteidentität"))));
             String body="--"+boundary+"\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n"+payload+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"client-details.json\"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+message.dossier()+"\r\n--"+boundary+"--\r\n";
             HttpRequest request=HttpRequest.newBuilder(URI.create(API+"/channels/"+message.channel()+"/messages")).timeout(java.time.Duration.ofSeconds(20)).header("Authorization","Bot "+token()).header("User-Agent","SimplexAdminSuite").header("Content-Type","multipart/form-data; boundary="+boundary).POST(HttpRequest.BodyPublishers.ofString(body,StandardCharsets.UTF_8)).build();
-            HttpResponse<String> response=http.send(request,HttpResponse.BodyHandlers.ofString());if(response.statusCode()==429){long seconds=60;try{seconds=Math.max(5,Math.min(86400,(long)Math.ceil(Double.parseDouble(response.headers().firstValue("Retry-After").orElse("60")))));}catch(NumberFormatException ignored){}privateDossierBlockedUntil=System.currentTimeMillis()+seconds*1000;}if(response.statusCode()/100!=2){recordHttpFailure("POST","/channels/"+message.channel()+"/messages",response.statusCode(),response.body());return false;}return true;
-        }catch(InterruptedException e){Thread.currentThread().interrupt();return false;}catch(Exception e){lastError="Private dossier: "+e.getClass().getSimpleName();return false;}
+            HttpResponse<String> response=http.send(request,HttpResponse.BodyHandlers.ofString());if(response.statusCode()==429){long seconds=60;try{seconds=Math.max(5,Math.min(86400,(long)Math.ceil(Double.parseDouble(response.headers().firstValue("Retry-After").orElse("60")))));}catch(NumberFormatException ignored){}privateDossierBlockedUntil=System.currentTimeMillis()+seconds*1000;}if(response.statusCode()/100!=2){privateDossierState="Discord-Versand HTTP "+response.statusCode()+"; Kanalrechte oder Ratenlimit prüfen";recordHttpFailure("POST","/channels/"+message.channel()+"/messages",response.statusCode(),response.body());return false;}privateDossierState="Privater Versand erfolgreich";return true;
+        }catch(InterruptedException e){Thread.currentThread().interrupt();return false;}catch(Exception e){privateDossierState=lastError="Private dossier: "+e.getClass().getSimpleName();return false;}
     }
 
     void clientProbeAlert(String player,UUID uuid,String status,List<String> clients,String detail){

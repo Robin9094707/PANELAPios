@@ -172,6 +172,20 @@ final class PanelUITests: XCTestCase {
         player.tap()
         XCTAssertTrue(app.buttons["Alle Geräte anzeigen"].waitForExistence(timeout: 10))
     }
+    func testSuiteOperationsStructuredTelemetry() throws {
+        let server = app.buttons["server-simplex1"]
+        XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap()
+        selectTab("Verwalten")
+        XCTAssertTrue(app.buttons["adminSuiteHub"].waitForExistence(timeout: 10)); app.buttons["adminSuiteHub"].tap()
+        let operations = app.buttons["Server, Statistiken & Discord-Protokolle"]
+        for _ in 0..<5 { if operations.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(operations.waitForExistence(timeout: 10)); operations.tap()
+        XCTAssertTrue(app.staticTexts["Tickdauer"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Arbeitsspeicher"].exists)
+        for _ in 0..<5 { if app.staticTexts["Wartende Einträge"].isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(app.staticTexts["Wartende Einträge"].exists)
+        capture("28-Suite-Operations")
+    }
     func testConnectionFormRequiresURLAndClientKey() throws {
         app.swipeUp()
         let connect = app.buttons["Eigenes Panel verbinden"]

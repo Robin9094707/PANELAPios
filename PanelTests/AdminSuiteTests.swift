@@ -30,6 +30,18 @@ final class AdminSuiteTests: XCTestCase {
         let connection = SuiteConnection(panel: "https://panel.example", server: "server1", endpoint: "https://api.example/control", fingerprint: "", serverIdentity: identity)
         return try SuiteAPI(connection, token: "synthetic-suite-token", session: URLSession(configuration: config))
     }
+    @MainActor func testStructuredOperationsUseAuthenticatedReadEndpoints() async throws {
+        var visited: [String] = []
+        StubProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer synthetic-suite-token")
+            visited.append(request.url!.lastPathComponent)
+            return (200, Data(#"{"items":[],"pending":2,"profiles":3}"#.utf8))
+        }
+        let api = try client()
+        for name in ["overview", "statistics", "worlds", "plugins", "log-status"] { _ = try await api.data(name) }
+        XCTAssertEqual(visited, ["overview", "statistics", "worlds", "plugins", "log-status"])
+    }
     @MainActor func testPrepareChecksIdentityAndExecuteSendsOnlySingleUseTicket() async throws {
         var visited: [String] = []
         StubProtocol.handler = { request in

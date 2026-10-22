@@ -68,7 +68,7 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -135,11 +135,21 @@ jobs:
       - name: Check HTTPS authentication, confirmations and existing data
         working-directory: Companion/AdminSuite
         run: python3 tools/test-830.py
+      - name: Package companion source and checksums
+        working-directory: Companion/AdminSuite
+        run: |
+          python3 tools/package-source.py
+          cd target
+          sha256sum SimplexAdminSuite-8.4.0.jar SimplexAdminSuite-8.4.0-source.zip > AdminSuite-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
-          path: Companion/AdminSuite/target/SimplexAdminSuite-8.3.0.jar
+          path: |
+            Companion/AdminSuite/target/SimplexAdminSuite-8.4.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-8.4.0-source.zip
+            Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
+          if-no-files-found: error
 
 
   release:
@@ -156,6 +166,10 @@ jobs:
         with:
           name: Panel-unsigned-IPA
           path: build/release
+      - uses: actions/download-artifact@v4
+        with:
+          name: SimplexAdminSuite-unsigned-plugin
+          path: build/companion
       - name: Publish versioned IPA and checksum
         env:
           GH_TOKEN: ${{ github.token }}
@@ -179,12 +193,13 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Repairs AMP TimeSpan uptime and partial resource updates; missing values no longer appear as zero. Adds one-second foreground console polling and complete status reconciliation. Widgets add interactive refresh, single-server RAM/CPU/uptime, a direct fleet overview and a large online-player list for AMP and coupled Simplex servers.
+          Simplex Panel 2.1.0 with Admin Suite 8.4.0 adds structured server performance, community totals, world and plugin lists, and private Discord outbox diagnostics. Full-access API keys can update world time/weather/difficulty/PvP/autosave and request a log retry through single-use confirmation tickets.
 
-          Widget storage supports App Groups, shared defaults and shared Keychain fallback. Both app and extension must keep a matching App Group or shared Keychain entitlement when re-signing; signing permissions cannot be created at runtime. A manual snapshot-code widget is available when neither shared entitlement survives. Background refresh requires granting the widget access in Settings → Server-Widgets. iOS controls automatic scheduling.
+          Admin Suite repairs durable log retries, sender exception handling and delivery/ACK races. Repeated pending observations coalesce with counts and latest details; existing queued rows survive the additive SQLite upgrade. Disabled channel queues remain stored. Private-channel validation remains mandatory; invalid Discord configuration or permissions must be corrected using the status shown in the app.
 
-          Adds native Python App Runner workspace, improved AMP settings, three original selectable icons and accessible accent-color customization. Existing profiles and app data are retained. Install over the existing app with the same signing identity and bundle ID; do not uninstall. The IPA is unsigned. Admin Suite is unchanged.
+          Existing plugin folders, player profiles, moderation data, configuration and API keys remain in place. Stop the server, back up the plugin folder, replace the JAR and start it again. Do not delete the data folder. Install the unsigned IPA over the existing app with the same bundle ID and signing identity. Real server and re-signed device validation remains necessary.
 
-          Source backup: backup/v1.9.0-before-widgets-metrics. Live validation on the user's signed device and AMP installation remains necessary.
+          Source backup: backup/before-suite-8.4-panel-2.1. Assets include the plugin JAR and complete plugin source. GitHub Actions builds the app and plugin, runs simulator and real SQLite/HTTPS regression tests, and publishes only after both jobs pass.
           NOTES
-          gh release create "$tag" "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest
+          (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)
+          gh release create "$tag" build/companion/*.jar build/companion/*-source.zip build/companion/AdminSuite-SHA256SUMS.txt "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest

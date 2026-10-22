@@ -12,11 +12,19 @@ enum SuiteDemo {
         "[12:00:04 INFO]: DemoGuest left the game",
         "[12:00:05 INFO]: DemoGuest issued server command: /list"
     ]
+    static let operations: [String: JSON] = {
+        let source = #"""
+        {"data/overview":{"tps":20,"mspt":8.5,"ramUsed":1073741824,"ramMax":4294967296,"uptime":7200000,"online":2,"maxPlayers":60},"data/statistics":{"profiles":3,"playMillis":36000000,"afkMillis":3600000,"sessions":42,"recent24h":3,"new24h":1,"bans":0,"mutes":0,"warnings":1},"data/log-status":{"pending":2,"observations":8,"bytes":2048,"enabledChannels":1,"discord":"Demo: Versand erfolgreich","deliveryState":"Synthetische Protokolle"},"data/worlds":{"items":[{"id":"demo-world","name":"Demo-Welt","environment":"NORMAL","players":2,"chunks":48,"days":20000,"difficulty":"NORMAL","pvp":true,"storm":false}]},"data/plugins":{"items":[{"id":"SimplexAdminSuite","name":"SimplexAdminSuite","version":"8.4.0","enabled":true}]}}
+        """#
+        guard let value = try? JSONDecoder().decode([String: JSON].self, from: Data(source.utf8)) else { return [:] }
+        return value
+    }()
     static let player = "00000000-0000-0000-0000-000000000001"
     static func field(_ name: String, _ label: String) -> JSON { .object(["name": .string(name), "description": .string(label), "type": .number(3), "required": .bool(true)]) }
     static func response(_ path: String, query: [String: String]) -> JSON {
+        if let value = operations[path] { return value }
         switch path {
-        case "health": return .object(["apiVersion": .number(1), "serverId": .string("synthetic-suite"), "version": .string("8.3.0"), "scope": .string("full")])
+        case "health": return .object(["apiVersion": .number(1), "serverId": .string("synthetic-suite"), "version": .string("8.4.0"), "features": .array([.string("overview")]), "scope": .string("full")])
         case "schema": return .object(["actions": .array([
             .object(["id": .string("player.punish"), "description": .string("Strafen und Warnungen"), "group": .string("Spieler"), "options": .array([field("player", "Spieler"), .object(["name": .string("type"), "description": .string("Strafaktion"), "required": .bool(true), "type": .number(3), "choices": .array([.object(["name": .string("Bannen"), "value": .string("ban")]), .object(["name": .string("Entbannen"), "value": .string("unban")])])])])]),
             .object(["id": .string("security.ultraban"), "description": .string("Ultrabann ausführen"), "group": .string("Sicherheit"), "options": .array([field("player", "Spieler")])]),

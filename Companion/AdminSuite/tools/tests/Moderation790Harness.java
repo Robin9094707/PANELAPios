@@ -23,6 +23,7 @@ public final class Moderation790Harness {
         Class<?> unsafeClass=Class.forName("sun.misc.Unsafe");Field f=unsafeClass.getDeclaredField("theUnsafe");f.setAccessible(true);Object unsafe=f.get(null);
         SimplexAdminSuite p=(SimplexAdminSuite)unsafeClass.getMethod("allocateInstance",Class.class).invoke(unsafe,SimplexAdminSuite.class);
         set(p,JavaPlugin.class,"dataFolder",dir.toFile());set(p,JavaPlugin.class,"newConfig",new YamlConfiguration());set(p,JavaPlugin.class,"logger",java.util.logging.Logger.getLogger("Moderation790Harness"));
+        set(p,JavaPlugin.class,"description",new org.bukkit.plugin.PluginDescriptionFile("SimplexAdminSuite","8.4.0",SimplexAdminSuite.class.getName()));
         return p;
     }
     public static void main(String[] args)throws Exception{
