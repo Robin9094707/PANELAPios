@@ -34,22 +34,22 @@ final class AddonUpdateTests: XCTestCase {
         XCTAssertEqual(MarketplaceClient.newer("1.0", than: "2.0"), false)
         XCTAssertNil(MarketplaceClient.newer("release-four", than: "release-three"))
     }
-    static func version(_ updates: [String: JSON] = [:]) -> JSON {
+    static func providerVersion(_ updates: [String: JSON] = [:]) -> JSON {
         var v: [String: JSON] = ["id": .string("release2"), "project_id": .string("original"), "name": .string("Plugin 2"), "version_number": .string("2.0"), "version_type": .string("release"), "game_versions": .array([.string("26.3")]), "loaders": .array([.string("paper")]), "files": .array([.object(["primary": .bool(true), "filename": .string("Plugin.jar"), "url": .string("https://cdn.modrinth.com/Plugin.jar"), "hashes": .object(["sha1": .string("abc")])])])]
         v.merge(updates, uniquingKeysWith: { _, new in new }); return .object(v)
     }
     func testProviderRequiresExactGameLoaderAndServerSideJar() {
         let target = AddonTarget(game: "26.3")
-        XCTAssertNotNil(MarketplaceClient.modrinthRelease(Self.version(), target: target))
-        XCTAssertNil(MarketplaceClient.modrinthRelease(Self.version(["game_versions": .array([.string("26.2")])]), target: target))
-        XCTAssertNil(MarketplaceClient.modrinthRelease(Self.version(["loaders": .array([.string("fabric")])]), target: target))
-        XCTAssertNil(MarketplaceClient.modrinthRelease(Self.version(["environment": .string("client_only")]), target: target))
-        XCTAssertNotNil(MarketplaceClient.modrinthRelease(Self.version(["loaders": .array([.string("bukkit")])]), target: target))
-        XCTAssertNil(MarketplaceClient.modrinthRelease(Self.version(["files": .array([.object(["filename": .string("Plugin-sources.zip")])])]), target: target))
+        XCTAssertNotNil(MarketplaceClient.modrinthRelease(Self.providerVersion(), target: target))
+        XCTAssertNil(MarketplaceClient.modrinthRelease(Self.providerVersion(["game_versions": .array([.string("26.2")])]), target: target))
+        XCTAssertNil(MarketplaceClient.modrinthRelease(Self.providerVersion(["loaders": .array([.string("fabric")])]), target: target))
+        XCTAssertNil(MarketplaceClient.modrinthRelease(Self.providerVersion(["environment": .string("client_only")]), target: target))
+        XCTAssertNotNil(MarketplaceClient.modrinthRelease(Self.providerVersion(["loaders": .array([.string("bukkit")])]), target: target))
+        XCTAssertNil(MarketplaceClient.modrinthRelease(Self.providerVersion(["files": .array([.object(["filename": .string("Plugin-sources.zip")])])]), target: target))
     }
     func testDownloadHashMismatchAndHtmlFailClosed() throws {
         let data = Data([0x50,0x4b] + Array(repeating: 1, count: 64))
-        var release = try XCTUnwrap(MarketplaceClient.modrinthRelease(Self.version(), target: AddonTarget(game: "26.3")))
+        var release = try XCTUnwrap(MarketplaceClient.modrinthRelease(Self.providerVersion(), target: AddonTarget(game: "26.3")))
         release.sha1 = Insecure.SHA1.hash(data: data).map { String(format: "%02x", $0) }.joined()
         XCTAssertNoThrow(try MarketplaceClient.verify(data, release: release))
         XCTAssertThrowsError(try MarketplaceClient.verify(data + Data([1]), release: release))
@@ -72,7 +72,7 @@ final class MarketplaceNetworkTests: XCTestCase {
     override func tearDown() { StubProtocol.handler = nil; super.tearDown() }
     func client() -> MarketplaceClient { let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubProtocol.self]; return MarketplaceClient(session: URLSession(configuration: config)) }
     func testExactHashFindsOriginalAndFiltersLoaderGameAndStableChannel() async throws {
-        let metadata = AddonUpdateTests.version()
+        let metadata = AddonUpdateTests.providerVersion()
         var requests = 0
         StubProtocol.handler = { request in
             requests += 1
@@ -100,4 +100,25 @@ final class MarketplaceNetworkTests: XCTestCase {
         XCTAssertNil(status.release?.download); XCTAssertFalse(try XCTUnwrap(status.release).compatibility)
         XCTAssertTrue(status.release?.website.contains("spigotmc.org/resources/53313") == true)
     }
+    func testCurseForgeKeyIsScopedAndDisabledDistributionHasNoInventedUrl() async throws {
+        let previous = try? Vault.read(MarketplaceClient.curseKeyID)
+        try Vault.save("synthetic-curse-key", id: MarketplaceClient.curseKeyID)
+        defer { if let previous { try? Vault.save(previous, id: MarketplaceClient.curseKeyID) } else { Vault.delete(MarketplaceClient.curseKeyID) } }
+        StubProtocol.handler = { request in
+            XCTAssertEqual(request.url?.host, "api.curseforge.com")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "synthetic-curse-key")
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            if request.url!.path.hasSuffix("/files") {
+                let body = #"{"data":[{"id":22,"isAvailable":true,"displayName":"Mod 2","fileName":"Mod-2.jar","releaseType":1,"gameVersions":["26.3","Fabric"],"downloadUrl":null,"hashes":[{"algo":1,"value":"provider-sha"}],"dependencies":[{"modId":42,"relationType":3}]}]}"#
+                return (200, Data(body.utf8))
+            }
+            return (200, Data(#"{"data":{"links":{"websiteUrl":"https://www.curseforge.com/minecraft/mc-mods/original"}}}"#.utf8))
+        }
+        let item = AddonInventory(filename: "Mod.jar", signature: "stamp", name: "Mod", version: "1.0", fingerprint: .make(Data()))
+        let (_, status) = try await client().latest(item, link: AddonLink(provider: .curseforge, project: "123"), target: AddonTarget(game: "26.3", loader: "fabric"))
+        XCTAssertNil(status.release?.download)
+        XCTAssertTrue(status.release?.compatibility == true)
+        XCTAssertEqual(status.release?.dependencies, ["Erforderlich: CurseForge 42"])
+    }
+
 }

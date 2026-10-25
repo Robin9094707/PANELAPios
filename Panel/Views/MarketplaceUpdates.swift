@@ -227,9 +227,9 @@ struct AddonDownloadBrowser: View {
             VStack(spacing: 0) {
                 Label(host.isEmpty ? (url.host ?? "Anbieter") : host, systemImage: "lock.shield").font(.caption).padding(8)
                 if let issue { Text(issue).font(.caption).foregroundStyle(.orange).padding(8) }
-                Text("Anmelden, ggf. CAPTCHA selbst lösen und beim gekauften Plugin Download wählen. Die JAR öffnet danach die Update-Prüfung.").font(.caption).foregroundStyle(.secondary).padding(.horizontal).padding(.bottom, 8)
+                Text("Anmelden, ggf. CAPTCHA selbst lösen und Download wählen. Für Web-Downloads die Vorschau geöffnet lassen. Falls die Seite die Vorschau ablehnt: in Safari laden und die JAR über „Update-Datei hochladen“ auswählen.").font(.caption).foregroundStyle(.secondary).padding(.horizontal).padding(.bottom, 8)
                 MarketplaceWebView(url: url, status: { host = $0 }, failure: { issue = $0 }, result: result)
-            }.navigationTitle("Anbieter-Download").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Schließen") { dismiss() } } }
+            }.navigationTitle("Anbieter-Download").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .bottomBar) { Link("In Safari öffnen", destination: url) }; ToolbarItem(placement: .confirmationAction) { Button("Schließen") { dismiss() } } }
         }
     }
 }

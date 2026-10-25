@@ -98,6 +98,13 @@ struct TransferRecord: Identifiable, Codable {
         let task = session.downloadTask(with: url)
         begin(record, task: task); return record.id
     }
+    /// Provider downloads share the same durable iOS transfer session as panel files.
+    func downloadAndWait(_ signed: String, filename: String, context: String) async throws -> URL {
+        let id = try download(signed, filename: filename, context: context)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in waiters[id] = continuation }
+        guard let record = records.first(where: { $0.id == id && $0.state == "completed" }) else { throw PanelError(message: "Download wurde entfernt oder nicht vollständig gespeichert.") }
+        return localFile(record)
+    }
     func upload(_ request: URLRequest, body: URL, filename: String, context: String) async throws {
         var record = TransferRecord(filename: filename, context: context, upload: true)
         try FileManager.default.createDirectory(at: folder(record.id), withIntermediateDirectories: true)

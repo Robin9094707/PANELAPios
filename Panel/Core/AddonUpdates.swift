@@ -214,17 +214,15 @@ final class MarketplaceClient {
     }
     func download(_ release: AddonRelease) async throws -> URL {
         guard let text = release.download, let url = URL(string: text), url.scheme == "https", url.user == nil, url.password == nil else { throw PanelError(message: "Download nur über die Anbieterseite verfügbar.") }
-        // Ephemeral unsigned request: no panel token and no marketplace API key.
-        let (file, response) = try await session.download(for: URLRequest(url: url))
-        defer { try? FileManager.default.removeItem(at: file) }
-        try PanelAPI.validate(Data(), response: response)
-        guard (response.expectedContentLength <= 128 * 1024 * 1024), let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 128 * 1024 * 1024 else { throw PanelError(message: "JAR größer als 128 MiB.") }
+        // Durable unsigned background request: no panel token or marketplace API key.
+        let name = URL(fileURLWithPath: release.filename).lastPathComponent
+        guard name.lowercased().hasSuffix(".jar"), !name.contains("\\") else { throw PanelError(message: "Anbieter hat keinen JAR-Dateinamen geliefert.") }
+        let file = try await TransferManager.shared.downloadAndWait(url.absoluteString, filename: name, context: release.provider.title + " · Update-Download (noch nicht installiert)")
+        guard let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 128 * 1024 * 1024 else { throw PanelError(message: "JAR größer als 128 MiB.") }
         let data = try Data(contentsOf: file, options: .mappedIfSafe)
         try Self.verify(data, release: release)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("addon-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let name = URL(fileURLWithPath: release.filename).lastPathComponent
-        guard name.lowercased().hasSuffix(".jar"), !name.contains("\\") else { throw PanelError(message: "Anbieter hat keine JAR-Datei geliefert. Öffne den Download auf der Anbieterseite.") }
         let destination = directory.appendingPathComponent(name); try data.write(to: destination); return destination
     }
     static func verify(_ data: Data, release: AddonRelease) throws {
