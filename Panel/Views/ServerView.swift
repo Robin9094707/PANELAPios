@@ -50,13 +50,11 @@ struct ServerView: View {
                 Tab("Statistiken", systemImage: "chart.bar.xaxis", value: 5) { SuiteStatisticsView(model: suite, live: live) }
             }
             Tab("Mehr", systemImage: "ellipsis", value: 4) {
-                NavigationStack {
-                    List {
-                        NavigationLink("Backups") { AccessBoundary(access: api.access, server: server.id, permission: "backup.read") { if api.amp != nil { AMPBackupsView(api: api, server: server) } else { BackupsView(api: api, server: server) } } }
-                        NavigationLink("Verwalten") { ManageView(api: api, server: server, suite: suite, live: live) }
-                        NavigationLink("Server-Live-Aktivität") { ServerActivitySettings(api: api, server: server, live: live, suite: suite) }
-                    }.panelScreen().navigationTitle("Mehr")
-                }.id(tab == 4)
+                List {
+                    NavigationLink("Backups") { AccessBoundary(access: api.access, server: server.id, permission: "backup.read") { if api.amp != nil { AMPBackupsView(api: api, server: server) } else { BackupsView(api: api, server: server) } } }
+                    NavigationLink("Verwalten") { ManageView(api: api, server: server, suite: suite, live: live) }
+                    NavigationLink("Server-Live-Aktivität") { ServerActivitySettings(api: api, server: server, live: live, suite: suite) }
+                }.panelScreen()
             }
         }.navigationTitle(server.name).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Workspace anpassen", systemImage: "rectangle.3.group") { editLayout = true }.accessibilityIdentifier("editServerLayout") }; ToolbarItem(placement: .topBarTrailing) { Button("Server aktualisieren", systemImage: "arrow.clockwise") { Task { await refreshServer() } } }; ToolbarItem(placement: .topBarTrailing) { powerMenu } }

@@ -7,12 +7,18 @@ final class PanelUITests: XCTestCase {
         app = XCUIApplication(); app.launchArguments = ["--demo", "--demo-paused-download", "--demo-suite", "-AppleLanguages", "(de)", "-AppleLocale", "de_DE"]; app.launch()
     }
     func selectTab(_ title: String) {
+        // More destinations use the same navigation stack as the rest of the server.
+        // Return to the server workspace before switching tabs from a pushed page.
+        for _ in 0..<4 {
+            if app.tabBars.firstMatch.exists { break }
+            let back = app.navigationBars.buttons.firstMatch
+            guard back.exists else { break }; back.tap()
+        }
         let direct = app.tabBars.buttons[title]
         if direct.exists { direct.tap(); return }
         let more = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["More", "Mehr"])).firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 10)); more.tap()
-        let item = app.staticTexts[title].firstMatch
-        if !item.waitForExistence(timeout: 3) { let back = app.navigationBars.buttons["Mehr"]; if back.exists { back.tap() } else { more.tap() } }
+        let item = app.buttons[title].firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 10)); item.tap()
     }
     func capture(_ name: String) {

@@ -83,6 +83,7 @@ struct AddonUpdateCenter: View {
                 if !selection.release.dependencies.isEmpty { Section("Abhängigkeiten – werden nicht automatisch installiert") { ForEach(selection.release.dependencies, id: \.self) { Text($0) } } }
                 Section("Versionshinweise") { Text(selection.release.notes.isEmpty ? "Keine Hinweise verfügbar." : selection.release.notes).font(.footnote).textSelection(.enabled) }
                 Section {
+                    if working { ProgressView("Download läuft · Fortschritt unter Übertragungen") }
                     if selection.release.download != nil {
                         Button("Download laden und JAR prüfen", systemImage: "arrow.down.circle") { fetch(selection) }.disabled(working)
                     }
@@ -122,6 +123,12 @@ struct AddonMappingView: View {
     @State private var results: [AddonSearchResult] = []
     @State private var busy = false
     @State private var error: String?
+    init(model: AddonUpdateModel, item: AddonInventory) {
+        self.model = model; self.item = item
+        _provider = State(initialValue: model.cache.links[item.filename]?.provider ?? .modrinth)
+        _project = State(initialValue: model.cache.links[item.filename]?.project ?? "")
+        _query = State(initialValue: item.name)
+    }
     var body: some View {
         NavigationStack {
             Form {
@@ -141,7 +148,6 @@ struct AddonMappingView: View {
                 Button("Zuordnung speichern") { do { try model.bind(item, provider: provider, project: project); dismiss() } catch { self.error = error.localizedDescription } }.disabled(project.isEmpty)
                 Button("Zuordnung entfernen", role: .destructive) { model.cache.links[item.filename] = nil; model.cache.statuses[item.filename] = nil; model.save(); dismiss() }
             }.navigationTitle("Quelle zuordnen").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() } } }.errorAlert($error)
-                .onAppear { query = item.name; if let link = model.cache.links[item.filename] { provider = link.provider; project = link.project } }
                 .onChange(of: provider) { _, _ in results = []; project = "" }
         }
     }
