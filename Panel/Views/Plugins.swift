@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 struct PluginsView: View {
     let api: PanelAPI
     let server: Server
+    @StateObject private var updates: AddonUpdateModel
+    init(api: PanelAPI, server: Server) { self.api = api; self.server = server; _updates = StateObject(wrappedValue: AddonUpdateModel(api: api, server: server, kind: .plugin)) }
     @State private var entries: [JSON] = []
     @State private var pending: [JSON] = []
     @State private var updateDirectory = "/plugins/update"
@@ -28,6 +30,12 @@ struct PluginsView: View {
                 Text("Wähle unten beim gewünschten Plugin „Update-Datei hochladen“.").font(.footnote).foregroundStyle(.secondary)
                 if busy { ProgressView("Update übertragen …") }
                 if let message { Label(message, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(Color.panelAccent) }
+                NavigationLink {
+                    AddonUpdateCenter(api: api, server: server, model: updates) { filename, url in selectedPlugin = filename; inspect(url) }
+                } label: {
+                    Label(updates.cache.statuses.values.contains(where: { $0.release != nil }) ? "Updates verfügbar · Modrinth, Spigot & CurseForge" : "Modrinth, Spigot & CurseForge", systemImage: "arrow.triangle.2.circlepath")
+                }
+                if updates.busy { ProgressView(updates.progress).font(.caption) }
                 NavigationLink("Plugin-Dateien & Konfigurationen") { FilesView(api: api, server: server, root: "/plugins") }
                 NavigationLink("Vorgemerkte Updates") { FilesView(api: api, server: server, root: updateDirectory) }
                 Link("Paper-Anleitung für Plugin-Updates", destination: URL(string: "https://docs.papermc.io/paper/updating/#step-2-update-plugins")!)
@@ -35,6 +43,7 @@ struct PluginsView: View {
             Section {
                 ForEach(jars, id: \.["name"].string) { entry in
                     let name = entry["name"].string
+                    if let status = updates.cache.statuses[name], status.release != nil { Label(status.text, systemImage: "arrow.down.circle.fill").font(.caption).foregroundStyle(Color.panelAccent) }
                     PluginListRow(api: api, server: server, entry: entry, pending: pending, updateDirectory: updateDirectory, refreshID: refreshID, busy: busy, details: {
                         detail = PluginDetailSelection(entry: entry)
                     }, update: { selectedPlugin = name; importer = true }, toggle: { rename(name) }, remove: {
@@ -42,7 +51,7 @@ struct PluginsView: View {
                     }, catalog: api.plugins)
                 }
             } header: { Text("JAR-Dateien · \(jars.count)") } footer: { Text("Versionen werden aus den Server-JARs gelesen, nicht aus Dateinamen geraten. Sichtbare JARs bis 8 MiB werden automatisch gelesen; größere erst beim Öffnen der Details. Bereits geladene Plugins können bis zum Neustart eine andere Version verwenden.") }
-        }.panelScreen().navigationTitle("Plugins").navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { api.plugins.clear(server: server.id); await load(); refreshID = UUID() }.errorAlert($error)
+        }.panelScreen().navigationTitle("Plugins").navigationBarTitleDisplayMode(.inline).task { await load(); await updates.scan(api: api, server: server, entries: entries) }.refreshable { api.plugins.clear(server: server.id); await load(); refreshID = UUID() }.errorAlert($error)
             .sheet(item: $detail) { PluginDetailsView(api: api, server: server, entry: $0.entry, catalog: api.plugins) }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) { await load() } }
             .sheet(item: $candidate, onDismiss: { if let url = stagedLocal { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }; stagedLocal = nil }) { value in
@@ -77,7 +86,7 @@ struct PluginsView: View {
     func inspect(_ url: URL) {
         guard url.pathExtension.lowercased() == "jar", let filename = selectedPlugin else { error = "Zuerst das installierte Plugin und dann eine JAR auswählen."; return }
         busy = true; message = nil
-        Task { defer { busy = false }; do {
+        Task { defer { busy = false; let folder = url.deletingLastPathComponent(); if folder.lastPathComponent.hasPrefix("addon-") || folder.lastPathComponent.hasPrefix("market-") { try? FileManager.default.removeItem(at: folder) } }; do {
             guard !api.demo else { throw PanelError(message: "Updates sind im Demomodus deaktiviert.") }
             let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
             let installedData = try await api.fileData(server: server.id, path: "/plugins/" + filename, limit: 128 * 1024 * 1024)
@@ -132,3 +141,4 @@ struct PluginsView: View {
         Feedback.success()
     }
 }
+

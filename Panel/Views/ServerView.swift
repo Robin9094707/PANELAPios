@@ -49,8 +49,15 @@ struct ServerView: View {
             if suite.configured {
                 Tab("Statistiken", systemImage: "chart.bar.xaxis", value: 5) { SuiteStatisticsView(model: suite, live: live) }
             }
-            Tab("Backups", systemImage: "externaldrive.badge.timemachine", value: 3) { AccessBoundary(access: api.access, server: server.id, permission: "backup.read") { if api.amp != nil { AMPBackupsView(api: api, server: server) } else { BackupsView(api: api, server: server) } } }
-            Tab("Verwalten", systemImage: "square.grid.2x2", value: 4) { ManageView(api: api, server: server, suite: suite, live: live) }
+            Tab("Mehr", systemImage: "ellipsis", value: 4) {
+                NavigationStack {
+                    List {
+                        NavigationLink("Backups") { AccessBoundary(access: api.access, server: server.id, permission: "backup.read") { if api.amp != nil { AMPBackupsView(api: api, server: server) } else { BackupsView(api: api, server: server) } } }
+                        NavigationLink("Verwalten") { ManageView(api: api, server: server, suite: suite, live: live) }
+                        NavigationLink("Server-Live-Aktivität") { ServerActivitySettings(api: api, server: server, live: live, suite: suite) }
+                    }.panelScreen().navigationTitle("Mehr")
+                }.id(tab == 4)
+            }
         }.navigationTitle(server.name).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Workspace anpassen", systemImage: "rectangle.3.group") { editLayout = true }.accessibilityIdentifier("editServerLayout") }; ToolbarItem(placement: .topBarTrailing) { Button("Server aktualisieren", systemImage: "arrow.clockwise") { Task { await refreshServer() } } }; ToolbarItem(placement: .topBarTrailing) { powerMenu } }
             .task(id: "\(scenePhase)-\(workspace.isMinecraft(api, server))") {
@@ -71,14 +78,19 @@ struct ServerView: View {
             .onChange(of: suite.configured) { _, configured in if !configured && tab == 5 { tab = 0 } }
             .onChange(of: tab) { _, value in if value == 1 { updateConsoleText() } else { consoleProjection.stop() } }
             .onChange(of: scenePhase) { _, phase in if phase == .active && tab == 1 { updateConsoleText() } else if phase != .active { consoleProjection.stop() } }
-            .onChange(of: live.lastUpdate) { _, _ in WidgetPublisher.publish(api: api, server: server, live: live) }
-            .onChange(of: live.players) { _, _ in WidgetPublisher.publish(api: api, server: server, live: live) }
+            .onChange(of: live.lastUpdate) { _, _ in publishStatus() }
+            .onChange(of: live.players) { _, _ in publishStatus() }
+            .onChange(of: suite.updated) { _, _ in publishStatus() }
             .onChange(of: live.state) { _, state in store.presence[server.id] = ServerPresence(state: state) }
             .sheet(isPresented: $editLayout) { DashboardEditor(scope: .server, layoutKey: layoutKey) }
             .sheet(isPresented: $historySheet) { ConsoleHistorySheet(historyKey: historyKey) { command = $0; historyCursor = CommandHistoryCursor(); tab = 1 } }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
             .sheet(isPresented: $commandLibrary) { CommandLibrary(api: api, server: server) { command = $0 } }
             .errorAlert($error)
+    }
+    func publishStatus() {
+        WidgetPublisher.publish(api: api, server: server, live: live)
+        ServerActivityManager.shared.publish(api: api, server: server, live: live, suite: suite)
     }
     var powerMenu: some View {
         Menu {
@@ -309,3 +321,4 @@ struct MetricCard: View {
         }.frame(maxWidth: .infinity, alignment: .leading).card()
     }
 }
+

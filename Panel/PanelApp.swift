@@ -16,12 +16,13 @@ import SwiftUI
                 else { HomeView() }
             }.environmentObject(store).environmentObject(workspace).tint(Color.panelAccent)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
+                .onChange(of: store.servers) { _, servers in if scenePhase == .active { ServerActivityManager.shared.resume(api: store.api, servers: servers) } }
                 .errorAlert($store.error)
                 .privacySensitive()
                 .overlay { if scenePhase == .background { PanelBackground().overlay { Image(systemName: "server.rack").font(.system(size: 60)).foregroundStyle(.teal) } } }
                 .onChange(of: scenePhase, initial: true) { _, phase in
-                    if phase == .background { transfers.persist(force: true); store.lock() }
-                    if phase == .active { Task { await store.resume() } }
+                    if phase == .background { transfers.persist(force: true); ServerActivityManager.shared.suspend(); store.lock() }
+                    if phase == .active { Task { await store.resume(); ServerActivityManager.shared.resume(api: store.api, servers: store.servers) } }
                 }
         }
     }
@@ -36,3 +37,4 @@ struct UnlockView: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background { PanelBackground() }
     }
 }
+

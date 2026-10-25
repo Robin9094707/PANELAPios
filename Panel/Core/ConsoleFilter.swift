@@ -36,22 +36,27 @@ struct ConsoleAnalysis: Sendable {
     private static let chat = try! NSRegularExpression(pattern: #"^(?:\[(?:Not Secure|Unsigned)\]\s*)*(?:<[^>\r\n]{1,100}>|\[(?:CHAT|Discord|Global|Local|Staff|Team|G|L)\])\s*"#, options: .caseInsensitive)
     private static let join = try! NSRegularExpression(pattern: #"^(?:\[[^\]\r\n]+\]\s*)?[^\s]{1,64}\s+(?:joined the game|hat das Spiel betreten)(?:[.! ]|$)"#, options: .caseInsensitive)
     private static let leave = try! NSRegularExpression(pattern: #"^(?:\[[^\]\r\n]+\]\s*)?[^\s]{1,64}\s+(?:left the game|hat das Spiel verlassen)(?:[.! ]|$)"#, options: .caseInsensitive)
+    private static let styledChat = try! NSRegularExpression(pattern: #"^(?:\[[^\]\r\n]{1,60}\]\s*){0,6}[.~]?[A-Za-z0-9_]{1,32}(?:\s*\[[^\]\r\n]{1,40}\])?\s*(?:»|›|→|\s: )\s*.+$"#)
+    private static let proxyJoin = try! NSRegularExpression(pattern: #"^(?:\[(?:Geyser[^\]]*|floodgate)\]\s*)(?:Player connected with username\s+\S+|\S+\s+\(logged in as:.*has connected to the Java server|Floodgate player logged in as\s+\S+\s+joined)|^[.~]?[A-Za-z0-9_]{1,32}(?:\[/[^\]]+\])?\s+logged in with entity id\s+\d+"#, options: .caseInsensitive)
+    private static let proxyLeave = try! NSRegularExpression(pattern: #"^(?:\[(?:Geyser[^\]]*|floodgate)\]\s*)?(?:[.~]?[A-Za-z0-9_]{1,32}\s+(?:lost connection:|has disconnected from the Java server|disconnected)|Floodgate player\s+.*(?:left|disconnected))"#, options: .caseInsensitive)
     private static let stack = try! NSRegularExpression(pattern: #"^(?:at\s+[\w.$/]+\([^)]*\)|Caused by:|Suppressed:|(?:[\w$]+\.)+[\w$]*(?:Exception|Error)(?::|$)|\.\.\.\s+\d+\s+more)"#)
     private static func matches(_ regex: NSRegularExpression, _ text: String) -> Bool { regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil }
     static func parse(_ raw: String) -> Self {
         let plain = cleanConsole(raw)
-        let source = plain as NSString
-        let match = header.firstMatch(in: plain, range: NSRange(location: 0, length: source.length))
+        // Wings/JLine redraw markers may repeat before a normal Minecraft header.
+        let normalized = plain.replacingOccurrences(of: #"^(?:\s*>[.\s]*)+(?=\[|/|<)"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        let source = normalized as NSString
+        let match = header.firstMatch(in: normalized, range: NSRange(location: 0, length: source.length))
         let prefix = match.map { source.substring(with: $0.range).uppercased() } ?? ""
-        let payload = (match.map { source.substring(from: NSMaxRange($0.range)) } ?? plain).trimmingCharacters(in: .whitespaces)
+        let payload = (match.map { source.substring(from: NSMaxRange($0.range)) } ?? normalized).trimmingCharacters(in: .whitespaces)
         let category: ConsoleCategory
         if prefix.contains("ERROR") || prefix.contains("SEVERE") { category = .errors }
         else if prefix.contains("WARN") { category = .warnings }
-        else if matches(chat, payload) { category = .chat }
-        else if matches(join, payload) { category = .joins }
-        else if matches(leave, payload) { category = .leaves }
+        else if payload.range(of: #"^[.~]?[A-Za-z0-9_]{1,32}\s+issued server command:"#, options: .regularExpression) != nil || payload.hasPrefix("> /") || normalized.hasPrefix("/") { category = .commands }
+        else if matches(chat, payload) || matches(styledChat, payload) { category = .chat }
+        else if matches(join, payload) || matches(proxyJoin, payload) { category = .joins }
+        else if matches(leave, payload) || matches(proxyLeave, payload) { category = .leaves }
         else if matches(stack, payload) { category = .errors }
-        else if payload.localizedCaseInsensitiveContains(" issued server command:") || payload.hasPrefix("> /") { category = .commands }
         else { category = .other }
         return Self(plain: plain, category: category)
     }
@@ -102,3 +107,4 @@ actor ConsoleFilterEngine {
     }
     func stop() { token = UUID(); worker?.cancel(); worker = nil; pending = nil; latest = nil }
 }
+

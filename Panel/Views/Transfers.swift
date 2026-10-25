@@ -9,6 +9,7 @@ struct TransfersView: View {
     @State private var error: String?
     @State private var removing: TransferRecord?
     @State private var cancelling: TransferRecord?
+    @State private var clearing = false
     var body: some View {
         NavigationStack {
             List {
@@ -52,7 +53,11 @@ struct TransfersView: View {
                     }
                 }
             }.panelScreen().navigationTitle("Übertragungen").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Alle leeren", systemImage: "trash", role: .destructive) { clearing = true }.disabled(manager.records.isEmpty) }; ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
+                .confirmationDialog("Übertragungen leeren?", isPresented: $clearing, titleVisibility: .visible) {
+                    Button("Verlauf leeren – aktive behalten", role: .destructive) { manager.clearAll() }
+                    if manager.records.contains(where: \.active) { Button("Alle abbrechen und leeren", role: .destructive) { manager.clearAll(includingActive: true) } }
+                } message: { Text("Gespeicherte Downloads auf diesem iPhone werden entfernt. Serverdateien bleiben bestehen. Ein abgebrochener Upload kann auf dem Server unvollständig sein.") }
                 .sheet(item: $share) { ShareSheet(url: $0.url) }.errorAlert($error)
                 .confirmationDialog("Lokale Übertragung und gespeicherte Datei entfernen?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) { Button("Lokal entfernen", role: .destructive) { if let removing { manager.remove(removing) }; removing = nil } }
                 .confirmationDialog("Übertragung abbrechen?", isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } }), titleVisibility: .visible) { Button("Abbrechen", role: .destructive) { if let cancelling { manager.cancel(cancelling) }; cancelling = nil } } message: { Text("Ein abgebrochener Upload kann eine unvollständige Datei auf dem Server hinterlassen.") }
@@ -87,3 +92,4 @@ struct TransferLink: View {
         }.sheet(isPresented: $show) { TransfersView() }
     }
 }
+

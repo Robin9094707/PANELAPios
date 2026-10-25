@@ -205,6 +205,22 @@ struct TransferRecord: Identifiable, Codable {
         guard !record.active else { return }
         try? FileManager.default.removeItem(at: folder(record.id)); records.removeAll { $0.id == record.id }; persist(force: true)
     }
+    /// Clear history without interrupting iOS-owned work, or explicitly cancel it too.
+    func clearAll(includingActive: Bool = false) {
+        let removed = records.filter { includingActive || !$0.active }
+        for record in removed {
+            if record.active { cancel(record) }
+            tasks[record.id]?.cancel(); tasks[record.id] = nil
+            waiters.removeValue(forKey: record.id)?.resume(throwing: CancellationError())
+            do { if FileManager.default.fileExists(atPath: folder(record.id).path) { try FileManager.default.removeItem(at: folder(record.id)) } }
+            catch { storageError = "Lokale Datei konnte nicht entfernt werden: " + error.localizedDescription }
+        }
+        let ids = Set(removed.map(\.id))
+        records.removeAll { ids.contains($0.id) }; persist(force: true)
+        if let activity, ids.contains(where: { $0.uuidString == activity.attributes.transferID }) {
+            Task { await activity.end(nil, dismissalPolicy: .immediate) }; self.activity = nil
+        }
+    }
     private func startActivity(_ record: TransferRecord) {
         guard UIApplication.shared.applicationState == .active, ActivityAuthorizationInfo().areActivitiesEnabled,
               UserDefaults.standard.object(forKey: "transferActivities") as? Bool ?? true else { return }
@@ -268,3 +284,4 @@ final class PanelAppDelegate: NSObject, UIApplicationDelegate {
         TransferManager.shared.backgroundCompletion = completionHandler
     }
 }
+

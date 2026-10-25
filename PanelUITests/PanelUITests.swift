@@ -12,7 +12,7 @@ final class PanelUITests: XCTestCase {
         let more = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["More", "Mehr"])).firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 10)); more.tap()
         let item = app.staticTexts[title].firstMatch
-        if !item.waitForExistence(timeout: 3) { more.tap() }
+        if !item.waitForExistence(timeout: 3) { let back = app.navigationBars.buttons["Mehr"]; if back.exists { back.tap() } else { more.tap() } }
         XCTAssertTrue(item.waitForExistence(timeout: 10)); item.tap()
     }
     func capture(_ name: String) {
@@ -197,4 +197,5 @@ final class PanelUITests: XCTestCase {
         capture("08-Panel-verbinden")
     }
 }
+
 

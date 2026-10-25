@@ -68,7 +68,7 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/AddonUpdateTests -only-testing:PanelTests/MarketplaceNetworkTests -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -193,13 +193,16 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 2.1.0 with Admin Suite 8.4.0 adds structured server performance, community totals, world and plugin lists, and private Discord outbox diagnostics. Full-access API keys can update world time/weather/difficulty/PvP/autosave and request a log retry through single-use confirmation tickets.
+          Simplex Panel 2.2.0 adds provider-aware plugin/mod update checks for Modrinth, Spigot via Spiget, and optional CurseForge with your own API key. Installed files are identified using hashes; unknown projects can be explicitly linked. Server version and loader are configurable. Premium Spigot downloads use your own local website login and purchased access, with manual CAPTCHA handling and JAR import verification.
 
-          Admin Suite repairs durable log retries, sender exception handling and delivery/ACK races. Repeated pending observations coalesce with counts and latest details; existing queued rows survive the additive SQLite upgrade. Disabled channel queues remain stored. Private-channel validation remains mandatory; invalid Discord configuration or permissions must be corrected using the status shown in the app.
+          Console filters now recognize Wings/JLine prompts, formatted player chat, Geyser/Floodgate joins and disconnects. The German Mehr tab keeps backups, management and the new server Live Activity accessible. Transfer history can be cleared in one confirmed action, with a separate option to cancel active transfers.
 
-          Existing plugin folders, player profiles, moderation data, configuration and API keys remain in place. Stop the server, back up the plugin folder, replace the JAR and start it again. Do not delete the data folder. Install the unsigned IPA over the existing app with the same bundle ID and signing identity. Real server and re-signed device validation remains necessary.
+          Server Live Activities show player/resource snapshots and optional Admin Suite TPS/MSPT while the app is active. Background values carry timestamps and become stale after 90 seconds; this release does not add an ActivityKit push server. Existing background URLSession file transfers remain supported subject to iOS lifecycle limits.
 
-          Source backup: backup/before-suite-8.4-panel-2.1. Assets include the plugin JAR and complete plugin source. GitHub Actions builds the app and plugin, runs simulator and real SQLite/HTTPS regression tests, and publishes only after both jobs pass.
+          Existing panel profiles, API keys, Admin Suite pairing, plugin data and server configuration are retained. Install over the existing app using the same bundle ID and signing identity. The companion plugin remains unchanged at 8.4.0; no server update is required for these app features. Source backup: backup/before-panel-2.2.0.
+
+          GitHub Actions builds the IPA, runs focused provider/hash/filter regressions and existing simulator/Admin Suite checks, and publishes only after all required jobs pass. Premium authentication, real host permissions and re-signed device behavior still need validation on your device.
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)
           gh release create "$tag" build/companion/*.jar build/companion/*-source.zip build/companion/AdminSuite-SHA256SUMS.txt "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest
+

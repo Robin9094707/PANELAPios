@@ -126,5 +126,6 @@ struct TransferLiveWidget: Widget {
     }
 }
 @main struct PanelWidgetBundle: WidgetBundle {
-    var body: some Widget { ServerStatusWidget(); FleetWidget(); OnlinePlayersWidget(); RAMWidget(); CPUWidget(); UptimeWidget(); CopiedWidget(); TransferLiveWidget() }
+    var body: some Widget { ServerStatusWidget(); FleetWidget(); OnlinePlayersWidget(); RAMWidget(); CPUWidget(); UptimeWidget(); CopiedWidget(); TransferLiveWidget(); ServerLiveWidget() }
 }
+

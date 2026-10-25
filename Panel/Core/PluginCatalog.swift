@@ -3,6 +3,7 @@ import Combine
 
 /// Metadata only, scoped to this panel connection. JAR bytes are not retained.
 @MainActor final class PluginCatalog: ObservableObject {
+    @Published private(set) var fingerprints: [String: AddonFingerprint] = [:]
     @Published private(set) var descriptors: [String: PluginDescriptor] = [:]
     @Published private(set) var errors: [String: String] = [:]
     @Published private(set) var loading: Set<String> = []
@@ -31,7 +32,9 @@ import Combine
                 descriptor = try PluginDescriptor.parse("name: ExamplePlugin\nversion: 2.0.0\nmain: eu.example.Plugin\napi-version: '1.21'\nauthor: Demo Team\ndescription: Beispielplugin für die Vorschau\n")
             } else {
                 let data = try await api.fileData(server: server, path: pathJoin(directory, entry["name"].string), limit: 128 * 1024 * 1024)
-                descriptor = try await Task.detached(priority: .utility) { try PluginArchive.descriptor(data) }.value
+                let parsed = try await Task.detached(priority: .utility) { (try PluginArchive.descriptor(data), AddonFingerprint.make(data)) }.value
+                descriptor = parsed.0
+                if epoch == epochs[server, default: 0] { fingerprints[key] = parsed.1 }
             }
             try Task.checkCancellation()
             guard epoch == epochs[server, default: 0] else { return }
@@ -46,7 +49,9 @@ import Combine
     func clear(server: String) {
         epochs[server, default: 0] += 1
         let prefix = server + "\u{0}"
+        fingerprints = fingerprints.filter { !$0.key.hasPrefix(prefix) }
         descriptors = descriptors.filter { !$0.key.hasPrefix(prefix) }
         errors = errors.filter { !$0.key.hasPrefix(prefix) }
     }
 }
+

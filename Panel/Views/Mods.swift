@@ -3,6 +3,8 @@ import SwiftUI
 struct ModsView: View {
     let api: PanelAPI
     let server: Server
+    @StateObject private var updates: AddonUpdateModel
+    init(api: PanelAPI, server: Server) { self.api = api; self.server = server; _updates = StateObject(wrappedValue: AddonUpdateModel(api: api, server: server, kind: .mod)) }
     @State private var entries: [JSON] = []
     @State private var descriptors: [String: ModDescriptor] = [:]
     @State private var errors: [String: String] = [:]
@@ -24,6 +26,10 @@ struct ModsView: View {
                 Label("Minecraft Java Mods", systemImage: "shippingbox.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent)
                 Text("Fabric, Quilt, Forge und NeoForge; auch 1.20.1 sowie ältere und neuere Versionen. Wähle JARs passend zu deinem Server, Loader und deinen Abhängigkeiten. Die App prüft Mod-IDs, Loader und Version vor Updates. Änderungen benötigen einen gestoppten Server.").font(.footnote).foregroundStyle(.secondary)
                 Button("Neue Mod installieren / hochladen", systemImage: "plus.circle") { selected = nil; importer = true }.requiresAccess(api, server.id, "file.create")
+                NavigationLink {
+                    AddonUpdateCenter(api: api, server: server, model: updates) { filename, url in selected = entries.first { $0["name"].string == filename }; if selected != nil { inspect(url) } else { error = "Die installierte Mod ist nicht mehr vorhanden. Liste aktualisieren." } }
+                } label: { Label(updates.cache.statuses.values.contains(where: { $0.release != nil }) ? "Updates verfügbar · Modrinth & CurseForge" : "Modrinth & CurseForge", systemImage: "arrow.triangle.2.circlepath") }
+                if updates.busy { ProgressView(updates.progress).font(.caption) }
                 NavigationLink("Alle Mod-Dateien") { FilesView(api: api, server: server, root: "/mods") }
                 NavigationLink("Gesicherte Mod-Versionen") { FilesView(api: api, server: server, root: "/simplex-mod-backups") }
                 Text("Wiederherstellung: Server stoppen, neue JAR aus /mods verschieben und die gesicherte JAR zurück nach /mods verschieben. Spielstände und Konfigurationen werden durch die Mod-Sicherung nicht zurückgesetzt.").font(.caption).foregroundStyle(.secondary)
@@ -35,7 +41,7 @@ struct ModsView: View {
             Section("Mod-Dateien · \(jars.count)") {
                 ForEach(jars, id: \.["name"].string) { entry in modRow(entry) }
             }
-        }.panelScreen().navigationTitle("Mods").navigationBarTitleDisplayMode(.inline).disabled(busy).task { await load() }.refreshable { descriptors = [:]; errors = [:]; await load() }.errorAlert($error)
+        }.panelScreen().navigationTitle("Mods").navigationBarTitleDisplayMode(.inline).disabled(busy).task { await load(); await updates.scan(api: api, server: server, entries: entries) }.refreshable { descriptors = [:]; errors = [:]; await load() }.errorAlert($error)
             .sheet(item: $detail) { value in NavigationStack { List { Section(value.value.name) { LabeledContent("Mod-IDs", value: value.value.ids.joined(separator: ", ")); LabeledContent("Version", value: value.value.version); LabeledContent("Loader", value: value.value.loader); LabeledContent("Minecraft", value: value.value.minecraft); LabeledContent("Umgebung", value: value.value.environment) }; Section("Metadaten") { Text(value.value.metadata).font(.caption.monospaced()).textSelection(.enabled) } }.navigationTitle("Mod-Details").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { detail = nil } } } } }
             .sheet(isPresented: Binding(get: { toggleFile != nil }, set: { if !$0 { toggleFile = nil } })) {
                 if let name = toggleFile {
@@ -76,6 +82,7 @@ struct ModsView: View {
                     Button(name.hasSuffix(".disabled") ? "Aktivieren" : "Deaktivieren", systemImage: "power") { toggle(name) }.requiresAccess(api, server.id, "file.update")
                 } label: { Image(systemName: "ellipsis.circle").font(.title3) }
             }
+            if let status = updates.cache.statuses[name], status.release != nil { Label(status.text, systemImage: "arrow.down.circle.fill").font(.caption).foregroundStyle(Color.panelAccent) }
             if let descriptor { Text("\(descriptor.loader) · \(descriptor.version) · MC \(descriptor.minecraft)").font(.caption).foregroundStyle(Color.panelAccent) }
             else if let problem = errors[name] { Text(problem).font(.caption).foregroundStyle(.orange) }
             else { Text("Metadaten über Details laden · " + bytes(entry["size"].double)).font(.caption).foregroundStyle(.secondary) }
@@ -97,7 +104,7 @@ struct ModsView: View {
     func toggle(_ name: String) { toggleFile = name }
     func inspect(_ url: URL) {
         busy = true; notice = nil
-        Task { defer { busy = false }; do {
+        Task { defer { busy = false; let folder = url.deletingLastPathComponent(); if folder.lastPathComponent.hasPrefix("addon-") || folder.lastPathComponent.hasPrefix("market-") { try? FileManager.default.removeItem(at: folder) } }; do {
             guard !api.demo else { throw PanelError(message: "Mods sind im Demomodus nur lesbar.") }
             guard url.pathExtension.lowercased() == "jar" else { throw PanelError(message: "Wähle eine einzelne Mod-JAR.") }
             let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
@@ -120,3 +127,4 @@ struct ModsView: View {
     }
 }
 struct ModDetail: Identifiable { let id = UUID(); let value: ModDescriptor }
+
