@@ -56,6 +56,7 @@ struct AddonInventory: Codable, Identifiable {
     var name: String
     var version: String
     var fingerprint: AddonFingerprint
+    var identity: String?
 }
 struct AddonRelease: Codable, Identifiable {
     var id: String
@@ -283,6 +284,7 @@ final class MarketplaceClient {
         }
         defer { busy = false; progress = ""; save() }
         let jars = entries.filter { $0["is_file"].bool && $0["name"].string.hasSuffix(".jar") }
+        let previousInventory = cache.inventory
         let names = Set(jars.map { $0["name"].string }); cache.inventory = cache.inventory.filter { names.contains($0.key) }; cache.statuses = cache.statuses.filter { names.contains($0.key) }
         for (index, entry) in jars.enumerated() {
             do {
@@ -294,10 +296,14 @@ final class MarketplaceClient {
                     if kind == .plugin {
                         await api.plugins.load(api: api, server: server.id, entry: entry, retry: force)
                         guard let descriptor = api.plugins.descriptor(server: server.id, entry: entry), let fingerprint = api.plugins.fingerprints[signature] else { throw PanelError(message: api.plugins.errors[signature] ?? "JAR-Metadaten nicht lesbar.") }
-                        item = AddonInventory(filename: name, signature: signature, name: descriptor.name, version: descriptor.version, fingerprint: fingerprint)
+                        item = AddonInventory(filename: name, signature: signature, name: descriptor.name, version: descriptor.version, fingerprint: fingerprint, identity: descriptor.name + "\u{0}" + descriptor.main)
                     } else {
                         let data = try await api.fileData(server: server.id, path: pathJoin(kind.directory, name), limit: 128 * 1024 * 1024)
-                        item = try await Task.detached(priority: .utility) { let descriptor = try ModArchive.descriptor(data); return AddonInventory(filename: name, signature: signature, name: descriptor.name, version: descriptor.version, fingerprint: .make(data)) }.value
+                        item = try await Task.detached(priority: .utility) { let descriptor = try ModArchive.descriptor(data); return AddonInventory(filename: name, signature: signature, name: descriptor.name, version: descriptor.version, fingerprint: .make(data), identity: descriptor.ids.joined(separator: ",") + "|" + descriptor.loader) }.value
+                    }
+                    if cache.links[name] == nil, let identity = item.identity {
+                        let previous = previousInventory.values.filter { $0.identity == identity && !names.contains($0.filename) }
+                        if previous.count == 1 { cache.links[name] = cache.links[previous[0].filename] }
                     }
                     cache.inventory[name] = item; cache.statuses[name] = nil
                 }
@@ -306,7 +312,10 @@ final class MarketplaceClient {
                     cache.links[name] = link; cache.statuses[name] = status
                 }
             } catch is CancellationError { return }
-            catch { cache.statuses[entry["name"].string] = AddonStatus(text: error.localizedDescription, release: nil) }
+            catch {
+                cache.statuses[entry["name"].string] = AddonStatus(text: error.localizedDescription, release: nil)
+                if error.localizedDescription.contains("Anbieter-Limit") { self.error = error.localizedDescription; break }
+            }
             rows = cache.inventory.values.sorted { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }
         }
         rows = cache.inventory.values.sorted { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }; lastScan = Date()

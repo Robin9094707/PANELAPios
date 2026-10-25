@@ -16,6 +16,7 @@ import SwiftUI
                 else { HomeView() }
             }.environmentObject(store).environmentObject(workspace).tint(Color.panelAccent)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
+                .onChange(of: store.locked) { _, locked in if !locked && scenePhase == .active { ServerActivityManager.shared.resume(api: store.api, servers: store.servers) } }
                 .onChange(of: store.servers) { _, servers in if scenePhase == .active { ServerActivityManager.shared.resume(api: store.api, servers: servers) } }
                 .errorAlert($store.error)
                 .privacySensitive()
