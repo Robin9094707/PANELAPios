@@ -2,6 +2,10 @@
 
 A native SwiftUI client for **your own Pterodactyl hosting account**, with Liquid Glass, iPhone/iPad layouts and no third-party runtime dependencies. Built with the iOS 26 SDK or newer; requires iOS 26+, including newer iOS releases. Not an official Pterodactyl or Kinetic application.
 
+## Version 2.3.0 / Admin Suite 8.5.0
+
+Directory-aware, verified JAR staging and a repaired first document-picker handoff; read-only database metadata via the paired Suite; Java world storage inspection and expanded colors/dashboard cards. Existing app/Suite data and identifiers are retained. Installation, API boundaries and validation: [Update 2.3.0](UPDATE-2.3.0.md).
+
 ## Connect
 
 1. Open your provider's **Pterodactyl panel**, then Account → API Credentials.

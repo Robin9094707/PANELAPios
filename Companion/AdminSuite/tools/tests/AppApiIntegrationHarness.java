@@ -51,6 +51,8 @@ public final class AppApiIntegrationHarness {
             client=HttpClient.newBuilder().sslContext(ssl).connectTimeout(java.time.Duration.ofSeconds(5)).build();base=URI.create("https://127.0.0.1:"+port);
             var read=api.security.issue("Read","read");var full=api.security.issue("Full","full");
             check(call("/v1/health",null,null).statusCode()==401,"no key denied");check(call("/v1/health","invalid",null).statusCode()==401,"invalid key denied");
+            check(call("/v1/database/inspect",read.token(),"{}").statusCode()==403,"read scope cannot create database connections");
+            check(call("/v1/database/inspect",full.token(),"{}").statusCode()==400,"scanner validates fields before connecting");
             var health=call("/v1/health",read.token(),null);check(health.statusCode()==200&&object(DiscordBotManager.Json.parse(health.body())).get("serverId").equals(api.security.serverId()),"authenticated stable server identity");
             for(String route:List.of("overview","statistics","worlds","plugins","log-status"))check(call("/v1/data/"+route,read.token(),null).statusCode()==200,"new authenticated data endpoint: "+route);
             check(health.body().contains("log-status"),"health advertises supported features");

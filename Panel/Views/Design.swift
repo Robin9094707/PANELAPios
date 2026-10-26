@@ -8,19 +8,20 @@ struct PanelBackground: View {
     @Environment(\.colorScheme) private var scheme
     @AppStorage("theme.primary") private var themePrimary = "008F83"
     @AppStorage("theme.secondary") private var themeSecondary = "7046BA"
+    @AppStorage("theme.backgroundStrength") private var strength = 1.0
     var body: some View {
         ZStack {
             (scheme == .dark ? Color(red: 0.025, green: 0.05, blue: 0.085) : Color(red: 0.94, green: 0.97, blue: 0.97))
             GeometryReader { geo in
-                Circle().fill(ThemeRGB(themePrimary).color.opacity(scheme == .dark ? 0.18 : 0.10)).frame(width: geo.size.width * 1.2).blur(radius: 95).offset(x: geo.size.width * 0.25, y: -180)
-                Circle().fill(ThemeRGB(themeSecondary).color.opacity(0.12)).frame(width: geo.size.width).blur(radius: 110).offset(x: -geo.size.width * 0.6, y: geo.size.height * 0.6)
+                Circle().fill(ThemeRGB(themePrimary).color.opacity((scheme == .dark ? 0.18 : 0.10) * strength)).frame(width: geo.size.width * 1.2).blur(radius: 95).offset(x: geo.size.width * 0.25, y: -180)
+                Circle().fill(ThemeRGB(themeSecondary).color.opacity(0.12 * strength)).frame(width: geo.size.width).blur(radius: 110).offset(x: -geo.size.width * 0.6, y: geo.size.height * 0.6)
             }.accessibilityHidden(true)
         }.ignoresSafeArea()
     }
 }
 extension View {
     func panelScreen() -> some View { self.scrollContentBackground(.hidden).background { PanelBackground() }.overlay { CopyFeedbackOverlay() } }
-    func card() -> some View { self.padding(18).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24)).overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(.primary.opacity(0.06)) } }
+    func card() -> some View { self.modifier(PanelCardStyle()) }
     func errorAlert(_ error: Binding<String?>) -> some View {
         alert("Hinweis", isPresented: Binding(get: { error.wrappedValue != nil }, set: { if !$0 { error.wrappedValue = nil } })) {
             Button("OK", role: .cancel) { error.wrappedValue = nil }
@@ -157,3 +158,15 @@ struct JSONDetails: View {
     }
 }
 func pathJoin(_ root: String, _ name: String) -> String { (root == "/" ? "" : root) + "/" + name }
+
+struct PanelCardStyle: ViewModifier {
+    @AppStorage("theme.compactCards") private var compact = false
+    @AppStorage("theme.cardRadius") private var radius = 24.0
+    @AppStorage("theme.cardTint") private var tint = 0.0
+    func body(content: Content) -> some View {
+        content.padding(compact ? 12 : 18)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: radius))
+            .background(Color.panelAccent.opacity(tint), in: RoundedRectangle(cornerRadius: radius))
+            .overlay { RoundedRectangle(cornerRadius: radius).strokeBorder(Color.panelAccent.opacity(tint > 0 ? 0.18 : 0.06)) }
+    }
+}

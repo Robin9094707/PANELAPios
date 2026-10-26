@@ -12,7 +12,7 @@ struct DatabasesView: View {
     var body: some View {
         List {
             Section {
-                Text("Verbindungsdaten, Passwörter und Datenbankverwaltung. Tabellen und SQL-Inhalte sind über diese Panel-API nicht zugänglich.").font(.footnote).foregroundStyle(.secondary)
+                Text("Verbindungsdaten, Passwörter und Datenbankverwaltung. Der optionale Scanner liest Metadaten über deine verbundene Admin Suite.").font(.footnote).foregroundStyle(.secondary)
                 Button("Datenbank erstellen", systemImage: "plus") { operation = Operation(title: "Datenbank erstellen", path: prefix, fields: [Field(key: "database", label: "Name"), Field(key: "remote", label: "Erlaubte Quelladresse", value: "%")], submit: "Erstellen") }.requiresRequest(api, prefix, method: "POST")
             }
             if loading { ProgressView() }
@@ -47,6 +47,9 @@ struct DatabaseDetail: View {
                 Section("Verbindung") {
                     copyRow("Datenbank", db.name); copyRow("Host", db.host); copyRow("Port", db.port); copyRow("Benutzer", row["username"].string)
                     copyRow("Erlaubte Quelladresse", row["connections_from"].string)
+                }
+                Section("Nur lesen") {
+                    NavigationLink { DatabaseScannerView(api: api, server: server, initial: row) } label: { Label("Datenbankscanner & Speicher", systemImage: "chart.bar.doc.horizontal") }
                 }
                 Section("Passwort") {
                     if !db.password.isEmpty { HStack { Text(reveal ? db.password : "••••••••••••").font(.system(.body, design: .monospaced)).textSelection(.enabled); Spacer(); Button(reveal ? "Verbergen" : "Anzeigen", systemImage: reveal ? "eye.slash" : "eye") { reveal.toggle() }.labelStyle(.iconOnly); Button("Kopieren", systemImage: "doc.on.doc") { Clipboard.copy(db.password) }.labelStyle(.iconOnly) } }

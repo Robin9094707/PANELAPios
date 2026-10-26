@@ -168,10 +168,11 @@ final class PanelAPI {
             let data = try await Task.detached { try Data(contentsOf: file, options: .mappedIfSafe) }.value
             try await amp.write(server: server, path: pathJoin(directory, file.lastPathComponent), data: data); return
         }
-        let signed = try await request("servers/\(server)/files/upload").attributes["url"].string
-        guard var c = URLComponents(string: signed), c.scheme == "https" else { throw PanelError(message: "Keine sichere Upload-URL erhalten.") }
-        var q = c.queryItems ?? []; q.append(URLQueryItem(name: "directory", value: directory)); c.queryItems = q
-        guard let target = c.url else { throw PanelError(message: "Ungültige Upload-URL.") }
+        // Kinetic signs the destination directory at the panel endpoint too.
+        let signed: String
+        do { signed = try await request("servers/\(server)/files/upload", query: ["directory": directory]).attributes["url"].string }
+        catch { throw PanelError(message: "Upload-Freigabe für \(directory): \(error.localizedDescription)") }
+        let target = try Self.uploadTarget(signed, directory: directory)
         let boundary = "Panel-" + UUID().uuidString
         let staging = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: staging.path, contents: nil)
@@ -190,6 +191,13 @@ final class PanelAPI {
         var request = URLRequest(url: target); request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         try await TransferManager.shared.upload(request, body: staging, filename: file.lastPathComponent, context: "\(base.host ?? "Panel") · \(server) · \(directory)")
+    }
+    nonisolated static func uploadTarget(_ signed: String, directory: String) throws -> URL {
+        guard var c = URLComponents(string: signed), c.scheme == "https", c.host != nil,
+              c.user == nil, c.password == nil, c.fragment == nil else { throw PanelError(message: "Keine sichere Upload-URL erhalten.") }
+        var items = (c.queryItems ?? []).filter { $0.name != "directory" }
+        items.append(URLQueryItem(name: "directory", value: directory)); c.queryItems = items
+        guard let url = c.url else { throw PanelError(message: "Ungültige Upload-URL.") }; return url
     }
     func download(_ signed: String, filename: String) async throws -> URL {
         guard let url = URL(string: signed), url.scheme == "https" else { throw PanelError(message: "Keine sichere Download-URL erhalten.") }

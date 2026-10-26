@@ -118,7 +118,17 @@ jobs:
   companion:
     name: Admin Suite JAR, HTTPS and regression checks
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: fixture-root
+          MARIADB_DATABASE: inspector_fixture
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s --health-timeout=5s --health-retries=10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -135,19 +145,21 @@ jobs:
       - name: Check HTTPS authentication, confirmations and existing data
         working-directory: Companion/AdminSuite
         run: python3 tools/test-830.py
+        env:
+          TEST_DATABASE: "1"
       - name: Package companion source and checksums
         working-directory: Companion/AdminSuite
         run: |
           python3 tools/package-source.py
           cd target
-          sha256sum SimplexAdminSuite-8.4.0.jar SimplexAdminSuite-8.4.0-source.zip > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-8.5.0.jar SimplexAdminSuite-8.5.0-source.zip > AdminSuite-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-8.4.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-8.4.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-8.5.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-8.5.0-source.zip
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
 
@@ -193,15 +205,13 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 2.2.0 adds provider-aware plugin/mod update checks for Modrinth, Spigot via Spiget, and optional CurseForge with your own API key. Installed files are identified using hashes; unknown projects can be explicitly linked. Server version and loader are configurable. Premium Spigot downloads use your own local website login and purchased access, with manual CAPTCHA handling and JAR import verification.
+          Simplex Panel 2.3.0 fixes directory-aware upload signing, stages and verifies JARs before activation, and repairs the first Files-picker handoff for plugin and mod updates. A raw-body transfer fallback is reconciled by SHA-256 before moving files.
 
-          Console filters now recognize Wings/JLine prompts, formatted player chat, Geyser/Floodgate joins and disconnects. The German Mehr tab keeps backups, management and the new server Live Activity accessible. Transfer history can be cleared in one confirmed action, with a separate option to cancel active transfers.
+          Java worlds gain a bounded read-only file/region/playerdata storage scan and level.dat information. New optional Minecraft, storage and transfer cards, color presets, card radius/tint/density and a wide-screen workspace grid expand customization without resetting saved layouts.
 
-          Server Live Activities show player/resource snapshots and optional Admin Suite TPS/MSPT while the app is active. Background values carry timestamps and become stale after 90 seconds; this release does not add an ActivityKit push server. Existing background URLSession file transfers remain supported subject to iOS lifecycle limits.
+          Admin Suite 8.5.0 adds a full-key-only database metadata scanner. It uses fixed metadata queries, a read-only SQL transaction, bounded timeouts and one concurrent connection. Panel passwords are tried first; optional overrides stay in the device Keychain. Table sizes and estimated rows are shown; provider quotas are not invented. TLS is verified by default, with an explicit plaintext database option for compatible private hosts. Existing Suite storage and API keys remain compatible.
 
-          Existing panel profiles, API keys, Admin Suite pairing, plugin data and server configuration are retained. Install over the existing app using the same bundle ID and signing identity. The companion plugin remains unchanged at 8.4.0; no server update is required for these app features. Source backup: backup/before-panel-2.2.0.
-
-          GitHub Actions builds the IPA, runs focused provider/hash/filter regressions and existing simulator/Admin Suite checks, and publishes only after all required jobs pass. Premium authentication, real host permissions and re-signed device behavior still need validation on your device.
+          Install over the existing app using the same signing identity and bundle ID. For the database scanner, update the companion JAR and restart Minecraft; prior Suite functionality remains available. Real Kinetic uploads and your database credentials still require device validation.
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)
           gh release create "$tag" build/companion/*.jar build/companion/*-source.zip build/companion/AdminSuite-SHA256SUMS.txt "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest

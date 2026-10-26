@@ -31,6 +31,7 @@ struct ServerView: View {
     @ObservedObject private var consoleHistory = ConsoleHistory.shared
     @State private var editLayout = false
     @State private var iconRevision = 0
+    @AppStorage("theme.workspaceGrid") private var grid = false
     @State private var historySheet = false
     @State private var historyCursor = CommandHistoryCursor()
     @StateObject private var viewport = ConsoleViewportState()
@@ -103,7 +104,7 @@ struct ServerView: View {
     }
     var overview: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            LazyVGrid(columns: grid ? [GridItem(.adaptive(minimum: 440), alignment: .top)] : [GridItem(.flexible(), alignment: .top)], alignment: .leading, spacing: 22) {
                 ForEach(layouts.cards(layoutKey, scope: .server)) { card in overviewCard(card) }
             }.padding(20).frame(maxWidth: 1000).frame(maxWidth: .infinity)
         }.panelScreen().refreshable { await refreshServer() }.scrollBounceBehavior(.always)
@@ -113,6 +114,22 @@ struct ServerView: View {
     var commandEntries: [String] { consoleHistory.entries(historyKey) }
     @ViewBuilder func overviewCard(_ card: DashboardCard) -> some View {
         switch card {
+        case .minecraftTools:
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Minecraft-Werkzeuge", systemImage: card.symbol).font(.headline)
+                NavigationLink("Java-Welten & Speicheranalyse") { WorldsView(api: api, server: server) }
+                NavigationLink("Minecraft-Einstellungen") { MinecraftPropertiesView(api: api, server: server) }
+                NavigationLink("Plugins & Updates") { PluginsView(api: api, server: server) }
+                NavigationLink("Mods & Updates") { ModsView(api: api, server: server) }
+                if let client = suite.api { NavigationLink("Live-Welten & Serverbetrieb") { SuiteOperationsView(suite: client, actions: suite.actions) } }
+            }.frame(maxWidth: .infinity, alignment: .leading).card()
+        case .storageTools:
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Speicher & Sicherung", systemImage: card.symbol).font(.headline)
+                NavigationLink("Dateien") { FilesView(api: api, server: server, root: "/") }
+                if api.amp == nil { NavigationLink("Datenbanken & Scanner") { DatabasesView(api: api, server: server) }; NavigationLink("Backups") { BackupsView(api: api, server: server) } }
+                else { NavigationLink("Backups") { AMPBackupsView(api: api, server: server) } }
+            }.frame(maxWidth: .infinity, alignment: .leading).card()
         case .identity: identityCard
         case .players: playersSection
         case .resources: resourceCards
