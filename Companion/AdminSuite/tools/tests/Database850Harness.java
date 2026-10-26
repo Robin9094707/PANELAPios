@@ -6,6 +6,7 @@ import java.util.*;
 public final class Database850Harness {
     static void check(boolean value,String why){if(!value)throw new AssertionError(why);}
     public static void main(String[] args)throws Exception {
+        check(ServiceLoader.load(org.mariadb.jdbc.plugin.AuthenticationPluginFactory.class).iterator().hasNext(),"packaged driver authentication services available");
         Map<String,Object> input=new LinkedHashMap<>(Map.of("host","127.0.0.1","port","3306","database","inspector_fixture","username","inspector","password","fixture-reader","allowPlaintext",true));
         check(DatabaseInspector.url(input).equals("jdbc:mariadb://127.0.0.1:3306/inspector_fixture"),"fixed database URL");
         check(DatabaseInspector.properties(input).getProperty("allowMultiQueries").equals("false"),"multiple statements disabled");

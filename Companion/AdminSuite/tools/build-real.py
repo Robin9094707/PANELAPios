@@ -39,7 +39,8 @@ with zipfile.ZipFile(jar,'w',zipfile.ZIP_DEFLATED) as archive:
             archive.writestr(name,sqlite.read(name))
     with zipfile.ZipFile(cache/'mariadb-java-client-3.5.11.jar') as driver:
         for name in driver.namelist():
-            if name.endswith('/') or name.endswith('module-info.class') or name.startswith('META-INF/'): continue
+            if name.endswith('/') or name.endswith('module-info.class'): continue
+            if name.startswith('META-INF/') and not name.startswith('META-INF/services/org.mariadb.jdbc.'): continue
             archive.writestr(name,driver.read(name))
     for base in [classes,root/'src/main/resources']:
         for path in sorted(base.rglob('*')):
