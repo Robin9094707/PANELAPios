@@ -18,10 +18,12 @@ final class Panel230Tests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
     func testSignedUploadTargetPreservesTokenAndHasOneDirectory() throws {
-        let target = try PanelAPI.uploadTarget("https://node.example/upload?token=abc%2B123&directory=%2Fold", directory: "/plugins/update ü")
+        let target = try PanelAPI.uploadTarget("https://node.example/upload?token=abc%2B123&directory=%2Fold", directory: "/plugins/update ü+")
         let query = URLComponents(url: target, resolvingAgainstBaseURL: false)!.queryItems!
-        XCTAssertEqual(query.filter { $0.name == "directory" }.map(\.value), ["/plugins/update ü"])
+        XCTAssertEqual(query.filter { $0.name == "directory" }.map(\.value), ["/plugins/update ü+"])
         XCTAssertEqual(query.first { $0.name == "token" }?.value, "abc+123")
+        XCTAssertTrue(target.absoluteString.contains("token=abc%2B123"))
+        XCTAssertTrue(target.absoluteString.contains("%2B"))
         XCTAssertThrowsError(try PanelAPI.uploadTarget("http://node.example/upload", directory: "/"))
     }
     @MainActor func testFailedSignerUsesVerifiedBinaryFallbackOnce() async throws {

@@ -195,8 +195,14 @@ final class PanelAPI {
     nonisolated static func uploadTarget(_ signed: String, directory: String) throws -> URL {
         guard var c = URLComponents(string: signed), c.scheme == "https", c.host != nil,
               c.user == nil, c.password == nil, c.fragment == nil else { throw PanelError(message: "Keine sichere Upload-URL erhalten.") }
-        var items = (c.queryItems ?? []).filter { $0.name != "directory" }
-        items.append(URLQueryItem(name: "directory", value: directory)); c.queryItems = items
+        // Preserve signed query bytes. URLQueryItem round-tripping can turn %2B into +,
+        // which a form-query parser interprets as a space and invalidates the token.
+        var items = (c.percentEncodedQuery ?? "").split(separator: "&").map(String.init).filter {
+            $0.split(separator: "=", maxSplits: 1).first.map(String.init)?.removingPercentEncoding != "directory"
+        }
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        items.append("directory=" + (directory.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""))
+        c.percentEncodedQuery = items.joined(separator: "&")
         guard let url = c.url else { throw PanelError(message: "Ungültige Upload-URL.") }; return url
     }
     func download(_ signed: String, filename: String) async throws -> URL {

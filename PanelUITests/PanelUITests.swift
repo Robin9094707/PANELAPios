@@ -192,6 +192,30 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Wartende Einträge"].exists)
         capture("28-Suite-Operations")
     }
+    func testJavaWorldStorageAndNewWorkspaceCards() throws {
+        let server = app.buttons["server-simplex1"]
+        XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap()
+        selectTab("Verwalten")
+        let worlds = app.buttons["Java-Welten & Speicheranalyse"]
+        for _ in 0..<5 { if worlds.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(worlds.waitForExistence(timeout: 10)); worlds.tap()
+        let world = app.buttons["world"].firstMatch
+        for _ in 0..<4 { if world.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(world.waitForExistence(timeout: 10)); world.tap()
+        app.buttons["Weltdateien analysieren"].tap()
+        XCTAssertTrue(app.staticTexts["Gesamtgröße"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Spielerdateien (.dat)"].exists)
+        capture("29-Java-Weltspeicher")
+        selectTab("Übersicht")
+        app.buttons["editServerLayout"].tap()
+        let tools = app.buttons["add-card-minecraftTools"]
+        for _ in 0..<8 { if tools.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(tools.waitForExistence(timeout: 10)); tools.tap()
+        capture("30-Workspace-Karten")
+        for _ in 0..<6 { if app.buttons["reset-dashboard"].isHittable { break }; app.swipeUp() }
+        app.buttons["reset-dashboard"].tap(); app.alerts.buttons["confirm-reset-dashboard"].firstMatch.tap()
+        app.buttons["finish-dashboard"].tap()
+    }
     func testConnectionFormRequiresURLAndClientKey() throws {
         app.swipeUp()
         let connect = app.buttons["Eigenes Panel verbinden"]
