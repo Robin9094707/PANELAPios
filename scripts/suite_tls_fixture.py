@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Loopback-only synthetic TLS endpoint for iOS transport tests. No real server data."""
-import http.server, ssl, json
+import http.server, ssl, json, hashlib
 from pathlib import Path
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version='HTTP/1.1'
@@ -10,6 +10,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path=='/v1/health':self.reply(200,{'serverId':'synthetic-tls-server','apiVersion':1,'scope':'read','version':'8.3.0'})
         elif self.path=='/v1/redirect':self.reply(302,{'message':'Must never follow'},location='https://never-contact.example.invalid/steal')
         else:self.reply(404,{'message':'Synthetic route missing'})
+    def do_POST(self):
+        if self.headers.get('Authorization')!='Bearer synthetic-tls-token':
+            self.reply(401,{'message':'Synthetic key missing'});return
+        if self.path!='/v1/plugin-files/echo' or self.headers.get('Content-Type')!='application/java-archive':
+            self.reply(400,{'message':'Invalid binary fixture request'});return
+        size=int(self.headers.get('Content-Length','0'))
+        if not 0<size<=16*1024*1024:
+            self.reply(413,{'message':'Invalid fixture body size'});return
+        digest=hashlib.sha256();remaining=size
+        while remaining:
+            data=self.rfile.read(min(65536,remaining))
+            if not data:self.reply(400,{'message':'Truncated binary upload'});return
+            digest.update(data);remaining-=len(data)
+        self.reply(200,{'size':size,'sha256':digest.hexdigest()})
     def reply(self,status,data,location=None):
         body=json.dumps(data).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.send_header('Connection','close')
         if location:self.send_header('Location',location)

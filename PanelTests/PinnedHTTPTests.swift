@@ -23,6 +23,12 @@ final class PinnedHTTPTests: XCTestCase {
         XCTAssertEqual(health["serverId"].string, "synthetic-tls-server")
         XCTAssertEqual(api.scope, "read")
     }
+    @MainActor func testPinnedBinaryJARLargerThanJSONResponseLimitIsNotTruncated() async throws {
+        let data = Data(repeating: 0x5a, count: 9 * 1024 * 1024)
+        let response = try await client(pin: pin).request("plugin-files/echo", method: "POST", binary: data)
+        XCTAssertEqual(response["size"].int, data.count)
+        XCTAssertEqual(response["sha256"].string, PluginArchive.digest(data))
+    }
     @MainActor func testWrongCertificateAndPinnedRedirectAreRejected() async throws {
         do { _ = try await client(pin: String(repeating: "0", count: 64)).health(); XCTFail("Wrong pin accepted") } catch { XCTAssertTrue(error.localizedDescription.contains("Fingerabdruck") || error.localizedDescription.contains("fingerabdruck")) }
         do { _ = try await client(pin: pin).request("redirect"); XCTFail("Redirect accepted") } catch { XCTAssertTrue(error.localizedDescription.contains("302")) }
