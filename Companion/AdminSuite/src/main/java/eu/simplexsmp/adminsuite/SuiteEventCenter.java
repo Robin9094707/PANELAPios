@@ -61,6 +61,7 @@ final class SuiteEventCenter {
     private static String clip(String text,int length) {String s=text==null?"":text.replaceAll("[\\p{Cc}&&[^\\n\\t]]","");return s.substring(0,Math.min(length,s.length()));}
     private synchronized void persist() throws IOException {
         Properties out=new Properties();events.forEach((id,row)->out.setProperty(id,DiscordBotManager.Json.stringify(row)));AtomicState.save(eventsFile,out,"Simplex event ledger v1");
+        Properties next=new Properties();next.putAll(subscriptions);boolean changed=false;for(String key:subscriptions.stringPropertyNames())if(key.startsWith("alarm.")||key.startsWith("ack.")){String[] parts=key.split("\\.",4);if(parts.length>=3&&!events.containsKey(parts[2])){next.remove(key);changed=true;}}if(changed){AtomicState.save(subscriptionsFile,next,"Private Bark subscriptions and alarms");subscriptions.clear();subscriptions.putAll(next);}
     }
     synchronized Object data(String query,int offset) {
         List<Map<String,Object>> rows=new ArrayList<>(events.values());Collections.reverse(rows);
@@ -103,7 +104,7 @@ final class SuiteEventCenter {
         subscriptions.clear();subscriptions.putAll(next);
         return SimplexAdminSuite.appMap("ok",true,"title","Benachrichtigungen gespeichert","description","Ereignisse werden vom Minecraft-Plugin an Bark gesendet, auch wenn die Panel-App geschlossen ist.");
     }
-    synchronized Object acknowledge(String owner,String id)throws IOException {String stem="alarm."+owner+"."+id;for(String suffix:List.of(".row",".next",".owner"))subscriptions.remove(stem+suffix);if(events.containsKey(id))subscriptions.setProperty("ack."+owner+"."+id,Long.toString(System.currentTimeMillis()));AtomicState.save(subscriptionsFile,subscriptions,"Private Bark subscriptions and alarms");return SimplexAdminSuite.appMap("ok",true,"title","Alarm bestätigt","description","Weitere Wiederholungen für diesen Alarm sind beendet.");}
+    synchronized Object acknowledge(String owner,String id)throws IOException {Properties next=new Properties();next.putAll(subscriptions);String stem="alarm."+owner+"."+id;for(String suffix:List.of(".row",".next",".owner"))next.remove(stem+suffix);if(events.containsKey(id))next.setProperty("ack."+owner+"."+id,Long.toString(System.currentTimeMillis()));AtomicState.save(subscriptionsFile,next,"Private Bark subscriptions and alarms");subscriptions.clear();subscriptions.putAll(next);return SimplexAdminSuite.appMap("ok",true,"title","Alarm bestätigt","description","Weitere Wiederholungen für diesen Alarm sind beendet.");}
     private void push(Map<String,Object> row) throws Exception {push(row,null,false);}
     private void push(Map<String,Object> row,String onlyOwner,boolean repeated) throws Exception {
         Properties copy=new Properties();synchronized(this){copy.putAll(subscriptions);}

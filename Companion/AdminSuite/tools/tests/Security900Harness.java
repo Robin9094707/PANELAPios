@@ -43,6 +43,9 @@ public final class Security900Harness {
             events.configure("owner",config);check(!events.subscription("owner").toString().contains("synthetic-key-900"),"secret never returned");
             check(!events.subscription("other").toString().contains("first-join"),"subscription isolated per API key");
             config.put("key","https://attacker.invalid/key");SuiteEventCenter current=events;reject(()->current.configure("owner",config),"external Bark hosts rejected");
+            Properties alarms=(Properties)Moderation790Harness.get(events,"subscriptions");alarms.setProperty("alarm.owner."+id+".row","{}");alarms.setProperty("alarm.owner."+id+".owner","owner");
+            events.acknowledge("owner",id);check(!alarms.containsKey("alarm.owner."+id+".row")&&alarms.containsKey("ack.owner."+id),"ack ends pending alarm and protects against in-flight rescheduling");
+            events.edit("events.delete",id,"");check(!alarms.containsKey("ack.owner."+id),"deleted event removes obsolete acknowledgement state");
             AtomicBoolean op=new AtomicBoolean(),invulnerable=new AtomicBoolean(true),online=new AtomicBoolean();AtomicReference<GameMode> mode=new AtomicReference<>(GameMode.CREATIVE);UUID uuid=UUID.randomUUID();
             Player player=AppApiIntegrationHarness.proxy(Player.class,(p,m,a)->switch(m.getName()) {
                 case "isOp"->op.get();case "isOnline"->true;case "getUniqueId"->uuid;case "getName"->"Fixture";case "getGameMode"->mode.get();case "isInvulnerable"->invulnerable.get();
