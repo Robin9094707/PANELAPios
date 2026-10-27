@@ -3,7 +3,7 @@ import SwiftUI
 enum SuiteSecurityArea: String, CaseIterable {
     case events, bans, vpn, reports
     var title: String { switch self { case .events: return "Ereignisse"; case .bans: return "Banns & Freigaben"; case .vpn: return "VPN-Schutz"; case .reports: return "Reports" } }
-    var symbol: String { switch self { case .events: return "bell.badge.fill"; case .bans: return "hand.raised.fill"; case .vpn: return "network.badge.shield.half.filled"; case .reports: return "flag.fill" } }
+    var symbol: String { switch self { case .events: return "bell.badge.fill"; case .bans: return "hand.raised.fill"; case .vpn: return "network"; case .reports: return "flag.fill" } }
 }
 
 @MainActor final class SuiteSecurityModel: ObservableObject {
@@ -237,4 +237,31 @@ struct SuiteBarkSettingsView: View {
             .sheet(isPresented: Binding(get: { model.plan != nil }, set: { if !$0 { model.plan = nil } })) { SuiteSecurityConfirmation(model: model) { key = ""; configured = true; dismiss() } }
     }
     func interruption(_ title: String, selection: Binding<String>) -> some View { Picker(title, selection: selection) { Text("Normal").tag("active"); Text("Nur Liste (still)").tag("passive"); Text("Zeitkritisch").tag("timeSensitive"); Text("Kritischer Alarm").tag("critical") } }
+}
+
+struct SuiteEventInboxView: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        List {
+            if let panel = store.api {
+                ForEach(store.servers.filter { SuiteConnections.shared.get(panel, $0) != nil }) { server in
+                    NavigationLink(server.name) { SuiteEventConnectedView(panel: panel, server: server) }
+                }
+                if !store.servers.contains(where: { SuiteConnections.shared.get(panel, $0) != nil }) { Text("Für das ausgewählte Panel ist noch keine Admin Suite verbunden.").foregroundStyle(.secondary) }
+            } else { Text("Öffne deinen gespeicherten Panel-Zugang, um die Serverereignisse anzuzeigen.") }
+        }.panelScreen().navigationTitle("Serverereignisse").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
+    }
+}
+struct SuiteEventConnectedView: View {
+    let panel: PanelAPI
+    let server: Server
+    @StateObject private var model: SuiteModel
+    init(panel: PanelAPI, server: Server) { self.panel = panel; self.server = server; _model = StateObject(wrappedValue: SuiteModel(panel: panel, server: server)) }
+    var body: some View {
+        Group {
+            if let suite = model.api, model.health["features"].array.contains(.string("events-v1")) { SuiteSecurityCenterView(suite: suite, panel: panel, server: server, actions: model.actions, area: .events) }
+            else { List { if model.busy { ProgressView("Verbinden …") }; Text(model.error ?? "Admin Suite 9.0 oder neuer wird für diesen Bereich benötigt.").foregroundStyle(.secondary); Button("Erneut verbinden") { Task { await model.load(force: true) } } }.panelScreen() }
+        }.task { await model.load() }
+    }
 }

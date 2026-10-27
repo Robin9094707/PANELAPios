@@ -28,6 +28,7 @@ public final class AppApiIntegrationHarness {
     }
     static String json(Object value){return DiscordBotManager.Json.stringify(value);}
     public static void main(String[] args)throws Exception{
+        System.setProperty("jdk.internal.httpclient.disableHostnameVerification","true"); // Fixture still verifies the exact certificate SHA-256.
         Path dir=Files.createTempDirectory("sas-api-http-");Field serverField=Bukkit.class.getDeclaredField("server");serverField.setAccessible(true);Object old=serverField.get(null);AppApiManager api=null;
         try{
             BukkitTask task=proxy(BukkitTask.class,(p,m,a)->empty(m.getReturnType()));

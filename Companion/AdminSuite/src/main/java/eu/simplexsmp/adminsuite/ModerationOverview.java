@@ -222,8 +222,8 @@ final class ModerationOverview {
             BanList list=Bukkit.getBanList(kind);for(Object raw:list.getBanEntries()) {
                 BanEntry entry=(BanEntry)raw;if(entry.getExpiration()!=null&&entry.getExpiration().before(new Date()))continue;
                 Object target=entry.getBanTarget();boolean profile=target instanceof org.bukkit.profile.PlayerProfile;
-                String id=profile?String.valueOf(((org.bukkit.profile.PlayerProfile)target).getUniqueId()):String.valueOf(target);
-                String name=profile?((org.bukkit.profile.PlayerProfile)target).getName():String.valueOf(target);
+                String id=profile?String.valueOf(((org.bukkit.profile.PlayerProfile)target).getUniqueId()):target instanceof java.net.InetAddress address?address.getHostAddress():String.valueOf(target);
+                String name=profile?((org.bukkit.profile.PlayerProfile)target).getName():id;
                 rows.add(SimplexAdminSuite.appMap("id",id,"player",profile?id:"","name",name==null?id:name,"source",kind==BanList.Type.IP?"minecraft-ip":"minecraft-profile","reason",safe(entry.getReason()),"actor",safe(entry.getSource()),"created",entry.getCreated().getTime(),"until",entry.getExpiration()==null?0:entry.getExpiration().getTime(),"revision",nativeRevision(entry)));
             }
         } else throw new IllegalArgumentException("Unbekannte Bannquelle");
@@ -272,7 +272,8 @@ final class ModerationOverview {
             return SimplexAdminSuite.appMap("ok",true,"title","Entbannung angefordert","description","LiteBans verarbeitet ID #"+id+". Liste aktualisieren, um das Ergebnis zu prüfen.");
         } else if(source.equals("minecraft-profile")||source.equals("minecraft-ip")) {
             BanList list=Bukkit.getBanList(source.equals("minecraft-ip")?BanList.Type.IP:BanList.Type.PROFILE);
-            Object target=source.equals("minecraft-ip")?id:Bukkit.createPlayerProfile(UUID.fromString(id));
+            if(source.equals("minecraft-ip")&&!VpnIpCheckService.isIpLiteral(id))throw new IllegalArgumentException("Gültige IP-Adresse erforderlich");
+            Object target=source.equals("minecraft-ip")?java.net.InetAddress.getByName(id):Bukkit.createPlayerProfile(UUID.fromString(id));
             BanEntry entry=list.getBanEntry(target);if(entry==null)throw new IllegalArgumentException("Sperre bereits aufgehoben");
             if(!nativeRevision(entry).equals(expected))throw new IllegalArgumentException("Minecraft-Sperre wurde geändert. Neu laden.");
             list.pardon(target);if(list.getBanEntry(target)!=null)throw new IllegalArgumentException("Minecraft-Sperre besteht weiterhin");
