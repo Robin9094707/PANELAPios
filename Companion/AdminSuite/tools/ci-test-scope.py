@@ -9,7 +9,7 @@ ALL = ['security', 'api', 'release', 'outbox', 'database']
 PREFIX = 'Companion/AdminSuite/'
 ISOLATED = {
     'DatabaseInspector.java': ['database'],
-    'OutboxStore.java': ['outbox'],
+    'SecurityLogOutbox.java': ['outbox'],
 }
 HARNESS = {
     'AppApiSecurityHarness.java': 'security',

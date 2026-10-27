@@ -42,6 +42,8 @@ jobs:
         with:
           path: Companion/AdminSuite/target/build-deps
           key: suite-build-deps-${{ hashFiles('Companion/AdminSuite/tools/build-dependencies.json') }}
+      - name: Check test-selection rules
+        run: python3 Companion/AdminSuite/tools/test-ci-scope.py
       - name: Select affected tests
         id: scope
         env:
