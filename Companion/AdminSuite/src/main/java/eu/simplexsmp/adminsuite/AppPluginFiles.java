@@ -123,8 +123,9 @@ final class AppPluginFiles {
         return old;
     }
     private static String text(Map<String,Object> values,String key){return String.valueOf(values.getOrDefault(key,""));}
-    synchronized Map<String,Object> stage(Map<String,Object> values, InputStream input) throws Exception {
-        prepare(values); Path folder=updateDirectory(true); String installed=text(values,"filename");
+    Map<String,Object> stage(Map<String,Object> values, InputStream input) throws Exception { return stage(values,input,()->{}); }
+    synchronized Map<String,Object> stage(Map<String,Object> values, InputStream input, Runnable authorize) throws Exception {
+        authorize.run();prepare(values); Path folder=updateDirectory(true); String installed=text(values,"filename");
         // Keep the installed filename so Paper replaces that exact JAR and no duplicate version remains.
         Path destination=folder.resolve(installed); String wanted=text(values,"sha256");
         Map<String,Object> existing=status(installed,wanted);if(Boolean.TRUE.equals(existing.get("queued")))return existing;
@@ -138,6 +139,7 @@ final class AppPluginFiles {
             verifyClass(temporary,text(values,"main"));
             prepare(values);if(!folder.equals(updateDirectory(false)))throw new IOException("Update-Ordner wurde geändert");
             checkPending(folder,installed,text(values,"name"));
+            authorize.run();
             // Atomic, exclusive publication: an existing destination is never overwritten.
             try { Files.createLink(destination,temporary); }
             catch(UnsupportedOperationException e){Files.move(temporary,destination);}

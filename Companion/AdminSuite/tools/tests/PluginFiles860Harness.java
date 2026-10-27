@@ -37,6 +37,9 @@ public final class PluginFiles860Harness {
             byte[] other=jar("SimplexAdminSuite","8.7.0","eu.simplex.Main",false,61);var conflict=plan(installed,other,"8.7.0");denied(()->service.stage(conflict,new ByteArrayInputStream(other)),"conflicting queued update");
             Files.delete(destination);
             denied(()->service.stage(plan,new ByteArrayInputStream(Arrays.copyOf(next,next.length-4))),"truncated upload");check(!Files.exists(destination),"no truncated JAR published");
+            int[] authorizations={0};
+            denied(()->service.stage(plan,new ByteArrayInputStream(next),()->{if(++authorizations[0]>1)throw new IllegalArgumentException("key revoked");}),"key revoked during upload");
+            check(!Files.exists(destination),"revoked key cannot publish uploaded JAR");
             byte[] wrong=jar("OtherPlugin","8.6.0","eu.simplex.Main",false,61);var wrongPlan=plan(installed,wrong,"8.6.0");denied(()->service.stage(wrongPlan,new ByteArrayInputStream(wrong)),"wrong identity");
             byte[] newerJava=jar("SimplexAdminSuite","8.6.0","eu.simplex.Main",false,100);var javaPlan=plan(installed,newerJava,"8.6.0");denied(()->service.stage(javaPlan,new ByteArrayInputStream(newerJava)),"unsupported main-class Java");
             var stale=new LinkedHashMap<>(plan);stale.put("expected","0".repeat(64));denied(()->service.stage(stale,new ByteArrayInputStream(next)),"stale installed hash");

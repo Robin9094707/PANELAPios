@@ -135,7 +135,7 @@ final class AppApiManager {
                 String stored=security.consume(key,query.getOrDefault("ticket",""),System.currentTimeMillis());Map<String,Object> plan=object(DiscordBotManager.Json.parse(stored));
                 if(!"plugins.stage".equals(plan.get("path")))throw new ApiError(400,"Bestätigung gehört nicht zu einem Plugin-Update");
                 if(generation.get()!=rev || !security.keys().contains(key))throw new ApiError(401,"API-Zugang wurde geändert");
-                result=pluginFiles().stage(object(plan.get("values")),x.getRequestBody());
+                result=pluginFiles().stage(object(plan.get("values")),x.getRequestBody(),()->{if(generation.get()!=rev || !security.keys().contains(key))throw new ApiError(401,"API-Zugang wurde geändert");});
                 String auditName=actor(key).auditName();String detail=String.valueOf(object(plan.get("values")).get("filename"));
                 onMain(rev,()->{plugin.expansionAudit(auditName,null,"Plugin-Update vorgemerkt",detail);return null;});
             }else if(method.equals("POST")&&(path.equals("/v1/prepare")||path.equals("/v1/execute"))){

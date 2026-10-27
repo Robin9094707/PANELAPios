@@ -4,6 +4,7 @@ import XCTest
 final class PluginServerAPITests: XCTestCase {
     @MainActor func testServerInspectionAndBinaryUploadUseSuiteOnly() async throws {
         var routes: [String] = [], uploaded: Data?
+        let bodyReader = PluginUploadRegressionTests.Host()
         let data = PluginUploadRegressionTests.next
         let old = try PluginArchive.descriptor(PluginUploadRegressionTests.old), next = try PluginArchive.descriptor(data)
         let hash = PluginArchive.digest(data)
@@ -15,13 +16,13 @@ final class PluginServerAPITests: XCTestCase {
             switch route {
             case "/v1/health": reply = .object(["apiVersion": .number(1), "serverId": .string("fixture"), "scope": .string("full"), "features": .array([.string("plugin-files-v1")])])
             case "/v1/prepare":
-                let body = try JSONDecoder().decode(JSON.self, from: request.httpBody!)
+                let body = try JSONDecoder().decode(JSON.self, from: bodyReader.body(request))
                 XCTAssertEqual(body["path"].string, "plugins.stage"); XCTAssertEqual(body["values"]["sha256"].string, hash)
                 reply = .object(["ticket": .string("bound-confirmation")])
             case "/v1/plugin-files/upload":
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/java-archive")
                 XCTAssertTrue(request.url!.query!.contains("ticket=bound-confirmation"))
-                uploaded = request.httpBody
+                uploaded = try bodyReader.body(request)
                 reply = .object(["queued": .bool(true), "filename": .string("installed.jar"), "sha256": .string(hash), "updateDirectory": .string("/plugins/update")])
             default: XCTFail("Unexpected route " + route); reply = .null
             }

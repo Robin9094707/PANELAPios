@@ -45,7 +45,7 @@ struct PluginsView: View {
                 NavigationLink("Plugin-Dateien & Konfigurationen") { FilesView(api: api, server: server, root: "/plugins") }
                 NavigationLink("Vorgemerkte Updates") { FilesView(api: api, server: server, root: updateDirectory) }
                 Link("Paper-Anleitung für Plugin-Updates", destination: URL(string: "https://docs.papermc.io/paper/updating/#step-2-update-plugins")!)
-            } footer: { Text("Der Updatepfad wird aus bukkit.yml gelesen. Standard: /plugins/update. Neue Plugins direkt unter /plugins bei gestopptem Server installieren.") }
+            } footer: { Text("Der Updatepfad wird aus bukkit.yml gelesen. Standard: /plugins/update. Neue Plugins direkt unter /plugins bei gestopptem Server installieren.") }.id("plugin-status")
             if let value = candidate {
                 Section("Plugin-Update prüfen") {
                     LabeledContent("Plugin", value: value.installed.name)
@@ -83,6 +83,12 @@ struct PluginsView: View {
                     if let selection = handoff.takeSelection() { inspect(selection.file, filename: selection.target) }
                     if let issue = handoff.takeError() { error = issue }
                 }.ignoresSafeArea()
+            }
+            .safeAreaInset(edge: .bottom) {
+                if busy { HStack(spacing: 12) { ProgressView(); Text(progress).font(.subheadline); Spacer() }.padding().background(.regularMaterial).accessibilityIdentifier("plugin-update-busy-banner") }
+            }
+            .onChange(of: error) { _, value in
+                if value != nil { withAnimation { scroll.scrollTo("plugin-status", anchor: .top) } }
             }
             .onChange(of: candidate?.id) { _, value in
                 if value != nil { withAnimation { scroll.scrollTo("plugin-update-preview", anchor: .top) } }
