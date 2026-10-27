@@ -152,14 +152,14 @@ jobs:
         run: |
           python3 tools/package-source.py
           cd target
-          sha256sum SimplexAdminSuite-9.0.0.jar SimplexAdminSuite-9.0.0-source.zip > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-9.0.5.jar SimplexAdminSuite-9.0.5-source.zip > AdminSuite-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-9.0.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-9.0.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-9.0.5.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-9.0.5-source.zip
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
 
@@ -205,13 +205,9 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 2.4.0 and Admin Suite 9.0.0 add a native security center: separate internal, client-check, Minecraft and LiteBans lists; exact-source unban; VPN whitelist and recent kicks; reports; searchable server events and per-key Bark subscriptions. iPad and iPhone have distinct device icons.
+          Simplex Panel 2.5.0 and Admin Suite 9.0.5 add direct UUID-based NBT opening, maintenance and local administrator controls, compact device/report details, client scan results, inactive Ultra group deletion, new-plugin installation and per-event Bark policies with quiet hours and acknowledged repeat alarms.
 
-          Unknown client brands are masked in public joins and produce private staff warnings, never brand-only bans. Confirmed Meteor detections require staff release by default (explicit configured rules remain authoritative). Sign placement retries avoid premature no-space skips. Non-operators are kept in survival and accidental invulnerability is corrected while respecting temporary probe fall protection.
-
-          Offline player NBT can be edited while the server runs through an authenticated full-scope Suite endpoint, with main-thread offline checks, SHA-256 conflict detection, structural NBT validation, verified backups and atomic replacement. Existing profile, punishment, report, VPN, Panel, AMP, Keychain and connection formats are retained. Bark secrets are configured on the server and never bundled in this public repository.
-
-          Install over the existing app with the same signing identity and bundle ID. Replace the plugin JAR during a planned Minecraft restart and retain its complete data folder. The IPA is unsigned and needs your own signing. Production Minecraft/Bedrock sessions and Apple push delivery are not simulated by the build.
+          Existing 2.4.0/9.0.0 state formats are retained. New policies are additive. Operator/owner access remains protected. Install the unsigned IPA with the same bundle/signing identity and retain the complete plugin data folder when replacing the JAR during a planned restart. Source and installation notes are included in the source ZIP.
 
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)

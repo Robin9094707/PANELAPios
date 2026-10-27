@@ -19,6 +19,14 @@ public final class Security900Harness {
         for(String brand:List.of("vanilla","fabric","forge","neoforge","quilt","noriskclient"))check(!ClientBrands.known(brand).isEmpty(),"known brand: "+brand);
         for(String brand:List.of("Robins PC","fabric Robins PC","vanilla\nAdmin","§cvanilla","meteor","<red>Forge"))check(ClientBrands.known(brand).isEmpty()&&!ClientBrands.label(brand,true).contains(brand),"spoof never publicly echoed: "+brand);
         check(ClientBrands.label("Robins PC",true).contains("Unbekannter")&&ClientBrands.label("Robins PC",false).contains("Unknown"),"viewer locale");
+        Properties policy=new Properties();policy.setProperty("u.quietMode","selected");policy.setProperty("u.quietStart","22:00");policy.setProperty("u.quietEnd","07:00");policy.setProperty("u.timezone","Europe/Berlin");policy.setProperty("u.quietKinds","report");
+        var night=java.time.Instant.parse("2026-10-27T23:00:00Z");var day=java.time.Instant.parse("2026-10-27T12:00:00Z");
+        check(BarkPolicy.quiet(policy,"u.",night)&&!BarkPolicy.quiet(policy,"u.",day),"overnight quiet interval in configured zone");
+        check(BarkPolicy.allowed(policy,"u.","report","critical",night),"selected critical report passes quiet hours");
+        check(!BarkPolicy.allowed(policy,"u.","ban","critical",night)&&!BarkPolicy.allowed(policy,"u.","report","active",night),"unselected critical and ordinary alerts stay quiet");
+        policy.setProperty("u.quietEnd","22:00");check(BarkPolicy.quiet(policy,"u.",day),"equal quiet endpoints mean whole day");
+        reject(()->BarkPolicy.rules("report:critical:alarm:1"),"unbounded short repeat rejected");
+        check(BarkPolicy.rules("report:critical:alarm:120;join:off:minuet:0").size()==2,"per-event rules parsed independently");
         Path folder=Files.createTempDirectory("suite900-");SuiteEventCenter events=null;
         Field serverField=Bukkit.class.getDeclaredField("server");serverField.setAccessible(true);Object previous=serverField.get(null);
         Path worldFolder=Files.createTempDirectory(Path.of("target").toAbsolutePath(),"nbt900-");
@@ -35,6 +43,9 @@ public final class Security900Harness {
             events.configure("owner",config);check(!events.subscription("owner").toString().contains("synthetic-key-900"),"secret never returned");
             check(!events.subscription("other").toString().contains("first-join"),"subscription isolated per API key");
             config.put("key","https://attacker.invalid/key");SuiteEventCenter current=events;reject(()->current.configure("owner",config),"external Bark hosts rejected");
+            Properties alarms=(Properties)Moderation790Harness.get(events,"subscriptions");alarms.setProperty("alarm.owner."+id+".row","{}");alarms.setProperty("alarm.owner."+id+".owner","owner");
+            events.acknowledge("owner",id);check(!alarms.containsKey("alarm.owner."+id+".row")&&alarms.containsKey("ack.owner."+id),"ack ends pending alarm and protects against in-flight rescheduling");
+            events.edit("events.delete",id,"");check(!alarms.containsKey("ack.owner."+id),"deleted event removes obsolete acknowledgement state");
             AtomicBoolean op=new AtomicBoolean(),invulnerable=new AtomicBoolean(true),online=new AtomicBoolean();AtomicReference<GameMode> mode=new AtomicReference<>(GameMode.CREATIVE);UUID uuid=UUID.randomUUID();
             Player player=AppApiIntegrationHarness.proxy(Player.class,(p,m,a)->switch(m.getName()) {
                 case "isOp"->op.get();case "isOnline"->true;case "getUniqueId"->uuid;case "getName"->"Fixture";case "getGameMode"->mode.get();case "isInvulnerable"->invulnerable.get();
@@ -48,6 +59,14 @@ public final class Security900Harness {
             var dbConstructor=SimplexAdminSuite.PlayerDatabase.class.getDeclaredConstructor(SimplexAdminSuite.class);dbConstructor.setAccessible(true);Object db=dbConstructor.newInstance(plugin);Moderation790Harness.set(plugin,SimplexAdminSuite.class,"database",db);
             var profileConstructor=SimplexAdminSuite.PlayerProfile.class.getDeclaredConstructor(UUID.class,String.class);profileConstructor.setAccessible(true);Object profile=profileConstructor.newInstance(uuid,"Fixture");
             @SuppressWarnings("unchecked") Map<UUID,Object> profiles=(Map<UUID,Object>)Moderation790Harness.get(db,"profiles");profiles.clear();profiles.put(uuid,profile);
+            var typedProfile=(SimplexAdminSuite.PlayerProfile)profile;
+            var temporary=SimplexAdminSuite.PlayerProfile.class.getDeclaredMethod("setTemporaryBlocked",String.class,long.class);temporary.setAccessible(true);
+            var permanent=SimplexAdminSuite.PlayerProfile.class.getDeclaredMethod("setBlocked",String.class,boolean.class);permanent.setAccessible(true);
+            long expiry=System.currentTimeMillis()+60000;temporary.invoke(profile,"chat",expiry);String oldRight=typedProfile.inheritedRightSnapshot("chat");
+            permanent.invoke(profile,"chat",true);typedProfile.restoreInheritedRight("chat",oldRight);
+            check(!typedProfile.blockedRightsSet().contains("chat")&&typedProfile.temporaryBlockedRightsMap().get("chat")==expiry,"removing inherited denial restores original temporary expiry");
+            typedProfile.restoreInheritedRight("chat","false:"+(System.currentTimeMillis()-1));check(!typedProfile.blockedRightsSet().contains("chat")&&!typedProfile.temporaryBlockedRightsMap().containsKey("chat"),"expired original restriction is not made permanent");
+            permanent.invoke(profile,"chat",true);String permanentRight=typedProfile.inheritedRightSnapshot("chat");permanent.invoke(profile,"chat",false);typedProfile.restoreInheritedRight("chat",permanentRight);check(typedProfile.blockedRightsSet().contains("chat"),"own permanent denial preserved");
             VpnProtectionManager vpn=new VpnProtectionManager(plugin);UUID firstBlocked=UUID.randomUUID();
             try {
                 vpn.appWhitelist("Fixture",firstBlocked.toString(),true);check(vpn.isWhitelisted(firstBlocked,"NewPlayer"),"first-login VPN kick can be whitelisted by exact UUID");

@@ -39,6 +39,8 @@ final class SuiteEventCenter {
     private static Properties load(Path path) throws IOException {Properties p=new Properties();if(Files.exists(path))try(Reader r=Files.newBufferedReader(path)){p.load(r);}return p;}
     void start() { Bukkit.getScheduler().runTaskTimer(plugin, this::health, 200L, 200L); }
     private void health() {
+        try{worker.execute(()->{Properties copy=new Properties();synchronized(this){copy.putAll(subscriptions);}long now=System.currentTimeMillis();for(String field:copy.stringPropertyNames())if(field.startsWith("alarm.")&&field.endsWith(".row")){String stem=field.substring(0,field.length()-4);long next=Long.parseLong(copy.getProperty(stem+".next","0"));if(next>now)continue;try{Object value=DiscordBotManager.Json.parse(copy.getProperty(field));if(value instanceof Map<?,?> map){@SuppressWarnings("unchecked") Map<String,Object> row=(Map<String,Object>)map;push(row,copy.getProperty(stem+".owner"),true);}}catch(Exception e){deliveryStatus="Alarmwiederholung fehlgeschlagen";}}});}catch(RejectedExecutionException ignored){}
+
         double[] tps=Bukkit.getTPS();
         if(tps.length>0 && tps[0]>0 && tps[0]<16)overloadSamples++; else overloadSamples=0;
         if(overloadSamples>=6 && System.currentTimeMillis()-lastOverload>600_000) {
@@ -59,6 +61,7 @@ final class SuiteEventCenter {
     private static String clip(String text,int length) {String s=text==null?"":text.replaceAll("[\\p{Cc}&&[^\\n\\t]]","");return s.substring(0,Math.min(length,s.length()));}
     private synchronized void persist() throws IOException {
         Properties out=new Properties();events.forEach((id,row)->out.setProperty(id,DiscordBotManager.Json.stringify(row)));AtomicState.save(eventsFile,out,"Simplex event ledger v1");
+        Properties next=new Properties();next.putAll(subscriptions);boolean changed=false;for(String key:subscriptions.stringPropertyNames())if(key.startsWith("alarm.")||key.startsWith("ack.")){String[] parts=key.split("\\.",4);if(parts.length>=3&&!events.containsKey(parts[2])){next.remove(key);changed=true;}}if(changed){AtomicState.save(subscriptionsFile,next,"Private Bark subscriptions and alarms");subscriptions.clear();subscriptions.putAll(next);}
     }
     synchronized Object data(String query,int offset) {
         List<Map<String,Object>> rows=new ArrayList<>(events.values());Collections.reverse(rows);
@@ -79,7 +82,7 @@ final class SuiteEventCenter {
     }
     synchronized Object subscription(String owner) {
         String prefix=owner+".";
-        return SimplexAdminSuite.appMap("enabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"enabled","false")),"configured",!subscriptions.getProperty(prefix+"key","").isBlank(),"events",subscriptions.getProperty(prefix+"events","ban-evasion,vpn-kick,overload,client-brand"),"level",subscriptions.getProperty(prefix+"level","active"),"critical",subscriptions.getProperty(prefix+"critical","critical"),"sound",subscriptions.getProperty(prefix+"sound","minuet"),"criticalSound",subscriptions.getProperty(prefix+"criticalSound","alarm"),"deliveryStatus",deliveryStatus);
+        return SimplexAdminSuite.appMap("enabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"enabled","false")),"configured",!subscriptions.getProperty(prefix+"key","").isBlank(),"events",subscriptions.getProperty(prefix+"events","ban-evasion,vpn-kick,overload,client-brand"),"level",subscriptions.getProperty(prefix+"level","active"),"critical",subscriptions.getProperty(prefix+"critical","critical"),"sound",subscriptions.getProperty(prefix+"sound","minuet"),"criticalSound",subscriptions.getProperty(prefix+"criticalSound","alarm"),"rules",subscriptions.getProperty(prefix+"rules",""),"quietMode",subscriptions.getProperty(prefix+"quietMode","off"),"quietStart",subscriptions.getProperty(prefix+"quietStart","22:00"),"quietEnd",subscriptions.getProperty(prefix+"quietEnd","07:00"),"timezone",subscriptions.getProperty(prefix+"timezone","Europe/Berlin"),"quietKinds",subscriptions.getProperty(prefix+"quietKinds",""),"deliveryStatus",deliveryStatus);
     }
     synchronized Object configure(String owner,Map<String,Object> values) throws IOException {
         String prefix=owner+".";Properties next=new Properties();next.putAll(subscriptions);
@@ -95,25 +98,43 @@ final class SuiteEventCenter {
         for(String field:List.of("sound","criticalSound"))if(!String.valueOf(values.getOrDefault(field,"minuet")).matches("[a-zA-Z0-9_.-]{1,64}"))throw new IllegalArgumentException("Ungültiger Klangname");
         for(String field:List.of("events","level","critical","sound","criticalSound","enabled"))next.setProperty(prefix+field,String.valueOf(values.getOrDefault(field,"")));
         if(Boolean.parseBoolean(next.getProperty(prefix+"enabled"))&&next.getProperty(prefix+"key","").isBlank())throw new IllegalArgumentException("Bark-Schlüssel fehlt");
+        if(values.containsKey("rules")){BarkPolicy.rules(String.valueOf(values.get("rules")));next.setProperty(prefix+"rules",String.valueOf(values.get("rules")));}
+        if(values.containsKey("quietMode")){String mode=String.valueOf(values.get("quietMode"));if(!Set.of("off","all","critical","selected").contains(mode))throw new IllegalArgumentException("Ruhezeitmodus ungültig");java.time.LocalTime.parse(String.valueOf(values.get("quietStart")));java.time.LocalTime.parse(String.valueOf(values.get("quietEnd")));java.time.ZoneId.of(String.valueOf(values.get("timezone")));for(String name:List.of("quietMode","quietStart","quietEnd","timezone","quietKinds"))next.setProperty(prefix+name,String.valueOf(values.getOrDefault(name,"")));}
         AtomicState.save(subscriptionsFile,next,"Private Bark subscriptions. Do not share.");AppApiSecurity.protect(subscriptionsFile);
         subscriptions.clear();subscriptions.putAll(next);
         return SimplexAdminSuite.appMap("ok",true,"title","Benachrichtigungen gespeichert","description","Ereignisse werden vom Minecraft-Plugin an Bark gesendet, auch wenn die Panel-App geschlossen ist.");
     }
-    private void push(Map<String,Object> row) throws Exception {
+    synchronized Object acknowledge(String owner,String id)throws IOException {Properties next=new Properties();next.putAll(subscriptions);String stem="alarm."+owner+"."+id;for(String suffix:List.of(".row",".next",".owner"))next.remove(stem+suffix);if(events.containsKey(id))next.setProperty("ack."+owner+"."+id,Long.toString(System.currentTimeMillis()));AtomicState.save(subscriptionsFile,next,"Private Bark subscriptions and alarms");subscriptions.clear();subscriptions.putAll(next);return SimplexAdminSuite.appMap("ok",true,"title","Alarm bestätigt","description","Weitere Wiederholungen für diesen Alarm sind beendet.");}
+    private void push(Map<String,Object> row) throws Exception {push(row,null,false);}
+    private void push(Map<String,Object> row,String onlyOwner,boolean repeated) throws Exception {
         Properties copy=new Properties();synchronized(this){copy.putAll(subscriptions);}
         for(String field:copy.stringPropertyNames())if(field.endsWith(".enabled")&&Boolean.parseBoolean(copy.getProperty(field))) {
             String prefix=field.substring(0,field.length()-"enabled".length());String owner=prefix.substring(0,prefix.length()-1);
+            if(onlyOwner!=null&&!owner.equals(onlyOwner))continue;
             if(plugin.appApi==null||plugin.appApi.security.keys().stream().noneMatch(k->k.id().equals(owner)&&k.scope().equals("full")))continue;
-            String type=String.valueOf(row.get("type"));if(!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type))continue;
+            String type=String.valueOf(row.get("type"));String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
+            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type))continue;
+            boolean critical=Boolean.TRUE.equals(row.get("critical"));String level=rule==null?copy.getProperty(prefix+(critical?"critical":"level"),"active"):rule[1];
+            if(level.equals("off")||!BarkPolicy.allowed(copy,prefix,type,level,java.time.Instant.now()))continue;
+            String sound=rule==null?copy.getProperty(prefix+(critical?"criticalSound":"sound"),"minuet"):rule[2];int repeat=rule==null?0:Integer.parseInt(rule[3]);
+
+            if(repeated){boolean retained;synchronized(this){retained=events.containsKey(String.valueOf(row.get("id")));}if(repeat==0||!retained){acknowledge(owner,String.valueOf(row.get("id")));continue;}}
             long now=System.currentTimeMillis();String rate=prefix+type;
             if(now-cooldown.getOrDefault(rate,0L)<(type.equals("first-join")?3000:30_000))continue;
-            cooldown.put(rate,now);boolean critical=Boolean.TRUE.equals(row.get("critical"));
-            Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",copy.getProperty(prefix+"key",""),"title",row.get("title"),"body",row.get("body"),"group","Simplex Admin Suite","level",copy.getProperty(prefix+(critical?"critical":"level"),"active"),"sound",copy.getProperty(prefix+(critical?"criticalSound":"sound"),"minuet"),"isArchive",1,"url","panel://suite-events");
+            cooldown.put(rate,now);
+            Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",copy.getProperty(prefix+"key",""),"title",row.get("title"),"body",row.get("body"),"group","Simplex Admin Suite","level",level,"sound",sound,"isArchive",1,"url","panel://suite-events");
+            String player=String.valueOf(row.getOrDefault("player",""));if(player.matches("[a-fA-F0-9-]{36}")){String avatar=plugin.discordRelay()==null?"":plugin.discordRelay().appAvatar(UUID.fromString(player));payload.put("icon",avatar.isBlank()?"https://mc-heads.net/avatar/"+player+"/128":avatar);}
+            payload.put("id",String.valueOf(row.get("id")));
+            String alarm="alarm."+owner+"."+row.get("id");
+            synchronized(this){if(subscriptions.containsKey("ack."+owner+"."+row.get("id"))||repeated&&!subscriptions.containsKey(alarm+".row"))continue;if(repeat>0&&!repeated){subscriptions.setProperty(alarm+".row",DiscordBotManager.Json.stringify(row));subscriptions.setProperty(alarm+".owner",owner);subscriptions.setProperty(alarm+".next",Long.toString(now+repeat*1000L));AtomicState.save(subscriptionsFile,subscriptions,"Private Bark subscriptions and pending alarms");}}
             HttpRequest request=HttpRequest.newBuilder(URI.create("https://api.day.app/push")).timeout(Duration.ofSeconds(8)).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(DiscordBotManager.Json.stringify(payload))).build();
+            if(repeated)synchronized(this){subscriptions.setProperty(alarm+".next",Long.toString(now+Math.max(60,repeat)*1000L));}
             HttpResponse<InputStream> response=http.send(request,HttpResponse.BodyHandlers.ofInputStream());
             Object reply;try(InputStream input=response.body()){byte[] bytes=input.readNBytes(16385);if(bytes.length>16384)throw new IOException("Oversize Bark reply");reply=DiscordBotManager.Json.parse(new String(bytes,java.nio.charset.StandardCharsets.UTF_8));}
             if(response.statusCode()!=200||!(reply instanceof Map<?,?> m)||!(m.get("code") instanceof Number n)||n.intValue()!=200)throw new IOException("Bark rejected push");
             deliveryStatus="Letzter Versand erfolgreich";
+            if(repeat>0)synchronized(this){if(!subscriptions.containsKey("ack."+owner+"."+row.get("id"))&&subscriptions.containsKey(alarm+".row")){subscriptions.setProperty(alarm+".row",DiscordBotManager.Json.stringify(row));subscriptions.setProperty(alarm+".owner",owner);subscriptions.setProperty(alarm+".next",Long.toString(now+repeat*1000L));AtomicState.save(subscriptionsFile,subscriptions,"Private Bark subscriptions and pending alarms");}}
+
         }
     }
     void stop() {try{persist();}catch(IOException e){plugin.getLogger().warning("App event checkpoint failed");}worker.shutdownNow();}

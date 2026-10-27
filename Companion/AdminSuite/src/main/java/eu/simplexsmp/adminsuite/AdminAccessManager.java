@@ -53,6 +53,7 @@ final class AdminAccessManager {
     boolean allows(CommandSender sender, String node, boolean inherited) {
         if (!(sender instanceof Player p) || !node.startsWith("simplexadminsuite.")) return inherited;
         if (master(p)) return true;
+        if(node.equals("simplexadminsuite.discord.design")||node.equals("simplexadminsuite.discordstatus")||node.contains(".opendiscord"))return false;
         Boolean explicit = override(p.getUniqueId(), node);
         if (explicit != null) return explicit;
         Role role = role(p.getUniqueId());
@@ -85,6 +86,9 @@ final class AdminAccessManager {
     long revision(UUID id) { return revisions.getOrDefault(id, 0L); }
     synchronized void change(Player actor, UUID target, String node, Boolean value, Role role) {
         if (!master(actor)) throw new SecurityException("Nur echte Server-Operatoren und der gebundene Hauptadmin dürfen Rechte ändern.");
+        changeAuthorized(actor.getName(),target,node,value,role);
+    }
+    synchronized void changeAuthorized(String actor,UUID target,String node,Boolean value,Role role) {
         Player online = Bukkit.getPlayer(target);
         if (target.equals(owner) || Bukkit.getOfflinePlayer(target).isOp() || online != null && master(online)) throw new IllegalArgumentException("Server-Operatoren und Hauptadmin können hier nicht eingeschränkt werden.");
         if (node != null && !nodes.contains(node)) throw new IllegalArgumentException("Unbekanntes Recht");
@@ -98,7 +102,7 @@ final class AdminAccessManager {
         revisions.merge(target, 1L, Long::sum);
         plugin.invalidateAdminSession(target);
         if (online != null) { applyAttachment(online); online.closeInventory(); }
-        plugin.expansionAudit(actor.getName(), target, "Adminrechte geändert", role == null ? node + "=" + value : "Rolle=" + role);
+        plugin.expansionAudit(actor, target, "Adminrechte geändert", role == null ? node + "=" + value : "Rolle=" + role);
     }
     private void applyAttachment(Player p) {
         org.bukkit.permissions.PermissionAttachment old = attachments.remove(p.getUniqueId());
