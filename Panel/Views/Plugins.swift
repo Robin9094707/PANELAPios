@@ -24,7 +24,7 @@ struct PluginsView: View {
     var body: some View {
         List {
             Section {
-                NavigationLink("Neues Plugin hochladen",systemImage:"plus.circle") { PluginInstallView(api:api,server:server) }
+                NavigationLink { PluginInstallView(api:api,server:server) } label: { Label("Neues Plugin hochladen",systemImage:"plus.circle") }
                 Label("Paper-Plugins", systemImage: "puzzlepiece.extension.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent)
                 Text("Neue Versionen als JAR im Paper-Updateordner vormerken. Paper übernimmt sie beim nächsten Neustart. Wähle zuerst das installierte Plugin. Die App vergleicht Namen, Einstiegsklasse und Version der beiden JARs. Laufzeitkompatibilität und Abhängigkeiten musst du zusätzlich prüfen.").font(.footnote).foregroundStyle(.secondary)
                 Text("Wähle unten beim gewünschten Plugin „Update-Datei hochladen“.").font(.footnote).foregroundStyle(.secondary)

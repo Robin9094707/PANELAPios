@@ -56,6 +56,14 @@ public final class Security900Harness {
             var dbConstructor=SimplexAdminSuite.PlayerDatabase.class.getDeclaredConstructor(SimplexAdminSuite.class);dbConstructor.setAccessible(true);Object db=dbConstructor.newInstance(plugin);Moderation790Harness.set(plugin,SimplexAdminSuite.class,"database",db);
             var profileConstructor=SimplexAdminSuite.PlayerProfile.class.getDeclaredConstructor(UUID.class,String.class);profileConstructor.setAccessible(true);Object profile=profileConstructor.newInstance(uuid,"Fixture");
             @SuppressWarnings("unchecked") Map<UUID,Object> profiles=(Map<UUID,Object>)Moderation790Harness.get(db,"profiles");profiles.clear();profiles.put(uuid,profile);
+            var typedProfile=(SimplexAdminSuite.PlayerProfile)profile;
+            var temporary=SimplexAdminSuite.PlayerProfile.class.getDeclaredMethod("setTemporaryBlocked",String.class,long.class);temporary.setAccessible(true);
+            var permanent=SimplexAdminSuite.PlayerProfile.class.getDeclaredMethod("setBlocked",String.class,boolean.class);permanent.setAccessible(true);
+            long expiry=System.currentTimeMillis()+60000;temporary.invoke(profile,"chat",expiry);String oldRight=typedProfile.inheritedRightSnapshot("chat");
+            permanent.invoke(profile,"chat",true);typedProfile.restoreInheritedRight("chat",oldRight);
+            check(!typedProfile.blockedRightsSet().contains("chat")&&typedProfile.temporaryBlockedRightsMap().get("chat")==expiry,"removing inherited denial restores original temporary expiry");
+            typedProfile.restoreInheritedRight("chat","false:"+(System.currentTimeMillis()-1));check(!typedProfile.blockedRightsSet().contains("chat")&&!typedProfile.temporaryBlockedRightsMap().containsKey("chat"),"expired original restriction is not made permanent");
+            permanent.invoke(profile,"chat",true);String permanentRight=typedProfile.inheritedRightSnapshot("chat");permanent.invoke(profile,"chat",false);typedProfile.restoreInheritedRight("chat",permanentRight);check(typedProfile.blockedRightsSet().contains("chat"),"own permanent denial preserved");
             VpnProtectionManager vpn=new VpnProtectionManager(plugin);UUID firstBlocked=UUID.randomUUID();
             try {
                 vpn.appWhitelist("Fixture",firstBlocked.toString(),true);check(vpn.isWhitelisted(firstBlocked,"NewPlayer"),"first-login VPN kick can be whitelisted by exact UUID");

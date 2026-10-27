@@ -6168,8 +6168,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     }
 
     private void setRight(String admin, PlayerProfile target, String right, boolean blocked) {
-        target.setBlocked(right, blocked);
         if(suitePolicies!=null)suitePolicies.recordRight(target.uuid,right,blocked);
+        target.setBlocked(right, blocked);
         target.addAction("Recht durch " + admin + " geändert: " + right + " = " + (blocked ? "dauerhaft gesperrt" : "erlaubt"));
         database.save(target);
         notifyRights(target);
@@ -8379,8 +8379,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(section.equals("dependencies")){try(var in=getResource("dependency-status.json")){return appMap("items",in==null?List.of():DiscordBotManager.Json.parse(new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8)));}}
         throw new IllegalArgumentException("Unbekannter Bereich");
     }
-    boolean appRightBlocked(UUID id,String right){PlayerProfile p=database.get(id);return p!=null&&p.isBlocked(right);}
-    void appRightDirect(UUID id,String right,boolean blocked,String actor){PlayerProfile p=database.get(id);if(p!=null&&p.isBlocked(right)!=blocked){p.setBlocked(right,blocked);database.save(p);notifyRights(p);audit.log(actor,id,"Recht geändert",right+"="+blocked);}}
+    String appRightSnapshot(UUID id,String right){PlayerProfile p=database.get(id);return p==null?"false:0":p.inheritedRightSnapshot(right);}
+    void appRightRestore(UUID id,String right,String snapshot){PlayerProfile p=database.get(id);if(p!=null){p.restoreInheritedRight(right,snapshot);database.save(p);notifyRights(p);audit.log("Alt-Vererbung aufgehoben",id,"Recht wiederhergestellt",right);}}
+    void appRightDirect(UUID id,String right,boolean blocked,String actor){PlayerProfile p=database.get(id);if(p!=null&&(p.blockedRightsSet().contains(right)!=blocked||p.temporaryBlockedUntil(right)>0)){p.setBlocked(right,blocked);database.save(p);notifyRights(p);audit.log(actor,id,"Recht geändert",right+"="+blocked);}}
     Object app250Apply(Map<String,Object> v,String actor) throws Exception {
         String op=String.valueOf(v.getOrDefault("operation","")),target=String.valueOf(v.getOrDefault("player","")),value=String.valueOf(v.getOrDefault("value","")),node=String.valueOf(v.getOrDefault("node",""));
         if(Set.of("maintenance","brand","inherit","right").contains(op)&&!Set.of("true","false").contains(value))throw new IllegalArgumentException("Boolean erforderlich");
@@ -8390,8 +8391,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         else if(op.equals("brand")){if(node.isBlank()||node.length()>120||node.chars().anyMatch(c->c<32))throw new IllegalArgumentException("Gültigen Brand angeben");suitePolicies.set("brand."+node.toLowerCase(Locale.ROOT),value);for(Player player:Bukkit.getOnlinePlayers())suitePolicies.apply(player);}
         else {UUID id=UUID.fromString(target);PlayerProfile p=database.get(id);if(p==null)throw new IllegalArgumentException("Spieler fehlt");switch(op){
             case "admin-role"->adminAccess.changeAuthorized(actor,id,null,null,AdminAccessManager.Role.valueOf(value));
-            case "admin-right"->adminAccess.changeAuthorized(actor,id,node,value.equals("inherit")?null:Boolean.valueOf(value),null);
-            case "inherit"->{suitePolicies.set("inherit."+id,value);suitePolicies.reconcileAll(id);}
+            case "admin-right"->{if(!Set.of("inherit","true","false").contains(value))throw new IllegalArgumentException("Boolean oder inherit erforderlich");adminAccess.changeAuthorized(actor,id,node,value.equals("inherit")?null:Boolean.valueOf(value),null);}
+            case "inherit"->suitePolicies.changeInheritance(id,Boolean.parseBoolean(value));
             case "right"->{if(!Arrays.asList(powerRights()).contains(node))throw new IllegalArgumentException("Unbekanntes Recht");setRight(actor,p,node,!Boolean.parseBoolean(value));}
             case "probe"->{Player online=Bukkit.getPlayer(id);if(online==null)throw new IllegalArgumentException("Prüfung benötigt Online-Spieler");qualityOfLife.probes.appStart(online);}
             default->throw new IllegalArgumentException("Unbekannte Aktion");
@@ -17487,6 +17488,11 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if (until > System.currentTimeMillis()) return true;
             temporaryBlockedRights.remove(right);
             return false;
+        }
+        synchronized String inheritedRightSnapshot(String right) { return blockedRights.contains(right)+":"+temporaryBlockedUntil(right); }
+        synchronized void restoreInheritedRight(String right,String snapshot) {
+            String[] parts=snapshot.split(":",2);boolean permanent=Boolean.parseBoolean(parts[0]);long until=parts.length==2?Long.parseLong(parts[1]):0L;
+            setBlocked(right,permanent);if(!permanent&&until>System.currentTimeMillis())setTemporaryBlocked(right,until);
         }
         private synchronized void setBlocked(String right, boolean blocked) {
             temporaryBlockedRights.remove(right);
