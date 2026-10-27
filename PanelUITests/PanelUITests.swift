@@ -228,7 +228,9 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(upload.waitForExistence(timeout: 10)); upload.tap()
         let confirm = app.buttons["plugin-update-confirm"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 20))
-        XCTAssertTrue(app.staticTexts["8.5.0"].exists); XCTAssertFalse(confirm.isEnabled)
+        // LabeledContent exposes a combined accessibility label, not a standalone value Text.
+        let version = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Neue Version", "8.5.0")).firstMatch
+        XCTAssertTrue(version.exists); XCTAssertFalse(confirm.isEnabled)
         capture("31-Plugin-Update-Erste-Auswahl")
         app.buttons["Auswahl verwerfen"].tap()
         for _ in 0..<6 { if upload.isHittable { break }; app.swipeUp() }
