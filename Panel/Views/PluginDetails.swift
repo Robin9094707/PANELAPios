@@ -17,7 +17,7 @@ struct PluginDetailsView: View {
                         Label(descriptor?.name ?? entry["name"].string, systemImage: "puzzlepiece.extension.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent)
                         if let descriptor { LabeledContent("Version auf dem Server", value: descriptor.version).font(.headline) }
                         else if catalog.loading.contains(key) { ProgressView("Plugin-JAR lesen …") }
-                        else { Button("Metadaten erneut lesen", systemImage: "arrow.clockwise") { Task { await catalog.load(api: api, server: server.id, entry: entry, retry: true) } } }
+                        else { Button("Metadaten erneut lesen", systemImage: "arrow.clockwise") { Task { await catalog.load(api: api, server: server.id, entry: entry, retry: true, allowLarge: true) } } }
                         if let error = catalog.errors[key] { Text(error).font(.footnote).foregroundStyle(.orange) }
                     } footer: { Text("Aus der JAR unter /plugins gelesen. Die tatsächlich laufende Version kann bis zum nächsten Serverstart davon abweichen.") }
                     if let descriptor {
@@ -45,7 +45,7 @@ struct PluginDetailsView: View {
                 }.panelScreen()
             }.navigationTitle("Plugin-Details").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
-                .task { await catalog.load(api: api, server: server.id, entry: entry, retry: true) }
+                .task { await catalog.load(api: api, server: server.id, entry: entry, retry: true, allowLarge: true) }
         }
     }
 }
@@ -86,7 +86,7 @@ struct PluginListRow: View {
             Text(bytes(entry["size"].double) + (name.hasSuffix(".disabled") ? " · Deaktiviert" : " · JAR auf dem Server")).font(.caption).foregroundStyle(.secondary)
             if let pendingVersion { Label("Update \(pendingVersion) vorgemerkt · nächster Start", systemImage: "clock.arrow.circlepath").font(.caption.weight(.medium)).foregroundStyle(.orange) }
             if catalog.errors[key] != nil { Text("Metadaten nicht verfügbar · Details zum Wiederholen öffnen").font(.caption).foregroundStyle(.orange) }
-            Button("Update-Datei hochladen", systemImage: "arrow.up.doc", action: update).buttonStyle(.borderless).disabled(busy || name.hasSuffix(".disabled")).requiresAccess(api, server.id, "file.create", "file.read-content")
+            Button("Update-Datei hochladen", systemImage: "arrow.up.doc", action: update).accessibilityIdentifier("pluginUpdate-" + name).buttonStyle(.borderless).disabled(busy || name.hasSuffix(".disabled")).requiresAccess(api, server.id, "file.create", "file.read-content")
             HStack {
                 Button(name.hasSuffix(".disabled") ? "Aktivieren" : "Deaktivieren", action: toggle).requiresAccess(api, server.id, "file.update")
                 Spacer()

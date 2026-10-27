@@ -68,7 +68,7 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/PluginUploadRegressionTests -only-testing:PanelTests/Panel230Tests -only-testing:PanelTests/WorkspaceUpdateTests -only-testing:PanelTests/UpdateFixTests -only-testing:PanelTests/AddonUpdateTests -only-testing:PanelTests/MarketplaceNetworkTests -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testJavaWorldStorageAndNewWorkspaceCards -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/PluginUploadRegressionTests -only-testing:PanelTests/PluginServerAPITests -only-testing:PanelTests/Panel230Tests -only-testing:PanelTests/WorkspaceUpdateTests -only-testing:PanelTests/UpdateFixTests -only-testing:PanelTests/AddonUpdateTests -only-testing:PanelTests/MarketplaceNetworkTests -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testFirstPluginPickerSelectionShowsReviewAndCanBeRepeated -only-testing:PanelUITests/PanelUITests/testJavaWorldStorageAndNewWorkspaceCards -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -152,14 +152,14 @@ jobs:
         run: |
           python3 tools/package-source.py
           cd target
-          sha256sum SimplexAdminSuite-8.5.0.jar SimplexAdminSuite-8.5.0-source.zip > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-8.6.0.jar SimplexAdminSuite-8.6.0-source.zip > AdminSuite-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-8.5.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-8.5.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-8.6.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-8.6.0-source.zip
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
 
@@ -205,14 +205,13 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 2.3.1 repairs plugin update queueing and the first Files-picker selection.
+          Simplex Panel 2.4.0 and Admin Suite 8.6.0 fix the plugin import handoff and add server-side plugin metadata and confirmed update staging.
 
-          Plugin updates upload as a unique .pending file directly inside the configured Paper update folder. The app reads the bytes back and verifies SHA-256 before renaming to .jar in the same folder. The authenticated binary route is tried first, with multipart upload as fallback. Failed HTTP responses after completed writes, directory creation or rename are reconciled against the real server files. Identical already-queued updates are accepted without another upload. Errors identify the failing step and temporary file.
+          File selection is processed directly from the document-picker delegate. A visible inline review card replaces the second modal, avoiding dismissal/presentation races. The app retains its own file copy, displays each stage and reports errors in the plugin screen.
 
-          Files-picker handoff now keeps the chosen file and installed plugin/mod filename together in one reference-owned selection. Duplicate delegate callbacks cannot consume the same choice twice. Existing profile, Keychain, Suite connection, layout and plugin configuration formats remain unchanged. No companion update is required to use these app fixes; the bundled Admin Suite 8.5.0 remains compatible with 8.4.0 data.
+          A paired Admin Suite 8.6.0 reads plugin metadata and hashes on the server. Confirmed updates stream to a non-loadable temporary file, verify SHA-256, plugin identity, main-class Java compatibility and the installed revision, then publish exclusively in the configured Paper update directory. Existing queued conflicts are rejected. The installed JAR and plugin data are left untouched until Paper starts again. Without this capability the verified panel installer remains available; large existing JARs are read only on request.
 
-          Install over the existing app using the same signing identity and bundle ID. Restart Minecraft after successfully queueing a plugin update. Host-specific production behavior must still be validated on the device.
-
+          Existing 8.4.0 data, profiles, API keys and app bundle identifiers remain compatible. Manually replace the Suite JAR once with the server stopped; retain the complete SimplexAdminSuite data directory. Install the IPA over the current app using the same signing identity. Pair the Suite API with a full key to use server-side updates. Production hosting and physical-device behavior require verification on the actual server and iPhone.
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)
           gh release create "$tag" build/companion/*.jar build/companion/*-source.zip build/companion/AdminSuite-SHA256SUMS.txt "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest

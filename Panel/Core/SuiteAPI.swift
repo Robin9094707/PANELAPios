@@ -67,13 +67,14 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         guard value.isEmpty || value.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else { throw PanelError(message: "Der SHA-256-Fingerabdruck muss genau 64 Hex-Zeichen enthalten.") }
         return value
     }
-    func request(_ path: String, method: String = "GET", query: [String: String] = [:], body: JSON? = nil) async throws -> JSON {
+    func request(_ path: String, method: String = "GET", query: [String: String] = [:], body: JSON? = nil, binary: Data? = nil, timeout: TimeInterval = 110) async throws -> JSON {
         if demo { guard method == "GET" else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }; return SuiteDemo.response(path, query: query) }
         guard !path.contains(".."), !path.contains("://"), !path.contains("?") else { throw PanelError(message: "Ungültiger Suite-Pfad.") }
         var c = URLComponents(url: try Self.endpoint(connection.endpoint).appendingPathComponent("v1").appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         c.queryItems = query.isEmpty ? nil : query.sorted(by: { $0.key < $1.key }).map { URLQueryItem(name: $0.key, value: $0.value) }
-        var request = URLRequest(url: c.url!); request.httpMethod = method; request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization"); request.setValue("application/json", forHTTPHeaderField: "Accept")
+        var request = URLRequest(url: c.url!); request.timeoutInterval = timeout; request.httpMethod = method; request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization"); request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body { request.httpBody = try JSONEncoder().encode(body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        if let binary { request.httpBody = binary; request.setValue("application/java-archive", forHTTPHeaderField: "Content-Type") }
         let data: Data
         let response: URLResponse
         do {
@@ -90,8 +91,8 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         guard data.count <= 8 * 1024 * 1024 else { throw PanelError(message: "Suite-Antwort zu groß.") }
         return try JSONDecoder().decode(JSON.self, from: data)
     }
-    func health() async throws -> JSON {
-        let result = try await request("health")
+    func health(timeout: TimeInterval = 110) async throws -> JSON {
+        let result = try await request("health", timeout: timeout)
         guard result["apiVersion"].int == 1, !result["serverId"].string.isEmpty else { throw PanelError(message: "Diese Adresse liefert keine kompatible Simplex-Admin-Suite-API.") }
         guard connection.serverIdentity.isEmpty || connection.serverIdentity == result["serverId"].string else { throw PanelError(message: "Die Serveridentität hat sich geändert. Kopplung prüfen und bewusst neu einrichten.") }
         scope = result["scope"].string

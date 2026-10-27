@@ -67,7 +67,13 @@ struct FileImportPicker: UIViewControllerRepresentable {
     }
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+        let picker: UIDocumentPickerViewController
+        #if DEBUG
+        if PluginPickerFixture.enabled { picker = PluginPickerFixture.Controller(forOpeningContentTypes: [.item], asCopy: true) }
+        else { picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true) }
+        #else
+        picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+        #endif
         picker.delegate = context.coordinator; picker.allowsMultipleSelection = multiple
         picker.shouldShowFileExtensions = true
         return picker
@@ -75,3 +81,30 @@ struct FileImportPicker: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) { context.coordinator.parent = self }
 }
 
+
+#if DEBUG
+/// Simulator-only fixture enters through the real picker delegate and retained-file callback.
+@MainActor enum PluginPickerFixture {
+    static var enabled: Bool { ProcessInfo.processInfo.arguments.contains("--plugin-picker-fixture") }
+    static let old = Data(base64Encoded: "UEsDBBQAAAAAAD1WW11QXTsOagAAAGoAAAAKAAAAcGx1Z2luLnltbG5hbWU6IFNpbXBsZXhBZG1pblN1aXRlCnZlcnNpb246IDguNC4wCm1haW46IGV1LnNpbXBsZXhzbXAuYWRtaW5zdWl0ZS5TaW1wbGV4QWRtaW5TdWl0ZQphcGktdmVyc2lvbjogMjYuMgpQSwECFAMUAAAAAAA9VltdUF07DmoAAABqAAAACgAAAAAAAAAAAAAAgAEAAAAAcGx1Z2luLnltbFBLBQYAAAAAAQABADgAAACSAAAAAAA=")!
+    static let next = Data(base64Encoded: "UEsDBBQAAAAAAD1WW124gwLUagAAAGoAAAAKAAAAcGx1Z2luLnltbG5hbWU6IFNpbXBsZXhBZG1pblN1aXRlCnZlcnNpb246IDguNS4wCm1haW46IGV1LnNpbXBsZXhzbXAuYWRtaW5zdWl0ZS5TaW1wbGV4QWRtaW5TdWl0ZQphcGktdmVyc2lvbjogMjYuMgpQSwECFAMUAAAAAAA9VltduIMC1GoAAABqAAAACgAAAAAAAAAAAAAAgAEAAAAAcGx1Z2luLnltbFBLBQYAAAAAAQABADgAAACSAAAAAAA=")!
+    final class Controller: UIDocumentPickerViewController {
+        private var delivered = false
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard !delivered else { return }; delivered = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                do {
+                    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("picker-fixture-" + UUID().uuidString)
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    defer { try? FileManager.default.removeItem(at: folder) }
+                    let file = folder.appendingPathComponent("SimplexAdminSuite-8.5.0.jar")
+                    try PluginPickerFixture.next.write(to: file)
+                    self.delegate?.documentPicker?(self, didPickDocumentsAt: [file])
+                } catch { assertionFailure(error.localizedDescription) }
+            }
+        }
+    }
+}
+#endif

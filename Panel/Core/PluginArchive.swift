@@ -101,7 +101,8 @@ struct PluginUpdateCandidate: Identifiable {
     let next: PluginDescriptor
     let originalHash: String
     let report: String
-    var updateFilename: String { next.versionedFilename }
+    var serverFilename: String? = nil
+    var updateFilename: String { serverFilename ?? next.versionedFilename }
 }
 
 /// Paper matches updates by the exact descriptor name and adopts the staged filename.

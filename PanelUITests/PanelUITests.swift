@@ -216,6 +216,24 @@ final class PanelUITests: XCTestCase {
         app.buttons["reset-dashboard"].tap(); app.alerts.buttons["confirm-reset-dashboard"].firstMatch.tap()
         app.buttons["finish-dashboard"].tap()
     }
+    func testFirstPluginPickerSelectionShowsReviewAndCanBeRepeated() throws {
+        app.terminate(); app.launchArguments += ["--plugin-picker-fixture"]; app.launch()
+        let server = app.buttons["server-simplex1"]
+        XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap(); selectTab("Verwalten")
+        let plugins = app.buttons["Plugins & JAR-Dateien"]
+        for _ in 0..<6 { if plugins.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(plugins.exists); plugins.tap()
+        let upload = app.buttons["pluginUpdate-ExamplePlugin.jar"]
+        for _ in 0..<6 { if upload.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(upload.waitForExistence(timeout: 10)); upload.tap()
+        let confirm = app.buttons["plugin-update-confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["8.5.0"].exists); XCTAssertFalse(confirm.isEnabled)
+        capture("31-Plugin-Update-Erste-Auswahl")
+        app.buttons["Auswahl verwerfen"].tap()
+        for _ in 0..<6 { if upload.isHittable { break }; app.swipeUp() }
+        upload.tap(); XCTAssertTrue(confirm.waitForExistence(timeout: 20))
+    }
     func testConnectionFormRequiresURLAndClientKey() throws {
         app.swipeUp()
         let connect = app.buttons["Eigenes Panel verbinden"]
