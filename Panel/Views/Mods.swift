@@ -13,7 +13,6 @@ struct ModsView: View {
     @State private var busy = false
     @State private var loaded = false
     @State private var importer = false
-    @State private var selected: JSON?
     @StateObject private var handoff = FileImportHandoff()
     @State private var candidate: ModCandidate?
     @State private var detail: ModDetail?
@@ -25,9 +24,9 @@ struct ModsView: View {
             Section {
                 Label("Minecraft Java Mods", systemImage: "shippingbox.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent)
                 Text("Fabric, Quilt, Forge und NeoForge; auch 1.20.1 sowie ältere und neuere Versionen. Wähle JARs passend zu deinem Server, Loader und deinen Abhängigkeiten. Die App prüft Mod-IDs, Loader und Version vor Updates. Änderungen benötigen einen gestoppten Server.").font(.footnote).foregroundStyle(.secondary)
-                Button("Neue Mod installieren / hochladen", systemImage: "plus.circle") { selected = nil; importer = true }.requiresAccess(api, server.id, "file.create")
+                Button("Neue Mod installieren / hochladen", systemImage: "plus.circle") { handoff.begin(); importer = true }.requiresAccess(api, server.id, "file.create")
                 NavigationLink {
-                    AddonUpdateCenter(api: api, server: server, model: updates) { filename, url in selected = entries.first { $0["name"].string == filename }; if selected != nil { inspect(url) } else { error = "Die installierte Mod ist nicht mehr vorhanden. Liste aktualisieren." } }
+                    AddonUpdateCenter(api: api, server: server, model: updates) { filename, url in inspect(url, filename: filename) }
                 } label: { Label(updates.cache.statuses.values.contains(where: { $0.release != nil }) ? "Updates verfügbar · Modrinth & CurseForge" : "Modrinth & CurseForge", systemImage: "arrow.triangle.2.circlepath") }
                 if updates.busy { ProgressView(updates.progress).font(.caption) }
                 NavigationLink("Alle Mod-Dateien") { FilesView(api: api, server: server, root: "/mods") }
@@ -55,7 +54,7 @@ struct ModsView: View {
                     }
                 }
             }
-            .sheet(isPresented: $importer, onDismiss: { if let imported = handoff.take() { inspect(imported) }; if let issue = handoff.takeError() { error = issue } }) {
+            .sheet(isPresented: $importer, onDismiss: { if let selection = handoff.takeSelection() { inspect(selection.file, filename: selection.target) }; if let issue = handoff.takeError() { error = issue } }) {
                 FileImportPicker(retainSelection: true) { result in handoff.receive(result); importer = false }.ignoresSafeArea()
             }
             .sheet(item: $candidate, onDismiss: { if let staging { try? FileManager.default.removeItem(at: staging) }; staging = nil }) { value in
@@ -78,7 +77,7 @@ struct ModsView: View {
                 Spacer()
                 Menu {
                     Button("Details & Version lesen", systemImage: "info.circle") { Task { await metadata(entry); if let value = descriptors[name] { detail = ModDetail(value: value) } } }.requiresAccess(api, server.id, "file.read-content")
-                    if !name.hasSuffix(".disabled") { Button("Update-Datei hochladen", systemImage: "arrow.up.doc") { selected = entry; importer = true }.requiresAccess(api, server.id, "file.update") }
+                    if !name.hasSuffix(".disabled") { Button("Update-Datei hochladen", systemImage: "arrow.up.doc") { handoff.begin(target: name); importer = true }.requiresAccess(api, server.id, "file.update") }
                     Button(name.hasSuffix(".disabled") ? "Aktivieren" : "Deaktivieren", systemImage: "power") { toggle(name) }.requiresAccess(api, server.id, "file.update")
                 } label: { Image(systemName: "ellipsis.circle").font(.title3) }
             }
@@ -102,7 +101,7 @@ struct ModsView: View {
         catch { errors[name] = error.localizedDescription }
     }
     func toggle(_ name: String) { toggleFile = name }
-    func inspect(_ url: URL) {
+    func inspect(_ url: URL, filename: String?) {
         busy = true; notice = nil
         Task { defer { busy = false; let folder = url.deletingLastPathComponent(); if folder.lastPathComponent.hasPrefix("addon-") || folder.lastPathComponent.hasPrefix("market-") || folder.lastPathComponent.hasPrefix("import-") { try? FileManager.default.removeItem(at: folder) } }; do {
             guard !api.demo else { throw PanelError(message: "Mods sind im Demomodus nur lesbar.") }
@@ -114,17 +113,18 @@ struct ModsView: View {
             let next = try await Task.detached { try ModArchive.descriptor(bytes) }.value
             guard next.environment != "client" else { throw PanelError(message: "Diese Mod ist ausschließlich für Clients vorgesehen.") }
             var installed: ModDescriptor?, hash: String?
-            if let selected {
-                let data = try await api.fileData(server: server.id, path: "/mods/" + selected["name"].string, limit: 128 * 1024 * 1024)
+            if let filename {
+                let data = try await api.fileData(server: server.id, path: "/mods/" + filename, limit: 128 * 1024 * 1024)
                 let old = try await Task.detached { try ModArchive.descriptor(data) }.value
                 try old.validateUpdate(next); installed = old; hash = PluginArchive.digest(data)
             }
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let file = folder.appendingPathComponent(url.lastPathComponent); try bytes.write(to: file)
-            staging = folder; candidate = ModCandidate(file: file, next: next, installed: installed, oldFilename: selected?["name"].string, oldHash: hash)
+            staging = folder; candidate = ModCandidate(file: file, next: next, installed: installed, oldFilename: filename, oldHash: hash)
         } catch { self.error = error.localizedDescription } }
     }
 }
 struct ModDetail: Identifiable { let id = UUID(); let value: ModDescriptor }
+
 
