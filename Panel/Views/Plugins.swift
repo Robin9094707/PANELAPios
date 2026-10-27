@@ -14,7 +14,6 @@ struct PluginsView: View {
     @State private var error: String?
     @State private var operation: Operation?
     @State private var importer = false
-    @State private var selectedPlugin: String?
     @StateObject private var handoff = FileImportHandoff()
     @State private var candidate: PluginUpdateCandidate?
     @State private var stagedLocal: URL?
@@ -28,10 +27,10 @@ struct PluginsView: View {
                 Label("Paper-Plugins", systemImage: "puzzlepiece.extension.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent)
                 Text("Neue Versionen als JAR im Paper-Updateordner vormerken. Paper übernimmt sie beim nächsten Neustart. Wähle zuerst das installierte Plugin. Die App vergleicht Namen, Einstiegsklasse und Version der beiden JARs. Laufzeitkompatibilität und Abhängigkeiten musst du zusätzlich prüfen.").font(.footnote).foregroundStyle(.secondary)
                 Text("Wähle unten beim gewünschten Plugin „Update-Datei hochladen“.").font(.footnote).foregroundStyle(.secondary)
-                if busy { ProgressView("Update übertragen …") }
+                if busy { ProgressView("JAR prüfen / Update vormerken …") }
                 if let message { Label(message, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(Color.panelAccent) }
                 NavigationLink {
-                    AddonUpdateCenter(api: api, server: server, model: updates) { filename, url in selectedPlugin = filename; inspect(url) }
+                    AddonUpdateCenter(api: api, server: server, model: updates) { filename, url in inspect(url, filename: filename) }
                 } label: {
                     Label(updates.cache.statuses.values.contains(where: { $0.release != nil }) ? "Updates verfügbar · Modrinth, Spigot & CurseForge" : "Modrinth, Spigot & CurseForge", systemImage: "arrow.triangle.2.circlepath")
                 }
@@ -44,9 +43,9 @@ struct PluginsView: View {
                 ForEach(jars, id: \.["name"].string) { entry in
                     let name = entry["name"].string
                     if let status = updates.cache.statuses[name], status.release != nil { Label(status.text, systemImage: "arrow.down.circle.fill").font(.caption).foregroundStyle(Color.panelAccent) }
-                    PluginListRow(api: api, server: server, entry: entry, pending: pending, updateDirectory: updateDirectory, refreshID: refreshID, busy: busy, details: {
+                    PluginListRow(api: api, server: server, entry: entry, pending: pending, updateDirectory: updateDirectory, refreshID: refreshID, busy: busy || importer || candidate != nil, details: {
                         detail = PluginDetailSelection(entry: entry)
-                    }, update: { selectedPlugin = name; importer = true }, toggle: { rename(name) }, remove: {
+                    }, update: { handoff.begin(target: name); importer = true }, toggle: { rename(name) }, remove: {
                         operation = Operation(title: "Plugin löschen", detail: "\(name) wird endgültig gelöscht. Stoppe den Server zuerst. Der Konfigurationsordner bleibt erhalten.", path: prefix + "/delete", fixed: ["root": .string("/plugins"), "files": .array([.string(name)])], destructive: true, submit: "JAR löschen")
                     }, catalog: api.plugins)
                 }
@@ -61,7 +60,7 @@ struct PluginsView: View {
                 }
             }
             .sheet(isPresented: $importer, onDismiss: {
-                if let url = handoff.take() { inspect(url) }
+                if let selection = handoff.takeSelection() { inspect(selection.file, filename: selection.target) }
                 if let issue = handoff.takeError() { error = issue }
             }) {
                 FileImportPicker(retainSelection: true) { result in
@@ -84,13 +83,13 @@ struct PluginsView: View {
         let target = name.hasSuffix(".disabled") ? String(name.dropLast(".disabled".count)) : name + ".disabled"
         operation = Operation(title: name.hasSuffix(".disabled") ? "Plugin aktivieren" : "Plugin deaktivieren", detail: "Stoppe den Server zuerst. Die Änderung wirkt beim nächsten Start. Konfigurationen werden nicht gelöscht.", path: prefix + "/rename", method: "PUT", fixed: ["root": .string("/plugins"), "files": .array([.object(["from": .string(name), "to": .string(target)])])], destructive: true)
     }
-    func inspect(_ url: URL) {
-        guard url.pathExtension.lowercased() == "jar", let filename = selectedPlugin else { error = "Zuerst das installierte Plugin und dann eine JAR auswählen."; return }
+    func inspect(_ url: URL, filename: String?) {
+        guard url.pathExtension.lowercased() == "jar", let filename else { error = "Zuerst das installierte Plugin und dann eine JAR auswählen."; return }
         busy = true; message = nil
         Task { defer { busy = false; let folder = url.deletingLastPathComponent(); if folder.lastPathComponent.hasPrefix("addon-") || folder.lastPathComponent.hasPrefix("market-") || folder.lastPathComponent.hasPrefix("import-") { try? FileManager.default.removeItem(at: folder) } }; do {
             guard !api.demo else { throw PanelError(message: "Updates sind im Demomodus deaktiviert.") }
             let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
-            let installedData = try await api.fileData(server: server.id, path: "/plugins/" + filename, limit: 128 * 1024 * 1024)
+            let installedData = try await PluginUpdateFiles(api: api, server: server.id).read("/plugins/" + filename)
             let result = try await Task.detached(priority: .userInitiated) {
                 let resource = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
                 guard resource.isRegularFile == true else { throw PanelError(message: "Bitte eine einzelne JAR-Datei auswählen, keinen Ordner.") }
@@ -109,36 +108,8 @@ struct PluginsView: View {
     }
     func commit(_ value: PluginUpdateCandidate) async throws {
         busy = true; defer { busy = false }
-        let current = try await api.fileData(server: server.id, path: "/plugins/" + value.filename, limit: 128 * 1024 * 1024)
-        guard PluginArchive.digest(current) == value.originalHash else { throw PanelError(message: "Das installierte Plugin wurde zwischenzeitlich geändert. Bitte neu auswählen.") }
-        let config = try await api.fileText(server: server.id, path: "/bukkit.yml")
-        let targetDirectory = try PluginUpdatePlan.directory(config)
-        let components = targetDirectory.dropFirst("/plugins/".count).split(separator: "/").map(String.init)
-        let installedFiles = try await api.list(prefix + "/list", query: ["directory": "/plugins"])
-        try PluginUpdatePlan.checkFilename(value.updateFilename, installed: value.filename, files: installedFiles.map { $0["name"].string })
-        var directory = "/plugins"
-        for part in components {
-            try await ModInstaller.ensureFolder(api, server: server.id, root: directory, name: part)
-            directory = pathJoin(directory, part)
-        }
-        let staged = try await api.list(prefix + "/list", query: ["directory": directory])
-        guard !staged.contains(where: { $0["name"].string.caseInsensitiveCompare(value.updateFilename) == .orderedSame }) else { throw PanelError(message: "Für dieses Plugin ist bereits ein Update vorgemerkt. Entferne die alte Update-Datei zuerst im Datei-Manager.") }
-        // Different versioned filenames must not stage two candidates for one plugin.
-        for entry in staged where entry["is_file"].bool && entry["name"].string.hasSuffix(".jar") {
-            let data = try await api.fileData(server: server.id, path: pathJoin(directory, entry["name"].string), limit: 128 * 1024 * 1024)
-            let pending = try await Task.detached(priority: .utility) { try PluginArchive.descriptor(data) }.value
-            try PluginUpdatePlan.checkPending(pending, next: value.next)
-        }
-        // A failed/partial transfer must never be in Paper's startup update directory.
-        try await ModInstaller.ensureFolder(api, server: server.id, root: "/", name: "simplex-plugin-staging")
-        let transaction = UUID().uuidString
-        try await ModInstaller.ensureFolder(api, server: server.id, root: "/simplex-plugin-staging", name: transaction)
-        let stage = "/simplex-plugin-staging/" + transaction
-        try await VerifiedUpload.send(value.file, api: api, server: server.id, directory: stage)
-        // Recheck after the transfer, since another client may have staged an update meanwhile.
-        let latest = try await api.list(prefix + "/list", query: ["directory": directory])
-        guard latest == staged else { throw PanelError(message: "Der Updateordner hat sich geändert. Bitte erneut prüfen. Die neue JAR liegt noch unter " + stage) }
-        try await ModInstaller.move(api, server: server.id, from: pathJoin(stage, value.updateFilename), to: pathJoin(directory, value.updateFilename))
+        let directory = try await PluginUpdateInstaller.stage(value, files: PluginUpdateFiles(api: api, server: server.id))
+        updateDirectory = directory
         await load()
         if let entry = pending.first(where: { $0["name"].string == value.updateFilename }) {
             api.plugins.rememberVerifiedUpload(value.next, server: server.id, directory: directory, entry: entry)
@@ -147,4 +118,5 @@ struct PluginsView: View {
         Feedback.success()
     }
 }
+
 
