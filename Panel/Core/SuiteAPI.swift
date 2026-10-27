@@ -46,6 +46,7 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
     let platforms = SuitePlatformCache()
     let demo: Bool
     private(set) var scope = "read"
+    private(set) var features: Set<String> = []
     private let token: String
     private let session: URLSession
     init(_ connection: SuiteConnection, token: String? = nil, session: URLSession? = nil, demo: Bool = false) throws {
@@ -95,6 +96,7 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         guard result["apiVersion"].int == 1, !result["serverId"].string.isEmpty else { throw PanelError(message: "Diese Adresse liefert keine kompatible Simplex-Admin-Suite-API.") }
         guard connection.serverIdentity.isEmpty || connection.serverIdentity == result["serverId"].string else { throw PanelError(message: "Die Serveridentität hat sich geändert. Kopplung prüfen und bewusst neu einrichten.") }
         scope = result["scope"].string
+        features = Set(result["features"].array.map(\.string))
         return result
     }
     func view(_ path: String, values: [String: JSON] = [:]) async throws -> JSON { try await request("view", query: values.mapValues(\.string).merging(["path": path], uniquingKeysWith: { _, b in b })) }
