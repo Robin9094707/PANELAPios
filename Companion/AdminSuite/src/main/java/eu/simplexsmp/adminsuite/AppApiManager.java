@@ -111,7 +111,7 @@ final class AppApiManager {
                     case "/v1/plugin-files/inspect"->pluginFiles().inspect(query.getOrDefault("filename",""),Boolean.parseBoolean(query.getOrDefault("pending","false")));
                     case "/v1/plugin-files/status"->pluginFiles().status(query.getOrDefault("filename",""),query.getOrDefault("sha256",""));
                     case "/v1/menu"->onMain(rev,()->{if(!key.scope().equals("full"))throw new ApiError(403,"Suite-Menüs benötigen einen full-Schlüssel.");return menus.current(key);});
-                    case "/v1/schema"->SimplexAdminSuite.appMap("actions",new ArrayList<>(actions.values()));
+                    case "/v1/schema"->SimplexAdminSuite.appMap("actions",actions.values().stream().filter(row->!"plugins.stage".equals(row.get("id"))).toList());
                     case "/v1/view"->onMain(rev,()->{
                         DiscordAdminController.Request request=request(query.getOrDefault("path","dashboard"),new LinkedHashMap<>(query));
                         if(controller.mutation(request)||Set.of("plugins.stage","ai.ask","ai.propose","server.suite","world.update","logs.retry").contains(request.path))throw new ApiError(405,"Diese Aktion benötigt Vorschau und Bestätigung.");
