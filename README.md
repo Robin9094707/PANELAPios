@@ -1,4 +1,10 @@
-# Panel for iOS
+# Simplex Admin Suite + Simplex Panel
+
+The repository contains the Admin Suite plugin and its optional iOS companion. Development and compatibility rules: [AGENTS.md](AGENTS.md).
+
+- **Plugin changes:** [Admin Suite JAR](https://github.com/Robin9094707/PANELAPios/actions/workflows/admin-suite.yml) builds the JAR, runs API compatibility and affected regression checks, and uploads a JAR, complete source ZIP and SHA-256 checksums. New plugin versions on main publish independently as `suite-vX.Y.Z`; existing versions remain downloadable as workflow artifacts without replacing a release.
+- **App changes:** [iOS workflow](https://github.com/Robin9094707/PANELAPios/actions/workflows/ios.yml) builds/tests the app and packages an unsigned IPA on macOS. Plugin-only changes do not rebuild the app. App releases remain `app-vX.Y.Z`.
+- Keep API v1 compatible; additive plugin features do not require an app update unless the client needs new UI or behavior. Inspect both sides before changing the shared contract. Authentication, permissions, confirmations and stored data remain part of that contract.
 
 A native SwiftUI client for **your own Pterodactyl hosting account**, with Liquid Glass, iPhone/iPad layouts and no third-party runtime dependencies. Built with the iOS 26 SDK or newer; requires iOS 26+, including newer iOS releases. Not an official Pterodactyl or Kinetic application.
 
@@ -23,7 +29,7 @@ Full-access Suite keys can change loaded-world time, weather, difficulty, PvP an
 
 Admin Suite repairs failed-delivery backoff, sender exceptions and ACK races, coalesces repeated pending observations and preserves the existing SQLite queue during upgrade. Invalid Discord permissions or channel configuration remain visible in diagnostics; private-channel validation is mandatory.
 
-The GitHub workflow builds and tests both products and publishes the unsigned IPA, plugin JAR and complete plugin source after success. Installation/API details: [Admin Suite 8.4.0](Companion/AdminSuite/UPDATE-8.4.0.md). Source rollback: [`backup/before-suite-8.4-panel-2.1`](https://github.com/Robin9094707/PANELAPios/tree/backup/before-suite-8.4-panel-2.1).
+Separate GitHub workflows build and test the affected product, publishing the unsigned IPA or plugin JAR and complete plugin source after success. Installation/API details: [Admin Suite 8.4.0](Companion/AdminSuite/UPDATE-8.4.0.md). Source rollback: [`backup/before-suite-8.4-panel-2.1`](https://github.com/Robin9094707/PANELAPios/tree/backup/before-suite-8.4-panel-2.1).
 
 ## Features
 

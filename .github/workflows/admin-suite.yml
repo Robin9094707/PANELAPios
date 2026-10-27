@@ -1,0 +1,108 @@
+name: Admin Suite JAR
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Companion/AdminSuite/**'
+      - '.github/workflows/admin-suite.yml'
+  pull_request:
+    paths:
+      - 'Companion/AdminSuite/**'
+      - '.github/workflows/admin-suite.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: admin-suite-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  plugin:
+    name: Build JAR and affected regression suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: fixture-root
+          MARIADB_DATABASE: inspector_fixture
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/cache@v4
+        with:
+          path: Companion/AdminSuite/target/build-deps
+          key: suite-build-deps-${{ hashFiles('Companion/AdminSuite/tools/build-dependencies.json') }}
+      - name: Select affected tests
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 Companion/AdminSuite/tools/ci-test-scope.py
+      - name: Build with verified dependencies
+        working-directory: Companion/AdminSuite
+        run: python3 tools/build-real.py
+      - name: Test API compatibility and affected features
+        working-directory: Companion/AdminSuite
+        env:
+          TEST_ARGS: ${{ steps.scope.outputs.args }}
+          DATABASE_TESTS: ${{ steps.scope.outputs.database }}
+        run: |
+          if [ "$DATABASE_TESTS" = true ]; then export TEST_DATABASE=1; fi
+          read -r -a args <<< "$TEST_ARGS"
+          python3 tools/test-830.py "${args[@]}"
+      - name: Package source and checksums
+        working-directory: Companion/AdminSuite
+        run: |
+          python3 tools/package-source.py
+          cd target
+          sha256sum SimplexAdminSuite-*.jar SimplexAdminSuite-*-source.zip > AdminSuite-SHA256SUMS.txt
+          sha256sum -c AdminSuite-SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SimplexAdminSuite-plugin
+          path: |
+            Companion/AdminSuite/target/SimplexAdminSuite-*.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-*-source.zip
+            Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+  release:
+    name: Publish independent plugin release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [plugin]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SimplexAdminSuite-plugin
+          path: release
+      - name: Publish versioned JAR without replacing releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum -c AdminSuite-SHA256SUMS.txt
+          jars=(SimplexAdminSuite-*.jar)
+          test "${#jars[@]}" -eq 1
+          version=${jars[0]#SimplexAdminSuite-}
+          version=${version%.jar}
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          tag="suite-v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag exists; verified JAR remains available as the workflow artifact. Increment the plugin version for a new release."
+            exit 0
+          fi
+          gh release create "$tag" "${jars[0]}" SimplexAdminSuite-*-source.zip AdminSuite-SHA256SUMS.txt --target "$GITHUB_SHA" --title "Simplex Admin Suite $version" --generate-notes --latest=false
