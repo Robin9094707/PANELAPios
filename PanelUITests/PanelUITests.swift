@@ -228,8 +228,8 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(upload.waitForExistence(timeout: 10)); upload.tap()
         let confirm = app.buttons["plugin-update-confirm"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 20))
-        // LabeledContent exposes a combined accessibility label, not a standalone value Text.
-        let version = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Neue Version", "8.5.0")).firstMatch
+        // Native LabeledContent may expose the value separately or combine it with its label.
+        let version = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND (label CONTAINS %@ OR value CONTAINS %@)", "Neue Version", "8.5.0", "8.5.0")).firstMatch
         XCTAssertTrue(version.exists); XCTAssertFalse(confirm.isEnabled)
         capture("31-Plugin-Update-Erste-Auswahl")
         app.buttons["Auswahl verwerfen"].tap()
