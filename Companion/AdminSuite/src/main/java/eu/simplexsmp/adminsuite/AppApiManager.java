@@ -21,9 +21,12 @@ final class AppApiManager {
     private final String serverName;
     final AppApiSecurity security;
     private final DiscordAdminController controller;
+    private AppPluginFiles pluginFiles;
+    private synchronized AppPluginFiles pluginFiles() throws Exception { if(pluginFiles==null)pluginFiles=new AppPluginFiles(plugin.getDataFolder().toPath().toAbsolutePath().getParent());return pluginFiles; }
     final AppApiMenus menus;
     private final Map<String,Map<String,Object>> actions=new LinkedHashMap<>();
     private final Map<String,long[]> rates=new HashMap<>();
+    private final PlayerNbtAccess playerNbt;
     private final DatabaseInspector databaseInspector=new DatabaseInspector();
     private final AtomicLong generation=new AtomicLong();
     private volatile HttpServer server;
@@ -31,12 +34,20 @@ final class AppApiManager {
     private volatile String status="Ausgeschaltet",fingerprint="";
     private final ExecutorService setup=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"SimplexAppSetup");t.setDaemon(true);return t;});
     AppApiManager(SimplexAdminSuite plugin)throws Exception{
-        this.plugin=plugin;serverName=Bukkit.getServer().getName();security=new AppApiSecurity(plugin.getDataFolder().toPath().resolve("app-api"));controller=new DiscordAdminController(plugin,plugin.discordRelay());menus=new AppApiMenus(plugin,security);
+        this.plugin=plugin;playerNbt=new PlayerNbtAccess(plugin);serverName=Bukkit.getServer().getName();security=new AppApiSecurity(plugin.getDataFolder().toPath().resolve("app-api"));controller=new DiscordAdminController(plugin,plugin.discordRelay());menus=new AppApiMenus(plugin,security);
         for(Object command:controller.guildCommands())if(command instanceof Map<?,?> c&&"sasadmin".equals(c.get("name")))flatten("",c.get("options"));
+        extra("vpn.whitelist","VPN-Ausnahme ändern","Sicherheit",List.of(field("player","Spielername oder UUID",3,true),choice("allowed","VPN-Ausnahme","true","false")));
+        extra("bans.remove","Ausgewählte Sperre aufheben","Moderation",List.of(choice("source","Bannquelle","internal","client","minecraft-profile","minecraft-ip","litebans"),field("id","Eintrag / Spieler-UUID",3,true),field("expected","Geladener Stand",3,false)));
+        extra("reports.update","Report bearbeiten","Moderation",List.of(field("id","Report-ID",3,true),choice("status","Status","OPEN","IN_REVIEW","RESOLVED","REJECTED"),field("note","Interne Notiz",3,false),field("expected","Geladener Stand",3,true)));
+        extra("events.delete","Ereignis löschen","Protokolle",List.of(field("id","Ereignis-ID",3,true)));
+        extra("events.note","Ereignisnotiz bearbeiten","Protokolle",List.of(field("id","Ereignis-ID",3,true),field("note","Notiz",3,false)));
+        extra("events.clear","Ereignisprotokoll leeren","Protokolle",List.of());
+        extra("notifications.update","Bark-Benachrichtigungen speichern","Benachrichtigungen",List.of(field("key","Bark-Schlüssel (leer = behalten)",3,false),field("events","Ereignisarten",3,false),choice("enabled","Aktiv","true","false"),choice("level","Normale Hinweise","active","passive","timeSensitive","critical"),choice("critical","Kritische Ereignisse","active","passive","timeSensitive","critical"),field("sound","Normaler Klang",3,true),field("criticalSound","Alarmklang",3,true)));
         extra("menu.action","Suite-Menü bedienen","Alle Suite-Menüs",List.of(field("session","Menüsitzung",3,true),field("revision","Menüstand",3,true),field("option","Menüpunkt",3,true),field("click","Mausaktion",3,false),field("input","Eingabe",3,false)));
         extra("settings.update","Suite-Einstellung speichern","Einstellungen",List.of(field("key","Einstellung",3,true),field("value","Neuer Wert; leer = leeren",3,false),field("expected","Geladener Stand",3,true)));
         extra("player.vitals","Spielerwerte live ändern","Spieler",List.of(field("player","Spielername oder UUID",3,true),choice("field","Wert","health","food","saturation","level","exp","gamemode","invulnerable","allowFlight"),field("value","Neuer Wert",3,true)));
         extra("world.update","Welteinstellung ändern","Welten",List.of(field("world","Weltname oder UUID",3,true),choice("field","Einstellung","time","weather","difficulty","pvp","autosave"),field("value","Neuer Wert",3,true)));
+        extra("plugins.stage","Plugin-Update vormerken","Plugins",List.of(field("filename","Installierte JAR",3,true),field("expected","SHA-256 der installierten JAR",3,true),field("sha256","SHA-256 des Updates",3,true),field("name","Plugin-Name",3,true),field("main","Hauptklasse",3,true),field("version","Neue Version",3,true)));
         extra("logs.retry","Private Discord-Protokolle erneut versuchen","Server",List.of());
         extra("suite.command","Weitere Suite-Befehle","Werkzeuge",List.of(choice("root","Suite-Befehl","sas","delivery","shop","spcurrency","connection"),field("command","Argumente ohne /sas",3,true)));
     }
@@ -51,7 +62,7 @@ final class AppApiManager {
     private void extra(String id,String description,String group,List<?> options){actions.put(id,new LinkedHashMap<>(SimplexAdminSuite.appMap("id",id,"name",description,"description",description,"group",group,"scope",scope(id),"options",options)));}
     private static Map<String,Object> field(String id,String label,int type,boolean required){return SimplexAdminSuite.appMap("name",id,"description",label,"type",type,"required",required);}
     private static Map<String,Object> choice(String id,String label,String... values){var f=field(id,label,3,true);f.put("choices",Arrays.stream(values).map(v->SimplexAdminSuite.appMap("name",switch(v){case "health"->"Gesundheit";case "food"->"Hunger";case "saturation"->"Sättigung";case "level"->"Erfahrungslevel";case "exp"->"XP-Anteil";case "gamemode"->"Spielmodus";case "invulnerable"->"Unverwundbarkeit";case "allowFlight"->"Flug erlauben";default->v;},"value",v)).toList());return f;}
-    static String scope(String path){return Set.of("world.update","logs.retry","settings.update","menu.action","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
+    static String scope(String path){return Set.of("events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
     void reload(){
         stopListener();menus.clear();long rev=generation.get();
         if(!plugin.getConfig().getBoolean("app-api.enabled",false)){status="Ausgeschaltet";return;}
@@ -103,18 +114,31 @@ final class AppApiManager {
             String path=x.getRequestURI().getPath(),method=x.getRequestMethod();Map<String,String> query=query(x.getRequestURI());Object result;
             if(method.equals("GET")){
                 result=switch(path){
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
+                    case "/v1/player-nbt"->onMain(rev,()->playerNbt.read(query.getOrDefault("player",""),query.getOrDefault("path",""),Boolean.parseBoolean(query.getOrDefault("status","false"))));
+                    case "/v1/notifications"->onMain(rev,()->{if(!key.scope().equals("full"))throw new ApiError(403,"Bark-Einrichtung benötigt full-Zugriff");if(plugin.appEvents==null)throw new ApiError(503,"Ereignismodul nicht verfügbar");return plugin.appEvents.subscription(key.id());});
+                    case "/v1/data/litebans"->{org.bukkit.plugin.Plugin lite=onMain(rev,()->Bukkit.getPluginManager().getPlugin("LiteBans"));int offset;try{offset=Math.max(0,Integer.parseInt(query.getOrDefault("offset","0")));}catch(Exception e){offset=0;}yield plugin.moderationOverview.appLite(lite,query.getOrDefault("q",""),offset);}
+                    case "/v1/plugin-files"->pluginFiles().list(Boolean.parseBoolean(query.getOrDefault("pending","false")));
+                    case "/v1/plugin-files/inspect"->pluginFiles().inspect(query.getOrDefault("filename",""),Boolean.parseBoolean(query.getOrDefault("pending","false")));
+                    case "/v1/plugin-files/status"->pluginFiles().status(query.getOrDefault("filename",""),query.getOrDefault("sha256",""));
                     case "/v1/menu"->onMain(rev,()->{if(!key.scope().equals("full"))throw new ApiError(403,"Suite-Menüs benötigen einen full-Schlüssel.");return menus.current(key);});
-                    case "/v1/schema"->SimplexAdminSuite.appMap("actions",new ArrayList<>(actions.values()));
+                    case "/v1/schema"->SimplexAdminSuite.appMap("actions",actions.values().stream().filter(row->!"plugins.stage".equals(row.get("id"))).toList());
                     case "/v1/view"->onMain(rev,()->{
                         DiscordAdminController.Request request=request(query.getOrDefault("path","dashboard"),new LinkedHashMap<>(query));
-                        if(controller.mutation(request)||Set.of("ai.ask","ai.propose","server.suite","world.update","logs.retry").contains(request.path))throw new ApiError(405,"Diese Aktion benötigt Vorschau und Bestätigung.");
+                        if(isCenterAction(request.path)||controller.mutation(request)||Set.of("plugins.stage","ai.ask","ai.propose","server.suite","world.update","logs.retry").contains(request.path))throw new ApiError(405,"Diese Aktion benötigt Vorschau und Bestätigung.");
                         return reply(controller.execute(request,actor(key)));
                     });
                     case "/v1/choices"->onMain(rev,()->controller.autocomplete(new DiscordAdminController.Request(query.getOrDefault("path",""),new LinkedHashMap<>(query)),query.getOrDefault("field",""),query.getOrDefault("q","")).stream().map(c->SimplexAdminSuite.appMap("name",c.name,"value",c.value)).toList());
-                    case "/v1/data/overview","/v1/data/statistics","/v1/data/worlds","/v1/data/plugins","/v1/data/log-status","/v1/data/players","/v1/data/profile","/v1/data/alts","/v1/data/devices","/v1/data/ultrabans","/v1/data/snapshots","/v1/data/nbt-paths","/v1/data/settings","/v1/data/inventory","/v1/data/snapshot-content"->onMain(rev,()->{Object data=plugin.appApiData(path.substring("/v1/data/".length()),query);if(path.endsWith("/settings")){Map<String,Object> envelope=object(data);for(Object entry:(List<?>)envelope.get("items")){Map<String,Object> item=object(entry);item.put("revision",AppApiSecurity.hash(DiscordBotManager.Json.stringify(item.get("value"))));}}return data;});
+                    case "/v1/data/events","/v1/data/vpn-whitelist","/v1/data/vpn-kicks","/v1/data/bans","/v1/data/reports","/v1/data/overview","/v1/data/statistics","/v1/data/worlds","/v1/data/plugins","/v1/data/log-status","/v1/data/players","/v1/data/profile","/v1/data/alts","/v1/data/devices","/v1/data/ultrabans","/v1/data/snapshots","/v1/data/nbt-paths","/v1/data/settings","/v1/data/inventory","/v1/data/snapshot-content"->onMain(rev,()->{Object data=plugin.appApiData(path.substring("/v1/data/".length()),query);if(path.endsWith("/settings")){Map<String,Object> envelope=object(data);for(Object entry:(List<?>)envelope.get("items")){Map<String,Object> item=object(entry);item.put("revision",AppApiSecurity.hash(DiscordBotManager.Json.stringify(item.get("value"))));}}return data;});
                     default->throw new ApiError(404,"API-Endpunkt nicht gefunden.");
                 };
+            }else if(method.equals("POST")&&path.equals("/v1/player-nbt")){
+                if(!key.scope().equals("full"))throw new ApiError(403,"Offline-NBT speichern benötigt full-Zugriff");
+                if(!rate("nbt:"+key.id(),6))throw new ApiError(429,"Maximal sechs NBT-Änderungen pro Minute");
+                String type=x.getRequestHeaders().getFirst("Content-Type");if(type==null||!type.startsWith("application/json"))throw new ApiError(415,"application/json erforderlich");
+                byte[] bytes=x.getRequestBody().readNBytes(2_810_001);if(bytes.length>2_810_000)throw new ApiError(413,"NBT-Anfrage zu groß");
+                String text=new String(bytes,StandardCharsets.UTF_8);AppApiSecurity.checkJson(text);Map<String,Object> input=object(DiscordBotManager.Json.parse(text));
+                result=onMain(rev,()->{if(!security.keys().contains(key))throw new ApiError(401,"API-Zugang widerrufen");return playerNbt.write(input,actor(key).auditName());});
             }else if(method.equals("POST")&&path.equals("/v1/database/inspect")){
                 if(!key.scope().equals("full"))throw new ApiError(403,"Der Datenbankscanner benötigt einen full-Schlüssel.");
                 if(!rate("db:"+key.id(),6))throw new ApiError(429,"Maximal sechs Datenbankscans pro Minute.");
@@ -123,6 +147,15 @@ final class AppApiManager {
                 String text=new String(bytes,StandardCharsets.UTF_8);AppApiSecurity.checkJson(text);
                 // Remains on the bounded HTTP worker pool, never Minecraft's main thread.
                 result=databaseInspector.scan(object(DiscordBotManager.Json.parse(text)));
+            }else if(method.equals("POST")&&path.equals("/v1/plugin-files/upload")){
+                if(!AppApiSecurity.permitted(key,"full"))throw new ApiError(403,"Plugin-Updates benötigen einen full-Schlüssel.");
+                if(!"application/java-archive".equals(x.getRequestHeaders().getFirst("Content-Type")))throw new ApiError(415,"application/java-archive erforderlich");
+                String stored=security.consume(key,query.getOrDefault("ticket",""),System.currentTimeMillis());Map<String,Object> plan=object(DiscordBotManager.Json.parse(stored));
+                if(!"plugins.stage".equals(plan.get("path")))throw new ApiError(400,"Bestätigung gehört nicht zu einem Plugin-Update");
+                if(generation.get()!=rev || !security.keys().contains(key))throw new ApiError(401,"API-Zugang wurde geändert");
+                result=pluginFiles().stage(object(plan.get("values")),x.getRequestBody(),()->{if(generation.get()!=rev || !security.keys().contains(key))throw new ApiError(401,"API-Zugang wurde geändert");});
+                String auditName=actor(key).auditName();String detail=String.valueOf(object(plan.get("values")).get("filename"));
+                onMain(rev,()->{plugin.expansionAudit(auditName,null,"Plugin-Update vorgemerkt",detail);return null;});
             }else if(method.equals("POST")&&(path.equals("/v1/prepare")||path.equals("/v1/execute"))){
                 String contentType=x.getRequestHeaders().getFirst("Content-Type");if(contentType==null||!contentType.toLowerCase(Locale.ROOT).startsWith("application/json"))throw new ApiError(415,"application/json erforderlich");
                 byte[] body=x.getRequestBody().readNBytes(65537);if(body.length>65536)throw new ApiError(413,"Anfrage zu groß");String text=new String(body,StandardCharsets.UTF_8);AppApiSecurity.checkJson(text);Map<String,Object> payload=object(DiscordBotManager.Json.parse(text));
@@ -130,10 +163,14 @@ final class AppApiManager {
                     String action=String.valueOf(payload.getOrDefault("path",""));Map<String,Object> values=object(payload.get("values"));
                     DiscordAdminController.Request req=request(action,values);authorize(key,req);
                     String encoded=DiscordBotManager.Json.stringify(SimplexAdminSuite.appMap("path",action,"values",values));
-                    String summary=onMain(rev,()->{if(req.path.equals("world.update"))return "Welt: "+req.text("world")+"\nEinstellung: "+req.text("field")+"\nNeuer Wert: "+req.text("value");if(req.path.equals("logs.retry"))return "Gespeicherte private Discord-Protokolle erneut versuchen. Keine Einträge werden gelöscht; die Prüfung privater Kanalrechte bleibt aktiv.";if(req.path.equals("settings.update")){checkSetting(req);return "**Einstellung:** "+req.text("key")+"\n**Neuer Wert:** "+(req.text("value").isEmpty()?"(leer)":req.text("value"))+"\nDer geladene Stand wird vor dem Speichern erneut geprüft.";}return controller.confirmationSummary(req);});
+                    String summary;
+                    if(isCenterAction(req.path))summary="Aktion: "+actions.get(req.path).get("description")+". Änderungen werden beim Ausführen erneut geprüft.";
+                    else if(req.path.equals("plugins.stage")){pluginFiles().prepare(values);summary="Plugin: "+req.text("name")+" · "+req.text("version")+". Update wird geprüft und für den nächsten Serverstart vorgemerkt.";}
+                    else summary=onMain(rev,()->{if(req.path.equals("world.update"))return "Welt: "+req.text("world")+"\nEinstellung: "+req.text("field")+"\nNeuer Wert: "+req.text("value");if(req.path.equals("logs.retry"))return "Gespeicherte private Discord-Protokolle erneut versuchen. Keine Einträge werden gelöscht; die Prüfung privater Kanalrechte bleibt aktiv.";if(req.path.equals("settings.update")){checkSetting(req);return "**Einstellung:** "+req.text("key")+"\n**Neuer Wert:** "+(req.text("value").isEmpty()?"(leer)":req.text("value"))+"\nDer geladene Stand wird vor dem Speichern erneut geprüft.";}return controller.confirmationSummary(req);});
                     result=SimplexAdminSuite.appMap("ticket",security.prepare(key,encoded,System.currentTimeMillis()),"summary",summary,"expiresIn",60);
                 }else{
                     String stored=security.consume(key,String.valueOf(payload.getOrDefault("ticket","")),System.currentTimeMillis());Map<String,Object> plan=object(DiscordBotManager.Json.parse(stored));DiscordAdminController.Request req=request(String.valueOf(plan.get("path")),object(plan.get("values")));authorize(key,req);
+                    if(req.path.equals("plugins.stage"))throw new ApiError(405,"Bestätigung mit der JAR an plugin-files/upload senden.");
                     if(req.path.equals("ai.ask")){
                         CompletableFuture<String> future=onMain(rev,()->plugin.discordAdminAiAsk(req.text("question")));String response=future.get(90,TimeUnit.SECONDS);result=SimplexAdminSuite.appMap("ok",true,"title","Simplex KI","description",response);
                     }else if(req.path.equals("ai.propose")){
@@ -141,6 +178,10 @@ final class AppApiManager {
                         result=SimplexAdminSuite.appMap("ok",true,"title","KI-Vorschlag · noch nicht angewendet","description",onMain(rev,()->controller.confirmationSummary(proposed)),"proposal",SimplexAdminSuite.appMap("path",proposed.path,"values",proposed.values));
                     }else result=onMain(rev,()->{
                         authorize(key,req);
+                        if(isCenterAction(req.path)) {
+                            if(req.path.equals("notifications.update")){if(plugin.appEvents==null)throw new ApiError(503,"Ereignismodul nicht verfügbar");return plugin.appEvents.configure(key.id(),req.values);}
+                            return plugin.appModerationMutation(req.path,req.values,actor(key).auditName());
+                        }
                         if(req.path.equals("settings.update")){checkSetting(req);plugin.asAdmin(actor(key).auditName(),()->plugin.moderationControl.appConfigSet(Bukkit.getConsoleSender(),req.text("key"),req.text("value")));plugin.expansionAudit(actor(key).auditName(),null,"App-Einstellung",req.text("key"));return SimplexAdminSuite.appMap("ok",true,"title","Einstellung gespeichert","description",req.text("key")+" gespeichert. Moduländerungen bei Bedarf mit Suite-Reload anwenden.");}
                         if(req.path.equals("menu.action"))return menus.perform(key,req.values);
                         if(Set.of("suite.command","player.vitals","world.update","logs.retry").contains(req.path)){Object[] out={null};plugin.asAdmin(actor(key).auditName(),()->out[0]=plugin.appApiMutation(req.path,req.values,actor(key).auditName()));return out[0];}
@@ -149,11 +190,12 @@ final class AppApiManager {
                 }
             }else throw new ApiError(405,"Methode nicht erlaubt.");
             send(x,200,result);
-        }catch(Throwable error){Throwable e=error;while(e instanceof ExecutionException&&e.getCause()!=null)e=e.getCause();int code=e instanceof ApiError a?a.code:e instanceof IllegalArgumentException?400:e instanceof TimeoutException?504:503;
-            String message=e instanceof ApiError||e instanceof IllegalArgumentException?e.getMessage():e instanceof TimeoutException?"Serverantwort dauert zu lange. Aktion nicht automatisch wiederholen; aktuellen Zustand prüfen.":"App-API momentan nicht verfügbar. Serverprotokoll und API-Status prüfen.";
+        }catch(Throwable error){Throwable e=error;while(e instanceof ExecutionException&&e.getCause()!=null)e=e.getCause();int code=e instanceof ApiError a?a.code:e instanceof IllegalArgumentException||e instanceof java.io.IOException?400:e instanceof TimeoutException?504:503;
+            String message=e instanceof ApiError||e instanceof IllegalArgumentException||e instanceof java.io.IOException?e.getMessage():e instanceof TimeoutException?"Serverantwort dauert zu lange. Aktion nicht automatisch wiederholen; aktuellen Zustand prüfen.":"App-API momentan nicht verfügbar. Serverprotokoll und API-Status prüfen.";
             try{send(x,code,SimplexAdminSuite.appMap("message",message));}catch(Exception ignored){}
         }finally{x.close();}
     }
+    private static boolean isCenterAction(String path){return Set.of("vpn.whitelist","bans.remove","reports.update","events.delete","events.note","events.clear","notifications.update").contains(path);}
     private void checkSetting(DiscordAdminController.Request req){
         String key=req.text("key");
         if(key.startsWith("app-api.")||key.startsWith("admin-security.")||key.startsWith("console.")||ModerationControl.protectedKey(key)||plugin.moderationControl==null||!plugin.moderationControl.configKeys().contains(key))throw new ApiError(403,"Geschützte oder unbekannte Einstellung");

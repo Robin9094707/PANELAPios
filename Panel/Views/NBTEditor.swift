@@ -1,4 +1,5 @@
 import SwiftUI
+import CryptoKit
 
 @MainActor final class NBTModel: ObservableObject {
     @Published var document: NBTDocument?
@@ -11,7 +12,11 @@ import SwiftUI
     let api: PanelAPI
     let server: Server
     let path: String
-    init(api: PanelAPI, server: Server, path: String) { self.api = api; self.server = server; self.path = path }
+    let suite: SuiteAPI?
+    let player: String?
+    init(api: PanelAPI, server: Server, path: String, suite: SuiteAPI? = nil, player: String? = nil) { self.api = api; self.server = server; self.path = path; self.suite = suite; self.player = player }
+    var canApply: Bool { suite == nil ? state == "offline" : state == "player-offline" && suite?.scope == "full" }
+
     var root: NBTNode? { document?.root }
     var playerName: String {
         let bukkit = root?.child("bukkit")?.child("lastKnownName")?.text ?? ""
@@ -20,13 +25,22 @@ import SwiftUI
     func load() async {
         busy = true; defer { busy = false }
         do {
-            let data = try await api.fileData(server: server.id, path: path)
+            let data: Data
+            if let suite, let player {
+                let response = try await suite.request("player-nbt", query: ["player": player, "path": path])
+                guard let decoded = Data(base64Encoded: response["data"].string) else { throw PanelError(message: "Ungültige NBT-Antwort der Admin Suite.") }; data = decoded
+            } else { data = try await api.fileData(server: server.id, path: path) }
             let decoded = try await Task.detached(priority: .userInitiated) { try NBTDocument.decode(data) }.value
             try Task.checkCancellation(); original = data; document = decoded
             await refreshState()
         } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
     }
-    func refreshState() async { do { state = try await api.request("servers/\(server.id)/resources").attributes["current_state"].string } catch { state = "unknown" } }
+    func refreshState() async {
+        do {
+            if let suite, let player { state = try await suite.request("player-nbt", query: ["player": player, "path": path, "status": "true"])["online"].bool ? "player-online" : "player-offline" }
+            else { state = try await api.request("servers/\(server.id)/resources").attributes["current_state"].string }
+        } catch { state = "unknown" }
+    }
     func update(_ id: UUID, _ text: String) throws {
         if root?.find(id)?.text == text { return }
         guard var doc = document else { return }
@@ -40,6 +54,14 @@ import SwiftUI
         busy = true; defer { busy = false }
         do {
             guard !api.demo, let doc = document else { throw PanelError(message: "Keine schreibbare NBT-Datei geladen.") }
+            if let suite, let player {
+                await refreshState(); guard canApply else { throw PanelError(message: "Spieler muss offline sein und der Suite-Schlüssel benötigt Vollzugriff.") }
+                let data = try await Task.detached(priority: .userInitiated) { let encoded = try doc.encode(); _ = try NBTDocument.decode(encoded); return encoded }.value
+                let hash = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
+                let response = try await suite.request("player-nbt", method: "POST", body: .object(["player": .string(player), "path": .string(path), "expected": .string(hash), "data": .string(data.base64EncodedString())]))
+                guard response["ok"].bool else { throw PanelError(message: "NBT-Änderung wurde nicht bestätigt. Aktuellen Stand prüfen.") }
+                original = data; dirty = false; backup = response["backup"].string; Feedback.success(); return
+            }
             await refreshState(); guard state == "offline" else { throw PanelError(message: "Anwenden ist nur bei gestopptem Server möglich. So überschreibt Minecraft keine Spielerdaten.") }
             let current = try await api.fileData(server: server.id, path: path)
             guard current == original else { throw PanelError(message: "Die Serverdatei hat sich geändert. Exportiere deinen Entwurf und öffne die Datei erneut.") }
@@ -72,7 +94,7 @@ struct NBTEditor: View {
     @State private var confirm = false
     @State private var discard = false
     @State private var share: ShareItem?
-    init(api: PanelAPI, server: Server, path: String) { _model = StateObject(wrappedValue: NBTModel(api: api, server: server, path: path)) }
+    init(api: PanelAPI, server: Server, path: String, suite: SuiteAPI? = nil, player: String? = nil) { _model = StateObject(wrappedValue: NBTModel(api: api, server: server, path: path, suite: suite, player: player)) }
     var body: some View {
         NavigationStack {
             List {
@@ -80,7 +102,7 @@ struct NBTEditor: View {
                     Label(model.playerName, systemImage: "person.crop.square.fill").font(.title2.bold()).foregroundStyle(Color.panelAccent).textSelection(.enabled)
                     HStack { Text("Server"); Spacer(); StatePill(state: model.state) }
                     Text("Du bearbeitest eine lokale Kopie. Anwenden ist bei gestopptem Server möglich und erstellt zuerst eine geprüfte Sicherung unter /.panel-nbt-backups. Kein automatischer Kick.").font(.footnote).foregroundStyle(.secondary)
-                    if model.state != "offline" { Label("Serverdatei schreibgeschützt · zum Anwenden Server stoppen", systemImage: "lock.fill").font(.footnote).foregroundStyle(.orange) }
+                    if !model.canApply { Label(model.suite == nil ? "Serverdatei schreibgeschützt · zum Anwenden Server stoppen" : "Schreibgeschützt · Spieler muss offline sein, Suite-Vollzugriff erforderlich", systemImage: "lock.fill").font(.footnote).foregroundStyle(.orange) }
                     if model.busy { ProgressView("Datei verarbeiten …") }
                     if let copy = model.backup { Text("Sicherung: \(copy)").font(.caption.monospaced()).textSelection(.enabled) }
                 }
@@ -106,14 +128,14 @@ struct NBTEditor: View {
                     Section { NavigationLink("Alle NBT-Daten · \(root.children.count) Felder") { NBTBranch(model: model, nodeID: root.id, title: "NBT-Wurzel") } }
                     Section {
                         Button("Entwurf exportieren", systemImage: "square.and.arrow.up") { Task { do { share = ShareItem(url: try await model.export()) } catch { model.error = error.localizedDescription } } }
-                        Button("Auf Server anwenden", systemImage: "checkmark.shield") { confirm = true }.disabled(!model.dirty || model.busy || model.state != "offline").requiresAccess(model.api, model.server.id, "file.update", "file.create")
+                        Button("Auf Server anwenden", systemImage: "checkmark.shield") { confirm = true }.disabled(!model.dirty || model.busy || !model.canApply).requiresAccess(model.api, model.server.id, "file.update", "file.create")
                         Button("Serverstatus aktualisieren", systemImage: "arrow.clockwise") { Task { await model.refreshState() } }
                     }
                 }
             }.panelScreen().refreshable { if !model.busy { if model.dirty { await model.refreshState() } else { await model.load() } } }.navigationTitle("NBT-Editor").navigationBarTitleDisplayMode(.inline).errorAlert($model.error)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { if model.dirty { discard = true } else { dismiss() } }.disabled(model.busy) } }
                 .task { await model.load() }
-                .confirmationDialog("NBT-Änderungen anwenden?", isPresented: $confirm, titleVisibility: .visible) { Button("Sichern & anwenden") { Task { await model.apply() } } } message: { Text("Die Originaldatei wird gesichert und danach ersetzt. Erfordert einen gestoppten Server.") }
+                .confirmationDialog("NBT-Änderungen anwenden?", isPresented: $confirm, titleVisibility: .visible) { Button("Sichern & anwenden") { Task { await model.apply() } } } message: { Text(model.suite == nil ? "Die Originaldatei wird gesichert und danach ersetzt. Erfordert einen gestoppten Server." : "Die Suite prüft erneut, dass der Spieler offline ist, sichert die Originaldatei und ersetzt sie atomar. Der Server kann weiterlaufen.") }
                 .confirmationDialog("Lokale Änderungen verwerfen?", isPresented: $discard, titleVisibility: .visible) { Button("Verwerfen", role: .destructive) { dismiss() } }
                 .sheet(item: $share) { ShareSheet(url: $0.url) }
         }.interactiveDismissDisabled(model.dirty || model.busy)
