@@ -48,6 +48,12 @@ public final class Security900Harness {
             var dbConstructor=SimplexAdminSuite.PlayerDatabase.class.getDeclaredConstructor(SimplexAdminSuite.class);dbConstructor.setAccessible(true);Object db=dbConstructor.newInstance(plugin);Moderation790Harness.set(plugin,SimplexAdminSuite.class,"database",db);
             var profileConstructor=SimplexAdminSuite.PlayerProfile.class.getDeclaredConstructor(UUID.class,String.class);profileConstructor.setAccessible(true);Object profile=profileConstructor.newInstance(uuid,"Fixture");
             @SuppressWarnings("unchecked") Map<UUID,Object> profiles=(Map<UUID,Object>)Moderation790Harness.get(db,"profiles");profiles.clear();profiles.put(uuid,profile);
+            VpnProtectionManager vpn=new VpnProtectionManager(plugin);UUID firstBlocked=UUID.randomUUID();
+            try {
+                vpn.appWhitelist("Fixture",firstBlocked.toString(),true);check(vpn.isWhitelisted(firstBlocked,"NewPlayer"),"first-login VPN kick can be whitelisted by exact UUID");
+                vpn.appWhitelist("Fixture",firstBlocked.toString(),false);check(!vpn.isWhitelisted(firstBlocked,"NewPlayer"),"same unknown UUID removed exactly");
+                reject(()->vpn.appWhitelist("Fixture","Fix",true),"name prefix cannot modify another player's whitelist");
+            } finally {vpn.stop();}
             Path file=Files.createDirectories(worldFolder.resolve("playerdata")).resolve(uuid+".dat");byte[] original={10,0,0,0};Files.write(file,original);
             ByteArrayOutputStream buffer=new ByteArrayOutputStream();try(DataOutputStream out=new DataOutputStream(buffer)){out.writeByte(10);out.writeUTF("");out.writeByte(8);out.writeUTF("note");out.writeUTF("edited");out.writeByte(0);}byte[] modified=buffer.toByteArray();
             String requested="/"+Path.of(".").toRealPath().relativize(file.toRealPath()).toString().replace(File.separatorChar,'/');

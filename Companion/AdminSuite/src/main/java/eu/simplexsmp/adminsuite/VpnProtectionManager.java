@@ -512,11 +512,14 @@ final class VpnProtectionManager implements Listener {
         int start=Math.min(Math.max(0,offset),rows.size()),end=Math.min(start+100,rows.size());return SimplexAdminSuite.appMap("items",rows.subList(start,end),"next",end<rows.size()?end:-1,"total",rows.size(),"window",route.equals("vpn-kicks")?200:0);
     }
     Object appWhitelist(String actor,String player,boolean allowed) {
-        UUID id=plugin.discordAdminResolvePlayer(player);
+        UUID id;boolean uuidInput=true;
+        try{id=UUID.fromString(player);}catch(IllegalArgumentException name){uuidInput=false;id=plugin.discordAdminResolvePlayer(player);}
         SimplexAdminSuite.PlayerProfile p=id==null?null:plugin.clientSecurityProfile(id);
-        if(allowed&&p==null)throw new IllegalArgumentException("Gespeicherten Spieler auswählen (Name oder UUID).");
-        if(allowed)addWhitelist(actor,id,p.displayName());else {
-            String name=p==null?player:p.displayName();
+        if(!uuidInput&&p!=null&&!p.displayName().equalsIgnoreCase(player))throw new IllegalArgumentException("Exakten Spielernamen oder UUID verwenden; keine Namenspräfixe.");
+        if(allowed&&id==null)throw new IllegalArgumentException("Gespeicherten Spieler oder genaue Spieler-UUID auswählen.");
+        String name=p==null?player:p.displayName();
+        if(p==null&&id!=null)for(VpnDetectionLog.Detection detection:detectionLog.recent("",200))if(id.equals(detection.uuid())){name=detection.playerName();break;}
+        if(allowed)addWhitelist(actor,id,name);else {
             // Exact identity only. Never use removeQuery's prefix matching from a remote request.
             boolean removed=whitelist.remove(id,name);
             if(!removed)throw new IllegalArgumentException("Dieser genaue Whitelist-Eintrag ist nicht mehr vorhanden.");

@@ -161,6 +161,9 @@ struct SuiteSecurityDetailView: View {
             if area == .bans {
                 Section { Button("Diese Sperre aufheben", systemImage: "lock.open.fill", role: .destructive) { prepare("bans.remove", ["source": row["source"], "id": row["id"], "expected": row["revision"]], "Quelle: \(row["source"].string)\nZiel: \(row["name"].string)\nGrund: \(row["reason"].string)\nNur diese Sperre aufheben?") }.disabled(suite.scope == "read" || model.busy) }
             }
+            if area == .vpn && source == "vpn-kicks" && !row["player"].string.isEmpty {
+                Section { Button("VPN-Ausnahme für diesen Spieler", systemImage: "checkmark.shield") { prepare("vpn.whitelist", ["player": row["player"], "allowed": .string("true")], "VPN-Ausnahme für \(row["name"].string) aktivieren?\nDie Freigabe gilt für diese genaue Spieler-UUID.") }.disabled(suite.scope == "read" || model.busy) }
+            }
             if area == .vpn && source == "vpn-whitelist" {
                 Section { Button("VPN-Ausnahme entfernen", role: .destructive) { prepare("vpn.whitelist", ["player": row["player"], "allowed": .string("false")], "VPN-Ausnahme für \(row["name"].string) entfernen?") }.disabled(suite.scope == "read" || model.busy) }
             }
