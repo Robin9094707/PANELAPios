@@ -73,11 +73,9 @@ struct SuiteHubView: View {
                         }
                     }
                 }
+                Section { NavigationLink("Suite-Verwaltung & Wartungsmodus") { SuiteManagementView(suite:api,actions:model.actions) } }
                 Section("Spieler & Moderation") {
-                    NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions, initialFilter: .online) } label: { Label("Online-Spieler", systemImage: "person.2.wave.2.fill") }
-                    NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions, initialFilter: .recent) } label: { Label("Zuletzt online", systemImage: "clock.arrow.circlepath") }
                     NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions) } label: { Label("Spieler, Geräte & Alt-Accounts", systemImage: "person.2.fill") }
-                    NavigationLink { SuiteUltraView(suite: api, actions: model.actions) } label: { Label("Ultrabanns & Identitätsgruppen", systemImage: "shield.slash.fill") }
                     NavigationLink { SuiteSettingsView(suite: api) } label: { Label("Suite-Einstellungen", systemImage: "slider.horizontal.3") }
                     NavigationLink { SuiteReadView(suite: api, path: "server.status", title: "Serverstatus") } label: { Label("Server & Neustartstatus", systemImage: "server.rack") }
                 }
@@ -89,7 +87,6 @@ struct SuiteHubView: View {
                 }
                 Section("Weitere Funktionen") {
                     NavigationLink { SuiteActionsView(suite: api, actions: model.actions.filter { !["menu.action", "settings.update"].contains($0.id) }, title: "Alle Funktionen") } label: { Label("Alle Funktionen durchsuchen", systemImage: "magnifyingglass") }
-                    if api.scope == "full" { NavigationLink { SuiteRemoteMenuView(suite: api) } label: { Label("Originale Suite-Menüs", systemImage: "square.grid.2x2") } }
                 }
                 Section { Button("Kopplung bearbeiten", systemImage: "key.horizontal") { settings = true }; Button("Verbindung aktualisieren", systemImage: "arrow.clockwise") { Task { await model.load(force: true) } } }
             }

@@ -534,19 +534,20 @@ final class NativeScoreboardManager implements Listener {
         if (board == null) { attach(player); return; }
         try {
             boolean full = plugin.community == null || plugin.community.scoreboard(player);
-            board.objective.setDisplayName(full ? color(plugin.getConfig().getString("scoreboard.title", DEFAULT_TITLE)) : "§b§lSimplex SMP");
-            applyBlankNumberFormat(board.objective, "objective-update");
-            for (String old : board.entries) board.scoreboard.resetScores(old);
-            board.entries.clear();
-            List<String> rendered = full ? renderLines(player) : List.of(); // Compact mode uses only the objective title; no blank header or body row.
-            int scoreValue = rendered.size();
-            for (int index = 0; index < rendered.size(); index++) {
-                String entry = unique(rendered.get(index), index);
-                org.bukkit.scoreboard.Score score = board.objective.getScore(entry);
-                score.setScore(scoreValue--);
-                applyBlankNumberFormat(score, "line");
-                board.entries.add(entry);
+            String title=full ? color(plugin.getConfig().getString("scoreboard.title", DEFAULT_TITLE)) : "§b§lSimplex SMP";
+            if(!board.objective.getDisplayName().equals(title))board.objective.setDisplayName(title);
+            List<String> rendered = full ? renderLines(player).stream().limit(15).toList() : List.of();
+            // Stable entries and teams: update text in place, never clear/recreate the sidebar every tick.
+            for(int index=0;index<rendered.size();index++) {
+                String entry="§"+Integer.toHexString(index)+"§r";
+                org.bukkit.scoreboard.Team team=board.scoreboard.getTeam("sx_line_"+index);
+                if(team==null){team=board.scoreboard.registerNewTeam("sx_line_"+index);team.addEntry(entry);}
+                String text=rendered.get(index);if(!team.getPrefix().equals(text))team.setPrefix(text);
+                var score=board.objective.getScore(entry);int value=rendered.size()-index;
+                if(!score.isScoreSet()||score.getScore()!=value){score.setScore(value);applyBlankNumberFormat(score,"line");}
+                if(!board.entries.contains(entry))board.entries.add(entry);
             }
+            while(board.entries.size()>rendered.size())board.scoreboard.resetScores(board.entries.remove(board.entries.size()-1));
             board.failures = 0;
         } catch (Throwable error) {
             if (board.failures++ == 0) plugin.getLogger().warning("Scoreboard-Aktualisierung für " + player.getName() + " fehlgeschlagen: " + error.getClass().getSimpleName() + (error.getMessage() == null ? "" : ": " + error.getMessage()));

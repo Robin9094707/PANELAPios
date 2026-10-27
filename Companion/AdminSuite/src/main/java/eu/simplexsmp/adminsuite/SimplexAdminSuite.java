@@ -129,7 +129,7 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class SimplexAdminSuite extends JavaPlugin implements Listener, CommandExecutor, org.bukkit.command.TabCompleter {
-    private static final String VERSION = "9.0.0";
+    private static final String VERSION = "9.0.5";
     private static final int CURRENT_DATA_SCHEMA = 17;
     private static final int DEFAULT_MAX_CHAT_LINES = 100;
     private static final int DEFAULT_MAX_ACTION_LINES = 240;
@@ -300,6 +300,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     }
     AppApiManager appApi;
     SuiteEventCenter appEvents;
+    SuitePolicies suitePolicies;
     SurvivalGuard survivalGuard;
     public void onEnable() {
         saveDefaultConfig();
@@ -471,6 +472,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if (altDetection != null) altDetection.startGeyserLoginGate();
         }, 40L);
         try { appEvents = new SuiteEventCenter(this); appEvents.start(); } catch (Exception error) { getLogger().warning("App-Ereignisse nicht verfügbar; vorhandene Datei bleibt erhalten: "+error.getClass().getSimpleName()); }
+        try { suitePolicies=new SuitePolicies(this); } catch(Exception e){throw new IllegalStateException("Suite-Richtlinien konnten nicht geladen werden",e);}
         survivalGuard = new SurvivalGuard(this); survivalGuard.start();
         try { appApi = new AppApiManager(this); appApi.reload(); } catch (Exception error) { getLogger().warning("Optionale App-API bleibt aus: " + error.getClass().getSimpleName()); }
         getLogger().info("Simplex Admin Suite v" + VERSION + " wurde geladen. Bedrock-Forms: " + bedrockMenus.status());
@@ -6167,6 +6169,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     private void setRight(String admin, PlayerProfile target, String right, boolean blocked) {
         target.setBlocked(right, blocked);
+        if(suitePolicies!=null)suitePolicies.recordRight(target.uuid,right,blocked);
         target.addAction("Recht durch " + admin + " geändert: " + right + " = " + (blocked ? "dauerhaft gesperrt" : "erlaubt"));
         database.save(target);
         notifyRights(target);
@@ -8360,13 +8363,44 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             List<Object> rows=new ArrayList<>();java.nio.file.Path root=new File(".").toPath().toAbsolutePath().normalize();
             for(World world:Bukkit.getWorlds())for(String folder:List.of("playerdata","players/data")){
                 java.nio.file.Path path=world.getWorldFolder().toPath().resolve(folder).resolve(p.uuid+".dat").toAbsolutePath().normalize();
-                if(path.startsWith(root)&&Files.isRegularFile(path)&&!Files.isSymbolicLink(path))rows.add(appMap("id","/"+root.relativize(path).toString().replace(File.separatorChar,'/'),"name",world.getName()+" · "+folder,"online",Bukkit.getPlayer(p.uuid)!=null));
-            }return appMap("items",rows);
+                if(path.startsWith(root)&&Files.isRegularFile(path)&&!Files.isSymbolicLink(path))rows.add(appMap("id","/"+root.relativize(path).toString().replace(File.separatorChar,'/'),"modified",path.toFile().lastModified(),"name",world.getName()+" · "+folder,"online",Bukkit.getPlayer(p.uuid)!=null));
+            }rows.sort((a,b)->Long.compare(((Number)((Map<?,?>)b).get("modified")).longValue(),((Number)((Map<?,?>)a).get("modified")).longValue()));return appMap("items",rows);
         }
         throw new IllegalArgumentException("Unbekannter Datenbereich.");
     }
+    Object app250Data(Map<String,String> q) throws Exception {
+        String section=q.getOrDefault("section","status"),raw=q.getOrDefault("player","");
+        if(section.equals("status"))return appMap("maintenance",maintenance.isActive(),"reason",maintenance.reason(),"actor",maintenance.enabledByDisplay(),"discord",getConfig().getString("community.discord-invite-code",""));
+        if(section.equals("admins")){if(luckPerms!=null)luckPerms.refresh(database.sortedProfiles());List<Object> rows=new ArrayList<>();for(PlayerProfile p:database.sortedProfiles()){Player online=Bukkit.getPlayer(p.uuid);boolean known=online!=null||luckPerms!=null&&luckPerms.access(p.uuid)!=null;boolean lp=luckPerms!=null&&luckPerms.access(p.uuid)!=null&&luckPerms.access(p.uuid).allowed;rows.add(appMap("id",p.uuid.toString(),"name",p.name,"role",adminAccess.role(p.uuid).name(),"online",known,"operator",Bukkit.getOfflinePlayer(p.uuid).isOp(),"effective",online!=null?has(online,"simplexadminsuite.admin"):lp||adminAccess.role(p.uuid)!=AdminAccessManager.Role.INHERIT,"inheritedUnknown",!known&&adminAccess.role(p.uuid)==AdminAccessManager.Role.INHERIT));}return appMap("items",rows);}
+        PlayerProfile p=raw.isBlank()?null:database.get(UUID.fromString(raw));
+        if(section.equals("admin-rights")){if(p==null)throw new IllegalArgumentException("Spieler fehlt");Player online=Bukkit.getPlayer(p.uuid);if(luckPerms!=null)luckPerms.refresh(List.of(p));Map<String,Boolean> lp=luckPerms==null?Map.of():luckPerms.permissions.getOrDefault(p.uuid,Map.of());List<Object> rows=new ArrayList<>();for(String node:adminAccess.nodes()){if(AdminAccessManager.PUBLIC.contains(node)||node.endsWith(".*"))continue;Boolean local=adminAccess.override(p.uuid,node);rows.add(appMap("id",node,"name",node,"allowed",local!=null?local:online!=null?has(online,node):adminAccess.role(p.uuid)==AdminAccessManager.Role.INHERIT?lp.getOrDefault(node,false):AdminAccessManager.roleAllows(adminAccess.role(p.uuid),node),"override",local==null?"inherit":local.toString(),"unknown",online==null&&local==null&&adminAccess.role(p.uuid)==AdminAccessManager.Role.INHERIT&&!lp.containsKey(node)));}return appMap("items",rows,"role",adminAccess.role(p.uuid).name());}
+        if(section.equals("rights")){if(p==null)throw new IllegalArgumentException("Spieler fehlt");return appMap("inherit",suitePolicies.inherit(p.uuid),"items",Arrays.stream(powerRights()).map(r->appMap("id",r,"name",r,"allowed",!p.isBlocked(r))).toList());}
+        if(section.equals("probe")){if(p==null)throw new IllegalArgumentException("Spieler fehlt");return qualityOfLife.probes.appReport(p.uuid);}
+        if(section.equals("dependencies")){try(var in=getResource("dependency-status.json")){return appMap("items",in==null?List.of():DiscordBotManager.Json.parse(new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8)));}}
+        throw new IllegalArgumentException("Unbekannter Bereich");
+    }
+    boolean appRightBlocked(UUID id,String right){PlayerProfile p=database.get(id);return p!=null&&p.isBlocked(right);}
+    void appRightDirect(UUID id,String right,boolean blocked,String actor){PlayerProfile p=database.get(id);if(p!=null&&p.isBlocked(right)!=blocked){p.setBlocked(right,blocked);database.save(p);notifyRights(p);audit.log(actor,id,"Recht geändert",right+"="+blocked);}}
+    Object app250Apply(Map<String,Object> v,String actor) throws Exception {
+        String op=String.valueOf(v.getOrDefault("operation","")),target=String.valueOf(v.getOrDefault("player","")),value=String.valueOf(v.getOrDefault("value","")),node=String.valueOf(v.getOrDefault("node",""));
+        if(Set.of("maintenance","brand","inherit","right").contains(op)&&!Set.of("true","false").contains(value))throw new IllegalArgumentException("Boolean erforderlich");
+        if(op.equals("maintenance")){if(value.equals("true"))maintenance.enable(actor,String.valueOf(v.getOrDefault("reason","Wartung")));else if(value.equals("false"))maintenance.disable(actor);else throw new IllegalArgumentException("Boolean erforderlich");}
+        else if(op.equals("discord")){String code=DiscordInvite.parseCode(value);getConfig().set("community.discord-invite-code",code);saveConfig();if(qualityOfLife!=null)qualityOfLife.probes.access.refreshInvite();}
+        else if(op.equals("ultra-delete")){target=target.toLowerCase(Locale.ROOT);var group=altDetection.ultraGroups.get(target);if(group==null)throw new IllegalArgumentException("Gruppe fehlt");if(group.active&&(group.until<=0||group.until>System.currentTimeMillis()))throw new IllegalArgumentException("Aktive Gruppe zuerst aufheben");altDetection.ultraGroups.remove(target);if(!altDetection.saveUltraBans()){altDetection.ultraGroups.put(target,group);throw new java.io.IOException("Gruppe konnte nicht dauerhaft gelöscht werden");}}
+        else if(op.equals("brand")){if(node.isBlank()||node.length()>120||node.chars().anyMatch(c->c<32))throw new IllegalArgumentException("Gültigen Brand angeben");suitePolicies.set("brand."+node.toLowerCase(Locale.ROOT),value);for(Player player:Bukkit.getOnlinePlayers())suitePolicies.apply(player);}
+        else {UUID id=UUID.fromString(target);PlayerProfile p=database.get(id);if(p==null)throw new IllegalArgumentException("Spieler fehlt");switch(op){
+            case "admin-role"->adminAccess.changeAuthorized(actor,id,null,null,AdminAccessManager.Role.valueOf(value));
+            case "admin-right"->adminAccess.changeAuthorized(actor,id,node,value.equals("inherit")?null:Boolean.valueOf(value),null);
+            case "inherit"->{suitePolicies.set("inherit."+id,value);suitePolicies.reconcileAll(id);}
+            case "right"->{if(!Arrays.asList(powerRights()).contains(node))throw new IllegalArgumentException("Unbekanntes Recht");setRight(actor,p,node,!Boolean.parseBoolean(value));}
+            case "probe"->{Player online=Bukkit.getPlayer(id);if(online==null)throw new IllegalArgumentException("Prüfung benötigt Online-Spieler");qualityOfLife.probes.appStart(online);}
+            default->throw new IllegalArgumentException("Unbekannte Aktion");
+        }}
+        expansionAudit(actor,null,"App-Verwaltung",op+" · "+target);return appMap("ok",true,"title","Gespeichert","description",op+" wurde angewendet.");
+    }
     Object appModerationMutation(String route,Map<String,Object> values,String actor) throws Exception {
         String id=String.valueOf(values.getOrDefault("id",""));
+        if(route.equals("management.apply"))return app250Apply(values,actor);
         if(route.startsWith("events.")){if(appEvents==null)throw new IllegalArgumentException("Ereignisprotokoll nicht verfügbar");Object result=appEvents.edit(route,id,String.valueOf(values.getOrDefault("note","")));audit.log(actor,null,route,id);return result;}
         if(route.equals("vpn.whitelist"))return vpnProtection.appWhitelist(actor,String.valueOf(values.get("player")),Boolean.parseBoolean(String.valueOf(values.get("allowed"))));
         if(route.equals("bans.remove"))return moderationOverview.appRemove(String.valueOf(values.get("source")),id,String.valueOf(values.getOrDefault("expected","")),actor);
@@ -12795,6 +12829,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     private static final class LuckPermsBridge {
         private final SimplexAdminSuite plugin;
         private final Map<UUID, StaffAccess> cache = new ConcurrentHashMap<>();
+        private final Map<UUID,Map<String,Boolean>> permissions=new ConcurrentHashMap<>();
         private Object api;
         private boolean available;
         private volatile boolean refreshing;
@@ -12856,6 +12891,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                             Object tristate = invoke(permissionData, "checkPermission", "simplexadminsuite.admin");
                             Object allowedObject = invoke(tristate, "asBoolean");
                             boolean allowed = Boolean.TRUE.equals(allowedObject);
+                            Map<String,Boolean> resolved=new HashMap<>();for(String node:plugin.adminAccess.nodes())resolved.put(node,Boolean.TRUE.equals(invoke(invoke(permissionData,"checkPermission",node),"asBoolean")));permissions.put(profile.uuid,Map.copyOf(resolved));
                             String group = String.valueOf(invoke(user, "getPrimaryGroup"));
                             Object usernameObject = invokeOptional(user, "getUsername");
                             cache.put(profile.uuid, new StaffAccess(allowed, group, usernameObject == null ? profile.name : String.valueOf(usernameObject), System.currentTimeMillis()));
@@ -16989,7 +17025,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             }
         }
 
-        private synchronized void saveUltraBans() {
+        private synchronized boolean saveUltraBans() {
             try {
                 YamlConfiguration y = new YamlConfiguration(); List<UltraBanGroup> groups = new ArrayList<>(ultraGroups.values()); y.set("schema", 3); y.set("count", groups.size());
                 for (int i = 0; i < groups.size(); i++) {
@@ -17003,8 +17039,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                     List<UltraIdentity> identities = new ArrayList<>(group.identities.values()); y.set(path + ".identities-count", identities.size());
                     for (int n = 0; n < identities.size(); n++) { UltraIdentity identity = identities.get(n); String ip = path + ".identities." + n; y.set(ip + ".type", identity.type); y.set(ip + ".value", identity.hash); y.set(ip + ".added-at", identity.addedAt); y.set(ip + ".sources", new ArrayList<>(identity.sources)); }
                 }
-                saveYamlAtomically(y, ultraBansFile); secureFile(ultraBansFile);
-            } catch (Exception error) { plugin.getLogger().warning("Ultrabann-Datei konnte nicht gespeichert werden: " + error.getMessage()); }
+                saveYamlAtomically(y, ultraBansFile); secureFile(ultraBansFile);return true;
+            } catch (Exception error) { plugin.getLogger().warning("Ultrabann-Datei konnte nicht gespeichert werden: " + error.getMessage());return false; }
         }
 
         private synchronized void loadEvasionEvents() {

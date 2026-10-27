@@ -769,6 +769,7 @@ final class DiscordBotManager {
         if (relay != null && canRelay("chat") && plugin.getConfig().getBoolean("discord-bot.relay.player-webhooks", true)) relay.warm(identity);
     }
 
+    String appAvatar(UUID id){DiscordPlayerRelay relay=playerRelay;if(relay==null)return "";for(var identity:relayIdentities.values())if(id.equals(identity.uuid()))return relay.avatar(identity);return "";}
     void forgetPlayer(String name) { relayIdentities.remove(name); }
 
     String relayDiagnostics() {

@@ -62,6 +62,9 @@ public final class AppApiIntegrationHarness {
             check(call("/v1/notifications",read.token(),null).statusCode()==403,"read key cannot inspect push settings");
             check(call("/v1/player-nbt",read.token(),"{}").statusCode()==403,"read key cannot write NBT");
             check(call("/v1/player-nbt",manage.token(),"{}").statusCode()==403,"manage key cannot write NBT");
+            check(call("/v1/data/management?section=admins",read.token(),null).statusCode()==403,"admin directory requires full scope");
+            check(call("/v1/prepare",manage.token(),json(SimplexAdminSuite.appMap("path","management.apply","values",Map.of("operation","maintenance","value","true")))).statusCode()==403,"manage key cannot modify server/admin state");
+            check(call("/v1/view?path=management.apply&operation=maintenance",full.token(),null).statusCode()==405,"GET cannot mutate management");
             String eventClear=json(SimplexAdminSuite.appMap("path","events.clear","values",Map.of()));
             check(call("/v1/prepare",manage.token(),eventClear).statusCode()==403,"manage key cannot clear event ledger");
             check(call("/v1/view?path=events.clear",full.token(),null).statusCode()==405,"GET cannot mutate event ledger");

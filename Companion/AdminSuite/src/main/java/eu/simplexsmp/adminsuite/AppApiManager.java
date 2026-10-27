@@ -36,13 +36,15 @@ final class AppApiManager {
     AppApiManager(SimplexAdminSuite plugin)throws Exception{
         this.plugin=plugin;playerNbt=new PlayerNbtAccess(plugin);serverName=Bukkit.getServer().getName();security=new AppApiSecurity(plugin.getDataFolder().toPath().resolve("app-api"));controller=new DiscordAdminController(plugin,plugin.discordRelay());menus=new AppApiMenus(plugin,security);
         for(Object command:controller.guildCommands())if(command instanceof Map<?,?> c&&"sasadmin".equals(c.get("name")))flatten("",c.get("options"));
+        extra("management.apply","Suite-Verwaltung ändern","Verwaltung",List.of(field("operation","Aktion",3,true),field("player","Spieler / Gruppe",3,false),field("node","Recht / Brand",3,false),field("value","Neuer Wert",3,false),field("reason","Grund",3,false)));
         extra("vpn.whitelist","VPN-Ausnahme ändern","Sicherheit",List.of(field("player","Spielername oder UUID",3,true),choice("allowed","VPN-Ausnahme","true","false")));
         extra("bans.remove","Ausgewählte Sperre aufheben","Moderation",List.of(choice("source","Bannquelle","internal","client","minecraft-profile","minecraft-ip","litebans"),field("id","Eintrag / Spieler-UUID",3,true),field("expected","Geladener Stand",3,false)));
         extra("reports.update","Report bearbeiten","Moderation",List.of(field("id","Report-ID",3,true),choice("status","Status","OPEN","IN_REVIEW","RESOLVED","REJECTED"),field("note","Interne Notiz",3,false),field("expected","Geladener Stand",3,true)));
+        extra("events.ack","Alarm bestätigen","Benachrichtigungen",List.of(field("id","Ereignis-ID",3,true)));
         extra("events.delete","Ereignis löschen","Protokolle",List.of(field("id","Ereignis-ID",3,true)));
         extra("events.note","Ereignisnotiz bearbeiten","Protokolle",List.of(field("id","Ereignis-ID",3,true),field("note","Notiz",3,false)));
         extra("events.clear","Ereignisprotokoll leeren","Protokolle",List.of());
-        extra("notifications.update","Bark-Benachrichtigungen speichern","Benachrichtigungen",List.of(field("key","Bark-Schlüssel (leer = behalten)",3,false),field("events","Ereignisarten",3,false),choice("enabled","Aktiv","true","false"),choice("level","Normale Hinweise","active","passive","timeSensitive","critical"),choice("critical","Kritische Ereignisse","active","passive","timeSensitive","critical"),field("sound","Normaler Klang",3,true),field("criticalSound","Alarmklang",3,true)));
+        extra("notifications.update","Bark-Benachrichtigungen speichern","Benachrichtigungen",List.of(field("key","Bark-Schlüssel (leer = behalten)",3,false),field("events","Ereignisarten",3,false),choice("enabled","Aktiv","true","false"),choice("level","Normale Hinweise","active","passive","timeSensitive","critical"),choice("critical","Kritische Ereignisse","active","passive","timeSensitive","critical"),field("sound","Normaler Klang",3,true),field("criticalSound","Alarmklang",3,true),field("rules","Ereignisregeln",3,false),field("quietMode","Ruhezeitmodus",3,false),field("quietStart","Von",3,false),field("quietEnd","Bis",3,false),field("timezone","Zeitzone",3,false),field("quietKinds","Ausnahmen",3,false)));
         extra("menu.action","Suite-Menü bedienen","Alle Suite-Menüs",List.of(field("session","Menüsitzung",3,true),field("revision","Menüstand",3,true),field("option","Menüpunkt",3,true),field("click","Mausaktion",3,false),field("input","Eingabe",3,false)));
         extra("settings.update","Suite-Einstellung speichern","Einstellungen",List.of(field("key","Einstellung",3,true),field("value","Neuer Wert; leer = leeren",3,false),field("expected","Geladener Stand",3,true)));
         extra("player.vitals","Spielerwerte live ändern","Spieler",List.of(field("player","Spielername oder UUID",3,true),choice("field","Wert","health","food","saturation","level","exp","gamemode","invulnerable","allowFlight"),field("value","Neuer Wert",3,true)));
@@ -62,7 +64,7 @@ final class AppApiManager {
     private void extra(String id,String description,String group,List<?> options){actions.put(id,new LinkedHashMap<>(SimplexAdminSuite.appMap("id",id,"name",description,"description",description,"group",group,"scope",scope(id),"options",options)));}
     private static Map<String,Object> field(String id,String label,int type,boolean required){return SimplexAdminSuite.appMap("name",id,"description",label,"type",type,"required",required);}
     private static Map<String,Object> choice(String id,String label,String... values){var f=field(id,label,3,true);f.put("choices",Arrays.stream(values).map(v->SimplexAdminSuite.appMap("name",switch(v){case "health"->"Gesundheit";case "food"->"Hunger";case "saturation"->"Sättigung";case "level"->"Erfahrungslevel";case "exp"->"XP-Anteil";case "gamemode"->"Spielmodus";case "invulnerable"->"Unverwundbarkeit";case "allowFlight"->"Flug erlauben";default->v;},"value",v)).toList());return f;}
-    static String scope(String path){return Set.of("events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
+    static String scope(String path){return Set.of("management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
     void reload(){
         stopListener();menus.clear();long rev=generation.get();
         if(!plugin.getConfig().getBoolean("app-api.enabled",false)){status="Ausgeschaltet";return;}
@@ -114,7 +116,8 @@ final class AppApiManager {
             String path=x.getRequestURI().getPath(),method=x.getRequestMethod();Map<String,String> query=query(x.getRequestURI());Object result;
             if(method.equals("GET")){
                 result=switch(path){
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
+                    case "/v1/data/management"->onMain(rev,()->{if(!key.scope().equals("full")&&Set.of("admins","admin-rights").contains(query.getOrDefault("section","status")))throw new ApiError(403,"Adminrechte benötigen full-Zugriff");return plugin.app250Data(query);});
                     case "/v1/player-nbt"->onMain(rev,()->playerNbt.read(query.getOrDefault("player",""),query.getOrDefault("path",""),Boolean.parseBoolean(query.getOrDefault("status","false"))));
                     case "/v1/notifications"->onMain(rev,()->{if(!key.scope().equals("full"))throw new ApiError(403,"Bark-Einrichtung benötigt full-Zugriff");if(plugin.appEvents==null)throw new ApiError(503,"Ereignismodul nicht verfügbar");return plugin.appEvents.subscription(key.id());});
                     case "/v1/data/litebans"->{org.bukkit.plugin.Plugin lite=onMain(rev,()->Bukkit.getPluginManager().getPlugin("LiteBans"));int offset;try{offset=Math.max(0,Integer.parseInt(query.getOrDefault("offset","0")));}catch(Exception e){offset=0;}yield plugin.moderationOverview.appLite(lite,query.getOrDefault("q",""),offset);}
@@ -179,6 +182,7 @@ final class AppApiManager {
                     }else result=onMain(rev,()->{
                         authorize(key,req);
                         if(isCenterAction(req.path)) {
+                            if(req.path.equals("events.ack"))return plugin.appEvents.acknowledge(key.id(),req.text("id"));
                             if(req.path.equals("notifications.update")){if(plugin.appEvents==null)throw new ApiError(503,"Ereignismodul nicht verfügbar");return plugin.appEvents.configure(key.id(),req.values);}
                             return plugin.appModerationMutation(req.path,req.values,actor(key).auditName());
                         }
@@ -195,7 +199,7 @@ final class AppApiManager {
             try{send(x,code,SimplexAdminSuite.appMap("message",message));}catch(Exception ignored){}
         }finally{x.close();}
     }
-    private static boolean isCenterAction(String path){return Set.of("vpn.whitelist","bans.remove","reports.update","events.delete","events.note","events.clear","notifications.update").contains(path);}
+    private static boolean isCenterAction(String path){return Set.of("management.apply","vpn.whitelist","bans.remove","reports.update","events.ack","events.delete","events.note","events.clear","notifications.update").contains(path);}
     private void checkSetting(DiscordAdminController.Request req){
         String key=req.text("key");
         if(key.startsWith("app-api.")||key.startsWith("admin-security.")||key.startsWith("console.")||ModerationControl.protectedKey(key)||plugin.moderationControl==null||!plugin.moderationControl.configKeys().contains(key))throw new ApiError(403,"Geschützte oder unbekannte Einstellung");

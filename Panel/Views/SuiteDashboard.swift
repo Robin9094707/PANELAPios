@@ -11,6 +11,7 @@ struct SuiteDashboardCard: View {
                 if let suite = model.api, model.health["features"].array.contains(.string("events-v1")) {
                     NavigationLink { SuiteSecurityCenterView(suite: suite, panel: model.panel, server: model.server, actions: model.actions, area: .events) } label: { Image(systemName: "bell.badge") }.accessibilityLabel("Serverereignisse")
                 }
+                if let suite=model.api { NavigationLink { SuiteManagementView(suite:suite,actions:model.actions) } label: { Image(systemName:"gearshape.fill") }.accessibilityLabel("Suite-Verwaltung") }
                 if model.busy { ProgressView() }
             }
             if let suite = model.api {
@@ -24,6 +25,7 @@ struct SuiteDashboardCard: View {
                 }
                 if online.isEmpty { Text(model.updated == nil ? "Spielerdaten werden geladen …" : "Gerade niemand online").font(.subheadline).foregroundStyle(.secondary) }
                 if online.count > 4 { Text("Weitere Spieler in der Online-Liste").font(.caption).foregroundStyle(.secondary) }
+                SuitePinnedActionsView(suite:suite,actions:model.actions)
                 Divider()
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) { shortcuts(suite) }

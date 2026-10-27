@@ -152,9 +152,10 @@ struct SuiteSecurityDetailView: View {
                     TextField("Interne Notiz ergänzen", text: $note, axis: .vertical).lineLimit(3...8)
                     Button("Report speichern", systemImage: "checkmark.circle") { prepare("reports.update", ["id": row["id"], "status": .string(status), "expected": row["revision"], "note": .string(note)], "Report #\(row["id"].string): \(reportStatus(status))\n\(note)") }.disabled(suite.scope == "read" || model.busy)
                 }
-                if case .object(let evidence) = row["evidence"] { ForEach(evidence.keys.sorted(), id: \.self) { key in Section(key == "chat" ? "Chatbelege" : key == "combat" ? "Kampfbelege" : "Aktionen") { ForEach(Array((evidence[key]?.array ?? []).enumerated()), id: \.offset) { _, line in Text(cleanConsole(line.string)).font(.footnote).textSelection(.enabled) } } } }
+                if case .object(let evidence) = row["evidence"] { ForEach(evidence.keys.sorted(), id: \.self) { key in Section(key == "chat" ? "Chatbelege" : key == "combat" ? "Kampfbelege" : "Aktionen") { ForEach(Array((evidence[key]?.array ?? []).enumerated()), id: \.offset) { _, line in NavigationLink { ScrollView { Text(cleanConsole(line.string)).textSelection(.enabled).padding() }.navigationTitle("Beleg") } label: { Text(cleanConsole(line.string)).font(.footnote).lineLimit(1) } } } } }
             }
             if area == .events && suite.scope == "full" {
+                Section { Button("Alarm bestätigen – Wiederholung beenden", systemImage:"bell.slash") { prepare("events.ack",["id":row["id"]],"Diesen Alarm für diese Kopplung bestätigen und Wiederholungen beenden?") } }
                 Section("Notiz") { TextField("Notiz zum Ereignis", text: $note, axis: .vertical).lineLimit(3...8); Button("Notiz speichern") { prepare("events.note", ["id": row["id"], "note": .string(note)], "Notiz zu diesem Ereignis speichern?\n" + note) } }
                 Section { Button("Diesen Eintrag löschen", role: .destructive) { prepare("events.delete", ["id": row["id"]], "Diesen Ereigniseintrag löschen?") } }
             }
@@ -214,6 +215,15 @@ struct SuiteBarkSettingsView: View {
     @State private var sound = "minuet"
     @State private var criticalSound = "alarm"
     @State private var delivery = ""
+    @State private var rules: [String:String] = [:]
+    @State private var sounds: [String:String] = [:]
+    @State private var repeats: Set<String> = []
+    @State private var quietMode="off"
+    @State private var quietStart="22:00"
+    @State private var quietEnd="07:00"
+    @State private var timezone="Europe/Berlin"
+    @State private var quietKinds: Set<String> = []
+    var encodedRules: String { events.map { event in let id=event.0;return [id,selected.contains(id) ? (rules[id] ?? (["ban","ban-evasion","overload"].contains(id) ? critical:level)):"off",sounds[id] ?? sound,repeats.contains(id) ? "120":"0"].joined(separator:":") }.joined(separator:";") }
     @Environment(\.dismiss) private var dismiss
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteSecurityModel(suite)) }
     private let events = [("first-join","Neue Spieler"),("join","Alle Beitritte"),("client-brand","Ungewöhnlicher Client-Brand"),("client-check","Client-Prüfungen"),("ban","Sperren"),("ban-evasion","Bannumgehungsversuche"),("vpn-kick","VPN-Kicks"),("report","Neue Reports"),("overload","Längere Serverüberlastung"),("guard","Spielerschutz korrigiert"),("admin","Admin-Aktionen")]
@@ -225,7 +235,20 @@ struct SuiteBarkSettingsView: View {
                 if configured { Label("Schlüssel sicher auf dem Server hinterlegt", systemImage: "checkmark.shield.fill").font(.footnote).foregroundStyle(.green) }
                 Text("Kopiere die Push-Adresse aus Bark. Das Plugin nutzt den öffentlichen Bark-Dienst und sendet auch bei geschlossener Panel-App. Nachrichteninhalt wird dabei an Bark und Apple übertragen.").font(.footnote).foregroundStyle(.secondary)
             }
-            Section("Ereignisse abonnieren") { ForEach(events, id: \.0) { event in Toggle(event.1, isOn: Binding(get: { selected.contains(event.0) }, set: { if $0 { selected.insert(event.0) } else { selected.remove(event.0) } })) } }
+            Section("Ereignisse einzeln konfigurieren") {
+                ForEach(events,id:\.0){event in NavigationLink(event.1) { Form {
+                    Toggle("Abonniert",isOn:Binding(get:{selected.contains(event.0)},set:{if $0{selected.insert(event.0)}else{selected.remove(event.0)}}))
+                    interruption("Dringlichkeit",selection:Binding(get:{rules[event.0] ?? (["ban","ban-evasion","overload"].contains(event.0) ? critical:level)},set:{rules[event.0]=$0}))
+                    TextField("Bark-Klang",text:Binding(get:{sounds[event.0] ?? sound},set:{sounds[event.0]=$0})).textInputAutocapitalization(.never)
+                    Toggle("Alle 2 Minuten bis Bestätigung wiederholen",isOn:Binding(get:{repeats.contains(event.0)},set:{if $0{repeats.insert(event.0)}else{repeats.remove(event.0)}}))
+                    Text("Bestätigen in der Ereignisglocke beim jeweiligen Ereignis. Bark- oder iOS-Einstellungen können die Zustellung begrenzen.").font(.footnote).foregroundStyle(.secondary)
+                }.navigationTitle(event.1) } }
+            }
+            Section("Ruhezeiten") {
+                Picker("Während der Ruhezeit",selection:$quietMode){Text("Keine Ruhezeit").tag("off");Text("Alles stumm").tag("all");Text("Nur kritische Hinweise").tag("critical");Text("Nur ausgewählte kritische Hinweise").tag("selected")}
+                TextField("Beginn HH:mm",text:$quietStart);TextField("Ende HH:mm",text:$quietEnd);TextField("IANA-Zeitzone",text:$timezone).textInputAutocapitalization(.never)
+                if quietMode=="selected" {ForEach(events,id:\.0){event in Toggle(event.1,isOn:Binding(get:{quietKinds.contains(event.0)},set:{if $0{quietKinds.insert(event.0)}else{quietKinds.remove(event.0)}}))}}
+            }
             Section("Töne & Dringlichkeit") {
                 interruption("Normale Hinweise", selection: $level)
                 interruption("Kritische Ereignisse", selection: $critical)
@@ -233,10 +256,10 @@ struct SuiteBarkSettingsView: View {
                 TextField("Alarmklang", text: $criticalSound).textInputAutocapitalization(.never)
                 Text("Bark-Klangnamen, z. B. minuet, alarm oder bell. Eigene Bark-Klänge sind möglich. Stille Hinweise: „Nur Liste“. Kritische Töne benötigen die entsprechende Erlaubnis in Bark und iOS. Wiederholte gleichartige Meldungen werden begrenzt.").font(.footnote).foregroundStyle(.secondary)
             }
-            Section { Button("Einstellungen speichern", systemImage: "checkmark.shield") { Task { await model.prepare("notifications.update", ["key": .string(key), "enabled": .string(String(enabled)), "events": .string(selected.sorted().joined(separator: ",")), "level": .string(level), "critical": .string(critical), "sound": .string(sound), "criticalSound": .string(criticalSound)], summary: enabled ? "Bark für \(selected.count) Ereignisarten aktivieren?\nNormale Hinweise: \(level)\nKritische Ereignisse: \(critical)" : "Bark-Benachrichtigungen deaktivieren?") } }.disabled(model.busy || suite.scope != "full"); if !delivery.isEmpty { Text(delivery).font(.footnote).foregroundStyle(.secondary) } }
+            Section { Button("Einstellungen speichern", systemImage: "checkmark.shield") { Task { await model.prepare("notifications.update", ["key": .string(key), "enabled": .string(String(enabled)), "events": .string(selected.sorted().joined(separator: ",")), "level": .string(level), "critical": .string(critical), "sound": .string(sound), "criticalSound": .string(criticalSound),"rules":.string(encodedRules),"quietMode":.string(quietMode),"quietStart":.string(quietStart),"quietEnd":.string(quietEnd),"timezone":.string(timezone),"quietKinds":.string(quietKinds.sorted().joined(separator:","))], summary: enabled ? "Bark für \(selected.count) Ereignisarten aktivieren?\nNormale Hinweise: \(level)\nKritische Ereignisse: \(critical)" : "Bark-Benachrichtigungen deaktivieren?") } }.disabled(model.busy || suite.scope != "full"); if !delivery.isEmpty { Text(delivery).font(.footnote).foregroundStyle(.secondary) } }
         }.panelScreen().navigationTitle("Benachrichtigungen").navigationBarTitleDisplayMode(.inline).errorAlert($model.error)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() } } }
-            .task { do { let value = try await suite.request("notifications"); configured = value["configured"].bool; enabled = value["enabled"].bool; selected = Set(value["events"].string.split(separator: ",").map(String.init)); level = value["level"].string; critical = value["critical"].string; sound = value["sound"].string; criticalSound = value["criticalSound"].string; delivery = value["deliveryStatus"].string } catch { model.error = error.localizedDescription } }
+            .task { do { let value = try await suite.request("notifications"); configured = value["configured"].bool; enabled = value["enabled"].bool; selected = Set(value["events"].string.split(separator: ",").map(String.init)); level = value["level"].string; critical = value["critical"].string; sound = value["sound"].string; criticalSound = value["criticalSound"].string; delivery = value["deliveryStatus"].string; quietMode=value["quietMode"].string.isEmpty ? "off":value["quietMode"].string;quietStart=value["quietStart"].string.isEmpty ? "22:00":value["quietStart"].string;quietEnd=value["quietEnd"].string.isEmpty ? "07:00":value["quietEnd"].string;timezone=value["timezone"].string.isEmpty ? "Europe/Berlin":value["timezone"].string;quietKinds=Set(value["quietKinds"].string.split(separator:",").map(String.init));for rule in value["rules"].string.split(separator:";"){let a=rule.split(separator:":",omittingEmptySubsequences:false).map(String.init);if a.count==4 {rules[a[0]]=a[1];sounds[a[0]]=a[2];if a[1]=="off"{selected.remove(a[0])}else{selected.insert(a[0])};if a[3] != "0"{repeats.insert(a[0])}}} } catch { model.error = error.localizedDescription } }
             .sheet(isPresented: Binding(get: { model.plan != nil }, set: { if !$0 { model.plan = nil } })) { SuiteSecurityConfirmation(model: model) { key = ""; configured = true; dismiss() } }
     }
     func interruption(_ title: String, selection: Binding<String>) -> some View { Picker(title, selection: selection) { Text("Normal").tag("active"); Text("Nur Liste (still)").tag("passive"); Text("Zeitkritisch").tag("timeSensitive"); Text("Kritischer Alarm").tag("critical") } }

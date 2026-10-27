@@ -90,6 +90,11 @@ struct SuitePlayerView: View {
                 LabeledContent("Simplex Points", value: current["points"].string)
                 LabeledContent("Warnungen", value: current["warnings"].string)
             }
+            Section("Spielerverwaltung") {
+                NavigationLink("Spielerrechte & Vererbung") { SuitePermissionView(suite:suite,player:player) }
+                NavigationLink("Client jetzt prüfen") { SuiteProbeView(suite:suite,player:player) }.disabled(!current["online"].bool)
+                if let action=actions.first(where:{$0.id=="moderation.banmode"}) {NavigationLink("Bannen: Account oder Alt-Gruppe") {SuiteActionView(suite:suite,action:action,preset:["player":.string(player),"mode":.string("account")])}}
+            }
             Section("Schnellaktionen") {
                 NavigationLink { SuiteDataListView(suite: suite, kind: "devices", player: player, actions: actions) } label: { Label("Alle Geräte anzeigen", systemImage: "iphone.and.arrow.right.inward") }
                 if let action = actions.first(where: { $0.id == "security.ultraban" }) {
@@ -118,7 +123,7 @@ struct SuitePlayerView: View {
                 NavigationLink { SuiteDataListView(suite: suite, kind: "devices", player: player, actions: actions) } label: { Label("Geräte & Diagnose", systemImage: "iphone.and.arrow.right.inward") }
                 NavigationLink { SuiteSnapshotsView(suite: suite, player: player, actions: actions) } label: { Label("Inventar-Snapshots", systemImage: "archivebox") }
                 NavigationLink { SuiteDataListView(suite: suite, kind: "inventory", player: player, actions: actions) } label: { Label("Aktuelles Inventar & Endertruhe", systemImage: "square.grid.3x3.fill") }.disabled(!current["online"].bool)
-                NavigationLink { SuiteNBTPathsView(suite: suite, panel: panel, server: server, player: player) } label: { Label("Gespeicherte NBT-Dateien", systemImage: "doc.badge.gearshape") }
+                NavigationLink { SuiteNBTPathsView(suite: suite, panel: panel, server: server, player: player) } label: { Label("NBT-Editor öffnen", systemImage: "doc.badge.gearshape") }
                 ForEach([("player.info", "Vollständige Spielerakte"), ("player.identity", "Identität & Ultrabann"), ("player.history", "Aktions- und Chatverlauf"), ("player.rights", "Alle Spielerrechte")], id: \.0) { route, title in NavigationLink(title) { SuiteReadView(suite: suite, path: route, title: title, values: ["player": .string(player), "category": .string("all")]) } }
             }
             }
@@ -150,7 +155,7 @@ struct SuiteDataListView: View {
         List {
             if rows.isEmpty { if loaded { ContentUnavailableView("Keine Daten vorhanden", systemImage: "tray") } else { ProgressView() } }
             ForEach(rows, id: \.["id"].string) { row in
-                Section {
+                NavigationLink { List { Section { 
                     HStack {
                         if kind == "devices" { PlayerPlatformIcon(platform: PlayerPlatform.resolve(row)) }
                         Text(row["name"].string).font(.headline).textSelection(.enabled)
@@ -169,8 +174,10 @@ struct SuiteDataListView: View {
                         ForEach(row["diagnostics"].object.keys.sorted(), id: \.self) { key in LabeledContent(key, value: row["diagnostics"][key].string).font(.caption).textSelection(.enabled) }
                         if let action = actions.first(where: { $0.id == "player.devices" }) { NavigationLink("Gerät verwalten") { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player), "identifier": row["id"]]) } }
                     }
-                    CopyButton(text: row["id"].string, title: kind == "alts" ? "Spieler-UUID kopieren" : "Kennung kopieren")
+                    CopyButton(text: row["id"].string, title: kind == "alts" ? "Spieler-UUID kopieren" : "Kennung kopieren") } }.panelScreen().navigationTitle(row["name"].string) } label: {
+                    HStack { if kind == "devices" { PlayerPlatformIcon(platform: PlayerPlatform.resolve(row)) }; VStack(alignment: .leading, spacing: 4) { Text(row["name"].string).font(.headline); Text(kind == "alts" ? row["level"].string : row["id"].string).font(.caption).foregroundStyle(.secondary).lineLimit(1) } }
                 }
+
             }
         }.panelScreen().navigationTitle(title).navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }.errorAlert($error)
     }
@@ -196,6 +203,7 @@ struct SuiteUltraView: View {
                     LabeledContent("Blockierte Versuche", value: row["attempts"].string)
                     DisclosureGroup("Zugehörige Accounts · \(row["members"].array.count)") { ForEach(row["members"].array, id: \.["id"].string) { member in VStack(alignment: .leading) { Text(member["name"].string); Text(member["relation"].string).font(.caption).foregroundStyle(.secondary) }.textSelection(.enabled) } }
                     CopyButton(text: row["id"].string, title: "Gruppen-ID kopieren")
+                    if !row["active"].bool { NavigationLink("Abgelaufene Gruppe endgültig löschen") { SuiteActionView(suite:suite,action:.make("management.apply","Inaktive Gruppe löschen"),preset:["operation":.string("ultra-delete"),"player":row["id"]]) } }
                     if row["active"].bool, let action = actions.first(where: { $0.id == "security.ultraunban" }) { NavigationLink("Diese Gruppe aufheben") { SuiteActionView(suite: suite, action: action, preset: ["target": row["id"]]) } }
                 }
             }
@@ -240,7 +248,7 @@ struct SuiteNBTPathsView: View {
     var body: some View {
         List { Section { Text(suite.features.contains("offline-player-nbt-v1") ? "Die Suite prüft den Offline-Status direkt auf dem Server, erkennt Dateikonflikte und sichert vor Änderungen die Originaldatei. Der Server kann weiterlaufen. Vollzugriff erforderlich." : "Diese Suite-Version bietet noch keine Offline-Prüfung für NBT. Der Editor nutzt die Panel-Dateiverwaltung und erlaubt Speichern nur bei gestopptem Server.").font(.footnote).foregroundStyle(.secondary) }; ForEach(rows, id: \.["id"].string) { row in Section { Text(row["name"].string).font(.headline); Text(row["id"].string).font(.caption.monospaced()).textSelection(.enabled); Button("Im NBT-Editor öffnen", systemImage: "doc.badge.gearshape") { editor = EditorItem(path: row["id"].string) }.requiresAccess(panel, server.id, "file.read-content") } }; if rows.isEmpty { Text("Keine gespeicherte Spielerdatei in den geladenen Welten gefunden.").foregroundStyle(.secondary) } }.panelScreen().navigationTitle("Spieler-NBT").task { await load() }.refreshable { await load() }.errorAlert($error).sheet(item: $editor) { NBTEditor(api: panel, server: server, path: $0.path, suite: suite.features.contains("offline-player-nbt-v1") ? suite : nil, player: player) }
     }
-    func load() async { do { rows = try await suite.data("nbt-paths", query: ["player": player])["items"].array } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
+    func load() async { do { rows = try await suite.data("nbt-paths", query: ["player": player])["items"].array; if let preferred = rows.first { editor = EditorItem(path: preferred["id"].string) } } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
 }
 struct SuiteSettingsView: View {
     let suite: SuiteAPI

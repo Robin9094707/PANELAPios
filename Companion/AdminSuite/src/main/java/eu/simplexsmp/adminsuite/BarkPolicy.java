@@ -1,0 +1,8 @@
+package eu.simplexsmp.adminsuite;
+import java.time.*;import java.util.*;
+/** Pure policy evaluation, including overnight quiet windows and IANA timezone/DST handling. */
+final class BarkPolicy {
+ static boolean quiet(Properties p,String prefix,Instant now){String mode=p.getProperty(prefix+"quietMode","off");if(mode.equals("off"))return false;ZoneId zone=ZoneId.of(p.getProperty(prefix+"timezone","Europe/Berlin"));LocalTime time=now.atZone(zone).toLocalTime(),start=LocalTime.parse(p.getProperty(prefix+"quietStart","22:00")),end=LocalTime.parse(p.getProperty(prefix+"quietEnd","07:00"));if(start.equals(end))return true;return start.isBefore(end)?!time.isBefore(start)&&time.isBefore(end):!time.isBefore(start)||time.isBefore(end);}
+ static boolean allowed(Properties p,String prefix,String type,String level,Instant now){if(!quiet(p,prefix,now))return true;return switch(p.getProperty(prefix+"quietMode","off")){case "critical"->level.equals("critical");case "selected"->level.equals("critical")&&Arrays.asList(p.getProperty(prefix+"quietKinds","").split(",")).contains(type);default->false;};}
+ static Map<String,String[]> rules(String input){Map<String,String[]> result=new LinkedHashMap<>();for(String row:input.split(";")){if(row.isBlank())continue;String[] a=row.split(":",-1);if(a.length!=4||!SuiteEventCenter.TYPES.contains(a[0])||!(SuiteEventCenter.LEVELS.contains(a[1])||a[1].equals("off"))||!a[2].matches("[A-Za-z0-9_.-]{1,64}"))throw new IllegalArgumentException("Ungültige Bark-Ereignisregel");int repeat=Integer.parseInt(a[3]);if(repeat!=0&&(repeat<60||repeat>86400))throw new IllegalArgumentException("Wiederholung: 0 oder 60–86400 Sekunden");result.put(a[0],a);}return result;}
+}

@@ -197,6 +197,7 @@ final class DiscordPlayerRelay {
     long sentCount() { return sent.get(); }
     long failedCount() { return failed.get(); }
     long droppedCount() { return dropped.get(); }
+    String avatar(RelayAvatarService.Identity identity){return avatars.avatar(identity);}
     void clearAvatars() { avatars.clear(); }
     void warm(RelayAvatarService.Identity identity) { avatars.avatar(identity); }
     void stop(boolean drain) {

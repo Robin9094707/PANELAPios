@@ -19,6 +19,14 @@ public final class Security900Harness {
         for(String brand:List.of("vanilla","fabric","forge","neoforge","quilt","noriskclient"))check(!ClientBrands.known(brand).isEmpty(),"known brand: "+brand);
         for(String brand:List.of("Robins PC","fabric Robins PC","vanilla\nAdmin","§cvanilla","meteor","<red>Forge"))check(ClientBrands.known(brand).isEmpty()&&!ClientBrands.label(brand,true).contains(brand),"spoof never publicly echoed: "+brand);
         check(ClientBrands.label("Robins PC",true).contains("Unbekannter")&&ClientBrands.label("Robins PC",false).contains("Unknown"),"viewer locale");
+        Properties policy=new Properties();policy.setProperty("u.quietMode","selected");policy.setProperty("u.quietStart","22:00");policy.setProperty("u.quietEnd","07:00");policy.setProperty("u.timezone","Europe/Berlin");policy.setProperty("u.quietKinds","report");
+        var night=java.time.Instant.parse("2026-10-27T23:00:00Z");var day=java.time.Instant.parse("2026-10-27T12:00:00Z");
+        check(BarkPolicy.quiet(policy,"u.",night)&&!BarkPolicy.quiet(policy,"u.",day),"overnight quiet interval in configured zone");
+        check(BarkPolicy.allowed(policy,"u.","report","critical",night),"selected critical report passes quiet hours");
+        check(!BarkPolicy.allowed(policy,"u.","ban","critical",night)&&!BarkPolicy.allowed(policy,"u.","report","active",night),"unselected critical and ordinary alerts stay quiet");
+        policy.setProperty("u.quietEnd","22:00");check(BarkPolicy.quiet(policy,"u.",day),"equal quiet endpoints mean whole day");
+        reject(()->BarkPolicy.rules("report:critical:alarm:1"),"unbounded short repeat rejected");
+        check(BarkPolicy.rules("report:critical:alarm:120;join:off:minuet:0").size()==2,"per-event rules parsed independently");
         Path folder=Files.createTempDirectory("suite900-");SuiteEventCenter events=null;
         Field serverField=Bukkit.class.getDeclaredField("server");serverField.setAccessible(true);Object previous=serverField.get(null);
         Path worldFolder=Files.createTempDirectory(Path.of("target").toAbsolutePath(),"nbt900-");
