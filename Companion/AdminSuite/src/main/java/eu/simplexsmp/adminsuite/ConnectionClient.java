@@ -81,7 +81,7 @@ final class ConnectionClient {
   }
 
   synchronized String label(boolean german) {
-    return bedrock ? DeviceNames.connectionDevice(model, os, german) : javaLabel(brand);
+    return bedrock ? DeviceNames.connectionDevice(model, os, german) : ClientBrands.label(brand, german);
   }
 
   synchronized boolean ready() {
@@ -91,14 +91,7 @@ final class ConnectionClient {
   }
 
   static String javaLabel(String raw) {
-    String brand = clean(raw);
-    String lower = brand.toLowerCase(Locale.ROOT);
-    if (lower.contains("fabric")) return "Java • Fabric";
-    if (lower.contains("neoforge")) return "Java • NeoForge";
-    if (lower.contains("forge") || lower.contains("fml")) return "Java • Forge";
-    if (lower.contains("quilt")) return "Java • Quilt";
-    if (lower.equals("vanilla")) return "Java • Vanilla";
-    return brand.isBlank() ? "Java" : "Java • " + brand;
+    return ClientBrands.label(raw, false);
   }
 
   private static String clean(String raw) {

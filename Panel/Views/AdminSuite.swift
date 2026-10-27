@@ -66,6 +66,13 @@ struct SuiteHubView: View {
                 }
             }
             if let api = model.api {
+                if model.health["features"].array.contains(.string("moderation-center-v1")) {
+                    Section("Sicherheitszentrale") {
+                        ForEach(SuiteSecurityArea.allCases, id: \.self) { area in
+                            NavigationLink { SuiteSecurityCenterView(suite: api, panel: panel, server: server, actions: model.actions, area: area) } label: { Label(area.title, systemImage: area.symbol) }
+                        }
+                    }
+                }
                 Section("Spieler & Moderation") {
                     NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions, initialFilter: .online) } label: { Label("Online-Spieler", systemImage: "person.2.wave.2.fill") }
                     NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions, initialFilter: .recent) } label: { Label("Zuletzt online", systemImage: "clock.arrow.circlepath") }
@@ -92,6 +99,7 @@ struct SuiteHubView: View {
             }
             }
         }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Admin Suite").navigationBarTitleDisplayMode(.inline).task { await model.load() }.refreshable { await model.load(force: true) }.errorAlert($model.error)
+            .toolbar { if let api = model.api, model.health["features"].array.contains(.string("events-v1")) { ToolbarItem(placement: .topBarTrailing) { NavigationLink { SuiteSecurityCenterView(suite: api, panel: panel, server: server, actions: model.actions, area: .events) } label: { Image(systemName: "bell.badge") }.accessibilityLabel("Serverereignisse") } } }
             .sheet(isPresented: $settings) { SuiteConnectionView(panel: panel, server: server) { await model.load(force: true) } }
     }
     func scopeName(_ value: String) -> String { switch value { case "full": return "Vollzugriff"; case "manage": return "Spieler & Moderation"; default: return "Nur lesen" } }

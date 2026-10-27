@@ -2,6 +2,13 @@ import XCTest
 @testable import Panel
 
 final class AdminSuiteTests: XCTestCase {
+    func testIPhoneIPadAndJavaRemainDistinct() {
+        XCTAssertEqual(PlayerPlatform.resolve(.object(["device": .string("iPad Pro"), "os": .string("iOS")])), .ipad)
+        XCTAssertEqual(PlayerPlatform.resolve(.object(["device": .string("iPhone 17"), "os": .string("iOS")])), .ios)
+        XCTAssertEqual(PlayerPlatform.resolve(.object(["client": .string("JAVA"), "device": .string("iPad")])), .java)
+        XCTAssertNotEqual(PlayerPlatform.ipad.symbol, PlayerPlatform.ios.symbol)
+    }
+
     func testSuiteAddressAndPinRejectInsecureOrAmbiguousInput() throws {
         XCTAssertEqual(try SuiteAPI.endpoint("https://host.example:39093/v1").absoluteString, "https://host.example:39093/")
         for bad in ["http://host:39093", "https://key@host", "https://host?q=key", "https://host/#pin"] { XCTAssertThrowsError(try SuiteAPI.endpoint(bad)) }

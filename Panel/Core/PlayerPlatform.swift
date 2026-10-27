@@ -1,11 +1,12 @@
 import SwiftUI
 
 enum PlayerPlatform: String, CaseIterable, Sendable {
-    case java, ios, android, windows, xbox, playstation, nintendoSwitch, mac, linux, unknown
+    case java, ios, ipad, android, windows, xbox, playstation, nintendoSwitch, mac, linux, unknown
     var title: String {
         switch self {
         case .java: return "Java-Client"
-        case .ios: return "iOS · Bedrock"
+        case .ios: return "iPhone / iOS · Bedrock"
+        case .ipad: return "iPad · Bedrock"
         case .android: return "Android · Bedrock"
         case .windows: return "Windows · Bedrock"
         case .xbox: return "Xbox · Bedrock"
@@ -20,6 +21,7 @@ enum PlayerPlatform: String, CaseIterable, Sendable {
         switch self {
         case .java: return "desktopcomputer"
         case .ios: return "iphone"
+        case .ipad: return "ipad"
         case .android: return "smartphone"
         case .windows: return "square.grid.2x2.fill"
         case .xbox: return "xbox.logo"
@@ -33,7 +35,7 @@ enum PlayerPlatform: String, CaseIterable, Sendable {
     var color: Color {
         switch self {
         case .java: return .teal
-        case .ios: return .blue
+        case .ios, .ipad: return .blue
         case .android, .xbox: return .green
         case .windows: return .cyan
         case .playstation: return .indigo
@@ -45,6 +47,7 @@ enum PlayerPlatform: String, CaseIterable, Sendable {
     }
     static func resolve(_ row: JSON) -> Self {
         if row["client"].string.uppercased() == "JAVA" { return .java }
+        if ["device", "name"].contains(where: { row[$0].string.lowercased().contains("ipad") }) { return .ipad }
         let structured = ["os", "deviceOs", "operatingSystem", "deviceOS"].map { row[$0].string }.joined(separator: " ")
         if let match = match(structured) { return match }
         if let match = match(row["platform"].string) { return match }
@@ -70,7 +73,8 @@ enum PlayerPlatform: String, CaseIterable, Sendable {
         if value.contains("playstation") || value == "ps4" || value == "ps5" { return .playstation }
         if value.contains("xbox") { return .xbox }
         if value.contains("switch") || value.contains("nintendo") { return .nintendoSwitch }
-        if value.contains("iphone") || value.contains("ipad") || value.trimmingCharacters(in: .whitespaces) == "ios" || value.contains(" ipados") { return .ios }
+        if value.contains("ipad") { return .ipad }
+        if value.contains("iphone") || value.trimmingCharacters(in: .whitespaces) == "ios" || value.contains(" ipados") { return .ios }
         if value.contains("android") || value.contains("amazon") || value.contains("fire os") { return .android }
         if value.contains("windows") || value.contains("uwp") || value.contains("win32") { return .windows }
         if value.contains("macos") || value.contains("osx") || value.contains("os x") { return .mac }

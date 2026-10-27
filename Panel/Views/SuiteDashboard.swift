@@ -8,6 +8,9 @@ struct SuiteDashboardCard: View {
             HStack {
                 Label("Spieler & Admin Suite", systemImage: "shield.lefthalf.filled").font(.headline)
                 Spacer()
+                if let suite = model.api, model.health["features"].array.contains(.string("events-v1")) {
+                    NavigationLink { SuiteSecurityCenterView(suite: suite, panel: model.panel, server: model.server, actions: model.actions, area: .events) } label: { Image(systemName: "bell.badge") }.accessibilityLabel("Serverereignisse")
+                }
                 if model.busy { ProgressView() }
             }
             if let suite = model.api {

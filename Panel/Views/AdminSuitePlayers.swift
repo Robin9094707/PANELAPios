@@ -82,6 +82,7 @@ struct SuitePlayerView: View {
                 CopyButton(text: name, title: "Spielername kopieren")
                 CopyButton(text: player, title: "UUID kopieren")
                 LabeledContent("Client", value: current["client"].string)
+                if !current["brand"].string.isEmpty { SuiteDetailRow(title: "Client-Brand (Selbstangabe)", value: current["brand"].string) }
                 LabeledContent("Plattform", value: (resolved ?? PlayerPlatform.resolve(current)).title)
                 SuiteDetailRow(title: current["online"].bool ? "Aktuelles Gerät" : "Letztes Gerät", value: SuitePlayerPresentation.device(current)).accessibilityIdentifier("player-device")
                 if let date = SuitePlayerPresentation.date(current["lastSeen"]), !current["online"].bool { LabeledContent("Zuletzt online") { Text(date, format: .dateTime.day().month().year().hour().minute()) } }
@@ -128,7 +129,7 @@ struct SuitePlayerView: View {
             Section {
                 Toggle("Live alle 15 Sekunden aktualisieren", isOn: $automatic)
                 if let updated { LabeledContent("Stand") { Text(updated, style: .time) } }
-                Text("Live-Werte stammen direkt aus der Suite. NBT-Dateien auf der Festplatte sind ein separater Speicherstand und werden nur bei gestopptem Server geändert.").font(.footnote).foregroundStyle(.secondary)
+                Text("Live-Werte stammen direkt aus der Suite. NBT-Dateien sind ein separater Speicherstand. Mit Admin Suite 9 können sie bei laufendem Server gespeichert werden, wenn der Spieler offline ist.").font(.footnote).foregroundStyle(.secondary)
             }
         }.panelScreen().navigationTitle(name).navigationBarTitleDisplayMode(.inline).task(id: automatic) { await load(); while automatic && !Task.isCancelled { do { try await Task.sleep(for: .seconds(15)) } catch { return }; await load() } }.refreshable { await load() }.errorAlert($error)
     }
@@ -237,7 +238,7 @@ struct SuiteNBTPathsView: View {
     @State private var editor: EditorItem?
     @State private var error: String?
     var body: some View {
-        List { Section { Text("Die Suite findet die gespeicherten Spielerdateien. Der vollständige NBT-Editor nutzt die bestehende Panel-Dateiverwaltung, prüft Konflikte und erstellt vor Änderungen eine Sicherung. Anwenden erfordert einen gestoppten Server.").font(.footnote).foregroundStyle(.secondary) }; ForEach(rows, id: \.["id"].string) { row in Section { Text(row["name"].string).font(.headline); Text(row["id"].string).font(.caption.monospaced()).textSelection(.enabled); Button("Im NBT-Editor öffnen", systemImage: "doc.badge.gearshape") { editor = EditorItem(path: row["id"].string) }.requiresAccess(panel, server.id, "file.read-content") } }; if rows.isEmpty { Text("Keine gespeicherte Spielerdatei in den geladenen Welten gefunden.").foregroundStyle(.secondary) } }.panelScreen().navigationTitle("Spieler-NBT").task { await load() }.refreshable { await load() }.errorAlert($error).sheet(item: $editor) { NBTEditor(api: panel, server: server, path: $0.path) }
+        List { Section { Text(suite.features.contains("offline-player-nbt-v1") ? "Die Suite prüft den Offline-Status direkt auf dem Server, erkennt Dateikonflikte und sichert vor Änderungen die Originaldatei. Der Server kann weiterlaufen. Vollzugriff erforderlich." : "Diese Suite-Version bietet noch keine Offline-Prüfung für NBT. Der Editor nutzt die Panel-Dateiverwaltung und erlaubt Speichern nur bei gestopptem Server.").font(.footnote).foregroundStyle(.secondary) }; ForEach(rows, id: \.["id"].string) { row in Section { Text(row["name"].string).font(.headline); Text(row["id"].string).font(.caption.monospaced()).textSelection(.enabled); Button("Im NBT-Editor öffnen", systemImage: "doc.badge.gearshape") { editor = EditorItem(path: row["id"].string) }.requiresAccess(panel, server.id, "file.read-content") } }; if rows.isEmpty { Text("Keine gespeicherte Spielerdatei in den geladenen Welten gefunden.").foregroundStyle(.secondary) } }.panelScreen().navigationTitle("Spieler-NBT").task { await load() }.refreshable { await load() }.errorAlert($error).sheet(item: $editor) { NBTEditor(api: panel, server: server, path: $0.path, suite: suite.features.contains("offline-player-nbt-v1") ? suite : nil, player: player) }
     }
     func load() async { do { rows = try await suite.data("nbt-paths", query: ["player": player])["items"].array } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
 }

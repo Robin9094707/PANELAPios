@@ -503,8 +503,33 @@ final class VpnProtectionManager implements Listener {
         return removed;
     }
 
+    Object appData(String route,String query,int offset) {
+        List<Map<String,Object>> rows=new ArrayList<>();
+        if(route.equals("vpn-whitelist"))for(VpnWhitelistStore.Entry e:whitelist.entries()) {
+            if(!query.isBlank()&&!(e.display()+" "+e.uuid()).toLowerCase(Locale.ROOT).contains(query))continue;
+            rows.add(SimplexAdminSuite.appMap("id",e.key(),"name",e.display(),"player",e.uuid()==null?e.name():e.uuid().toString(),"created",e.addedAt(),"actor",e.addedBy()));
+        } else for(VpnDetectionLog.Detection d:detectionLog.recent(query,200))if(d.blocked())rows.add(SimplexAdminSuite.appMap("id",d.timestamp()+":"+d.uuid(),"name",d.playerName(),"player",d.uuid()==null?"":d.uuid().toString(),"time",d.timestamp(),"reason",d.reason(),"country",d.country(),"risk",d.riskScore(),"decision",d.decision()));
+        int start=Math.min(Math.max(0,offset),rows.size()),end=Math.min(start+100,rows.size());return SimplexAdminSuite.appMap("items",rows.subList(start,end),"next",end<rows.size()?end:-1,"total",rows.size(),"window",route.equals("vpn-kicks")?200:0);
+    }
+    Object appWhitelist(String actor,String player,boolean allowed) {
+        UUID id;boolean uuidInput=true;
+        try{id=UUID.fromString(player);}catch(IllegalArgumentException name){uuidInput=false;id=plugin.discordAdminResolvePlayer(player);}
+        SimplexAdminSuite.PlayerProfile p=id==null?null:plugin.clientSecurityProfile(id);
+        if(!uuidInput&&p!=null&&!p.displayName().equalsIgnoreCase(player))throw new IllegalArgumentException("Exakten Spielernamen oder UUID verwenden; keine Namenspräfixe.");
+        if(allowed&&id==null)throw new IllegalArgumentException("Gespeicherten Spieler oder genaue Spieler-UUID auswählen.");
+        String name=p==null?player:p.displayName();
+        if(p==null&&id!=null)for(VpnDetectionLog.Detection detection:detectionLog.recent("",200))if(id.equals(detection.uuid())){name=detection.playerName();break;}
+        if(allowed)addWhitelist(actor,id,name);else {
+            // Exact identity only. Never use removeQuery's prefix matching from a remote request.
+            boolean removed=whitelist.remove(id,name);
+            if(!removed)throw new IllegalArgumentException("Dieser genaue Whitelist-Eintrag ist nicht mehr vorhanden.");
+            plugin.vpnAudit(actor,id,"VPN-Whitelist entfernt",name);
+        }
+        return SimplexAdminSuite.appMap("ok",true,"title","VPN-Whitelist gespeichert","description",allowed?"Spieler freigegeben.":"Ausnahme entfernt.");
+    }
     private void record(VpnDetectionLog.Detection detection, boolean notifyDiscord) {
         detectionLog.append(detection);
+        if(detection.blocked()&&plugin.appEvents!=null)plugin.appEvents.record("vpn-kick",detection.uuid(),"VPN-Verbindung blockiert",detection.playerName()+" · "+detection.reason(),false);
         if (notifyDiscord) plugin.vpnRelayDetection(detection);
     }
 

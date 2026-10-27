@@ -209,6 +209,79 @@ final class ModerationOverview {
         }
     }
 
+    @SuppressWarnings({"deprecation","rawtypes"})
+    Object appBans(String source,String query,int offset) {
+        List<Map<String,Object>> rows=new ArrayList<>();
+        if(source.equals("internal"))rows.addAll(plugin.appInternalBans());
+        else if(source.equals("client")) {
+            if(plugin.qualityOfLife!=null)for(var e:plugin.qualityOfLife.probes.access.snapshot().entrySet())if(ClientProbeAccess.restricted(e.getValue(),System.currentTimeMillis())) {
+                Subject subject=plugin.moderationSubject(e.getKey().toString());var state=e.getValue();
+                rows.add(SimplexAdminSuite.appMap("id",e.getKey().toString(),"player",e.getKey().toString(),"source","client","name",subject==null?e.getKey().toString():subject.name,"reason",String.join(", ",state.clients())+(state.review()?" · Team-Freigabe erforderlich":""),"until",state.banUntil(),"created",state.lastFailure(),"revision",AppApiSecurity.hash(state.toString())));
+            }
+        } else if(source.equals("minecraft"))for(BanList.Type kind:List.of(BanList.Type.PROFILE,BanList.Type.IP)) {
+            BanList list=Bukkit.getBanList(kind);for(Object raw:list.getBanEntries()) {
+                BanEntry entry=(BanEntry)raw;if(entry.getExpiration()!=null&&entry.getExpiration().before(new Date()))continue;
+                Object target=entry.getBanTarget();boolean profile=target instanceof org.bukkit.profile.PlayerProfile;
+                String id=profile?String.valueOf(((org.bukkit.profile.PlayerProfile)target).getUniqueId()):target instanceof java.net.InetAddress address?address.getHostAddress():String.valueOf(target);
+                String name=profile?((org.bukkit.profile.PlayerProfile)target).getName():id;
+                rows.add(SimplexAdminSuite.appMap("id",id,"player",profile?id:"","name",name==null?id:name,"source",kind==BanList.Type.IP?"minecraft-ip":"minecraft-profile","reason",safe(entry.getReason()),"actor",safe(entry.getSource()),"created",entry.getCreated().getTime(),"until",entry.getExpiration()==null?0:entry.getExpiration().getTime(),"revision",nativeRevision(entry)));
+            }
+        } else throw new IllegalArgumentException("Unbekannte Bannquelle");
+        return page(rows,query,offset);
+    }
+    private static Object page(List<Map<String,Object>> rows,String query,int offset) {
+        String q=query.toLowerCase(Locale.ROOT);rows.removeIf(r->!q.isBlank()&&!DiscordBotManager.Json.stringify(r).toLowerCase(Locale.ROOT).contains(q));
+        int start=Math.min(Math.max(0,offset),rows.size()),end=Math.min(start+100,rows.size());
+        return SimplexAdminSuite.appMap("items",rows.subList(start,end),"next",end<rows.size()?end:-1,"total",rows.size());
+    }
+    private static String nativeRevision(BanEntry<?> e) {return AppApiSecurity.hash(e.getCreated()+":"+e.getReason()+":"+e.getSource()+":"+e.getExpiration());}
+    // HTTP worker only, bounded SELECT through LiteBans' existing connection pool.
+    Object appLite(Plugin lite,String query,int offset) throws Exception {
+        if(lite==null||!lite.isEnabled())return SimplexAdminSuite.appMap("items",List.of(),"available",false,"message","LiteBans ist nicht lokal installiert.","next",-1);
+        if(!queries.tryAcquire())throw new IllegalArgumentException("LiteBans-Abfragen ausgelastet. Bitte kurz warten.");
+        try {
+            Class<?> type=Class.forName("litebans.api.Database",true,lite.getClass().getClassLoader());Object db=type.getMethod("get").invoke(null);
+            String sql="SELECT id,uuid,reason,banned_by_name,until,server_scope,time,ip,ipban FROM {bans} WHERE active=? AND (until<=0 OR until>?)";
+            boolean filter=!query.isBlank();if(filter)sql+=" AND (uuid LIKE ? OR reason LIKE ? OR uuid IN (SELECT uuid FROM {history} WHERE name LIKE ?))";
+            sql+=" ORDER BY id DESC LIMIT 101 OFFSET "+Math.min(100000,Math.max(0,offset));
+            List<Map<String,Object>> rows=new ArrayList<>();
+            try(PreparedStatement statement=(PreparedStatement)type.getMethod("prepareStatement",String.class).invoke(db,sql)) {
+                statement.setBoolean(1,true);statement.setLong(2,System.currentTimeMillis());statement.setQueryTimeout(5);
+                if(filter)for(int i=3;i<=5;i++)statement.setString(i,"%"+query+"%");
+                try(ResultSet result=statement.executeQuery()) {while(result.next()) {
+                    String uuid=result.getString("uuid");rows.add(SimplexAdminSuite.appMap("id",Long.toString(result.getLong("id")),"player",uuid==null?"":uuid,"name",result.getBoolean("ipban")?"IP-Sperre #"+result.getLong("id"):uuid==null?"#"+result.getLong("id"):uuid,"source","litebans","reason",safe(result.getString("reason")),"actor",safe(result.getString("banned_by_name")),"until",result.getLong("until"),"created",result.getLong("time"),"scope",result.getString("server_scope"),"revision",Long.toString(result.getLong("id"))));
+                }}
+            }
+            boolean more=rows.size()>100;if(more)rows.remove(100);
+            return SimplexAdminSuite.appMap("items",rows,"available",true,"next",more?offset+100:-1);
+        } finally {queries.release();}
+    }
+    @SuppressWarnings({"deprecation","rawtypes","unchecked"})
+    Object appRemove(String source,String id,String expected,String actor) throws Exception {
+        if(source.equals("internal"))plugin.appInternalUnban(id,expected,actor);
+        else if(source.equals("client")) {
+            UUID player=UUID.fromString(id);if(plugin.qualityOfLife==null)throw new IllegalArgumentException("Client-Prüfung ist nicht aktiv");
+            ClientProbeAccess access=plugin.qualityOfLife.probes.access;
+            if(!AppApiSecurity.hash(access.state(player).toString()).equals(expected))throw new IllegalArgumentException("Prüfsperre wurde geändert. Neu laden.");
+            access.release(player);plugin.expansionAudit(actor,player,"Client-Prüfsperre freigegeben","App");
+        } else if(source.equals("litebans")) {
+            if(!id.matches("[0-9]{1,18}")||lite()==null)throw new IllegalArgumentException("LiteBans-Eintrag nicht verfügbar");
+            boolean accepted=Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"litebans:unban "+id+" --sender=SimplexPanel");
+            if(!accepted)throw new IllegalArgumentException("LiteBans hat den Entbannbefehl abgelehnt");
+            plugin.expansionAudit(actor,null,"LiteBans-Entbannung angefordert","ID "+id);
+            return SimplexAdminSuite.appMap("ok",true,"title","Entbannung angefordert","description","LiteBans verarbeitet ID #"+id+". Liste aktualisieren, um das Ergebnis zu prüfen.");
+        } else if(source.equals("minecraft-profile")||source.equals("minecraft-ip")) {
+            BanList list=Bukkit.getBanList(source.equals("minecraft-ip")?BanList.Type.IP:BanList.Type.PROFILE);
+            if(source.equals("minecraft-ip")&&!VpnIpCheckService.isIpLiteral(id))throw new IllegalArgumentException("Gültige IP-Adresse erforderlich");
+            Object target=source.equals("minecraft-ip")?java.net.InetAddress.getByName(id):Bukkit.createPlayerProfile(UUID.fromString(id));
+            BanEntry entry=list.getBanEntry(target);if(entry==null)throw new IllegalArgumentException("Sperre bereits aufgehoben");
+            if(!nativeRevision(entry).equals(expected))throw new IllegalArgumentException("Minecraft-Sperre wurde geändert. Neu laden.");
+            list.pardon(target);if(list.getBanEntry(target)!=null)throw new IllegalArgumentException("Minecraft-Sperre besteht weiterhin");
+            plugin.expansionAudit(actor,null,"Minecraft-Bann aufgehoben",source+" "+id);
+        } else throw new IllegalArgumentException("Unbekannte Bannquelle");
+        return SimplexAdminSuite.appMap("ok",true,"title","Sperre aufgehoben","description","Die ausgewählte Sperre wurde aufgehoben. Andere Bannquellen bleiben separat.");
+    }
+
     private record LiteRow(long id,String uuid,String reason,String executor,long until,String scope,long created,String ip,boolean ipban) {}
     private void liteList(Player p,boolean mute,int page){
         if(!allowed(p,mute))return;

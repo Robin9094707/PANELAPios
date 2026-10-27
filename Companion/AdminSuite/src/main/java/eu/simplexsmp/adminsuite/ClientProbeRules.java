@@ -22,9 +22,10 @@ final class ClientProbeRules {
     }
     Rule rule(String id){String path=ROOT+"rules."+id+".";
         String legacy=plugin.getConfig().getBoolean(ROOT+"enforce-blocklist",false)&&plugin.getConfig().getStringList(ROOT+"blocked-clients").contains(id)?"kick":manager!=null&&manager.diagnosticOnly(id)?"none":"notify";
+        if(id.equals("meteor-client"))legacy="kick";
         String action=plugin.getConfig().getString(path+"action",legacy);if(!ACTIONS.contains(action))action="notify";
         long duration=900000;try{duration=duration(plugin.getConfig().getString(path+"ban-duration","15m"));}catch(IllegalArgumentException ignored){if(action.equals("tempban"))action="notify";}
-        return new Rule(action,duration,Math.max(0,Math.min(100,plugin.getConfig().getInt(path+"review-after",0))),plugin.getConfig().getBoolean(path+"alert-admins",!action.equals("none")||manager!=null&&manager.diagnosticOnly(id)),plugin.getConfig().getBoolean(path+"alert-discord",!action.equals("none")||manager!=null&&manager.diagnosticOnly(id)));
+        return new Rule(action,duration,Math.max(0,Math.min(100,plugin.getConfig().getInt(path+"review-after",id.equals("meteor-client")&&action.equals("kick")?1:0))),plugin.getConfig().getBoolean(path+"alert-admins",!action.equals("none")||manager!=null&&manager.diagnosticOnly(id)),plugin.getConfig().getBoolean(path+"alert-discord",!action.equals("none")||manager!=null&&manager.diagnosticOnly(id)));
     }
     String configure(String actor,String id,String action,String duration,int reviewAfter){
         if(!manager.definitionIds().contains(id)||!id.matches("[a-z0-9_-]{1,64}"))return "Unbekannte Client-ID.";
@@ -48,6 +49,7 @@ final class ClientProbeRules {
         long now=System.currentTimeMillis();try{
             ClientProbeAccess.State state=manager.access.record(target.getUniqueId(),now,target.getLocale(),disallowed,thresholds,ban,reviewUnknown,Math.max(1,Math.min(30,plugin.getConfig().getInt(ROOT+"strike-window-days",7)))*86400000L);
             String action=state.review()?"TEAM_REVIEW":ban>0?"TEMPBAN":kick?"KICK":"STRIKE";
+            if(plugin.appEvents!=null&&(state.review()||ban>0))plugin.appEvents.record("ban",target.getUniqueId(),"Automatische Client-Prüfsperre",target.getName()+" · "+String.join(", ",disallowed)+" · "+action,true);
             plugin.expansionAudit(actor,target.getUniqueId(),"Client rule "+action,disallowed+" • until="+state.banUntil()+" • strikes="+state.strikes());
             if(kick||state.review()){manager.access.refreshInvite();plugin.suiteKick(target,ClientProbeAccess.message(state,now,manager.access.invite()));}
             return new ActionReport(action,state.banUntil(),state.strikes(),"Maßnahme: "+action+" • Fehlversuche: "+state.strikes()+" • Bann bis: "+(state.banUntil()>now?new Date(state.banUntil()):"—")+" • Freigabe: /sasadmin client approve player:"+target.getName());

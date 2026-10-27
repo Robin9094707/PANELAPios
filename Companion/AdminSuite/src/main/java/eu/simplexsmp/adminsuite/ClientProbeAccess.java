@@ -29,6 +29,7 @@ final class ClientProbeAccess implements Listener {
         State next=failure(state(id),now,locale,detected,thresholds,duration,threshold,window);Map<UUID,State> copy=new HashMap<>(states);copy.put(id,next);save(copy);states.put(id,next);return next;
     }
     synchronized void release(UUID id)throws IOException{Map<UUID,State> next=new HashMap<>(states);next.remove(id);save(next);states.remove(id);}
+    Map<UUID,State> snapshot(){return Map.copyOf(states);}
     List<UUID> reviewQueue(){return states.entrySet().stream().filter(e->e.getValue().review).map(Map.Entry::getKey).sorted().toList();}
     static boolean german(String locale){return locale!=null&&locale.toLowerCase(Locale.ROOT).startsWith("de");}
     static String message(State s,long now,String invite){

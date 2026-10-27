@@ -129,7 +129,7 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class SimplexAdminSuite extends JavaPlugin implements Listener, CommandExecutor, org.bukkit.command.TabCompleter {
-    private static final String VERSION = "8.3.0";
+    private static final String VERSION = "9.0.0";
     private static final int CURRENT_DATA_SCHEMA = 17;
     private static final int DEFAULT_MAX_CHAT_LINES = 100;
     private static final int DEFAULT_MAX_ACTION_LINES = 240;
@@ -299,6 +299,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         Bukkit.getScheduler().runTask(this,()->{if(discordBot!=null){discordBot.relayMaintenance(enabled);discordBot.updateNow();}if(discordStatus!=null)discordStatus.updateNow();});
     }
     AppApiManager appApi;
+    SuiteEventCenter appEvents;
+    SurvivalGuard survivalGuard;
     public void onEnable() {
         saveDefaultConfig();
         SuiteExpansion.migrateBeforeLoad(this);
@@ -468,6 +470,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         Bukkit.getScheduler().runTaskLater(this, () -> {
             if (altDetection != null) altDetection.startGeyserLoginGate();
         }, 40L);
+        try { appEvents = new SuiteEventCenter(this); appEvents.start(); } catch (Exception error) { getLogger().warning("App-Ereignisse nicht verfügbar; vorhandene Datei bleibt erhalten: "+error.getClass().getSimpleName()); }
+        survivalGuard = new SurvivalGuard(this); survivalGuard.start();
         try { appApi = new AppApiManager(this); appApi.reload(); } catch (Exception error) { getLogger().warning("Optionale App-API bleibt aus: " + error.getClass().getSimpleName()); }
         getLogger().info("Simplex Admin Suite v" + VERSION + " wurde geladen. Bedrock-Forms: " + bedrockMenus.status());
         if(getConfig().getBoolean("startup.console-animation",true)) {
@@ -478,6 +482,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     public void onDisable() {
         if (appApi != null) appApi.stop();
+        if (appEvents != null) appEvents.stop();
         if (detectors != null) detectors.stop();
         if (qualityOfLife != null) qualityOfLife.stop();
         if(deliveries!=null)deliveries.stop();
@@ -1961,6 +1966,13 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return;
         }
         if (adminSpy.hiddenJoin(player) || isPubliclyHidden(player)) return;
+        if(appEvents!=null) {
+            appEvents.record(firstJoin?"first-join":"join",player.getUniqueId(),firstJoin?"Neuer Spieler":"Spieler beigetreten",player.getName()+" · "+current.label(true),false);
+            if(!current.bedrock&&!current.brand().isBlank()&&ClientBrands.known(current.brand()).isBlank()) {
+                appEvents.record("client-brand",player.getUniqueId(),"Ungewöhnlicher Client-Brand",player.getName()+" meldet: "+ClientBrands.evidence(current.brand())+". Selbstangabe; kein Cheat-Nachweis.",false);
+                for(Player admin:Bukkit.getOnlinePlayers())if(admin.isOp()||has(admin,"simplexadminsuite.clientsecurity"))admin.sendMessage(playerText(admin,"§eUngewöhnlicher Client-Brand bei ","§eUnusual client brand for ")+player.getName()+". /sas channels "+player.getName());
+            }
+        }
         broadcastConnection(player, profile, true);
         if (discordBot != null) {
             discordBot.rememberPlayer(player);
@@ -7092,7 +7104,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     String visualName(Player player) { return nicknames == null ? (player == null ? "Unbekannt" : player.getName()) : nicknames.visualName(player); }
     String visualName(UUID uuid, String realName) { return nicknames == null ? realName : nicknames.visualName(uuid, realName); }
     void refreshVisualIdentity(Player player) { if (afk != null) afk.refreshDisplay(player); }
-    void nicknameAudit(String actor, UUID target, String action, String details) { if (audit != null) audit.log(actor, target, action, details); }
+    void nicknameAudit(String actor, UUID target, String action, String details) { if (audit != null) audit.log(actor, target, action, details); if(appEvents!=null) {String lower=(action+" "+actor).toLowerCase(Locale.ROOT);String kind=lower.contains("client")||lower.contains("probe")?"client-check":lower.contains("ban")||lower.contains("sperr")?"ban":lower.contains("spielerschutz")?"guard":"admin";appEvents.record(kind,target,action,actor+" · "+details,kind.equals("ban"));} }
     String discordAdminNickname(String actor, String playerQuery, String nickname) {
         if (nicknames == null) return "Das Nickname-System ist noch nicht initialisiert.";
         UUID target = discordAdminResolvePlayer(playerQuery);
@@ -8272,6 +8284,15 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     Object appApiData(String route, Map<String,String> q) {
         String query=q.getOrDefault("q","").toLowerCase(Locale.ROOT);
         int offset;try{offset=Math.max(0,Integer.parseInt(q.getOrDefault("offset","0")));}catch(Exception e){offset=0;}
+        if(route.equals("events")){if(appEvents==null)throw new IllegalArgumentException("Ereignisprotokoll nicht verfügbar");return appEvents.data(query,offset);}
+        if(route.equals("vpn-whitelist")||route.equals("vpn-kicks"))return vpnProtection.appData(route,query,offset);
+        if(route.equals("bans"))return moderationOverview.appBans(q.getOrDefault("source","internal"),query,offset);
+        if(route.equals("reports")) {
+            List<Object> rows=new ArrayList<>();for(ReportCase r:reports.sortedReports()) {
+                if(!query.isBlank()&&!(r.targetName+" "+r.reporterName+" "+r.details+" "+r.id).toLowerCase(Locale.ROOT).contains(query))continue;
+                rows.add(appMap("id",Long.toString(r.id),"name",r.targetName,"player",r.targetUuid==null?"":r.targetUuid.toString(),"reporter",r.reporterName,"category",r.category,"details",r.details,"status",r.status.name(),"created",r.createdAt,"handledBy",r.handledBy,"revision",r.status.name()+":"+r.handledAt,"note",r.staffNote,"evidence",r.evidenceIncluded?appMap("chat",new ArrayList<>(r.chatEvidence),"actions",new ArrayList<>(r.actionEvidence),"combat",new ArrayList<>(r.combatEvidence)):appMap()));
+            }int end=Math.min(rows.size(),offset+100);return appMap("items",rows.subList(Math.min(offset,rows.size()),end),"next",end<rows.size()?end:-1,"total",rows.size());
+        }
         if(route.equals("log-status"))return securityHub==null?appMap("available",false,"discord","Client-Protokollmodul nicht aktiv"):securityHub.logStatus();
         if(route.equals("plugins"))return appMap("items",Arrays.stream(Bukkit.getPluginManager().getPlugins()).map(p->appMap("id",p.getName(),"name",p.getName(),"version",p.getDescription().getVersion(),"enabled",p.isEnabled(),"authors",p.getDescription().getAuthors())).toList());
         if(route.equals("worlds"))return appMap("items",Bukkit.getWorlds().stream().map(w->appMap("id",w.getUID().toString(),"name",w.getName(),"environment",w.getEnvironment().name(),"players",w.getPlayers().size(),"chunks",w.getLoadedChunks().length,"time",w.getTime(),"days",w.getFullTime()/24000,"difficulty",w.getDifficulty().name(),"storm",w.hasStorm(),"thunder",w.isThundering(),"pvp",w.getPVP(),"autosave",w.isAutoSave(),"border",w.getWorldBorder().getSize())).toList());
@@ -8344,6 +8365,30 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         }
         throw new IllegalArgumentException("Unbekannter Datenbereich.");
     }
+    Object appModerationMutation(String route,Map<String,Object> values,String actor) throws Exception {
+        String id=String.valueOf(values.getOrDefault("id",""));
+        if(route.startsWith("events.")){if(appEvents==null)throw new IllegalArgumentException("Ereignisprotokoll nicht verfügbar");Object result=appEvents.edit(route,id,String.valueOf(values.getOrDefault("note","")));audit.log(actor,null,route,id);return result;}
+        if(route.equals("vpn.whitelist"))return vpnProtection.appWhitelist(actor,String.valueOf(values.get("player")),Boolean.parseBoolean(String.valueOf(values.get("allowed"))));
+        if(route.equals("bans.remove"))return moderationOverview.appRemove(String.valueOf(values.get("source")),id,String.valueOf(values.getOrDefault("expected","")),actor);
+        if(route.equals("reports.update")) {
+            long number=Long.parseLong(id);ReportCase r=reports.get(number);if(r==null)throw new IllegalArgumentException("Report fehlt");
+            String expected=String.valueOf(values.getOrDefault("expected",""));String revision=r.status.name()+":"+r.handledAt;
+            if(!expected.equals(revision))throw new IllegalArgumentException("Report wurde inzwischen bearbeitet. Bitte neu laden.");
+            reports.updateStatus(number,ReportStatus.valueOf(String.valueOf(values.get("status"))),actor,String.valueOf(values.getOrDefault("note","")));
+            return appMap("ok",true,"title","Report gespeichert","description","#"+number+" wurde aktualisiert.");
+        }
+        throw new IllegalArgumentException("Unbekannte Moderationsaktion");
+    }
+    List<Map<String,Object>> appInternalBans() {
+        List<Map<String,Object>> rows=new ArrayList<>();for(PlayerProfile p:database.sortedProfiles())if(p.internalBanActive(System.currentTimeMillis()))rows.add(appMap("id",p.uuid.toString(),"player",p.uuid.toString(),"name",p.name,"source","internal","reason",p.internalBanReason,"actor",p.internalBanBy,"until",p.internalBanUntil,"revision",AppApiSecurity.hash(p.uuid+":"+p.internalBanUntil+":"+p.internalBanReason+":"+p.internalBanBy)));
+        return rows;
+    }
+    void appInternalUnban(String id,String expected,String actor) {
+        PlayerProfile p=database.find(id);if(p==null)throw new IllegalArgumentException("Spieler fehlt");
+        String revision=AppApiSecurity.hash(p.uuid+":"+p.internalBanUntil+":"+p.internalBanReason+":"+p.internalBanBy);
+        if(!revision.equals(expected))throw new IllegalArgumentException("Sperre hat sich geändert. Bitte neu laden.");
+        p.internalBanUntil=0L;p.internalBanReason="";p.internalBanBy="";database.save(p);expansionAudit(actor,p.uuid,"Interner Bann aufgehoben","App");
+    }
     private void appInventory(List<Object> rows,String container,List<?> contents){
         for(int i=0;i<contents.size();i++)if(contents.get(i) instanceof ItemStack item && !item.getType().isAir()){
             var meta=item.getItemMeta();rows.add(appMap("id",container+":"+i,"name",meta!=null&&meta.hasDisplayName()?meta.getDisplayName():item.getType().name(),"type",item.getType().name(),"amount",item.getAmount(),"slot",i,"container",container,"lore",meta!=null&&meta.hasLore()?meta.getLore():List.of()));
@@ -8351,7 +8396,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     }
     private Map<String,Object> appPlayer(PlayerProfile p,boolean detail){
         Player online=Bukkit.getPlayer(p.uuid);
-        Map<String,Object> row=appMap("id",p.uuid.toString(),"name",p.name,"online",online!=null,"client",p.clientPlatform,"device",p.bedrockDeviceModel,"version",p.clientVersion,"firstSeen",p.firstSeen,"lastSeen",p.lastSeen,"points",p.simplexPoints(),"warnings",p.warnings.size(),"ban",p.internalBanActive(System.currentTimeMillis()),"mute",p.internalMuteActive(System.currentTimeMillis()));
+        Map<String,Object> row=appMap("id",p.uuid.toString(),"name",p.name,"online",online!=null,"client",p.clientPlatform,"device",p.bedrockDeviceModel,"brand",p.javaClientBrandValue(),"version",p.clientVersion,"firstSeen",p.firstSeen,"lastSeen",p.lastSeen,"points",p.simplexPoints(),"warnings",p.warnings.size(),"ban",p.internalBanActive(System.currentTimeMillis()),"mute",p.internalMuteActive(System.currentTimeMillis()));
         if(detail){row.put("notes",new ArrayList<>(p.notes));row.put("warningEntries",new ArrayList<>(p.warnings));row.put("previousNames",new ArrayList<>(p.previousNames));row.put("rights",Arrays.stream(powerRights()).map(r->appMap("id",r,"blocked",p.blockedRightsSet().contains(r),"until",p.temporaryBlockedRightsMap().getOrDefault(r,0L))).toList());
             if(online!=null){Location loc=online.getLocation();row.put("live",appMap("health",online.getHealth(),"maxHealth",online.getMaxHealth(),"food",online.getFoodLevel(),"saturation",online.getSaturation(),"level",online.getLevel(),"exp",online.getExp(),"gamemode",online.getGameMode().name().toLowerCase(Locale.ROOT),"invulnerable",online.isInvulnerable(),"allowFlight",online.getAllowFlight(),"world",loc.getWorld()==null?"":loc.getWorld().getName(),"x",loc.getX(),"y",loc.getY(),"z",loc.getZ()));}
         }return row;
@@ -8373,6 +8418,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             PlayerProfile p=database.find(String.valueOf(values.getOrDefault("player","")));Player target=p==null?null:Bukkit.getPlayer(p.uuid);
             if(target==null)throw new IllegalArgumentException("Spieler muss online sein. Offline-NBT wird hier nicht überschrieben.");
             String field=String.valueOf(values.get("field")),value=String.valueOf(values.get("value"));
+            if(!target.isOp()&&((field.equals("gamemode")&&!value.equalsIgnoreCase("survival"))||(field.equals("invulnerable")&&Boolean.parseBoolean(value))))throw new IllegalArgumentException("Nur echte Operatoren dürfen den Überlebensmodus verlassen oder unverwundbar sein.");
             if(field.equals("gamemode"))target.setGameMode(GameMode.valueOf(value.toUpperCase(Locale.ROOT)));
             else if(field.equals("invulnerable")||field.equals("allowFlight")){if(!Set.of("true","false").contains(value))throw new IllegalArgumentException("true oder false erforderlich");if(field.equals("invulnerable"))target.setInvulnerable(Boolean.parseBoolean(value));else target.setAllowFlight(Boolean.parseBoolean(value));}
             else {double n=Double.parseDouble(value);if(!Double.isFinite(n))throw new IllegalArgumentException("Endlicher Wert erforderlich");
@@ -12130,6 +12176,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                     if (parsed == null) return false;
                     until = parsed.until(now);
                 }
+                if(plugin.appEvents!=null)plugin.appEvents.record("ban",target.uuid,"Spieler gesperrt",target.name+" · "+reason+" · "+admin.getName(),true);
                 target.internalBanUntil = until; target.internalBanReason = reason; target.internalBanBy = admin.getName();
                 plugin.database.save(target);
                 if (online != null && plugin.getConfig().getBoolean("punishments.kick-player-on-ban", true)) plugin.suiteKick(online,activeBanMessage(target));
@@ -12498,6 +12545,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             }
             cases.put(report.id, report);
             save(report);
+            if(plugin.appEvents!=null)plugin.appEvents.record("report",report.targetUuid,"Neuer Report",report.targetName+" · "+report.category+" · #"+report.id,false);
             return ReportCreateResult.ok(report);
         }
 
@@ -16856,6 +16904,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             long now = System.currentTimeMillis();
             Long previous = recentUltraAttempts.put(dedupe, now);
             if (previous != null && now - previous < 10_000L) return;
+            if(plugin.appEvents!=null)plugin.appEvents.record("ban-evasion",profile.uuid,"Bannumgehung blockiert",profile.name+" · Gruppe "+match.group.id+(newAccount?" · neuer zugeordneter Account":" · erneuter Beitrittsversuch"),true);
             match.group.blockedAttempts++;
             match.group.lastAttemptAt = now;
             match.group.lastAttemptName = profile.name;
