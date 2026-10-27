@@ -14,7 +14,7 @@ struct ModsView: View {
     @State private var loaded = false
     @State private var importer = false
     @State private var selected: JSON?
-    @State private var imported: URL?
+    @StateObject private var handoff = FileImportHandoff()
     @State private var candidate: ModCandidate?
     @State private var detail: ModDetail?
     @State private var toggleFile: String?
@@ -55,8 +55,8 @@ struct ModsView: View {
                     }
                 }
             }
-            .sheet(isPresented: $importer, onDismiss: { if let imported { self.imported = nil; inspect(imported) } }) {
-                FileImportPicker { result in switch result { case .success(let urls): imported = urls.first; case .failure(let failure): error = failure.localizedDescription }; importer = false }.ignoresSafeArea()
+            .sheet(isPresented: $importer, onDismiss: { if let imported = handoff.take() { inspect(imported) }; if let issue = handoff.takeError() { error = issue } }) {
+                FileImportPicker(retainSelection: true) { result in handoff.receive(result); importer = false }.ignoresSafeArea()
             }
             .sheet(item: $candidate, onDismiss: { if let staging { try? FileManager.default.removeItem(at: staging) }; staging = nil }) { value in
                 ActionForm(title: value.installed == nil ? "Mod installieren" : "Mod aktualisieren", detail: "\(value.next.name)\nIDs: \(value.next.ids.joined(separator: ", "))\nLoader: \(value.next.loader)\nInstalliert: \(value.installed?.version ?? "–")\nNeue Version: \(value.next.version)\nMinecraft: \(value.next.minecraft)\n\nVorhandene Mod-IDs und Upload-Prüfsumme werden geprüft. Die bisherige JAR wird außerhalb von /mods gesichert. Die Metadatenprüfung garantiert keine vollständige Laufzeitkompatibilität.", fields: [Field(key: "ack", label: "Minecraft-Version, Loader und Abhängigkeiten passen", value: "false", kind: .toggle)], submit: "Geprüft installieren") { values in
@@ -104,7 +104,7 @@ struct ModsView: View {
     func toggle(_ name: String) { toggleFile = name }
     func inspect(_ url: URL) {
         busy = true; notice = nil
-        Task { defer { busy = false; let folder = url.deletingLastPathComponent(); if folder.lastPathComponent.hasPrefix("addon-") || folder.lastPathComponent.hasPrefix("market-") { try? FileManager.default.removeItem(at: folder) } }; do {
+        Task { defer { busy = false; let folder = url.deletingLastPathComponent(); if folder.lastPathComponent.hasPrefix("addon-") || folder.lastPathComponent.hasPrefix("market-") || folder.lastPathComponent.hasPrefix("import-") { try? FileManager.default.removeItem(at: folder) } }; do {
             guard !api.demo else { throw PanelError(message: "Mods sind im Demomodus nur lesbar.") }
             guard url.pathExtension.lowercased() == "jar" else { throw PanelError(message: "Wähle eine einzelne Mod-JAR.") }
             let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }

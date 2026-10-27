@@ -15,7 +15,7 @@ struct PluginsView: View {
     @State private var operation: Operation?
     @State private var importer = false
     @State private var selectedPlugin: String?
-    @State private var importedPlugin: URL?
+    @StateObject private var handoff = FileImportHandoff()
     @State private var candidate: PluginUpdateCandidate?
     @State private var stagedLocal: URL?
     @State private var busy = false
@@ -61,10 +61,11 @@ struct PluginsView: View {
                 }
             }
             .sheet(isPresented: $importer, onDismiss: {
-                if let url = importedPlugin { importedPlugin = nil; inspect(url) }
+                if let url = handoff.take() { inspect(url) }
+                if let issue = handoff.takeError() { error = issue }
             }) {
-                FileImportPicker { result in
-                    switch result { case .success(let urls): importedPlugin = urls.first; case .failure(let e): error = e.localizedDescription }
+                FileImportPicker(retainSelection: true) { result in
+                    handoff.receive(result)
                     importer = false
                 }.ignoresSafeArea()
             }
@@ -86,7 +87,7 @@ struct PluginsView: View {
     func inspect(_ url: URL) {
         guard url.pathExtension.lowercased() == "jar", let filename = selectedPlugin else { error = "Zuerst das installierte Plugin und dann eine JAR auswählen."; return }
         busy = true; message = nil
-        Task { defer { busy = false; let folder = url.deletingLastPathComponent(); if folder.lastPathComponent.hasPrefix("addon-") || folder.lastPathComponent.hasPrefix("market-") { try? FileManager.default.removeItem(at: folder) } }; do {
+        Task { defer { busy = false; let folder = url.deletingLastPathComponent(); if folder.lastPathComponent.hasPrefix("addon-") || folder.lastPathComponent.hasPrefix("market-") || folder.lastPathComponent.hasPrefix("import-") { try? FileManager.default.removeItem(at: folder) } }; do {
             guard !api.demo else { throw PanelError(message: "Updates sind im Demomodus deaktiviert.") }
             let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
             let installedData = try await api.fileData(server: server.id, path: "/plugins/" + filename, limit: 128 * 1024 * 1024)
@@ -117,8 +118,7 @@ struct PluginsView: View {
         try PluginUpdatePlan.checkFilename(value.updateFilename, installed: value.filename, files: installedFiles.map { $0["name"].string })
         var directory = "/plugins"
         for part in components {
-            let entries = try await api.list(prefix + "/list", query: ["directory": directory])
-            if !entries.contains(where: { $0["name"].string == part && !$0["is_file"].bool }) { try await api.mutate(prefix + "/create-folder", ["root": directory, "name": part]) }
+            try await ModInstaller.ensureFolder(api, server: server.id, root: directory, name: part)
             directory = pathJoin(directory, part)
         }
         let staged = try await api.list(prefix + "/list", query: ["directory": directory])
@@ -129,10 +129,16 @@ struct PluginsView: View {
             let pending = try await Task.detached(priority: .utility) { try PluginArchive.descriptor(data) }.value
             try PluginUpdatePlan.checkPending(pending, next: value.next)
         }
-        try await api.upload(server: server.id, directory: directory, file: value.file)
-        let uploaded = try await api.fileData(server: server.id, path: pathJoin(directory, value.updateFilename), limit: 128 * 1024 * 1024)
-        let local = try Data(contentsOf: value.file, options: .mappedIfSafe)
-        guard PluginArchive.digest(uploaded) == PluginArchive.digest(local) else { throw PanelError(message: "Upload-Prüfsumme stimmt nicht überein. Entferne die vorgemerkte Datei vor dem Neustart.") }
+        // A failed/partial transfer must never be in Paper's startup update directory.
+        try await ModInstaller.ensureFolder(api, server: server.id, root: "/", name: "simplex-plugin-staging")
+        let transaction = UUID().uuidString
+        try await ModInstaller.ensureFolder(api, server: server.id, root: "/simplex-plugin-staging", name: transaction)
+        let stage = "/simplex-plugin-staging/" + transaction
+        try await VerifiedUpload.send(value.file, api: api, server: server.id, directory: stage)
+        // Recheck after the transfer, since another client may have staged an update meanwhile.
+        let latest = try await api.list(prefix + "/list", query: ["directory": directory])
+        guard latest == staged else { throw PanelError(message: "Der Updateordner hat sich geändert. Bitte erneut prüfen. Die neue JAR liegt noch unter " + stage) }
+        try await ModInstaller.move(api, server: server.id, from: pathJoin(stage, value.updateFilename), to: pathJoin(directory, value.updateFilename))
         await load()
         if let entry = pending.first(where: { $0["name"].string == value.updateFilename }) {
             api.plugins.rememberVerifiedUpload(value.next, server: server.id, directory: directory, entry: entry)

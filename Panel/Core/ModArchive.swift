@@ -80,7 +80,7 @@ struct ModCandidate: Identifiable {
 }
 @MainActor enum ModInstaller {
     static func stopped(_ api: PanelAPI, server: String) async throws {
-        let state = try await api.request("servers/\(server)/resources")["current_state"].string
+        let state = try await api.request("servers/\(server)/resources").attributes["current_state"].string
         guard state == "offline" else { throw PanelError(message: "Stoppe zuerst den Minecraft-Server. Mods werden ausschließlich bei gestopptem Server geändert.") }
     }
     static func ensureFolder(_ api: PanelAPI, server: String, root: String, name: String) async throws {
@@ -113,10 +113,7 @@ struct ModCandidate: Identifiable {
         let transaction = UUID().uuidString
         try await ensureFolder(api, server: server, root: "/simplex-mod-staging", name: transaction)
         let stage = "/simplex-mod-staging/" + transaction
-        try await api.upload(server: server, directory: stage, file: candidate.file)
-        let uploaded = try await api.fileData(server: server, path: pathJoin(stage, target), limit: 128 * 1024 * 1024)
-        let local = try Data(contentsOf: candidate.file, options: .mappedIfSafe)
-        guard PluginArchive.digest(uploaded) == PluginArchive.digest(local) else { throw PanelError(message: "Upload-Prüfsumme stimmt nicht. Installierte Mods wurden nicht verändert.") }
+        try await VerifiedUpload.send(candidate.file, api: api, server: server, directory: stage)
         try await stopped(api, server: server)
         var backup: String?
         if let old = candidate.oldFilename {

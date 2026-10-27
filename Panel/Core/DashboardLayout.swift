@@ -3,11 +3,14 @@ import Combine
 
 enum DashboardScope: String, Codable { case home, server }
 enum DashboardCard: String, Codable, CaseIterable, Identifiable {
-    case welcome, folders, servers, fleet, favorites, account
-    case identity, players, resources, cpuHistory, network, health, memoryHistory, shortcuts
+    case welcome, folders, servers, fleet, favorites, account, transfers
+    case identity, players, resources, cpuHistory, network, health, memoryHistory, shortcuts, minecraftTools, storageTools
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .transfers: return "Übertragungen"
+        case .minecraftTools: return "Minecraft-Werkzeuge"
+        case .storageTools: return "Dateien, Backups & Datenbanken"
         case .welcome: return "Begrüßung"
         case .folders: return "Favoritenordner"
         case .servers: return "Serverliste"
@@ -26,6 +29,9 @@ enum DashboardCard: String, Codable, CaseIterable, Identifiable {
     }
     var symbol: String {
         switch self {
+        case .transfers: return "arrow.up.arrow.down.circle"
+        case .minecraftTools: return "globe.europe.africa"
+        case .storageTools: return "externaldrive"
         case .welcome: return "hand.wave"
         case .folders: return "folder"
         case .servers: return "server.rack"
@@ -43,7 +49,7 @@ enum DashboardCard: String, Codable, CaseIterable, Identifiable {
         }
     }
     static func available(_ scope: DashboardScope) -> [Self] {
-        scope == .home ? [.welcome, .folders, .servers, .fleet, .favorites, .account] : [.identity, .players, .resources, .cpuHistory, .network, .health, .memoryHistory, .shortcuts]
+        scope == .home ? [.welcome, .folders, .servers, .fleet, .favorites, .account, .transfers] : [.identity, .players, .resources, .cpuHistory, .network, .health, .memoryHistory, .shortcuts, .minecraftTools, .storageTools]
     }
     static func defaults(_ scope: DashboardScope) -> [Self] {
         scope == .home ? [.welcome, .folders, .servers] : [.identity, .players, .resources, .cpuHistory, .network]

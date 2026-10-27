@@ -6,12 +6,19 @@ struct DashboardEditor: View {
     @ObservedObject private var layouts = DashboardLayouts.shared
     @Environment(\.dismiss) private var dismiss
     @State private var reset = false
+    @AppStorage("theme.workspaceGrid") private var grid = false
     private var cards: [DashboardCard] { layouts.cards(layoutKey, scope: scope) }
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     Text(scope == .home ? "Deine Startseite für dieses Panel. Die Serverliste bleibt immer erreichbar." : "Dein Workspace für diesen Server. Jede Änderung wird automatisch gespeichert.").font(.footnote).foregroundStyle(.secondary)
+                }
+                if scope == .server {
+                    Section("Anordnung") {
+                        Toggle("Kartenraster auf breiten Bildschirmen", isOn: $grid)
+                        Text("Auf dem iPhone bleiben die Karten untereinander. Auf breiten Displays werden zwei Karten nebeneinander angeordnet.").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Section("Deine Karten") {
                     ForEach(cards) { card in

@@ -33,12 +33,34 @@ enum PanelIcon: String, CaseIterable, Identifiable {
 struct AppearanceSettingsView: View {
     @AppStorage("theme.primary") private var primary = "008F83"
     @AppStorage("theme.secondary") private var secondary = "7046BA"
+    @AppStorage("theme.compactCards") private var compact = false
+    @AppStorage("theme.cardRadius") private var radius = 24.0
+    @AppStorage("theme.cardTint") private var cardTint = 0.0
+    @AppStorage("theme.backgroundStrength") private var backgroundStrength = 1.0
     @State private var icon = UIApplication.shared.alternateIconName ?? "AppIcon"
     @State private var error: String?
     @State private var changing = false
     func binding(_ value: Binding<String>) -> Binding<Color> { Binding(get: { ThemeRGB(value.wrappedValue).color }, set: { color in var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0; UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a); value.wrappedValue = ThemeRGB(red: Double(r), green: Double(g), blue: Double(b)).hex }) }
     var body: some View {
         Form {
+            Section("Farbwelten") {
+                ForEach(["Simplex", "Ozean", "Sonnenuntergang", "Wald", "Amethyst"], id: \.self) { name in
+                    Button(name) {
+                        let palettes = ["Simplex": ["008F83", "7046BA"], "Ozean": ["0067C5", "00838F"], "Sonnenuntergang": ["BE3C16", "A62E70"], "Wald": ["327345", "867016"], "Amethyst": ["7B3CC6", "B12862"]]
+                        if let colors = palettes[name] { primary = colors[0]; secondary = colors[1] }
+                    }.foregroundStyle(Color.panelAccent)
+                }
+            }
+            Section("Karten & Hintergrund") {
+                Toggle("Kompakte Karten", isOn: $compact)
+                LabeledContent("Eckenradius", value: String(Int(radius)))
+                Slider(value: $radius, in: 8...36, step: 2).accessibilityLabel("Eckenradius")
+                Text("Farbtönung der Karten").font(.subheadline)
+                Slider(value: $cardTint, in: 0...0.3, step: 0.025).accessibilityLabel("Kartentönung")
+                Text("Hintergrundfarben").font(.subheadline)
+                Slider(value: $backgroundStrength, in: 0...2, step: 0.1).accessibilityLabel("Hintergrundstärke")
+                Label("So sehen deine Karten aus", systemImage: "square.stack.3d.up").frame(maxWidth: .infinity).card()
+            }
             Section("Farben") {
                 ColorPicker("Primärfarbe", selection: binding($primary), supportsOpacity: false)
                 ColorPicker("Sekundärfarbe", selection: binding($secondary), supportsOpacity: false)

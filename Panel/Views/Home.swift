@@ -95,6 +95,8 @@ struct HomeView: View {
     }
     @ViewBuilder func homeCard(_ card: DashboardCard, api: PanelAPI) -> some View {
         switch card {
+        case .transfers:
+            TransferDashboardCard { transfers = true }
         case .welcome: hero
         case .folders: pinnedFolders(api)
         case .servers: serverList

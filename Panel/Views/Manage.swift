@@ -24,6 +24,7 @@ struct ManageView: View {
             }
             if api.amp == nil || workspace.isMinecraft(api, server) {
             Section("Minecraft") {
+                NavigationLink { WorldsView(api: api, server: server) } label: { Label("Java-Welten & Speicheranalyse", systemImage: "globe.europe.africa") }.requiresAccess(api, server.id, "file.read")
                 if !suite.configured, let live { NavigationLink { PlayerManagerView(api: api, server: server, live: live) } label: { Label("Spieler-Manager", systemImage: "person.crop.circle.badge.checkmark") } }
                 NavigationLink { ModsView(api: api, server: server) } label: { Label("Mods & Mod-Updates", systemImage: "shippingbox") }.requiresAccess(api, server.id, "file.read")
                 NavigationLink { PluginsView(api: api, server: server) } label: { Label("Plugins & JAR-Dateien", systemImage: "puzzlepiece.extension") }.requiresAccess(api, server.id, "file.read")

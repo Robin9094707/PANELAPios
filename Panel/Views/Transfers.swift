@@ -93,3 +93,19 @@ struct TransferLink: View {
     }
 }
 
+
+struct TransferDashboardCard: View {
+    let open: () -> Void
+    @ObservedObject private var manager = TransferManager.shared
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Übertragungen", systemImage: "arrow.up.arrow.down.circle").font(.headline)
+            LabeledContent("Aktiv", value: String(manager.records.filter(\.active).count))
+            LabeledContent("Fehlgeschlagen", value: String(manager.records.filter { $0.state == "failed" }.count))
+            ForEach(Array(manager.records.prefix(3))) { record in
+                HStack { Text(record.filename).font(.caption).lineLimit(1); Spacer(); Text(record.title).font(.caption).foregroundStyle(.secondary) }
+            }
+            Button("Alle Übertragungen", action: open).buttonStyle(.glass)
+        }.frame(maxWidth: .infinity, alignment: .leading).card()
+    }
+}

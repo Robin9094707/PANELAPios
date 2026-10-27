@@ -24,6 +24,7 @@ final class AppApiManager {
     final AppApiMenus menus;
     private final Map<String,Map<String,Object>> actions=new LinkedHashMap<>();
     private final Map<String,long[]> rates=new HashMap<>();
+    private final DatabaseInspector databaseInspector=new DatabaseInspector();
     private final AtomicLong generation=new AtomicLong();
     private volatile HttpServer server;
     private volatile ExecutorService requests;
@@ -102,7 +103,7 @@ final class AppApiManager {
             String path=x.getRequestURI().getPath(),method=x.getRequestMethod();Map<String,String> query=query(x.getRequestURI());Object result;
             if(method.equals("GET")){
                 result=switch(path){
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
                     case "/v1/menu"->onMain(rev,()->{if(!key.scope().equals("full"))throw new ApiError(403,"Suite-Menüs benötigen einen full-Schlüssel.");return menus.current(key);});
                     case "/v1/schema"->SimplexAdminSuite.appMap("actions",new ArrayList<>(actions.values()));
                     case "/v1/view"->onMain(rev,()->{
@@ -114,6 +115,14 @@ final class AppApiManager {
                     case "/v1/data/overview","/v1/data/statistics","/v1/data/worlds","/v1/data/plugins","/v1/data/log-status","/v1/data/players","/v1/data/profile","/v1/data/alts","/v1/data/devices","/v1/data/ultrabans","/v1/data/snapshots","/v1/data/nbt-paths","/v1/data/settings","/v1/data/inventory","/v1/data/snapshot-content"->onMain(rev,()->{Object data=plugin.appApiData(path.substring("/v1/data/".length()),query);if(path.endsWith("/settings")){Map<String,Object> envelope=object(data);for(Object entry:(List<?>)envelope.get("items")){Map<String,Object> item=object(entry);item.put("revision",AppApiSecurity.hash(DiscordBotManager.Json.stringify(item.get("value"))));}}return data;});
                     default->throw new ApiError(404,"API-Endpunkt nicht gefunden.");
                 };
+            }else if(method.equals("POST")&&path.equals("/v1/database/inspect")){
+                if(!key.scope().equals("full"))throw new ApiError(403,"Der Datenbankscanner benötigt einen full-Schlüssel.");
+                if(!rate("db:"+key.id(),6))throw new ApiError(429,"Maximal sechs Datenbankscans pro Minute.");
+                String type=x.getRequestHeaders().getFirst("Content-Type");if(type==null||!type.toLowerCase(Locale.ROOT).startsWith("application/json"))throw new ApiError(415,"application/json erforderlich");
+                byte[] bytes=x.getRequestBody().readNBytes(16385);if(bytes.length>16384)throw new ApiError(413,"Anfrage zu groß");
+                String text=new String(bytes,StandardCharsets.UTF_8);AppApiSecurity.checkJson(text);
+                // Remains on the bounded HTTP worker pool, never Minecraft's main thread.
+                result=databaseInspector.scan(object(DiscordBotManager.Json.parse(text)));
             }else if(method.equals("POST")&&(path.equals("/v1/prepare")||path.equals("/v1/execute"))){
                 String contentType=x.getRequestHeaders().getFirst("Content-Type");if(contentType==null||!contentType.toLowerCase(Locale.ROOT).startsWith("application/json"))throw new ApiError(415,"application/json erforderlich");
                 byte[] body=x.getRequestBody().readNBytes(65537);if(body.length>65536)throw new ApiError(413,"Anfrage zu groß");String text=new String(body,StandardCharsets.UTF_8);AppApiSecurity.checkJson(text);Map<String,Object> payload=object(DiscordBotManager.Json.parse(text));
