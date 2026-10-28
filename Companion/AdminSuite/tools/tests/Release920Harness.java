@@ -37,6 +37,9 @@ public final class Release920Harness {
             denied(()->access.saveCustom("Test","bad","X","simplexadminsuite.not-real",1,false),"unknown permission must fail");denied(()->access.changeAuthorized("Test",op,null,null,AdminAccessManager.Role.NONE),"operator must remain protected");
             external.add("simplexadminsuite.action.kick");access.changeAuthorized("Test",user,null,null,AdminAccessManager.Role.INHERIT);
             check(plugin.has(junior,"simplexadminsuite.admin")&&plugin.has(junior,"simplexadminsuite.action.kick"),"single inherited action grants /sas and kick without broad bans node");external.clear();
+            access.changeAuthorized("Test",normal,"simplexadminsuite.action.kick",true,AdminAccessManager.Role.NONE);
+            check(!access.hasAccess(normal,null,Map.of("simplexadminsuite.admin",true))&&!access.effective(normal,"simplexadminsuite.action.kick",null,Map.of()),"no-access role suspends retained explicit rules");
+            check(Boolean.TRUE.equals(access.override(normal,"simplexadminsuite.action.kick")),"no-access role preserves rules for later restoration");
             // Dimension block must run before the usual admin/managed-teleport bypasses.
             var dbCtor=SimplexAdminSuite.PlayerDatabase.class.getDeclaredConstructor(SimplexAdminSuite.class);dbCtor.setAccessible(true);Object db=dbCtor.newInstance(plugin);Moderation790Harness.set(plugin,SimplexAdminSuite.class,"database",db);
             var profileCtor=SimplexAdminSuite.PlayerProfile.class.getDeclaredConstructor(UUID.class,String.class);profileCtor.setAccessible(true);var profile=(SimplexAdminSuite.PlayerProfile)profileCtor.newInstance(user,"Junior");profile.setRightBlocked("nether",true);profile.setRightBlocked("end",true);

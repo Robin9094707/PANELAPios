@@ -28,7 +28,7 @@ struct SuiteRoleDirectory: View {
         List {
             Section("Vorlagen") { ForEach(catalog["items"].array.filter { !$0["id"].string.hasPrefix("CUSTOM:") }, id: \.["id"].string) { role in VStack(alignment: .leading) { Text(role["name"].string); Text(SuiteRoleText.limit(role["maxBanSeconds"].string)).font(.caption).foregroundStyle(.secondary) } } }
             Section("Eigene Rollen") { ForEach(catalog["items"].array.filter { $0["id"].string.hasPrefix("CUSTOM:") }, id: \.["id"].string) { role in NavigationLink(role["name"].string) { SuiteCustomRoleView(suite:suite, catalog:catalog, role:role) } }
-                NavigationLink("Neue Rolle erstellen", systemImage:"plus.circle") { SuiteCustomRoleView(suite:suite, catalog:catalog) }
+                NavigationLink { SuiteCustomRoleView(suite:suite, catalog:catalog) } label: { Label("Neue Rolle erstellen",systemImage:"plus.circle") }
             }
         }.panelScreen().navigationTitle("Adminrollen").task { await load() }.refreshable { await load() }.errorAlert($error)
     }

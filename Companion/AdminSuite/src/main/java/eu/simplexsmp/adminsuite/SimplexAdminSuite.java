@@ -8166,7 +8166,6 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         PlayerProfile p = exact == null ? null : database.get(exact);
         if (p == null && mode.equals("none") && has(sender, "simplexadminsuite.ultraban.unban")) return altDetection.ultraUnban(sender,name).message;
         if (p == null) return "Eindeutiges gespeichertes Profil nicht gefunden. Exakten Namen oder UUID verwenden.";
-        if (!has(sender, "simplexadminsuite.bans")) return "Bannberechtigung fehlt.";
         if (mode.equals("none") && !has(sender,"simplexadminsuite.action.unban")) return "Entbannberechtigung fehlt.";
         if (mode.equals("account") && !has(sender,"simplexadminsuite.action.ban")) return "Account-Bannberechtigung fehlt.";
         if (mode.equals("none") || mode.equals("account")) {

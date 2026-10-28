@@ -60,9 +60,10 @@ final class AdminAccessManager {
         if (master(p)) return true;
         if(node.equals("simplexadminsuite.discord.design")||node.equals("simplexadminsuite.discordstatus")||node.contains(".opendiscord"))return false;
         if (node.equals("simplexadminsuite.admin")) return hasAccess(p.getUniqueId(), p, Map.of());
+        Role role = role(p.getUniqueId());
+        if(role==Role.NONE&&!PUBLIC.contains(node))return false;
         Boolean explicit = override(p.getUniqueId(), node);
         if (explicit != null) return explicit;
-        Role role = role(p.getUniqueId());
         if(PUBLIC.contains(node))return inherited;
         if (role == Role.CUSTOM) return customAllows(p.getUniqueId(), node);
         if (role == Role.NONE) return PUBLIC.contains(node) && inherited;
@@ -110,6 +111,7 @@ final class AdminAccessManager {
     }
     synchronized boolean effective(UUID id,String node,Player online,Map<String,Boolean> inherited) {
         if(online!=null && master(online)||Bukkit.getOfflinePlayer(id).isOp()||id.equals(owner))return true;
+        if(role(id)==Role.NONE&&!PUBLIC.contains(node))return false;
         Boolean local=override(id,node); if(local!=null)return local;
         Role role=role(id);
         if(role==Role.CUSTOM)return customAllows(id,node);
@@ -221,7 +223,8 @@ final class AdminAccessManager {
         for (String node : nodes) {
             if(node.startsWith("simplexadminsuite.menu.") || node.endsWith(".*")) continue;
             Boolean explicit = override(p.getUniqueId(), node);
-            if (explicit != null) attachment.setPermission(node, explicit);
+            if(role(p.getUniqueId())==Role.NONE&&!PUBLIC.contains(node))attachment.setPermission(node,false);
+            else if (explicit != null) attachment.setPermission(node, explicit);
             else if (p.getUniqueId().equals(owner) && !PUBLIC.contains(node)) attachment.setPermission(node, true);
             else if (role(p.getUniqueId()) != Role.INHERIT && !PUBLIC.contains(node)) attachment.setPermission(node, allows(p,node,false));
         }
