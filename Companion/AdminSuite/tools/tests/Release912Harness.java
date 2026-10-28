@@ -17,6 +17,7 @@ public final class Release912Harness {
         try {
             AltIpExclusions rules=new AltIpExclusions(folder.resolve("ip-policy.properties"));
             check(rules.contains("82.165.45.159"),"default infrastructure IP excluded");
+            check(rules.contains("::ffff:82.165.45.159"),"IPv4-mapped IPv6 alias also excluded");
             rules.change("2001:db8::1",true);check(rules.contains("2001:0db8:0:0:0:0:0:1"),"IPv6 canonical aliases excluded");
             rules.change(AltIpExclusions.DEFAULT_IP,false);check(!new AltIpExclusions(folder.resolve("ip-policy.properties")).contains(AltIpExclusions.DEFAULT_IP),"explicit default release survives restart");
             rules.change(AltIpExclusions.DEFAULT_IP,true);check(new AltIpExclusions(folder.resolve("ip-policy.properties")).values().size()==2,"multiple exclusions persist");

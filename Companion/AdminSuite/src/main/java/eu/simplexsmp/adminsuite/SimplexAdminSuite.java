@@ -8335,14 +8335,14 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     void appOpenRemoteMenu(Player player) { if(unifiedMenu!=null)unifiedMenu.open(player); }
     Object altDashboardData(Map<String,String> query){
         var alt=altDetection;var cache=alt.matchCache;if(cache==null)alt.requestMatchCache(null);
-        List<Object> rows=new ArrayList<>();Set<List<UUID>> groups=new HashSet<>();int largest=0,extras=0,devices=0;
+        List<Object> rows=new ArrayList<>();Map<UUID,List<UUID>> groups=new HashMap<>();int largest=0,extras=0,devices=0;
         List<PlayerProfile> profiles=database.sortedProfiles();for(PlayerProfile p:profiles)devices+=p.devices.size();
-        if(cache!=null){for(List<UUID> group:cache.componentMembers.values())if(group.size()>1)groups.add(group);for(List<UUID> group:groups){largest=Math.max(largest,group.size());extras+=group.size()-1;}
+        if(cache!=null){for(List<UUID> group:cache.componentMembers.values())if(group.size()>1)groups.putIfAbsent(group.get(0),group);for(List<UUID> group:groups.values()){largest=Math.max(largest,group.size());extras+=group.size()-1;}
             List<PlayerProfile> ranked=new ArrayList<>(profiles);ranked.sort(Comparator.comparingInt((PlayerProfile p)->cache.counts.getOrDefault(p.uuid,0)).reversed().thenComparing(p->p.name,String.CASE_INSENSITIVE_ORDER));
             int offset=0;try{offset=Math.max(0,Integer.parseInt(query.getOrDefault("offset","0")));}catch(NumberFormatException ignored){}
             String q=query.getOrDefault("q","").toLowerCase(Locale.ROOT);List<PlayerProfile> matches=ranked.stream().filter(p->cache.counts.getOrDefault(p.uuid,0)>0&&(q.isBlank()||p.name.toLowerCase(Locale.ROOT).contains(q)||p.uuid.toString().contains(q))).toList();
             for(PlayerProfile p:matches.subList(Math.min(offset,matches.size()),Math.min(offset+100,matches.size()))){Map<String,Object> row=appPlayer(p,false);row.put("linked",cache.counts.getOrDefault(p.uuid,0));row.put("devices",p.devices.size());rows.add(row);}
-            return appMap("loading",false,"profiles",profiles.size(),"linkedProfiles",cache.overview.size(),"groups",groups.size(),"extraAccounts",extras,"largestGroup",largest,"directPairs",cache.linkedPairs,"devices",devices,"items",rows,"total",matches.size(),"next",offset+100<matches.size()?offset+100:-1,"at",cache.createdAt,"excluded",alt.ipExclusions.values(),"revision",alt.ipExclusions.revision(),"report",alt.ipExclusions.report());
+            return appMap("loading",cache.linkedPairs<0,"profiles",profiles.size(),"linkedProfiles",cache.overview.size(),"groups",groups.size(),"extraAccounts",extras,"largestGroup",largest,"directPairs",cache.linkedPairs<0?null:cache.linkedPairs,"devices",devices,"items",rows,"total",matches.size(),"next",offset+100<matches.size()?offset+100:-1,"at",cache.createdAt,"excluded",alt.ipExclusions.values(),"revision",alt.ipExclusions.revision(),"report",alt.ipExclusions.report());
         }
         return appMap("loading",true,"items",rows,"profiles",profiles.size(),"devices",devices,"next",-1,"excluded",alt.ipExclusions.values(),"revision",alt.ipExclusions.revision(),"report",alt.ipExclusions.report());
     }
@@ -8369,7 +8369,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     private void openAltDashboard(Player admin){
         if(!adminMenuAllowed(admin,"suite.openaltcenter")||!has(admin,"simplexadminsuite.alts"))return;
         Map<?,?> data=(Map<?,?>)altDashboardData(Map.of());List<AdminUpdateMenu.Button> rows=new ArrayList<>();
-        for(String key:List.of("linkedProfiles","groups","extraAccounts","largestGroup","directPairs","devices"))if(data.containsKey(key)){String title=switch(key){case "linkedProfiles"->"Profile mit Alt-Hinweisen";case "groups"->"Verknüpfte Gruppen";case "extraAccounts"->"Zusätzliche Konten in Gruppen";case "largestGroup"->"Größte Gruppe";case "directPairs"->"Direkte Verbindungen";default->"Gespeicherte Geräte";};rows.add(AdminUpdateMenu.info(title,String.valueOf(data.get(key)),Material.PLAYER_HEAD));}
+        for(String key:List.of("linkedProfiles","groups","extraAccounts","largestGroup","directPairs","devices"))if(data.get(key)!=null){String title=switch(key){case "linkedProfiles"->"Profile mit Alt-Hinweisen";case "groups"->"Verknüpfte Gruppen";case "extraAccounts"->"Zusätzliche Konten in Gruppen";case "largestGroup"->"Größte Gruppe";case "directPairs"->"Direkte Verbindungen";default->"Gespeicherte Geräte";};rows.add(AdminUpdateMenu.info(title,String.valueOf(data.get(key)),Material.PLAYER_HEAD));}
         rows.add(new AdminUpdateMenu.Button("IP-Ausschlüsse verwalten","Ausnehmen, freigeben, gespeicherte IPs löschen und Verknüpfungen reparieren",Material.COMPASS,()->openAltIps(admin,0)));
         rows.add(new AdminUpdateMenu.Button("Aktualisieren",Boolean.TRUE.equals(data.get("loading"))?"Analyse läuft im Hintergrund":"Neue Auswertung laden",Material.CLOCK,()->openAltDashboard(admin)));
         for(Object raw:(List<?>)data.get("items")){Map<?,?> item=(Map<?,?>)raw;UUID id=UUID.fromString(String.valueOf(item.get("id")));rows.add(new AdminUpdateMenu.Button(String.valueOf(item.get("name")),item.get("linked")+" verknüpfte Konten • "+item.get("devices")+" Geräte",Material.PLAYER_HEAD,()->{if(!(isBedrockAdmin(admin)&&bedrockMenus.openAltPlayer(admin,id)))openAltProfile(admin,id);}));}
@@ -15467,8 +15467,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 java.nio.file.Path backup=existingBackup==null?AltIpExclusions.backup(plugin.getDataFolder().toPath()):existingBackup;
                 resetMatchCache();
                 List<PlayerProfile> profiles=plugin.database.sortedProfiles();
-                AltMatchCacheEngine.Result beforeGraph=AltMatchCacheEngine.build(snapshotProfilesForCache(true),1,100,70,System.currentTimeMillis());
-                AltMatchCacheEngine.Result graph=AltMatchCacheEngine.build(snapshotProfilesForCache(),1,100,70,System.currentTimeMillis());
+                AltMatchCacheEngine.Result beforeGraph=AltRepairGraph.build(snapshotProfilesForCache(true),System.currentTimeMillis());
+                AltMatchCacheEngine.Result graph=AltRepairGraph.build(snapshotProfilesForCache(),System.currentTimeMillis());
                 int membersRemoved=0,anchorsRemoved=0,bansRemoved=0;
                 for(UltraBanGroup group:ultraGroups.values()) {
                     boolean touched=group.identities.values().stream().anyMatch(i->i.type.equals("IP")&&ipExclusions.contains(i.hash));
@@ -15484,13 +15484,13 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                     anchorsRemoved+=before-group.identities.size();
                 }
                 // Remove excluded IP bans and only derived anchors owned exclusively by now-unrelated profiles.
-                Map<UUID,Set<String>> allowed=new HashMap<>();Map<String,Set<UUID>> owners=new HashMap<>();for(PlayerProfile p:profiles)for(String key:identityKeysUnfiltered(p))owners.computeIfAbsent(key,k->new HashSet<>()).add(p.uuid);
+                Map<UUID,Set<String>> allowed=new HashMap<>();Map<UUID,Set<UUID>> priorComponents=new HashMap<>();Map<String,Set<UUID>> owners=new HashMap<>();for(PlayerProfile p:profiles)for(String key:identityKeysUnfiltered(p))owners.computeIfAbsent(key,k->new HashSet<>()).add(p.uuid);
                 for(var it=identityBans.entrySet().iterator();it.hasNext();) {
                     var entry=it.next();IdentityBan ban=entry.getValue();
                     boolean remove=ban.type.equals("IP")&&ipExclusions.contains(ban.hash);
                     if(!remove&&ban.sourceUuid!=null&&plugin.database.get(ban.sourceUuid)!=null) {
-                        Set<String> keys=allowed.computeIfAbsent(ban.sourceUuid,root->{Set<String> result=new HashSet<>();for(UUID id:graph.componentMembers.getOrDefault(root,List.of(root))){PlayerProfile p=plugin.database.get(id);if(p!=null)for(String key:identityKeysUnfiltered(p))if(!key.startsWith("IP|")||!ipExclusions.contains(key.substring(3)))result.add(key);}return result;});
-                        Set<UUID> prior=new HashSet<>(beforeGraph.componentMembers.getOrDefault(ban.sourceUuid,List.of(ban.sourceUuid)));
+                        Set<String> keys=allowed.computeIfAbsent(graph.componentMembers.getOrDefault(ban.sourceUuid,List.of(ban.sourceUuid)).get(0),root->{Set<String> result=new HashSet<>();for(UUID id:graph.componentMembers.getOrDefault(root,List.of(root))){PlayerProfile p=plugin.database.get(id);if(p!=null)for(String key:identityKeysUnfiltered(p))if(!key.startsWith("IP|")||!ipExclusions.contains(key.substring(3)))result.add(key);}return result;});
+                        Set<UUID> prior=priorComponents.computeIfAbsent(beforeGraph.componentMembers.getOrDefault(ban.sourceUuid,List.of(ban.sourceUuid)).get(0),root->new HashSet<>(beforeGraph.componentMembers.getOrDefault(root,List.of(root))));
                         boolean knownOwner=owners.getOrDefault(entry.getKey(),Set.of()).stream().anyMatch(prior::contains);
                         if(knownOwner&&!keys.contains(entry.getKey()))remove=true;
                     }
@@ -15503,7 +15503,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 if(plugin.suitePolicies!=null)for(PlayerProfile p:profiles)plugin.suitePolicies.reconcileAll(p.uuid);
                 if(plugin.moderationControl!=null)plugin.moderationControl.refreshOnline();
                 String report=membersRemoved+" abgeleitete Gruppenzuordnungen und "+anchorsRemoved+" Gruppenanker entfernt; "+bansRemoved+" IP-/abgeleitete Identitätssperren bereinigt. "+legacy+" alte Rechtekopien ohne Rücksetzbeleg zur manuellen Prüfung.";
-                ipExclusions.repaired(report);plugin.expansionAudit(actor,null,"Alt-IP-Reparatur",report+" Sicherung: "+backup.getFileName());
+                ipExclusions.repaired(report);markMatchCacheDirty();requestMatchCache(null);plugin.expansionAudit(actor,null,"Alt-IP-Reparatur",report+" Sicherung: "+backup.getFileName());
                 return appMap("ok",true,"title","IP-Regel gespeichert und Verknüpfungen repariert","description",report,"backup",backup.getFileName().toString(),"legacyRightsReview",legacy);
             }catch(java.io.IOException error){throw new IllegalStateException("IP-Reparatur unvollständig; Ausschlüsse bleiben aktiv. "+error.getMessage(),error);}
         }

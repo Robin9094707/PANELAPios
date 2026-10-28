@@ -1091,8 +1091,13 @@ final class AdminPowerToolsManager implements Listener {
 
     private void copyPolicyRights(AltRightsPolicy policy,SimplexAdminSuite.PlayerProfile source,SimplexAdminSuite.PlayerProfile target){
         Map<String,String> original=policy.originals.computeIfAbsent(target.uniqueId(),id->new LinkedHashMap<>());
-        for(String right:plugin.powerRights())original.putIfAbsent(right,target.inheritedRightSnapshot(right));
-        copyKnownRights(source,target);
+        for(String right:plugin.powerRights()){
+            String baseline=target.inheritedRightSnapshot(right);
+            for(AltRightsPolicy other:altPolicies.values())if(other!=policy&&baseline.equals(other.applied.getOrDefault(target.uniqueId(),Map.of()).get(right))){baseline=other.originals.getOrDefault(target.uniqueId(),Map.of()).getOrDefault(right,baseline);break;}
+            original.putIfAbsent(right,baseline);
+        }
+        Map<String,String> own=new LinkedHashMap<>();for(String right:plugin.powerRights())if(plugin.suitePolicies!=null&&plugin.suitePolicies.ownsRight(target.uniqueId(),right))own.put(right,target.inheritedRightSnapshot(right));
+        copyKnownRights(source,target);own.forEach(target::restoreInheritedRight);
         Map<String,String> applied=new LinkedHashMap<>();for(String right:plugin.powerRights())applied.put(right,target.inheritedRightSnapshot(right));policy.applied.put(target.uniqueId(),applied);
     }
     synchronized int repairAltPolicies(){

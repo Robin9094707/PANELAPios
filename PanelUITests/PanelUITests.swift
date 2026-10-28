@@ -61,9 +61,9 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts[".BedrockDemo"].waitForExistence(timeout: 10)); capture("20-Suite-Alt-Accounts")
     }
     func testAltDashboardAndIgnoredInfrastructureIP() throws {
-        let card = app.buttons["workspace-online-simplex1"]
-        XCTAssertTrue(card.waitForExistence(timeout: 15)); card.tap()
-        XCTAssertTrue(app.staticTexts["Gefundene Profile"].waitForExistence(timeout: 10))
+        let server = app.buttons["server-simplex1"]
+        XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap()
+        XCTAssertTrue(app.buttons["showPlayers"].waitForExistence(timeout: 10))
         selectTab("Verwalten")
         XCTAssertTrue(app.buttons["adminSuiteHub"].waitForExistence(timeout: 10)); app.buttons["adminSuiteHub"].tap()
         let dashboard = app.buttons["Alt-Account-Dashboard & IP-Regeln"]

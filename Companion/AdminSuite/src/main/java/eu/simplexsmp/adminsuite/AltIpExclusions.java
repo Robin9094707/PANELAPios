@@ -18,7 +18,7 @@ final class AltIpExclusions {
         TreeSet<String> ips=new TreeSet<>();for(String ip:state.getProperty("excluded","").split(","))if(!ip.isBlank())ips.add(normalize(ip));excluded=Set.copyOf(ips);
     }
     static String normalize(String value){
-        if(value==null||!VpnIpCheckService.isIpLiteral(value.strip()))throw new IllegalArgumentException("Eine genaue IPv4- oder IPv6-Adresse ist erforderlich; keine Hostnamen oder CIDR-Netze.");
+        if(value==null||!(VpnIpCheckService.isIpLiteral(value.strip())||value.indexOf(':')>=0&&value.strip().matches("[0-9A-Fa-f:.]+")))throw new IllegalArgumentException("Eine genaue IPv4- oder IPv6-Adresse ist erforderlich; keine Hostnamen oder CIDR-Netze.");
         try {return InetAddress.getByName(value.strip()).getHostAddress();}catch(UnknownHostException error){throw new IllegalArgumentException("Ungültige IP-Adresse");}
     }
     static String canonical(String value){try{return normalize(value);}catch(IllegalArgumentException invalid){return value==null?"":value;}}
