@@ -95,8 +95,13 @@ struct SuitePlayerView: View {
                 NavigationLink("Client jetzt prüfen") { SuiteProbeView(suite:suite,player:player) }.disabled(!current["online"].bool)
                 if let action=actions.first(where:{$0.id=="moderation.banmode"}) {NavigationLink("Bannen: Account oder Alt-Gruppe") {SuiteActionView(suite:suite,action:action,preset:["player":.string(player),"mode":.string("account")])}}
             }
+            Section("Netzwerk & Verknüpfungen") {
+                SuiteNetworkContent(network: current["network"])
+                NavigationLink { SuiteDataListView(suite: suite, kind: "alts", player: player, actions: actions, panel: panel, server: server) } label: { Label("Alt-Accounts & deren Profile", systemImage: "person.2.badge.key.fill") }
+                NavigationLink { SuiteVPNPlatformView(suite: suite) } label: { Label("VPN-Plattformen & Standortdiagnose", systemImage: "network") }
+            }
             Section("Schnellaktionen") {
-                NavigationLink { SuiteDataListView(suite: suite, kind: "devices", player: player, actions: actions) } label: { Label("Alle Geräte anzeigen", systemImage: "iphone.and.arrow.right.inward") }
+                NavigationLink { SuiteDataListView(suite: suite, kind: "devices", player: player, actions: actions, panel: panel, server: server) } label: { Label("Alle Geräte anzeigen", systemImage: "iphone.and.arrow.right.inward") }
                 if let action = actions.first(where: { $0.id == "security.ultraban" }) {
                     NavigationLink { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player)]) } label: { Label("Ultrabann", systemImage: "shield.slash.fill").foregroundStyle(.red) }.accessibilityIdentifier("player-ultraban")
                 }
@@ -119,8 +124,8 @@ struct SuitePlayerView: View {
                 }
             }
             Section { DisclosureGroup("Spielerakte & gespeicherte Daten") {
-                NavigationLink { SuiteDataListView(suite: suite, kind: "alts", player: player, actions: actions) } label: { Label("Alt-Accounts & Belege", systemImage: "person.2.badge.key.fill") }
-                NavigationLink { SuiteDataListView(suite: suite, kind: "devices", player: player, actions: actions) } label: { Label("Geräte & Diagnose", systemImage: "iphone.and.arrow.right.inward") }
+                NavigationLink { SuiteDataListView(suite: suite, kind: "alts", player: player, actions: actions, panel: panel, server: server) } label: { Label("Alt-Accounts & Belege", systemImage: "person.2.badge.key.fill") }
+                NavigationLink { SuiteDataListView(suite: suite, kind: "devices", player: player, actions: actions, panel: panel, server: server) } label: { Label("Geräte & Diagnose", systemImage: "iphone.and.arrow.right.inward") }
                 NavigationLink { SuiteSnapshotsView(suite: suite, player: player, actions: actions) } label: { Label("Inventar-Snapshots", systemImage: "archivebox") }
                 NavigationLink { SuiteDataListView(suite: suite, kind: "inventory", player: player, actions: actions) } label: { Label("Aktuelles Inventar & Endertruhe", systemImage: "square.grid.3x3.fill") }.disabled(!current["online"].bool)
                 NavigationLink { SuiteNBTPathsView(suite: suite, panel: panel, server: server, player: player) } label: { Label("NBT-Editor öffnen", systemImage: "doc.badge.gearshape") }
@@ -136,7 +141,7 @@ struct SuitePlayerView: View {
                 if let updated { LabeledContent("Stand") { Text(updated, style: .time) } }
                 Text("Live-Werte stammen direkt aus der Suite. NBT-Dateien sind ein separater Speicherstand. Mit Admin Suite 9 können sie bei laufendem Server gespeichert werden, wenn der Spieler offline ist.").font(.footnote).foregroundStyle(.secondary)
             }
-        }.panelScreen().navigationTitle(name).navigationBarTitleDisplayMode(.inline).task(id: automatic) { await load(); while automatic && !Task.isCancelled { do { try await Task.sleep(for: .seconds(15)) } catch { return }; await load() } }.refreshable { await load() }.errorAlert($error)
+        }.panelScreen().navigationTitle(name).navigationBarTitleDisplayMode(.inline).task(id: automatic) { await load(); for _ in 0..<12 { guard current["network"]["pending"].bool && !Task.isCancelled else { break }; do { try await Task.sleep(for: .seconds(2)) } catch { return }; await load() }; while automatic && !Task.isCancelled { do { try await Task.sleep(for: .seconds(15)) } catch { return }; await load() } }.refreshable { await load() }.errorAlert($error)
     }
     func load() async { do { profile = try await suite.data("profile", query: ["player": player]); updated = Date()
         resolved = nil
@@ -147,6 +152,8 @@ struct SuiteDataListView: View {
     let kind: String
     let player: String
     let actions: [SuiteAction]
+    var panel: PanelAPI? = nil
+    var server: Server? = nil
     @State private var rows: [JSON] = []
     @State private var error: String?
     @State private var loaded = false
@@ -161,6 +168,11 @@ struct SuiteDataListView: View {
                         Text(row["name"].string).font(.headline).textSelection(.enabled)
                     }
                     if kind == "alts" {
+                        if let panel, let server {
+                            NavigationLink("Vollständiges Spielerprofil öffnen") { SuitePlayerView(suite: suite, panel: panel, server: server, player: row["id"].string, actions: actions) }
+                        }
+                        NavigationLink("Alle Geräte dieses Alt-Accounts") { SuiteDataListView(suite: suite, kind: "devices", player: row["id"].string, actions: actions, panel: panel, server: server) }
+                        NavigationLink("Weitere verknüpfte Accounts") { SuiteDataListView(suite: suite, kind: "alts", player: row["id"].string, actions: actions, panel: panel, server: server) }
                         HStack { Text(row["level"].string); Spacer(); Text("\(row["score"].int) / 100").font(.headline.monospacedDigit()).foregroundStyle(row["score"].int >= 85 ? .orange : .teal) }
                         ForEach(Array(row["evidence"].array.enumerated()), id: \.offset) { _, line in Text(line.string).font(.subheadline) }
                         Text(row["safe"].bool ? "Für automatische Kaskaden als ausreichend eingestuft" : "Hinweis auf Zusammenhang; keine sichere Identität bewiesen").font(.caption).foregroundStyle(.secondary)
@@ -244,11 +256,48 @@ struct SuiteNBTPathsView: View {
     let player: String
     @State private var rows: [JSON] = []
     @State private var editor: EditorItem?
+    @State private var panelOnly = false
+    @State private var busy = false
     @State private var error: String?
     var body: some View {
-        List { Section { Text(suite.features.contains("offline-player-nbt-v1") ? "Die Suite prüft den Offline-Status direkt auf dem Server, erkennt Dateikonflikte und sichert vor Änderungen die Originaldatei. Der Server kann weiterlaufen. Vollzugriff erforderlich." : "Diese Suite-Version bietet noch keine Offline-Prüfung für NBT. Der Editor nutzt die Panel-Dateiverwaltung und erlaubt Speichern nur bei gestopptem Server.").font(.footnote).foregroundStyle(.secondary) }; ForEach(rows, id: \.["id"].string) { row in Section { Text(row["name"].string).font(.headline); Text(row["id"].string).font(.caption.monospaced()).textSelection(.enabled); Button("Im NBT-Editor öffnen", systemImage: "doc.badge.gearshape") { editor = EditorItem(path: row["id"].string) }.requiresAccess(panel, server.id, "file.read-content") } }; if rows.isEmpty { Text("Keine gespeicherte Spielerdatei in den geladenen Welten gefunden.").foregroundStyle(.secondary) } }.panelScreen().navigationTitle("Spieler-NBT").task { await load() }.refreshable { await load() }.errorAlert($error).sheet(item: $editor) { NBTEditor(api: panel, server: server, path: $0.path, suite: suite.features.contains("offline-player-nbt-v1") ? suite : nil, player: player) }
+        List {
+            Section {
+                Text("Direkte UUID-Suche in players/data und playerdata. Die Suite sichert vor Änderungen die Originaldatei und prüft Offline-Status sowie Dateikonflikte. Bei einem Fund ausschließlich über die Panel-API muss zum Speichern der Server gestoppt sein.").font(.footnote).foregroundStyle(.secondary)
+                CopyButton(text: player, title: "UUID kopieren")
+                if busy { ProgressView("Zugehörige UUID-Datei suchen …") }
+                Button("Erneut suchen", systemImage: "magnifyingglass") { Task { await load() } }.disabled(busy)
+            }
+            ForEach(rows, id: \.["id"].string) { row in
+                Section {
+                    Text(row["name"].string).font(.headline)
+                    Text(row["id"].string).font(.caption.monospaced()).textSelection(.enabled)
+                    if row["panelOnly"].bool { Text("Über die Panel-API gefunden · Speichern bei gestopptem Server").font(.caption).foregroundStyle(.orange) }
+                    Button("Im NBT-Editor öffnen", systemImage: "doc.badge.gearshape") { open(row) }.requiresAccess(panel, server.id, "file.read-content")
+                }
+            }
+            if rows.isEmpty && !busy { Text("Keine passende UUID.dat gefunden. Geprüft werden die Weltpfade der Suite und anschließend gezielt die Weltordner über die Panel-API.").foregroundStyle(.secondary) }
+        }.panelScreen().navigationTitle("Spieler-NBT").task { await load() }.refreshable { await load() }.errorAlert($error)
+            .sheet(item: $editor) { NBTEditor(api: panel, server: server, path: $0.path, suite: !panelOnly && suite.features.contains("offline-player-nbt-v1") ? suite : nil, player: player) }
     }
-    func load() async { do { rows = try await suite.data("nbt-paths", query: ["player": player])["items"].array; if let preferred = rows.first { editor = EditorItem(path: preferred["id"].string) } } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
+    func open(_ row: JSON) { panelOnly = row["panelOnly"].bool; editor = EditorItem(path: row["id"].string) }
+    func load() async {
+        guard !busy else { return }; busy = true; defer { busy = false }; error = nil
+        do {
+            var suiteError: Error?
+            do { rows = try await suite.data("nbt-paths", query: ["player": player])["items"].array }
+            catch { if RequestFailure.isCancellation(error) { throw error }; rows = []; suiteError = error }
+            if rows.isEmpty {
+                var roots = ["/world"]
+                let top = (try? await panel.list("servers/\(server.id)/files/list", query: ["directory": "/"])) ?? []
+                roots += top.filter { !$0["is_file"].bool && !["plugins", "logs", "cache", "libraries", "versions", "backups"].contains($0["name"].string) }.prefix(32).map { "/" + $0["name"].string }
+                rows = try await PlayerNBTSearch.paths(player: player, roots: roots) { directory in
+                    try await panel.list("servers/\(server.id)/files/list", query: ["directory": directory])
+                }
+            }
+            if let preferred = rows.first { open(preferred) }
+            else if let suiteError { self.error = suiteError.localizedDescription }
+        } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }
+    }
 }
 struct SuiteSettingsView: View {
     let suite: SuiteAPI

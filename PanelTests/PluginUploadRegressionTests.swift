@@ -154,6 +154,33 @@ final class PluginUploadRegressionTests: XCTestCase {
         }
         XCTAssertEqual(changed.renames, 0)
     }
+    @MainActor func testSelectedJarValidatesWithoutDismissCallbackAndStagesSameBytes() async throws {
+        let host = Host()
+        try await withHost(host) { input, files in
+            let model = PluginUploadFlowModel()
+            await model.inspect(input.file, filename: input.filename, files: files)
+            XCTAssertNil(model.error); XCTAssertFalse(model.busy)
+            XCTAssertEqual(model.status, "Dateiprüfung erfolgreich")
+            let candidate = try XCTUnwrap(model.candidate)
+            XCTAssertEqual(candidate.next.version, "8.5.0")
+            XCTAssertEqual(try Data(contentsOf: candidate.file), Self.next)
+            _ = try await PluginUpdateInstaller.stage(candidate, files: files)
+            model.cleanup()
+            XCTAssertFalse(FileManager.default.fileExists(atPath: candidate.file.path))
+        }
+        XCTAssertEqual(host.files["/plugins/update/SimplexAdminSuite-8.5.0.jar"], Self.next)
+        XCTAssertEqual(host.files["/plugins/SimplexAdminSuite-8.4.0.jar"], Self.old)
+        XCTAssertEqual(host.files["/plugins/SimplexAdminSuite/config.yml"], Data("existing configuration".utf8))
+    }
+    @MainActor func testUnreadableSelectionShowsFailureAndRetryCanValidate() async throws {
+        try await withHost(Host()) { input, files in
+            let model = PluginUploadFlowModel()
+            await model.inspect(URL(fileURLWithPath: "/missing/upload.jar"), filename: input.filename, files: files)
+            XCTAssertNotNil(model.error); XCTAssertNil(model.candidate); XCTAssertFalse(model.busy)
+            await model.inspect(input.file, filename: input.filename, files: files)
+            XCTAssertNil(model.error); XCTAssertNotNil(model.candidate); model.cleanup()
+        }
+    }
     @MainActor func testFirstSelectionCarriesItsPluginAcrossCachedDismissClosureAndCancellation() throws {
         let handoff = FileImportHandoff(), cached = handoff
         let first = URL(fileURLWithPath: "/tmp/first.jar"), second = URL(fileURLWithPath: "/tmp/second.jar")

@@ -671,7 +671,11 @@ final class ModerationControl implements Listener {
         if(key.equals("discord-bot.profile.description")&&value.length()>400)throw new IllegalArgumentException("Bot-Bio: maximal 400 Zeichen.");
         if(key.startsWith("admin-update.feedback.")&&key.endsWith("-sound"))next=SimplexAdminSuite.validatedMenuSound(value);
         if(key.equals("admin-update.feedback.volume-percent")&&(!(next instanceof Number n)||n.intValue()<0||n.intValue()>100))throw new IllegalArgumentException("Lautstärke: 0 bis 100 Prozent.");
-        plugin.getConfig().set(key,next);plugin.saveConfig();plugin.suiteAudit(sender.getName(),"Suite-Konfiguration",key+" • "+String.valueOf(prior)+" → "+String.valueOf(next));
+        if(key.equals("vpn-protection.target-platform")&&!Set.of("both","java","bedrock").contains(value))throw new IllegalArgumentException("both, java oder bedrock erforderlich.");
+        plugin.getConfig().set(key,next);plugin.saveConfig();
+        if(key.startsWith("vpn-protection."))plugin.refreshVpnSettings();
+        if(key.equals("client-control.geo.enabled")&&plugin.securityHub!=null)plugin.securityHub.reload();
+        plugin.suiteAudit(sender.getName(),"Suite-Konfiguration",key+" • "+String.valueOf(prior)+" → "+String.valueOf(next));
     }
     private static String settingLabel(String key){
         if(key.equals("prefix"))return "Nachrichtenpräfix";

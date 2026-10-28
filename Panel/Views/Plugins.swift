@@ -13,8 +13,7 @@ struct PluginsView: View {
     @State private var refreshID = UUID()
     @State private var error: String?
     @State private var operation: Operation?
-    @State private var importer = false
-    @StateObject private var handoff = FileImportHandoff()
+    @State private var upload: PluginUploadTarget?
     @State private var candidate: PluginUpdateCandidate?
     @State private var stagedLocal: URL?
     @State private var busy = false
@@ -44,9 +43,9 @@ struct PluginsView: View {
                 ForEach(jars, id: \.["name"].string) { entry in
                     let name = entry["name"].string
                     if let status = updates.cache.statuses[name], status.release != nil { Label(status.text, systemImage: "arrow.down.circle.fill").font(.caption).foregroundStyle(Color.panelAccent) }
-                    PluginListRow(api: api, server: server, entry: entry, pending: pending, updateDirectory: updateDirectory, refreshID: refreshID, busy: busy || importer || candidate != nil, details: {
+                    PluginListRow(api: api, server: server, entry: entry, pending: pending, updateDirectory: updateDirectory, refreshID: refreshID, busy: busy || upload != nil || candidate != nil, details: {
                         detail = PluginDetailSelection(entry: entry)
-                    }, update: { handoff.begin(target: name); importer = true }, toggle: { rename(name) }, remove: {
+                    }, update: { upload = PluginUploadTarget(filename: name) }, toggle: { rename(name) }, remove: {
                         operation = Operation(title: "Plugin löschen", detail: "\(name) wird endgültig gelöscht. Stoppe den Server zuerst. Der Konfigurationsordner bleibt erhalten.", path: prefix + "/delete", fixed: ["root": .string("/plugins"), "files": .array([.string(name)])], destructive: true, submit: "JAR löschen")
                     }, catalog: api.plugins)
                 }
@@ -60,14 +59,10 @@ struct PluginsView: View {
                     try await commit(value)
                 }
             }
-            .sheet(isPresented: $importer, onDismiss: {
-                if let selection = handoff.takeSelection() { inspect(selection.file, filename: selection.target) }
-                if let issue = handoff.takeError() { error = issue }
-            }) {
-                FileImportPicker(retainSelection: true) { result in
-                    handoff.receive(result)
-                    importer = false
-                }.ignoresSafeArea()
+            .sheet(item: $upload, onDismiss: { Task { await load(); refreshID = UUID() } }) { target in
+                PluginUploadFlow(api: api, server: server, filename: target.filename) { value in
+                    try await commit(value)
+                }
             }
     }
     func load() async {

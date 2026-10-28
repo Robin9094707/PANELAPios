@@ -518,6 +518,8 @@ client-security:
     minimum-jaccard: 0.68
 
 vpn-protection:
+  # both (Standard), java oder bedrock; ausgeschlossene Plattformen ohne API-/Cooldown-Prüfung.
+  target-platform: both
   # Vollständig integrierter PreLogin-Schutz. Es gibt bewusst weder Geo-Blocking noch einen
   # automatischen OP-/Admin-Bypass. Whitelist-Einträge werden vor jeder externen API-Abfrage geprüft.
   enabled: true

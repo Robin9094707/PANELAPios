@@ -102,6 +102,7 @@ final class VpnIpCheckService implements AutoCloseable {
         return new VpnCheckResult(ip, country, signals, risk, highConfidence, positive, false, allFailed, reason, providers);
     }
 
+    VpnCheckResult cached(String ip) { CacheEntry entry=cache.get(ip);return entry!=null&&entry.expiresAt>System.currentTimeMillis()?entry.result:null; }
     int cacheSize() { return cache.size(); }
     void clearCache() { cache.clear(); }
 

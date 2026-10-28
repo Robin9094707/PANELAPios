@@ -70,7 +70,7 @@ struct SuiteSecurityCenterView: View {
                     Picker("Bannquelle", selection: $source) { Text("Admin Suite").tag("internal"); Text("Client-Prüfung").tag("client"); Text("Minecraft").tag("minecraft"); Text("LiteBans").tag("litebans") }
                     NavigationLink { SuiteUltraView(suite: suite, actions: actions) } label: { Label("Ultrabanns & Identitätsgruppen", systemImage: "person.2.slash") }
                 }
-                if area == .vpn { Picker("Bereich", selection: $source) { Text("Whitelist").tag("vpn-whitelist"); Text("Letzte Kicks").tag("vpn-kicks") }.pickerStyle(.segmented) }
+                if area == .vpn { NavigationLink("Geprüfte Plattformen & IP-Diagnose") { SuiteVPNPlatformView(suite: suite) }; Picker("Bereich", selection: $source) { Text("Whitelist").tag("vpn-whitelist"); Text("Letzte Kicks").tag("vpn-kicks") }.pickerStyle(.segmented) }
                 if area == .events { Button("Bark & Alarmtöne", systemImage: "bell.and.waves.left.and.right") { bark = true }.disabled(suite.scope != "full") }
             }
             if !model.message.isEmpty { Section { Text(model.message).foregroundStyle(.secondary) } }
