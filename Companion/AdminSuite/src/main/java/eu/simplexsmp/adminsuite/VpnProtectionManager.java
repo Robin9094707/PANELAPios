@@ -246,9 +246,9 @@ final class VpnProtectionManager implements Listener {
     private final Set<String> profilePending = ConcurrentHashMap.newKeySet();
     VpnCheckResult profileResult(UUID uuid,String name,String ip,boolean bedrock) {
         VpnIpCheckService service=checks;VpnSettings policy=settings;
-        if(service==null||policy==null||!policy.enabled()||!policy.checksPlatform(bedrock))return null;
+        if(service==null||policy==null||!policy.enabled()||!policy.checksPlatform(bedrock)||whitelist.isWhitelisted(uuid,name))return null;
         VpnCheckResult known=service.cached(ip);
-        if(known==null&&GeoInsights.publicIp(ip)!=null&&profilePending.add(ip)) {
+        if(known==null&&plugin.getConfig().getBoolean("client-control.geo.enabled",false)&&GeoInsights.publicIp(ip)!=null&&profilePending.add(ip)) {
             Bukkit.getScheduler().runTaskAsynchronously(plugin,()->{try{service.check(ip,false);}finally{profilePending.remove(ip);}});
         }
         return known;

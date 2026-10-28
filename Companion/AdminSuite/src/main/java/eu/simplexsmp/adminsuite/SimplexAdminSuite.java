@@ -6746,10 +6746,11 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(raw==null){out.put("status","Keine Roh-IP gespeichert; frühere Hashes sind nicht umkehrbar");return out;}
         if(GeoInsights.publicIp(raw)==null){out.put("status","Lokale/private IP · keine externe Standortabfrage");return out;}
         VpnCheckResult vpn=vpnProtection==null?null:vpnProtection.profileResult(profile.uuid,profile.name,raw,"BEDROCK".equals(profile.clientPlatform));
-        boolean excluded=!new VpnSettings(getConfig()).checksPlatform("BEDROCK".equals(profile.clientPlatform));
+        boolean excluded=!new VpnSettings(getConfig()).checksPlatform("BEDROCK".equals(profile.clientPlatform))||(vpnProtection!=null&&vpnProtection.isWhitelisted(profile.uuid,profile.name));
+        boolean diagnose=getConfig().getBoolean("client-control.geo.enabled",false);
         boolean clean=vpn!=null&&!vpn.positive()&&!vpn.allProvidersFailed()&&!vpn.localAddress()&&vpn.signals()==0;
         out.put("vpn",vpn==null?"unknown":vpn.positive()?"detected":vpn.allProvidersFailed()?"unknown":"no-signal");
-        if(!clean){out.put("status",excluded?"Diese Plattform wird nicht auf VPN geprüft; Standort bleibt ausgeblendet":vpn==null?"VPN-Status wird geprüft oder VPN-Schutz ist deaktiviert":vpn.positive()||vpn.signals()>0?"VPN-/Proxy-/Hosting-Hinweis; Standort ausgeblendet":"VPN-Prüfung ohne verlässliches Ergebnis");out.put("pending",!excluded&&vpn==null&&getConfig().getBoolean("vpn-protection.enabled",true));return out;}
+        if(!clean){out.put("status",excluded?"VPN-Ausnahme oder ausgeschlossene Plattform; Standort bleibt ausgeblendet":vpn==null?(diagnose?"VPN-Status wird geprüft oder VPN-Schutz ist deaktiviert":"VPN-Status unbekannt · Standortdiagnose ausgeschaltet"):vpn.positive()||vpn.signals()>0?"VPN-/Proxy-/Hosting-Hinweis; Standort ausgeblendet":"VPN-Prüfung ohne verlässliches Ergebnis");out.put("pending",diagnose&&!excluded&&vpn==null&&getConfig().getBoolean("vpn-protection.enabled",true));return out;}
         if(securityHub==null||!getConfig().getBoolean("client-control.geo.enabled",false)){out.put("status","Standortdiagnose ist ausgeschaltet");return out;}
         String key=geoIpKey(raw);securityHub.geo.enqueue(key,raw);GeoInsights.Result result=securityHub.geo.get(key);
         if(result==null||System.currentTimeMillis()-result.at()>7L*86400000){out.put("pending",true);out.put("status","Ungefährer IP-Standort wird geladen; bei API-Limit später erneut versuchen");return out;}
@@ -6766,7 +6767,14 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if(isBedrockAdmin(admin)){adminUpdate.prompt(admin,"Roh-IP kopieren",ip,ignored->openNetworkProfile(admin,id));}
             else {admin.closeInventory();admin.sendMessage(net.kyori.adventure.text.Component.text("IP kopieren: "+ip).clickEvent(net.kyori.adventure.text.event.ClickEvent.copyToClipboard(ip)));}
         }));
-        items.add(AdminUpdateMenu.info("IP-Standort",String.valueOf(data.get("status"))+"\n"+String.valueOf(data.getOrDefault("location","")),Material.MAP));
+        items.add(AdminUpdateMenu.info("IP-Standort",String.valueOf(data.get("status")),Material.MAP));
+        if(data.get("location") instanceof Map<?,?> location){
+            for(String field:List.of("country","region","city","postal","isp","timezone")) {
+                String label=switch(field){case "country"->"Land";case "region"->"Region";case "city"->"Ungefähre Stadt";case "postal"->"Ungefähre PLZ";case "isp"->"Internetanbieter";default->"Zeitzone";};
+                String value=String.valueOf(location.get(field));if(!value.isBlank())items.add(AdminUpdateMenu.info(label,value,Material.MAP));
+            }
+            items.add(AdminUpdateMenu.info("Quelle: ipwho.is","7 Tage Cache · ungefähre IP-Zuordnung, kein Wohnortnachweis",Material.BOOK));
+        }
         items.add(new AdminUpdateMenu.Button("Aktualisieren","VPN- und Standortcache erneut anzeigen",Material.CLOCK,()->openNetworkProfile(admin,id)));
         items.add(new AdminUpdateMenu.Button("Alt-Accounts","Verknüpfte Profile, Geräte und Belege",Material.PLAYER_HEAD,()->{if(!(isBedrockAdmin(admin)&&bedrockMenus.openAltPlayer(admin,id)))openAltProfile(admin,id);}));
         items.add(new AdminUpdateMenu.Button("Alle Geräte","Geräte dieses Profils",Material.COMPARATOR,()->{if(!has(admin,"simplexadminsuite.alts.identities"))return;List<AdminUpdateMenu.Button> devices=new ArrayList<>();for(DeviceRecord d:profile.devices.values())devices.add(new AdminUpdateMenu.Button(d.model.isBlank()?d.id:d.model,d.platform+" • "+d.os,Material.COMPARATOR,()->openDeviceDiagnostics(admin,id,d.id,0,"fields")));devices.add(new AdminUpdateMenu.Button("Zurück","Netzwerk",Material.OAK_DOOR,()->openNetworkProfile(admin,id)));adminUpdate.show(admin,"Geräte · "+profile.name,devices,0);}));
