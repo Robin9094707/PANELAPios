@@ -66,6 +66,11 @@ final class AppApiManager {
     private void extra(String id,String description,String group,List<?> options){actions.put(id,new LinkedHashMap<>(SimplexAdminSuite.appMap("id",id,"name",description,"description",description,"group",group,"scope",scope(id),"options",options)));}
     private static Map<String,Object> field(String id,String label,int type,boolean required){return SimplexAdminSuite.appMap("name",id,"description",label,"type",type,"required",required);}
     private static Map<String,Object> choice(String id,String label,String... values){var f=field(id,label,3,true);f.put("choices",Arrays.stream(values).map(v->SimplexAdminSuite.appMap("name",switch(v){case "health"->"Gesundheit";case "food"->"Hunger";case "saturation"->"Sättigung";case "level"->"Erfahrungslevel";case "exp"->"XP-Anteil";case "gamemode"->"Spielmodus";case "invulnerable"->"Unverwundbarkeit";case "allowFlight"->"Flug erlauben";default->v;},"value",v)).toList());return f;}
+    static int countdown(Object value){
+        double seconds=Double.parseDouble(String.valueOf(value));
+        if(!Double.isFinite(seconds)||seconds<1||seconds>60||seconds!=(int)seconds)throw new IllegalArgumentException("Countdown muss eine ganze Zahl von 1 bis 60 Sekunden sein");
+        return (int)seconds;
+    }
     static String scope(String path){return Set.of("restart.apply","alts.ip","management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
     void reload(){
         stopListener();menus.clear();long rev=generation.get();

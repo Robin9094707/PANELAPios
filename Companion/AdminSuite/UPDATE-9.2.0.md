@@ -1,4 +1,4 @@
-# Simplex Panel 2.9.0 · Adminrechte & Live-Kommunikation
+# Simplex Admin Suite 9.2.0 · Adminrechte & App-Anbindung
 
 Mit Admin Suite 9.2.0 verwenden. App-Bundle-ID, Schlüsselbund, gespeicherte Server, Layouts und Einstellungen bleiben unverändert.
 

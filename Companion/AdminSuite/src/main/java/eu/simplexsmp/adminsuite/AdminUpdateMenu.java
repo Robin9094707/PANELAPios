@@ -529,7 +529,7 @@ final class AdminUpdateMenu implements Listener {
     List<Button> b = new ArrayList<>();
     b.add(
         button(
-            "Rolle: " + roleLabel(plugin.adminAccess.role(target)),
+            "Rolle: " + plugin.adminAccess.roleLabel(target),
             "Klick: Rolle auswählen; Einzelrechte bleiben erhalten",
             () -> roles(p, target, name)));
     b.add(
@@ -542,8 +542,11 @@ final class AdminUpdateMenu implements Listener {
                     "Rechtefilter (leer = alle)",
                     filter,
                     q -> rights(p, target, name, 0, q.toLowerCase(Locale.ROOT)))));
+    if(plugin.adminAccess.role(target)==AdminAccessManager.Role.CUSTOM)b.add(button("Rollen-Bannschutz bearbeiten","Banndauer und Alt-Banns gelten für alle Mitglieder dieser Rolle",()->customRole(p,plugin.adminAccess.customRole(target),0,"")));
+    else {
     b.add(button("Maximale Banndauer", "Aktuell: "+plugin.adminAccess.maxBanSeconds(target)+" Sekunden • -1 = kein Bann, 0 = unbegrenzt",()->prompt(p,"Maximale Banndauer in Sekunden (-1 / 0 / z. B. 259200)","259200",value->{if(!plugin.adminAccess.master(p))return;try{plugin.adminAccess.limits(p.getName(),target,Long.parseLong(value),plugin.adminAccess.altBansFor(target));}catch(RuntimeException e){plugin.menuError(p,e.getMessage());}rights(p,target,name,0,filter);})));
     b.add(button("Alt-Account-Banns: "+(plugin.adminAccess.altBansFor(target)?"ERLAUBT":"GESPERRT"),"Zusätzliche Freigabe; Aktionsrecht und Banndauer gelten weiterhin",()->{if(!plugin.adminAccess.master(p))return;plugin.adminAccess.limits(p.getName(),target,plugin.adminAccess.maxBanSeconds(target),!plugin.adminAccess.altBansFor(target));rights(p,target,name,0,filter);}));
+    }
     if(filter.isBlank())for(String group:plugin.adminAccess.nodes().stream().filter(AdminAccessManager::administrative).map(AdminPermissionText::group).distinct().sorted().toList())b.add(button(group,"Berechtigungen mit deutschen Beschreibungen",()->rights(p,target,name,0,group.toLowerCase(Locale.ROOT))));
     for (String node : plugin.adminAccess.nodes())
       if (!filter.isBlank() && AdminAccessManager.administrative(node) && (AdminPermissionText.group(node)+" "+AdminPermissionText.name(node)+" "+node).toLowerCase(Locale.ROOT).contains(filter)) {

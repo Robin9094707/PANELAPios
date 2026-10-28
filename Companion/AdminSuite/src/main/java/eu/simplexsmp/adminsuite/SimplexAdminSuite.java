@@ -8515,7 +8515,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     Object appRestart(Map<String,Object> values,String actor){
         String operation=String.valueOf(values.getOrDefault("operation","schedule"));
         if(operation.equals("cancel")){if(!restartManager.cancel(actor))throw new IllegalArgumentException("Kein Neustart geplant");}
-        else if(operation.equals("schedule")){Object rawSeconds=values.getOrDefault("seconds","30");int seconds=rawSeconds instanceof Number n?n.intValue():Integer.parseInt(String.valueOf(rawSeconds));if(seconds<1||seconds>60)throw new IllegalArgumentException("Countdown muss 1–60 Sekunden betragen");if(restartManager.active())throw new IllegalArgumentException("Bereits ein Neustart geplant");
+        else if(operation.equals("schedule")){int seconds=AppApiManager.countdown(values.getOrDefault("seconds","30"));if(seconds<1||seconds>60)throw new IllegalArgumentException("Countdown muss 1–60 Sekunden betragen");if(restartManager.active())throw new IllegalArgumentException("Bereits ein Neustart geplant");
             String de=String.valueOf(values.getOrDefault("reasonDE","")),en=String.valueOf(values.getOrDefault("reasonEN",""));if(de.length()>200||en.length()>200)throw new IllegalArgumentException("Grund: maximal 200 Zeichen je Sprache");
             restartManager.reasonDE=stripFormatting(de);restartManager.reasonEN=stripFormatting(en);restartManager.localized=true;restartManager.schedule(actor,seconds);
         }else throw new IllegalArgumentException("Unbekannte Neustartaktion");
@@ -8526,7 +8526,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         for(PlayerProfile p:database.sortedProfiles()){
             Player online=Bukkit.getPlayer(p.uuid);Map<String,Boolean> lp=luckPerms==null?Map.of():luckPerms.permissions.getOrDefault(p.uuid,Map.of());
             if(!adminAccess.hasAccess(p.uuid,online,lp))continue;
-            rows.add(appMap("id",p.uuid.toString(),"name",p.name,"role",AdminAccessManager.roleName(adminAccess.role(p.uuid)),"online",online!=null,"operator",Bukkit.getOfflinePlayer(p.uuid).isOp(),"effective",true,"inheritedUnknown",false));
+            rows.add(appMap("id",p.uuid.toString(),"name",p.name,"role",adminAccess.roleLabel(p.uuid),"online",online!=null,"operator",Bukkit.getOfflinePlayer(p.uuid).isOp(),"effective",true,"inheritedUnknown",false));
         }
         return appMap("items",rows,"refreshing",luckPerms!=null&&luckPerms.refreshing);
     }
@@ -13880,7 +13880,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if (task != null) return false;
             initiatedBy = actor == null || actor.isBlank() ? "System" : plugin.sanitizeText(actor, 80);
             restartIssued = false;
-            remainingSeconds = Math.max(1, Math.min(60, requestedSeconds));
+            remainingSeconds = localized ? Math.max(1, Math.min(60, requestedSeconds)) : Math.max(5, Math.min(300, requestedSeconds));
             announce(remainingSeconds, true);
             if (plugin.discordStatus != null) plugin.discordStatus.markRestarting(initiatedBy, remainingSeconds);
             if (plugin.discordBot != null) plugin.discordBot.markRestarting(remainingSeconds);

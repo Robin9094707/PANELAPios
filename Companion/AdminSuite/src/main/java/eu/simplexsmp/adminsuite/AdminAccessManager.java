@@ -134,6 +134,7 @@ final class AdminAccessManager {
     static String roleName(Role role) { return switch(role) {
         case INHERIT->"LuckPerms / Bukkit übernehmen"; case FULL->"Volladministrator"; case MODERATOR->"Moderator"; case SUPPORT->"Support"; case READ_ONLY->"Nur lesen";
         case JUNIOR_ADMIN->"Junior-Admin · nur kicken"; case TEMP_MODERATOR->"Zeitbann-Moderator · maximal 3 Tage"; case CUSTOM->"Eigene Rolle"; case NONE->"Kein Admin-Zugang"; }; }
+    synchronized String roleLabel(UUID id){return role(id)==Role.CUSTOM?state.getProperty("custom."+customRole(id)+".name","Eigene Rolle"):roleName(role(id));}
     static long defaultLimit(Role role) { return switch(role) {case FULL,INHERIT->0;case JUNIOR_ADMIN,SUPPORT,READ_ONLY,NONE->-1;default->259200;}; }
     synchronized long maxBanSeconds(UUID id) {
         String prefix=role(id)==Role.CUSTOM?"custom."+customRole(id):id.toString();
@@ -172,6 +173,7 @@ final class AdminAccessManager {
         } else changeAuthorized(actor,id,null,null,Role.valueOf(selected));
     }
     synchronized void limits(String actor,UUID id,long max,boolean alt) {
+        if(role(id)==Role.CUSTOM)throw new IllegalArgumentException("Bannschutz bitte in der eigenen Rolle ändern; er gilt für alle Mitglieder.");
         if(id.equals(owner)||Bukkit.getOfflinePlayer(id).isOp())throw new IllegalArgumentException("Hauptoperator ist geschützt");
         if(max < -1 || max>315360000)throw new IllegalArgumentException("Banndauer außerhalb des Bereichs");
         Properties before=new Properties();before.putAll(state);
