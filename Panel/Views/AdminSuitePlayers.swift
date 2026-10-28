@@ -33,32 +33,33 @@ struct SuitePlayersView: View {
     var initialFilter: SuitePlayerFilter = .all
     @ObservedObject private var directory: SuiteDirectory
     @State private var search = ""
+    @State private var lastSelection = ""
     @State private var filter: SuitePlayerFilter
     init(suite: SuiteAPI, panel: PanelAPI, server: Server, actions: [SuiteAction], initialFilter: SuitePlayerFilter = .all) {
         self.suite = suite; self.panel = panel; self.server = server; self.actions = actions; self.initialFilter = initialFilter
         _filter = State(initialValue: initialFilter); _directory = ObservedObject(wrappedValue: suite.playerDirectory)
     }
-    var visible: [JSON] { SuitePlayerPresentation.sorted(directory.rows.filter { search.isEmpty || ($0["name"].string + " " + $0["id"].string).localizedCaseInsensitiveContains(search) }, filter: filter) }
+    var visible: [JSON] { directory.rows.filter { filter == .all || (filter == .online ? $0["online"].bool : !$0["online"].bool) } }
     var body: some View {
         List {
             Section {
                 Picker("Spieler anzeigen", selection: $filter) { ForEach(SuitePlayerFilter.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
                 LabeledContent("Gefundene Profile", value: String(directory.total))
-                Text("Spieler suchen und öffnen: Gerät, alle Geräte, Live-Werte und Moderation an einem Ort.").font(.footnote).foregroundStyle(.secondary)
+                Text("Gezielte Suche · 50 Profile pro Seite. Bereits geladene Listen bleiben beim Zurückgehen erhalten.").font(.footnote).foregroundStyle(.secondary)
             }
             Section(filter == .recent ? "Offline · zuletzt gesehen zuerst" : filter.rawValue) {
                 ForEach(visible, id: \.["id"].string) { row in
                     NavigationLink { SuitePlayerView(suite: suite, panel: panel, server: server, player: row["id"].string, actions: actions, initialProfile: row) } label: { SuitePlayerRow(row: row, suite: suite) }
                 }
-                if directory.busy { ProgressView(filter == .recent ? "Letzte Aktivitäten aller Profile laden …" : "Spieler laden …") }
+                if directory.busy { ProgressView("Spieler laden …") }
                 if visible.isEmpty && !directory.busy { ContentUnavailableView("Keine Spieler gefunden", systemImage: "person.crop.circle.badge.questionmark", description: Text("Suche nach einem Namen oder wechsle den Filter.")) }
-                if directory.next >= 0 && !directory.busy && filter != .online { Button("Weitere Spieler laden") { Task { await load(reset: false) } } }
+                if directory.next >= 0 && !directory.busy { Button("Weitere Spieler laden") { Task { await load(reset: false) } } }
             }
         }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Spieler").searchable(text: $search, prompt: "Name oder UUID").textInputAutocapitalization(.never).autocorrectionDisabled()
-            .task { await directory.snapshot(suite: suite) }
-            .refreshable { await directory.snapshot(suite: suite, force: true) }.toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Neu laden", systemImage: "arrow.clockwise") { Task { await directory.snapshot(suite: suite, force: true) } }.disabled(directory.busy) } }.errorAlert($directory.error)
+            .task(id: filter.rawValue + "|" + search) { do { if !search.isEmpty { try await Task.sleep(for: .milliseconds(300)) }; try Task.checkCancellation(); let selection = filter.rawValue + "|" + search; let freshSearch = !search.isEmpty && selection != lastSelection; lastSelection = selection; await load(reset: true, force: freshSearch) } catch {} }
+            .refreshable { await load(reset: true, force: true) }.toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Neu laden", systemImage: "arrow.clockwise") { Task { await load(reset: true, force: true) } }.disabled(directory.busy) } }.errorAlert($directory.error)
     }
-    func load(reset: Bool) async { await directory.load(suite: suite, query: search, filter: filter, reset: reset) }
+    func load(reset: Bool, force: Bool = false) async { await directory.load(suite: suite, query: search, filter: filter, reset: reset, force: force) }
 }
 struct SuitePlayerView: View {
     let suite: SuiteAPI
@@ -69,7 +70,8 @@ struct SuitePlayerView: View {
     var initialProfile: JSON = .null
     @State private var profile: JSON = .null
     @State private var error: String?
-    @State private var automatic = false
+    @State private var automatic = true
+    @State private var vpnSheet = false
     @State private var updated: Date?
     @State private var resolved: PlayerPlatform?
     var current: JSON { profile == .null ? initialProfile : profile }
@@ -85,24 +87,44 @@ struct SuitePlayerView: View {
                 if !current["brand"].string.isEmpty { SuiteDetailRow(title: "Client-Brand (Selbstangabe)", value: current["brand"].string) }
                 LabeledContent("Plattform", value: (resolved ?? PlayerPlatform.resolve(current)).title)
                 SuiteDetailRow(title: current["online"].bool ? "Aktuelles Gerät" : "Letztes Gerät", value: SuitePlayerPresentation.device(current)).accessibilityIdentifier("player-device")
-                if let date = SuitePlayerPresentation.date(current["lastSeen"]), !current["online"].bool { LabeledContent("Zuletzt online") { Text(date, format: .dateTime.day().month().year().hour().minute()) } }
+                if let date = SuitePlayerPresentation.date(current["lastSeen"]), !current["online"].bool { LabeledContent("Zuletzt online") { Text(SuiteGermanTime.text(date)) } }
                 if !current["version"].string.isEmpty { LabeledContent("Spielversion", value: current["version"].string) }
                 LabeledContent("Simplex Points", value: current["points"].string)
                 LabeledContent("Warnungen", value: current["warnings"].string)
             }
+            Section("Inventar & Speicherstand") {
+                if current["inventoryPreview"] != .null {
+                    LabeledContent("Belegte Inventarplätze", value: current["inventoryPreview"]["occupied"].string + " / 36")
+                    ForEach(current["inventoryPreview"]["items"].array, id: \.["id"].string) { item in Label(item["name"].string + " × " + item["amount"].string, systemImage: "shippingbox.fill").font(.caption).foregroundStyle(.secondary) }
+                }
+                NavigationLink { SuiteDataListView(suite: suite, kind: "inventory", player: player, actions: actions) } label: { Label("Aktuelles Inventar & Endertruhe", systemImage: "square.grid.3x3.fill") }.disabled(!current["online"].bool)
+                NavigationLink { SuiteNBTPathsView(suite: suite, panel: panel, server: server, player: player) } label: { Label("NBT-Editor öffnen", systemImage: "doc.badge.gearshape") }
+                NavigationLink { SuiteSnapshotsView(suite: suite, player: player, actions: actions) } label: { Label("Inventar-Snapshots", systemImage: "archivebox") }
+                if !current["online"].bool { Text("Offline-Inventar über den NBT-Editor oder einen gespeicherten Snapshot öffnen.").font(.caption).foregroundStyle(.secondary) }
+            }
+            if current["logoutLocation"] != .null {
+                Section("Zuletzt ausgeloggt") {
+                    LabeledContent("Welt", value: current["logoutLocation"]["world"].string)
+                    LabeledContent("Position", value: ["x", "y", "z"].map { String(format: "%.1f", current["logoutLocation"][$0].double) }.joined(separator: " / ")).font(.caption.monospaced()).textSelection(.enabled)
+                    CopyButton(text: current["logoutLocation"]["world"].string + " " + ["x", "y", "z"].map { String(format: "%.1f", current["logoutLocation"][$0].double) }.joined(separator: " / "), title: "Ausloggposition kopieren")
+                }
+            }
             Section("Spielerverwaltung") {
                 NavigationLink("Spielerrechte & Vererbung") { SuitePermissionView(suite:suite,player:player) }
                 NavigationLink("Client jetzt prüfen") { SuiteProbeView(suite:suite,player:player) }.disabled(!current["online"].bool)
-                if let action=actions.first(where:{$0.id=="moderation.banmode"}) {NavigationLink("Bannen: Account oder Alt-Gruppe") {SuiteActionView(suite:suite,action:action,preset:["player":.string(player),"mode":.string("account")])}}
             }
             Section("Netzwerk & Verknüpfungen") {
+                if current["vpnWhitelisted"] != .null {
+                    Toggle("VPN-Whitelist für diesen Spieler", isOn: Binding(get: { current["vpnWhitelisted"].bool }, set: { _ in vpnSheet = true })).disabled(suite.scope == "read" || suite.demo).accessibilityIdentifier("profile-vpn-whitelist")
+                    Text("Die Änderung wird vor dem Speichern geprüft und bestätigt.").font(.caption).foregroundStyle(.secondary)
+                }
                 SuiteNetworkContent(network: current["network"])
                 NavigationLink { SuiteAltDashboardView(suite: suite, panel: panel, server: server, actions: actions) } label: { Label("Alt-Account-Dashboard", systemImage: "chart.bar.xaxis") }
                 if !current["network"]["ip"].string.isEmpty {
                     if current["network"]["altExcluded"].bool { Label("Diese IP wird für Alt-Verknüpfungen ignoriert", systemImage: "shield.lefthalf.filled").font(.caption).foregroundStyle(.orange) }
                     NavigationLink { SuiteAltIPsView(suite: suite, initialIP: current["network"]["ip"].string) } label: { Label("Diese IP ausschließen / verwalten", systemImage: "network") }
                 }
-                NavigationLink { SuiteDataListView(suite: suite, kind: "alts", player: player, actions: actions, panel: panel, server: server) } label: { Label("Alt-Accounts & deren Profile", systemImage: "person.2.badge.key.fill") }
+                NavigationLink { SuiteDataListView(suite: suite, kind: "alts", player: player, actions: actions, panel: panel, server: server) } label: { Label(current["altCount"] == .null ? "Alt-Accounts & deren Profile" : "Alt-Accounts & deren Profile · \(current["altCount"].int)", systemImage: "person.2.badge.key.fill") }.accessibilityLabel("Alt-Accounts & deren Profile")
                 NavigationLink { SuiteVPNPlatformView(suite: suite) } label: { Label("VPN-Plattformen & Standortdiagnose", systemImage: "network") }
             }
             Section("Schnellaktionen") {
@@ -129,24 +151,20 @@ struct SuitePlayerView: View {
                 }
             }
             Section { DisclosureGroup("Spielerakte & gespeicherte Daten") {
-                NavigationLink { SuiteDataListView(suite: suite, kind: "alts", player: player, actions: actions, panel: panel, server: server) } label: { Label("Alt-Accounts & Belege", systemImage: "person.2.badge.key.fill") }
-                NavigationLink { SuiteDataListView(suite: suite, kind: "devices", player: player, actions: actions, panel: panel, server: server) } label: { Label("Geräte & Diagnose", systemImage: "iphone.and.arrow.right.inward") }
-                NavigationLink { SuiteSnapshotsView(suite: suite, player: player, actions: actions) } label: { Label("Inventar-Snapshots", systemImage: "archivebox") }
-                NavigationLink { SuiteDataListView(suite: suite, kind: "inventory", player: player, actions: actions) } label: { Label("Aktuelles Inventar & Endertruhe", systemImage: "square.grid.3x3.fill") }.disabled(!current["online"].bool)
-                NavigationLink { SuiteNBTPathsView(suite: suite, panel: panel, server: server, player: player) } label: { Label("NBT-Editor öffnen", systemImage: "doc.badge.gearshape") }
-                ForEach([("player.info", "Vollständige Spielerakte"), ("player.identity", "Identität & Ultrabann"), ("player.history", "Aktions- und Chatverlauf"), ("player.rights", "Alle Spielerrechte")], id: \.0) { route, title in NavigationLink(title) { SuiteReadView(suite: suite, path: route, title: title, values: ["player": .string(player), "category": .string("all")]) } }
+                ForEach([("player.info", "Vollständige Spielerakte"), ("player.identity", "Identität & Ultrabann"), ("player.history", "Aktions- und Chatverlauf")], id: \.0) { route, title in NavigationLink(title) { SuiteReadView(suite: suite, path: route, title: title, values: ["player": .string(player), "category": .string("all")]) } }
             }
             }
             Section { DisclosureGroup("Weitere Spieleraktionen") {
-                ForEach(actions.filter { ["player.right", "player.notes", "player.watchlist", "player.action", "player.message", "player.points", "player.nickname", "security.alt-ban", "moderation.restrict", "moderation.banmode"].contains($0.id) }) { action in NavigationLink(action.title) { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player)]) } }
+                ForEach(actions.filter { ["player.notes", "player.watchlist", "player.action", "player.message", "player.points", "player.nickname", "security.alt-ban", "moderation.restrict", "moderation.banmode"].contains($0.id) }) { action in NavigationLink(action.title) { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player)]) } }
             }
             }
             Section {
                 Toggle("Live alle 15 Sekunden aktualisieren", isOn: $automatic)
-                if let updated { LabeledContent("Stand") { Text(updated, style: .time) } }
+                if let updated { LabeledContent("Stand") { Text(SuiteGermanTime.text(updated)) } }
                 Text("Live-Werte stammen direkt aus der Suite. NBT-Dateien sind ein separater Speicherstand. Mit Admin Suite 9 können sie bei laufendem Server gespeichert werden, wenn der Spieler offline ist.").font(.footnote).foregroundStyle(.secondary)
             }
         }.panelScreen().navigationTitle(name).navigationBarTitleDisplayMode(.inline).task(id: automatic) { await load(); for _ in 0..<12 { guard current["network"]["pending"].bool && !Task.isCancelled else { break }; do { try await Task.sleep(for: .seconds(2)) } catch { return }; await load() }; while automatic && !Task.isCancelled { do { try await Task.sleep(for: .seconds(15)) } catch { return }; await load() } }.refreshable { await load() }.errorAlert($error)
+            .sheet(isPresented: $vpnSheet, onDismiss: { Task { await load() } }) { NavigationStack { SuiteActionView(suite: suite, action: .make("vpn.whitelist", "VPN-Ausnahme ändern"), preset: ["player": .string(player), "allowed": .string(current["vpnWhitelisted"].bool ? "false" : "true")]) } }
     }
     func load() async { do { profile = try await suite.data("profile", query: ["player": player]); updated = Date()
         resolved = nil
@@ -185,7 +203,7 @@ struct SuiteDataListView: View {
                         LabeledContent("Bereich", value: row["container"].string); LabeledContent("Slot", value: row["slot"].string); LabeledContent("Anzahl", value: row["amount"].string)
                         if !row["lore"].array.isEmpty { ForEach(Array(row["lore"].array.enumerated()), id: \.offset) { _, value in Text(cleanConsole(value.string)).font(.caption) } }
                     } else {
-                        if let date = SuitePlayerPresentation.date(row["lastSeen"]) { LabeledContent("Zuletzt verwendet") { Text(date, format: .dateTime.day().month().year().hour().minute()) } }
+                        if let date = SuitePlayerPresentation.date(row["lastSeen"]) { LabeledContent("Zuletzt verwendet") { Text(SuiteGermanTime.text(date)) } }
                         ForEach([("platform", "Plattform"), ("os", "Betriebssystem"), ("version", "Spielversion"), ("language", "Sprache"), ("input", "Eingabe")], id: \.0) { key, label in SuiteDetailRow(title: label, value: row[key].string.isEmpty ? "Nicht erfasst" : row[key].string) }
                         Label(row["blocked"].bool ? "Gesperrt" : "Nicht gesperrt", systemImage: row["blocked"].bool ? "lock.fill" : "checkmark.shield").foregroundStyle(row["blocked"].bool ? .orange : .teal)
                         ForEach(row["diagnostics"].object.keys.sorted(), id: \.self) { key in LabeledContent(key, value: row["diagnostics"][key].string).font(.caption).textSelection(.enabled) }
@@ -323,8 +341,9 @@ struct SuiteSettingEditor: View {
     @State private var value = ""
     @State private var toggle = false
     @State private var apply = false
+    @State private var initialized = false
     var body: some View {
-        Form { Section { Text(setting["name"].string).font(.headline); Text(setting["hint"].string).font(.footnote).foregroundStyle(.secondary); Text(setting["id"].string).font(.caption.monospaced()).textSelection(.enabled) }; Section("Wert") { if setting["kind"].string == "bool" { Toggle("Aktiv", isOn: $toggle) } else { TextField("Wert", text: $value, axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled(); if setting["kind"].string == "list" { Text("Listeneinträge mit | trennen.").font(.caption).foregroundStyle(.secondary) } } }; Section { Button("Änderung prüfen") { apply = true }.disabled(suite.scope != "full" || suite.demo) } }.panelScreen().navigationTitle("Einstellung ändern").task { value = setting["kind"].string == "list" ? setting["value"].array.map(\.string).joined(separator: " | ") : setting["value"].string; toggle = setting["value"].bool }
+        Form { Section { Text(setting["name"].string).font(.headline); Text(setting["hint"].string).font(.footnote).foregroundStyle(.secondary); Text(setting["id"].string).font(.caption.monospaced()).textSelection(.enabled) }; Section("Wert") { if setting["id"].string.hasPrefix("discord-bot.") && setting["id"].string.hasSuffix("channel-id") { SuiteDiscordChannelPicker(suite: suite, value: $value) } else if setting["kind"].string == "bool" { Toggle("Aktiv", isOn: $toggle) } else { TextField("Wert", text: $value, axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled(); if setting["kind"].string == "list" { Text("Listeneinträge mit | trennen.").font(.caption).foregroundStyle(.secondary) } } }; Section { Button("Änderung prüfen") { apply = true }.disabled(suite.scope != "full" || suite.demo) } }.panelScreen().navigationTitle("Einstellung ändern").task { guard !initialized else { return }; initialized = true; value = setting["kind"].string == "list" ? setting["value"].array.map(\.string).joined(separator: " | ") : setting["value"].string; toggle = setting["value"].bool }
             .sheet(isPresented: $apply) { NavigationStack { SuiteActionView(suite: suite, action: .make("settings.update", "Suite-Einstellung speichern"), preset: ["expected": setting["revision"], "key": setting["id"], "value": .string(setting["kind"].string == "bool" ? String(toggle) : value)]) } }
     }
 }

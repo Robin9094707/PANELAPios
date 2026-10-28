@@ -1,6 +1,6 @@
 name: SimplexAdminSuite
 main: eu.simplexsmp.adminsuite.SimplexAdminSuite
-version: 9.1.2
+version: 9.1.3
 api-version: '26.2'
 author: RJ
 website: https://simplexsmp.eu

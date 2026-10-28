@@ -6,6 +6,7 @@ import SwiftUI
     @Published var actions: [SuiteAction] = []
     @Published var players: [JSON] = []
     @Published var total = 0
+    @Published var overview: JSON = .null
     @Published var updated: Date?
     @Published var error: String?
     @Published var busy = false
@@ -37,9 +38,11 @@ import SwiftUI
     func refreshPlayers() async {
         guard let api else { return }
         do {
-            let result = try await api.data("players")
+            async let response = api.data("players", query: ["filter": "online", "limit": "4"])
+            async let status = api.data("overview")
+            let (result, summary) = try await (response, status)
             try Task.checkCancellation()
-            players = result["items"].array; total = result["total"].int; updated = Date(); error = nil
+            overview = summary; players = result["items"].array; total = summary["profiles"] == .null ? result["total"].int : summary["profiles"].int; updated = Date(); error = nil
         } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }
     }
 }
@@ -77,6 +80,7 @@ struct SuiteHubView: View {
                 Section("Spieler & Moderation") {
                     NavigationLink { SuiteAltDashboardView(suite: api, panel: panel, server: server, actions: model.actions) } label: { Label("Alt-Account-Dashboard & IP-Regeln", systemImage: "person.2.badge.key.fill") }
                     NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions) } label: { Label("Spieler, Geräte & Alt-Accounts", systemImage: "person.2.fill") }
+                    NavigationLink { SuiteDiscordView(suite: api) } label: { Label("Discord-Zentrale", systemImage: "bubble.left.and.bubble.right.fill") }
                     NavigationLink { SuiteSettingsView(suite: api) } label: { Label("Suite-Einstellungen", systemImage: "slider.horizontal.3") }
                     NavigationLink { SuiteReadView(suite: api, path: "server.status", title: "Serverstatus") } label: { Label("Server & Neustartstatus", systemImage: "server.rack") }
                 }

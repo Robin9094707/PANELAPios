@@ -54,11 +54,50 @@ final class PanelUITests: XCTestCase {
         app.buttons.containing(.staticText, identifier: "TadMC_YT").firstMatch.tap()
         for _ in 0..<6 { if app.staticTexts["Live-Spielerwerte"].isHittable { break }; app.swipeUp() }
         XCTAssertTrue(app.staticTexts["Live-Spielerwerte"].waitForExistence(timeout: 10)); capture("19-Suite-Spielerakte")
-        for _ in 0..<6 { if app.buttons["Spielerakte & gespeicherte Daten"].isHittable { break }; app.swipeUp() }
-        app.buttons["Spielerakte & gespeicherte Daten"].tap()
-        for _ in 0..<4 { if app.buttons["Alt-Accounts & Belege"].isHittable { break }; app.swipeUp() }
-        app.buttons["Alt-Accounts & Belege"].tap()
+        for _ in 0..<6 { if app.buttons["Alt-Accounts & deren Profile"].isHittable { break }; app.swipeDown() }
+        app.buttons["Alt-Accounts & deren Profile"].tap()
         XCTAssertTrue(app.staticTexts[".BedrockDemo"].waitForExistence(timeout: 10)); capture("20-Suite-Alt-Accounts")
+    }
+    func testPlayerProfile20AndTargetedSearch() throws {
+        let online = app.buttons["workspace-online-simplex1"]
+        XCTAssertTrue(app.descendants(matching: .any)["home-online-count-simplex1"].firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(online.waitForExistence(timeout: 15)); online.tap()
+        XCTAssertTrue(app.staticTexts["iPhone · Demo"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["RecentOffline"].exists)
+        app.segmentedControls.buttons["Zuletzt online"].tap()
+        XCTAssertTrue(app.staticTexts["RecentOffline"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["TadMC_YT"].exists)
+        app.segmentedControls.buttons["Alle"].tap()
+        app.swipeDown()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 10)); search.tap(); search.typeText("TadMC")
+        let profile = app.buttons.containing(.staticText, identifier: "TadMC_YT").firstMatch
+        XCTAssertTrue(profile.waitForExistence(timeout: 10)); profile.tap()
+        for _ in 0..<5 { if app.buttons["NBT-Editor öffnen"].isHittable { break }; app.swipeUp() }
+        XCTAssertEqual(app.buttons.matching(identifier: "NBT-Editor öffnen").count, 1)
+        XCTAssertTrue(app.buttons["Aktuelles Inventar & Endertruhe"].exists)
+        for _ in 0..<4 { if app.staticTexts["Zuletzt ausgeloggt"].isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(app.staticTexts["Zuletzt ausgeloggt"].exists)
+        for _ in 0..<4 { if app.switches["profile-vpn-whitelist"].isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(app.switches["profile-vpn-whitelist"].exists); capture("31-Player-Profil-2")
+    }
+    func testDiscordSettingsChannelSelection() throws {
+        let server = app.buttons["server-simplex1"]
+        XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap()
+        let discord = app.buttons["Discord verwalten"]
+        for _ in 0..<5 { if discord.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(discord.waitForExistence(timeout: 10)); discord.tap()
+        let channel = app.buttons.containing(.staticText, identifier: "Minecraft ↔ Discord Chat").firstMatch
+        XCTAssertTrue(channel.waitForExistence(timeout: 10)); channel.tap()
+        let picker = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Discord-Kanal")).firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 10)); picker.tap()
+        XCTAssertTrue(app.buttons["#server-chat"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Deaktiviert / kein Kanal"].exists); capture("32-Discord-Kanalauswahl")
+        app.buttons["Deaktiviert / kein Kanal"].tap()
+        let manual = app.textFields["Kanal-ID manuell"]
+        if !manual.waitForExistence(timeout: 3) { app.navigationBars.buttons.firstMatch.tap() }
+        XCTAssertTrue(manual.waitForExistence(timeout: 5))
+        XCTAssertNotEqual(manual.value as? String, "123456789012345678")
     }
     func testAltDashboardAndIgnoredInfrastructureIP() throws {
         let server = app.buttons["server-simplex1"]

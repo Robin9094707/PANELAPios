@@ -49,45 +49,41 @@ enum SuitePlayerPresentation {
     @Published var error: String?
     private static var sessions: [String: SuiteDirectory] = [:]
     static func shared(key: String) -> SuiteDirectory { if let value = sessions[key] { return value }; let value = SuiteDirectory(); sessions[key] = value; return value }
-    @Published private(set) var snapshotLoaded = false
-    func snapshot(suite: SuiteAPI, force: Bool = false) async {
-        guard !busy, force || !snapshotLoaded else { return }
-        busy = true; error = nil; defer { busy = false }
-        do {
-            var staged: [JSON] = [], offset = 0, seen = Set<Int>(), reportedTotal = 0
-            repeat {
-                guard seen.insert(offset).inserted else { throw PanelError(message: "Ungültige Spieler-Paginierung") }
-                let response = try await suite.data("players", query: ["offset": String(offset)])
-                try Task.checkCancellation()
-                staged = SuitePlayerPresentation.merge(staged, response["items"].array); reportedTotal = response["total"].int
-                let next = response["next"] == .null ? -1 : response["next"].int
-                if next <= offset { break }; offset = next
-            } while true
-            rows = staged; total = reportedTotal; next = -1; snapshotLoaded = true
-        } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
-    }
+    private struct Page { var rows: [JSON]; var total: Int; var next: Int; var snapshot: String; var loaded: Date }
+    private var pages: [String: Page] = [:]
+    private var order: [String] = []
     private var revision = UUID()
-    func load(suite: SuiteAPI, query: String, filter: SuitePlayerFilter, reset: Bool) async {
-        guard reset || !busy else { return }
-        let stamp = UUID(); revision = stamp; busy = true; error = nil
-        if reset { rows = []; next = -1 }
+    private var selected = ""
+    private var snapshot = ""
+    func load(suite: SuiteAPI, query: String, filter: SuitePlayerFilter, reset: Bool, force: Bool = false) async {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = filter.rawValue + "|" + q.lowercased()
+        if !reset && (busy || next < 0 || selected != key) { return }
+        let stamp = UUID(); revision = stamp
+        if reset, !force, let page = pages[key], filter != .online || Date().timeIntervalSince(page.loaded) < 30 {
+            selected = key; rows = page.rows; total = page.total; next = page.next; snapshot = page.snapshot; busy = false; error = nil; return
+        }
+        if reset && selected != key { rows = []; total = 0; next = -1; snapshot = "" }
+        selected = key; busy = true; error = nil
         defer { if revision == stamp { busy = false } }
-        var offset = reset ? 0 : next
-        guard offset >= 0 else { return }
         do {
-            repeat {
-                let response = try await suite.data("players", query: ["q": query.trimmingCharacters(in: .whitespacesAndNewlines), "offset": String(offset)])
-                guard revision == stamp, !Task.isCancelled else { return }
-                rows = SuitePlayerPresentation.merge(rows, response["items"].array)
-                total = response["total"].int
-                let candidate = response["next"] == .null ? -1 : response["next"].int
-                next = candidate > offset ? candidate : -1
-                offset = next
-                // The existing API sorts online first. Recent offline profiles require
-                // all pages before the global last-seen order is complete.
-                if filter == .all { break }
-                if filter == .online && response["items"].array.contains(where: { !$0["online"].bool }) { break }
-            } while next >= 0
+            var params = ["q": q, "filter": filter == .online ? "online" : filter == .recent ? "recent" : "all", "offset": reset ? "0" : String(next), "limit": "50"]
+            if !reset && !snapshot.isEmpty { params["snapshot"] = snapshot }
+            let response = try await suite.data("players", query: params)
+            guard revision == stamp, !Task.isCancelled else { return }
+            rows = reset ? response["items"].array : SuitePlayerPresentation.merge(rows, response["items"].array)
+            total = response["total"].int
+            let candidate = response["next"] == .null ? -1 : response["next"].int
+            next = candidate > (reset ? 0 : next) ? candidate : -1; snapshot = response["snapshot"].string
+            pages[key] = Page(rows: rows, total: total, next: next, snapshot: snapshot, loaded: Date())
+            order.removeAll { $0 == key }; order.append(key)
+            if order.count > 24 { pages.removeValue(forKey: order.removeFirst()) }
         } catch { if revision == stamp && !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }
+    }
+}
+
+enum SuiteGermanTime {
+    static func text(_ date: Date) -> String {
+        let format = DateFormatter(); format.locale = Locale(identifier: "de_DE"); format.timeZone = TimeZone(identifier: "Europe/Berlin"); format.dateFormat = "dd.MM.yyyy HH:mm:ss z"; return format.string(from: date)
     }
 }

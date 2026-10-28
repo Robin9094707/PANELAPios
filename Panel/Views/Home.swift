@@ -84,6 +84,7 @@ struct HomeView: View {
                                     if let api = store.api { Button(workspace.favorites.contains(workspace.key(api, server)) ? "Server lösen" : "Server anpinnen", systemImage: "star") { workspace.toggleServer(api, server) } }
                                 }
                                 if let api = store.api, suiteConnections.get(api, server) != nil || store.demo && ProcessInfo.processInfo.arguments.contains("--demo-suite") {
+                                    SuiteHomeStatus(panel: api, server: server)
                                     HStack {
                                         NavigationLink { SuitePlayerBrowser(panel: api, server: server, filter: .online) } label: { Label("Online-Spieler", systemImage: "person.2.fill") }.accessibilityIdentifier("workspace-online-" + server.id)
                                         Spacer()

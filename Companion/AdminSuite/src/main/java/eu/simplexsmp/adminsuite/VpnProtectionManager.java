@@ -508,6 +508,7 @@ final class VpnProtectionManager implements Listener {
     }
 
     private boolean addWhitelist(String actor, UUID uuid, String name) {
+        if(whitelist.isWhitelisted(uuid,name))return false;
         boolean added = whitelist.add(uuid, name, actor);
         if (added) {
             plugin.vpnAudit(actor, uuid, "VPN-Whitelist hinzugefügt", name);
@@ -534,6 +535,15 @@ final class VpnProtectionManager implements Listener {
         } else for(VpnDetectionLog.Detection d:detectionLog.recent(query,200))if(d.blocked())rows.add(SimplexAdminSuite.appMap("id",d.timestamp()+":"+d.uuid(),"name",d.playerName(),"player",d.uuid()==null?"":d.uuid().toString(),"time",d.timestamp(),"reason",d.reason(),"country",d.country(),"risk",d.riskScore(),"decision",d.decision()));
         int start=Math.min(Math.max(0,offset),rows.size()),end=Math.min(start+100,rows.size());return SimplexAdminSuite.appMap("items",rows.subList(start,end),"next",end<rows.size()?end:-1,"total",rows.size(),"window",route.equals("vpn-kicks")?200:0);
     }
+    String appWhitelistPlan(String player,String allowed){
+        if(!Set.of("true","false").contains(allowed))throw new IllegalArgumentException("true oder false erforderlich");
+        UUID id;try{id=UUID.fromString(player);}catch(IllegalArgumentException ex){id=plugin.discordAdminResolvePlayer(player);}
+        SimplexAdminSuite.PlayerProfile p=id==null?null:plugin.clientSecurityProfile(id);
+        if(p!=null&&!player.equalsIgnoreCase(p.displayName())&&!player.equalsIgnoreCase(id.toString()))throw new IllegalArgumentException("Exakten Spielernamen oder UUID verwenden.");
+        String name=p==null?player:p.displayName();boolean present=whitelist.isWhitelisted(id,name);
+        if(Boolean.parseBoolean(allowed)==present)throw new IllegalArgumentException(present?"Dieser Spieler steht bereits auf der VPN-Whitelist.":"Dieser Spieler hat keine VPN-Ausnahme.");
+        return name+" · VPN-Ausnahme "+(Boolean.parseBoolean(allowed)?"aktivieren":"entfernen");
+    }
     Object appWhitelist(String actor,String player,boolean allowed) {
         UUID id;boolean uuidInput=true;
         try{id=UUID.fromString(player);}catch(IllegalArgumentException name){uuidInput=false;id=plugin.discordAdminResolvePlayer(player);}
@@ -542,7 +552,7 @@ final class VpnProtectionManager implements Listener {
         if(allowed&&id==null)throw new IllegalArgumentException("Gespeicherten Spieler oder genaue Spieler-UUID auswählen.");
         String name=p==null?player:p.displayName();
         if(p==null&&id!=null)for(VpnDetectionLog.Detection detection:detectionLog.recent("",200))if(id.equals(detection.uuid())){name=detection.playerName();break;}
-        if(allowed)addWhitelist(actor,id,name);else {
+        if(allowed){if(!addWhitelist(actor,id,name))throw new IllegalArgumentException("Dieser Spieler steht bereits auf der VPN-Whitelist.");}else {
             // Exact identity only. Never use removeQuery's prefix matching from a remote request.
             boolean removed=whitelist.remove(id,name);
             if(!removed)throw new IllegalArgumentException("Dieser genaue Whitelist-Eintrag ist nicht mehr vorhanden.");

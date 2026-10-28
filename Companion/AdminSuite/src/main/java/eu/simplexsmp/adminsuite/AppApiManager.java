@@ -117,10 +117,11 @@ final class AppApiManager {
             String path=x.getRequestURI().getPath(),method=x.getRequestMethod();Map<String,String> query=query(x.getRequestURI());Object result;
             if(method.equals("GET")){
                 result=switch(path){
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
                     case "/v1/data/management"->onMain(rev,()->{if(!key.scope().equals("full")&&Set.of("admins","admin-rights").contains(query.getOrDefault("section","status")))throw new ApiError(403,"Adminrechte benötigen full-Zugriff");return plugin.app250Data(query);});
                     case "/v1/player-nbt"->onMain(rev,()->playerNbt.read(query.getOrDefault("player",""),query.getOrDefault("path",""),Boolean.parseBoolean(query.getOrDefault("status","false"))));
                     case "/v1/notifications"->onMain(rev,()->{if(!key.scope().equals("full"))throw new ApiError(403,"Bark-Einrichtung benötigt full-Zugriff");if(plugin.appEvents==null)throw new ApiError(503,"Ereignismodul nicht verfügbar");return plugin.appEvents.subscription(key.id());});
+                    case "/v1/data/discord-channels"->{DiscordBotManager bot=onMain(rev,()->plugin.discordRelay());if(bot==null)throw new ApiError(503,"Discord-Bot ist nicht geladen");yield bot.appChannels();}
                     case "/v1/data/litebans"->{org.bukkit.plugin.Plugin lite=onMain(rev,()->Bukkit.getPluginManager().getPlugin("LiteBans"));int offset;try{offset=Math.max(0,Integer.parseInt(query.getOrDefault("offset","0")));}catch(Exception e){offset=0;}yield plugin.moderationOverview.appLite(lite,query.getOrDefault("q",""),offset);}
                     case "/v1/plugin-files"->pluginFiles().list(Boolean.parseBoolean(query.getOrDefault("pending","false")));
                     case "/v1/plugin-files/inspect"->pluginFiles().inspect(query.getOrDefault("filename",""),Boolean.parseBoolean(query.getOrDefault("pending","false")));
@@ -168,12 +169,15 @@ final class AppApiManager {
                     DiscordAdminController.Request req=request(action,values);authorize(key,req);
                     String encoded=DiscordBotManager.Json.stringify(SimplexAdminSuite.appMap("path",action,"values",values));
                     String summary;
-                    if(isCenterAction(req.path))summary="Aktion: "+actions.get(req.path).get("description")+". Änderungen werden beim Ausführen erneut geprüft.";
+                    if(req.path.equals("vpn.whitelist"))summary=onMain(rev,()->plugin.appVpnWhitelistPlan(req.text("player"),req.text("allowed")));
+                    else if(isCenterAction(req.path))summary="Aktion: "+actions.get(req.path).get("description")+". Änderungen werden beim Ausführen erneut geprüft.";
                     else if(req.path.equals("plugins.stage")){pluginFiles().prepare(values);summary="Plugin: "+req.text("name")+" · "+req.text("version")+". Update wird geprüft und für den nächsten Serverstart vorgemerkt.";}
                     else summary=onMain(rev,()->{if(req.path.equals("alts.ip"))return plugin.altIpPlan(req.values);if(req.path.equals("world.update"))return "Welt: "+req.text("world")+"\nEinstellung: "+req.text("field")+"\nNeuer Wert: "+req.text("value");if(req.path.equals("logs.retry"))return "Gespeicherte private Discord-Protokolle erneut versuchen. Keine Einträge werden gelöscht; die Prüfung privater Kanalrechte bleibt aktiv.";if(req.path.equals("settings.update")){checkSetting(req);return "**Einstellung:** "+req.text("key")+"\n**Neuer Wert:** "+(req.text("value").isEmpty()?"(leer)":req.text("value"))+"\nDer geladene Stand wird vor dem Speichern erneut geprüft.";}return controller.confirmationSummary(req);});
+                    validateDiscordChannel(req,rev);
                     result=SimplexAdminSuite.appMap("ticket",security.prepare(key,encoded,System.currentTimeMillis()),"summary",summary,"expiresIn",60);
                 }else{
                     String stored=security.consume(key,String.valueOf(payload.getOrDefault("ticket","")),System.currentTimeMillis());Map<String,Object> plan=object(DiscordBotManager.Json.parse(stored));DiscordAdminController.Request req=request(String.valueOf(plan.get("path")),object(plan.get("values")));authorize(key,req);
+                    validateDiscordChannel(req,rev);
                     if(req.path.equals("plugins.stage"))throw new ApiError(405,"Bestätigung mit der JAR an plugin-files/upload senden.");
                     if(req.path.equals("ai.ask")){
                         CompletableFuture<String> future=onMain(rev,()->plugin.discordAdminAiAsk(req.text("question")));String response=future.get(90,TimeUnit.SECONDS);result=SimplexAdminSuite.appMap("ok",true,"title","Simplex KI","description",response);
@@ -202,6 +206,11 @@ final class AppApiManager {
         }finally{x.close();}
     }
     private static boolean isCenterAction(String path){return Set.of("management.apply","vpn.whitelist","bans.remove","reports.update","events.ack","events.delete","events.note","events.clear","notifications.update").contains(path);}
+    private void validateDiscordChannel(DiscordAdminController.Request req,long rev)throws Exception {
+        if(!req.path.equals("settings.update")||!req.text("key").startsWith("discord-bot.")||!req.text("key").endsWith("channel-id")||req.text("value").isBlank())return;
+        DiscordBotManager bot=onMain(rev,()->{checkSetting(req);return plugin.discordRelay();});
+        if(bot==null)throw new IllegalArgumentException("Discord-Bot nicht geladen");bot.appValidateChannel(req.text("value"));
+    }
     private void checkSetting(DiscordAdminController.Request req){
         String key=req.text("key");
         if(key.startsWith("app-api.")||key.startsWith("admin-security.")||key.startsWith("console.")||ModerationControl.protectedKey(key)||plugin.moderationControl==null||!plugin.moderationControl.configKeys().contains(key))throw new ApiError(403,"Geschützte oder unbekannte Einstellung");

@@ -931,6 +931,20 @@ final class DiscordBotManager {
         var embed=mapOf("title",ModerationControl.logLabel(type),"fields",fields,"color",0x5865F2,"timestamp",java.time.Instant.ofEpochMilli(timestamp).toString());
         synchronized(moderationQueue){if(moderationQueue.size()>=200){droppedModerationLogs.incrementAndGet();return;}moderationQueue.addLast(new ModerationEnvelope(channel,Json.stringify(mapOf("embeds",List.of(embed),"allowed_mentions",mapOf("parse",List.of()))),0));}
     }
+    // Called only from the App API worker; all network requests are bounded.
+    Object appChannels()throws Exception {
+        if(!enabled()||!configured())throw new IllegalArgumentException("Discord-Bot aktivieren und Token/Server-ID auf dem Server einrichten.");
+        var response=featureRequest("GET","/guilds/"+guildId()+"/channels",null);
+        if(response.statusCode()!=200)throw new IllegalArgumentException("Discord-Kanäle nicht verfügbar (HTTP "+response.statusCode()+"). Bot-Rechte prüfen.");
+        List<Object> rows=new ArrayList<>();Object raw=Json.parse(response.body());
+        if(raw instanceof List<?> channels)for(Object value:channels)if(value instanceof Map<?,?> c&&Set.of(0,5).contains(intValue(c.get("type"),-1)))rows.add(mapOf("id",string(c.get("id")),"name",string(c.get("name")),"category",string(c.get("parent_id"))));
+        return mapOf("items",rows,"guild",guildId());
+    }
+    void appValidateChannel(String id)throws Exception {
+        if(!id.matches("[0-9]{15,22}")||!enabled()||!configured())throw new IllegalArgumentException("Discord-Bot oder Kanal-ID nicht gültig.");
+        var response=featureRequest("GET","/channels/"+id,null);Object raw=Json.parse(response.body());
+        if(response.statusCode()!=200||!(raw instanceof Map<?,?> c)||!guildId().equals(string(c.get("guild_id")))||!Set.of(0,5).contains(intValue(c.get("type"),-1)))throw new IllegalArgumentException("Textkanal im konfigurierten Discord-Server nicht verfügbar. Bot-Rechte prüfen.");
+    }
     void listLogChannels(java.util.function.Consumer<Map<String,String>> callback){
         executor.execute(()->{
             Map<String,String> channels=new LinkedHashMap<>();
