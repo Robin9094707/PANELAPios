@@ -49,6 +49,8 @@ final class SuiteIntegrationTests: XCTestCase {
         XCTAssertEqual(offsets, ["0"]); XCTAssertEqual(directory.rows.count, 1)
         await directory.load(suite: api, query: " Some Name ", filter: .recent, reset: false)
         XCTAssertEqual(offsets, ["0", "50"]); XCTAssertEqual(directory.rows.map { $0["id"].string }, ["newest", "older"])
+        await directory.load(suite: api, query: "Some Name", filter: .recent, reset: true)
+        XCTAssertEqual(offsets, ["0", "50"]); XCTAssertEqual(directory.rows.count, 2)
     }
     @MainActor func testOnlineNeverScansOfflinePagesAndFilterSwitchRestoresCache() async throws {
         var filters: [String] = []

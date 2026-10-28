@@ -105,6 +105,7 @@ struct SuitePlayerView: View {
             if current["logoutLocation"] != .null {
                 Section("Zuletzt ausgeloggt") {
                     LabeledContent("Welt", value: current["logoutLocation"]["world"].string)
+                    LabeledContent("Position", value: ["x", "y", "z"].map { String(format: "%.1f", current["logoutLocation"][$0].double) }.joined(separator: " / ")).font(.caption.monospaced()).textSelection(.enabled)
                     CopyButton(text: current["logoutLocation"]["world"].string + " " + ["x", "y", "z"].map { String(format: "%.1f", current["logoutLocation"][$0].double) }.joined(separator: " / "), title: "Ausloggposition kopieren")
                 }
             }
