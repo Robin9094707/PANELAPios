@@ -49,7 +49,7 @@ enum SuitePlayerPresentation {
     @Published var error: String?
     private static var sessions: [String: SuiteDirectory] = [:]
     static func shared(key: String) -> SuiteDirectory { if let value = sessions[key] { return value }; let value = SuiteDirectory(); sessions[key] = value; return value }
-    private struct Page { var rows: [JSON]; var total: Int; var next: Int; var snapshot: String }
+    private struct Page { var rows: [JSON]; var total: Int; var next: Int; var snapshot: String; var loaded: Date }
     private var pages: [String: Page] = [:]
     private var order: [String] = []
     private var revision = UUID()
@@ -60,7 +60,7 @@ enum SuitePlayerPresentation {
         let key = filter.rawValue + "|" + q.lowercased()
         if !reset && (busy || next < 0 || selected != key) { return }
         let stamp = UUID(); revision = stamp
-        if reset, !force, let page = pages[key] {
+        if reset, !force, let page = pages[key], filter != .online || Date().timeIntervalSince(page.loaded) < 30 {
             selected = key; rows = page.rows; total = page.total; next = page.next; snapshot = page.snapshot; busy = false; error = nil; return
         }
         if reset && selected != key { rows = []; total = 0; next = -1; snapshot = "" }
@@ -75,7 +75,7 @@ enum SuitePlayerPresentation {
             total = response["total"].int
             let candidate = response["next"] == .null ? -1 : response["next"].int
             next = candidate > (reset ? 0 : next) ? candidate : -1; snapshot = response["snapshot"].string
-            pages[key] = Page(rows: rows, total: total, next: next, snapshot: snapshot)
+            pages[key] = Page(rows: rows, total: total, next: next, snapshot: snapshot, loaded: Date())
             order.removeAll { $0 == key }; order.append(key)
             if order.count > 24 { pages.removeValue(forKey: order.removeFirst()) }
         } catch { if revision == stamp && !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }

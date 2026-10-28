@@ -31,6 +31,7 @@ struct SuiteDashboardCard: View {
                 }
                 if online.isEmpty { Text(model.updated == nil ? "Spielerdaten werden geladen …" : "Gerade niemand online").font(.subheadline).foregroundStyle(.secondary) }
                 if model.overview["online"].int > 4 { Text("Weitere Spieler in der Online-Liste").font(.caption).foregroundStyle(.secondary) }
+                NavigationLink { SuiteDiscordView(suite: suite) } label: { Label("Discord verwalten", systemImage: "bubble.left.and.bubble.right.fill") }
                 SuitePinnedActionsView(suite:suite,actions:model.actions)
                 Divider()
                 ViewThatFits(in: .horizontal) {

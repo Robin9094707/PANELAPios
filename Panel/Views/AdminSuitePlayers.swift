@@ -33,6 +33,7 @@ struct SuitePlayersView: View {
     var initialFilter: SuitePlayerFilter = .all
     @ObservedObject private var directory: SuiteDirectory
     @State private var search = ""
+    @State private var lastSelection = ""
     @State private var filter: SuitePlayerFilter
     init(suite: SuiteAPI, panel: PanelAPI, server: Server, actions: [SuiteAction], initialFilter: SuitePlayerFilter = .all) {
         self.suite = suite; self.panel = panel; self.server = server; self.actions = actions; self.initialFilter = initialFilter
@@ -55,7 +56,7 @@ struct SuitePlayersView: View {
                 if directory.next >= 0 && !directory.busy { Button("Weitere Spieler laden") { Task { await load(reset: false) } } }
             }
         }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Spieler").searchable(text: $search, prompt: "Name oder UUID").textInputAutocapitalization(.never).autocorrectionDisabled()
-            .task(id: filter.rawValue + "|" + search) { do { if !search.isEmpty { try await Task.sleep(for: .milliseconds(300)) }; try Task.checkCancellation(); await load(reset: true, force: !search.isEmpty) } catch {} }
+            .task(id: filter.rawValue + "|" + search) { do { if !search.isEmpty { try await Task.sleep(for: .milliseconds(300)) }; try Task.checkCancellation(); let selection = filter.rawValue + "|" + search; let freshSearch = !search.isEmpty && selection != lastSelection; lastSelection = selection; await load(reset: true, force: freshSearch) } catch {} }
             .refreshable { await load(reset: true, force: true) }.toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Neu laden", systemImage: "arrow.clockwise") { Task { await load(reset: true, force: true) } }.disabled(directory.busy) } }.errorAlert($directory.error)
     }
     func load(reset: Bool, force: Bool = false) async { await directory.load(suite: suite, query: search, filter: filter, reset: reset, force: force) }
@@ -158,7 +159,7 @@ struct SuitePlayerView: View {
             }
             Section {
                 Toggle("Live alle 15 Sekunden aktualisieren", isOn: $automatic)
-                if let updated { LabeledContent("Stand") { Text(updated, style: .time) } }
+                if let updated { LabeledContent("Stand") { Text(SuiteGermanTime.text(updated)) } }
                 Text("Live-Werte stammen direkt aus der Suite. NBT-Dateien sind ein separater Speicherstand. Mit Admin Suite 9 können sie bei laufendem Server gespeichert werden, wenn der Spieler offline ist.").font(.footnote).foregroundStyle(.secondary)
             }
         }.panelScreen().navigationTitle(name).navigationBarTitleDisplayMode(.inline).task(id: automatic) { await load(); for _ in 0..<12 { guard current["network"]["pending"].bool && !Task.isCancelled else { break }; do { try await Task.sleep(for: .seconds(2)) } catch { return }; await load() }; while automatic && !Task.isCancelled { do { try await Task.sleep(for: .seconds(15)) } catch { return }; await load() } }.refreshable { await load() }.errorAlert($error)

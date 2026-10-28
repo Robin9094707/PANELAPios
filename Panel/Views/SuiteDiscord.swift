@@ -15,6 +15,7 @@ struct SuiteDiscordView: View {
                 Label("Discord-Zentrale", systemImage: "bubble.left.and.bubble.right.fill").font(.headline)
                 Text("Kanäle auswählen, Chat-Relay, Protokolle, Botprofil und weitere vorhandene Module einstellen. Bot-Token und geschützte Zugangsdaten werden auf dem Server eingerichtet.").font(.footnote).foregroundStyle(.secondary)
                 if busy { ProgressView("Discord-Einstellungen laden …") }
+                if suite.scope == "full" { NavigationLink("Module nach Änderungen neu laden") { SuiteActionView(suite: suite, action: .make("server.reload", "Suite-Module neu laden")) } }
                 if suite.scope != "full" { Text("Änderungen benötigen Vollzugriff.").font(.caption).foregroundStyle(.orange) }
             }
             if !channels.isEmpty { Section("Kanäle & Protokollziele") { ForEach(channels, id: \.["id"].string) { row in setting(row) } } }
