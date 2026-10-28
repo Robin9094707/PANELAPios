@@ -46,7 +46,11 @@ enum SuiteDemo {
             return .object(["items": .array([.object(["id": .string("synthetic-device"), "name": .string("iPhone · Demo"), "platform": .string("BEDROCK"), "os": .string("iOS"), "version": .string("26.3"), "language": .string("de_DE"), "input": .string("Touch"), "blocked": .bool(false)])])])
         case "data/ultrabans": return .object(["items": .array([.object(["id": .string("UB-DEMO"), "name": .string("DemoAccount"), "active": .bool(true), "mode": .string("ultra"), "reason": .string("Synthetischer Testfall"), "attempts": .number(3), "members": .array([.object(["id": .string(player), "name": .string("DemoAccount"), "relation": .string("Ausgangskonto")])])])]), "total": .number(1), "next": .number(-1)])
         case "data/discord-channels": return .object(["items": .array([.object(["id": .string("123456789012345678"), "name": .string("server-chat")])])])
-        case "data/snapshots", "data/nbt-paths", "data/inventory", "data/settings": return .object(["items": .array([])])
+        case "data/settings": return .object(["items": .array([
+            .object(["id": .string("discord-bot.relay-channel-id"), "name": .string("Chat-Kanal"), "kind": .string("string"), "value": .string("123456789012345678"), "revision": .string("synthetic-revision")]),
+            .object(["id": .string("discord-bot.relay.enabled"), "name": .string("Chat-Relay aktiv"), "kind": .string("bool"), "value": .bool(true), "revision": .string("synthetic-revision")])
+        ])])
+        case "data/snapshots", "data/nbt-paths", "data/inventory": return .object(["items": .array([])])
         case "view": return .object(["ok": .bool(true), "title": .string("Demo-Suite"), "description": .string("Synthetische Daten. Reale Serveraktionen sind im Demomodus gesperrt.")])
         case "menu": return .object(["session": .string("demo"), "revision": .number(1), "title": .string("Admin-Zentrale"), "notice": .string("Nur Demo · keine Serveränderungen"), "options": .array([.object(["id": .string("0"), "name": .string("Spieler"), "detail": .string("Profile und Spielerdaten"), "disabled": .bool(true)])])])
         default: return .null

@@ -81,6 +81,19 @@ final class PanelUITests: XCTestCase {
         for _ in 0..<4 { if app.switches["profile-vpn-whitelist"].isHittable { break }; app.swipeUp() }
         XCTAssertTrue(app.switches["profile-vpn-whitelist"].exists); capture("31-Player-Profil-2")
     }
+    func testDiscordSettingsChannelSelection() throws {
+        let server = app.buttons["server-simplex1"]
+        XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap()
+        let discord = app.buttons["Discord verwalten"]
+        for _ in 0..<5 { if discord.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(discord.waitForExistence(timeout: 10)); discord.tap()
+        let channel = app.buttons.containing(.staticText, identifier: "Minecraft ↔ Discord Chat").firstMatch
+        XCTAssertTrue(channel.waitForExistence(timeout: 10)); channel.tap()
+        let picker = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Discord-Kanal")).firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 10)); picker.tap()
+        XCTAssertTrue(app.staticTexts["#server-chat"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Deaktiviert / kein Kanal"].exists); capture("32-Discord-Kanalauswahl")
+    }
     func testAltDashboardAndIgnoredInfrastructureIP() throws {
         let server = app.buttons["server-simplex1"]
         XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap()
