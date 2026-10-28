@@ -9,54 +9,66 @@ final class SuiteIntegrationTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubProtocol.self]
         return try SuiteAPI(SuiteConnection(panel: "https://panel.example", server: "server", endpoint: "https://suite.example", fingerprint: "", serverIdentity: "server"), token: "fixture", session: URLSession(configuration: config))
     }
-    @MainActor func testSnapshotStaysStableAcrossReopeningUntilExplicitRefresh() async throws {
+    @MainActor func testFirstPageIsBoundedAndCachedUntilExplicitRefresh() async throws {
         var calls = 0
-        StubProtocol.handler = { _ in calls += 1; return (200, try JSONEncoder().encode(JSON.object(["items": .array([self.row(calls == 1 ? "old" : "new", online: false, seen: Double(calls))]), "total": .number(1), "next": .number(-1)]))) }
+        StubProtocol.handler = { _ in calls += 1; return (200, try JSONEncoder().encode(JSON.object(["items": .array([self.row(calls == 1 ? "old" : "new", online: false, seen: Double(calls))]), "total": .number(2500), "next": .number(50), "snapshot": .string("page-token")]))) }
         defer { StubProtocol.handler = nil }
         let api = try client(), directory = SuiteDirectory()
-        await directory.snapshot(suite: api)
-        await directory.snapshot(suite: api)
-        XCTAssertEqual(calls, 1); XCTAssertEqual(directory.rows.first?["id"].string, "old")
-        await directory.snapshot(suite: api, force: true)
+        await directory.load(suite: api, query: "", filter: .all, reset: true)
+        await directory.load(suite: api, query: "", filter: .all, reset: true)
+        XCTAssertEqual(calls, 1); XCTAssertEqual(directory.rows.first?["id"].string, "old"); XCTAssertEqual(directory.next, 50)
+        await directory.load(suite: api, query: "", filter: .all, reset: true, force: true)
         XCTAssertEqual(calls, 2); XCTAssertEqual(directory.rows.first?["id"].string, "new")
     }
-    @MainActor func testFailedSnapshotRefreshPreservesExistingRowsAndSessionCacheIsScoped() async throws {
+    @MainActor func testFailedRefreshPreservesRowsAndSessionCacheIsScoped() async throws {
         let api = try client(), directory = SuiteDirectory()
         StubProtocol.handler = { _ in (200, try JSONEncoder().encode(JSON.object(["items": .array([self.row("stable", online: false, seen: 1)]), "total": .number(1), "next": .number(-1)]))) }
         defer { StubProtocol.handler = nil }
-        await directory.snapshot(suite: api)
+        await directory.load(suite: api, query: "", filter: .all, reset: true)
         StubProtocol.handler = { _ in (500, Data()) }
-        await directory.snapshot(suite: api, force: true)
+        await directory.load(suite: api, query: "", filter: .all, reset: true, force: true)
         XCTAssertEqual(directory.rows.first?["id"].string, "stable"); XCTAssertNotNil(directory.error)
         XCTAssertTrue(SuiteDirectory.shared(key: "test-one") === SuiteDirectory.shared(key: "test-one"))
         XCTAssertFalse(SuiteDirectory.shared(key: "test-one") === SuiteDirectory.shared(key: "test-two"))
     }
-    @MainActor func testRecentOfflinePlayersUseAllPagesBeforeGlobalSorting() async throws {
+    @MainActor func testRecentUsesServerFilterAndLoadsOnlyOnePageThenSnapshotContinuation() async throws {
         var offsets: [String] = []
         StubProtocol.handler = { request in
             let q = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
             XCTAssertEqual(q.first { $0.name == "q" }?.value, "Some Name")
+            XCTAssertEqual(q.first { $0.name == "filter" }?.value, "recent")
+            XCTAssertEqual(q.first { $0.name == "limit" }?.value, "50")
             let offset = q.first { $0.name == "offset" }!.value!; offsets.append(offset)
-            let items = offset == "0" ? [self.row("online", online: true, seen: 9000), self.row("old", online: false, seen: 1000)] : [self.row("newest", online: false, seen: 8000)]
-            return (200, try JSONEncoder().encode(JSON.object(["items": .array(items), "total": .number(3), "next": .number(offset == "0" ? 100 : -1)])))
+            if offset != "0" { XCTAssertEqual(q.first { $0.name == "snapshot" }?.value, "stable-token") }
+            let items = [self.row(offset == "0" ? "newest" : "older", online: false, seen: 1000)]
+            return (200, try JSONEncoder().encode(JSON.object(["items": .array(items), "total": .number(2500), "next": .number(offset == "0" ? 50 : -1), "snapshot": .string("stable-token")])))
         }
-        let directory = SuiteDirectory()
-        await directory.load(suite: try client(), query: " Some Name ", filter: .recent, reset: true)
-        XCTAssertEqual(offsets, ["0", "100"])
-        XCTAssertEqual(SuitePlayerPresentation.sorted(directory.rows, filter: .recent).map { $0["id"].string }, ["newest", "old"])
-        XCTAssertEqual(directory.next, -1); XCTAssertNil(directory.error)
+        defer { StubProtocol.handler = nil }
+        let directory = SuiteDirectory(), api = try client()
+        await directory.load(suite: api, query: " Some Name ", filter: .recent, reset: true)
+        XCTAssertEqual(offsets, ["0"]); XCTAssertEqual(directory.rows.count, 1)
+        await directory.load(suite: api, query: " Some Name ", filter: .recent, reset: false)
+        XCTAssertEqual(offsets, ["0", "50"]); XCTAssertEqual(directory.rows.map { $0["id"].string }, ["newest", "older"])
     }
-    @MainActor func testOnlineScanContinuesBeyondFirstHundredAndStopsAtOfflineRows() async throws {
-        var calls = 0
-        StubProtocol.handler = { _ in
-            calls += 1
-            let items = calls == 1 ? [self.row("one", online: true, seen: 1)] : [self.row("two", online: true, seen: 2), self.row("offline", online: false, seen: 3)]
-            return (200, try JSONEncoder().encode(JSON.object(["items": .array(items), "total": .number(500), "next": .number(Double(calls * 100))])))
+    @MainActor func testOnlineNeverScansOfflinePagesAndFilterSwitchRestoresCache() async throws {
+        var filters: [String] = []
+        StubProtocol.handler = { request in
+            let filter = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "filter" }!.value!
+            filters.append(filter)
+            return (200, try JSONEncoder().encode(JSON.object(["items": .array([self.row(filter, online: filter == "online", seen: 1)]), "total": .number(2500), "next": .number(50)])))
         }
-        let directory = SuiteDirectory()
-        await directory.load(suite: try client(), query: "", filter: .online, reset: true)
-        XCTAssertEqual(calls, 2)
-        XCTAssertEqual(SuitePlayerPresentation.sorted(directory.rows, filter: .online).count, 2)
+        defer { StubProtocol.handler = nil }
+        let directory = SuiteDirectory(), api = try client()
+        await directory.load(suite: api, query: "", filter: .online, reset: true)
+        XCTAssertEqual(filters, ["online"])
+        await directory.load(suite: api, query: "", filter: .recent, reset: true)
+        await directory.load(suite: api, query: "", filter: .online, reset: true)
+        XCTAssertEqual(filters, ["online", "recent"]); XCTAssertEqual(directory.rows.first?["id"].string, "online")
+    }
+    func testGermanTimeUsesBerlinIncludingDaylightSaving() {
+        XCTAssertTrue(SuiteGermanTime.text(Date(timeIntervalSince1970: 0)).contains("01:00:00"))
+        // July 2026 midnight UTC must become 02:00 in Germany, regardless of phone timezone.
+        XCTAssertTrue(SuiteGermanTime.text(Date(timeIntervalSince1970: 1782864000)).contains("02:00:00"))
     }
     @MainActor func testCancelledRefreshIsSilentButAuthenticationFailureIsVisible() async throws {
         let api = try client(); let directory = SuiteDirectory()

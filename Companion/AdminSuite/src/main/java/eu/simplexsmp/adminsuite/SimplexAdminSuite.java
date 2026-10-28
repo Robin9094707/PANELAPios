@@ -6943,7 +6943,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     }
     List<String> ownWarnings(UUID id) {PlayerProfile p=database.get(id);if(p==null)return List.of();synchronized(p){return List.copyOf(p.warnings);}}
     String profileLocale(UUID id) {PlayerProfile p=database.get(id);return p==null?"":p.localeValue();}
-    String profileDate(long at) { return at<=0?"—":java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm").withZone(java.time.ZoneId.systemDefault()).format(Instant.ofEpochMilli(at)); }
+    String profileDate(long at) { return at<=0?"—":java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm").withZone(java.time.ZoneId.of("Europe/Berlin")).format(Instant.ofEpochMilli(at)); }
     String profileDuration(long ms) { return Math.max(0,ms)/3600000+"h "+Math.max(0,ms)/60000%60+"m"; }
     void refreshPlayerBoard(Player p) { if(p!=null&&nativeScoreboard!=null)nativeScoreboard.refreshPlayer(p); }
     void broadcastConnection(Player joining, PlayerProfile profile, boolean join) {
@@ -8409,7 +8409,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(route.equals("worlds"))return appMap("items",Bukkit.getWorlds().stream().map(w->appMap("id",w.getUID().toString(),"name",w.getName(),"environment",w.getEnvironment().name(),"players",w.getPlayers().size(),"chunks",w.getLoadedChunks().length,"time",w.getTime(),"days",w.getFullTime()/24000,"difficulty",w.getDifficulty().name(),"storm",w.hasStorm(),"thunder",w.isThundering(),"pvp",w.getPVP(),"autosave",w.isAutoSave(),"border",w.getWorldBorder().getSize())).toList());
         if(route.equals("overview")){
             Runtime runtime=Runtime.getRuntime();double mspt=-1;try{Object value=Bukkit.class.getMethod("getAverageTickTime").invoke(null);if(value instanceof Number n)mspt=n.doubleValue();}catch(ReflectiveOperationException ignored){}
-            return appMap("at",System.currentTimeMillis(),"tps",discordAdminTps(),"mspt",mspt,"ramUsed",runtime.totalMemory()-runtime.freeMemory(),"ramMax",runtime.maxMemory(),"uptime",System.currentTimeMillis()-suiteBootTime,"online",Bukkit.getOnlinePlayers().size(),"maxPlayers",serverMaxPlayers(),"worlds",Bukkit.getWorlds().size(),"version",getDescription().getVersion());
+            return appMap("at",System.currentTimeMillis(),"tps",discordAdminTps(),"mspt",mspt,"ramUsed",runtime.totalMemory()-runtime.freeMemory(),"ramMax",runtime.maxMemory(),"uptime",System.currentTimeMillis()-suiteBootTime,"online",Bukkit.getOnlinePlayers().size(),"maxPlayers",serverMaxPlayers(),"profiles",database.profiles.size(),"scoreboard",nativeScoreboard==null?null:appMap("mainDays",nativeScoreboard.mainDays(),"secondDays",nativeScoreboard.secondDays(),"mainWorld",getConfig().getString("scoreboard.main-world","world"),"secondWorld",getConfig().getString("scoreboard.second-world.name","survival2")),"timezone","Europe/Berlin","serverTime",java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss z",Locale.GERMANY).withZone(java.time.ZoneId.of("Europe/Berlin")).format(Instant.now()),"worlds",Bukkit.getWorlds().size(),"version",getDescription().getVersion());
         }
         if(route.equals("statistics")){
             long play=0,afk=0,sessions=0,points=0;int warnings=0,bans=0,mutes=0,recent=0,new24=0;long now=System.currentTimeMillis();
@@ -8420,12 +8420,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             }
             return appMap("at",now,"profiles",profiles.size(),"playMillis",play,"afkMillis",afk,"sessions",sessions,"points",points,"warnings",warnings,"bans",bans,"mutes",mutes,"recent24h",recent,"new24h",new24,"platforms",platforms,"versions",versions,"models",models,"discordPages",serverStatistics==null?List.of():serverStatistics.payloads());
         }
-        if(route.equals("players")) {
-            List<Map<String,Object>> rows=new ArrayList<>();
-            List<PlayerProfile> profiles=database.sortedProfiles();profiles.sort(Comparator.comparing((PlayerProfile p)->Bukkit.getPlayer(p.uuid)==null).thenComparing(p->p.name.toLowerCase(Locale.ROOT)));
-            for(PlayerProfile p:profiles)if(query.isBlank()||p.name.toLowerCase(Locale.ROOT).contains(query)||p.uuid.toString().contains(query))rows.add(appPlayer(p,false));
-            int end=Math.min(rows.size(),offset+100);return appMap("items",rows.subList(Math.min(offset,rows.size()),end),"next",end<rows.size()?end:-1,"total",rows.size());
-        }
+        if(route.equals("players")) return appPlayerPage(q,query,offset);
         if(route.equals("ultrabans")) {
             List<Object> rows=new ArrayList<>();
             if(altDetection!=null)for(var group:altDetection.ultraGroups.values()){
@@ -8508,6 +8503,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         }}
         expansionAudit(actor,null,"App-Verwaltung",op+" · "+target);return appMap("ok",true,"title","Gespeichert","description",op+" wurde angewendet.");
     }
+    String appVpnWhitelistPlan(String player,String allowed){return vpnProtection.appWhitelistPlan(player,allowed);}
     Object appModerationMutation(String route,Map<String,Object> values,String actor) throws Exception {
         String id=String.valueOf(values.getOrDefault("id",""));
         if(route.equals("management.apply"))return app250Apply(values,actor);
@@ -8538,11 +8534,40 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             var meta=item.getItemMeta();rows.add(appMap("id",container+":"+i,"name",meta!=null&&meta.hasDisplayName()?meta.getDisplayName():item.getType().name(),"type",item.getType().name(),"amount",item.getAmount(),"slot",i,"container",container,"lore",meta!=null&&meta.hasLore()?meta.getLore():List.of()));
         }
     }
+    private record AppPlayerPage(String selection,List<UUID> ids,long expires) {}
+    private final Map<String,AppPlayerPage> appPlayerPages=new LinkedHashMap<>();
+    private Object appPlayerPage(Map<String,String> q,String query,int offset){
+        String filter=q.getOrDefault("filter","all");
+        if(!Set.of("all","online","recent").contains(filter))throw new IllegalArgumentException("Unbekannter Spielerfilter");
+        int limit=50;try{limit=Math.max(1,Math.min(100,Integer.parseInt(q.getOrDefault("limit","50"))));}catch(NumberFormatException ignored){}
+        long now=System.currentTimeMillis();appPlayerPages.entrySet().removeIf(e->e.getValue().expires()<now);
+        String selection=filter+"|"+query,token=q.getOrDefault("snapshot","");AppPlayerPage page=null;
+        if(offset>0&&!token.isBlank()){
+            page=appPlayerPages.get(token);if(page==null||!page.selection().equals(selection))throw new IllegalArgumentException("Spielerliste ist abgelaufen. Bitte neu laden.");
+        }
+        if(page==null){
+            List<PlayerProfile> candidates=new ArrayList<>();
+            // Online never walks the stored player database or materializes offline profiles.
+            if(filter.equals("online")){for(Player live:Bukkit.getOnlinePlayers()){PlayerProfile p=database.get(live.getUniqueId());if(p!=null)candidates.add(p);}}
+            else candidates.addAll(database.profiles.values());
+            Set<UUID> online=new HashSet<>();for(Player live:Bukkit.getOnlinePlayers())online.add(live.getUniqueId());
+            candidates.removeIf(p->filter.equals("recent")&&online.contains(p.uuid)||!query.isBlank()&&!(p.name.toLowerCase(Locale.ROOT).contains(query)||p.uuid.toString().contains(query)));
+            Comparator<PlayerProfile> names=Comparator.comparing((PlayerProfile p)->p.name.toLowerCase(Locale.ROOT)).thenComparing(p->p.uuid);
+            if(filter.equals("online"))candidates.sort(names);
+            else candidates.sort(Comparator.comparing((PlayerProfile p)->filter.equals("all")&&!online.contains(p.uuid)).thenComparing(Comparator.comparingLong((PlayerProfile p)->p.lastSeen).reversed()).thenComparing(names));
+            page=new AppPlayerPage(selection,candidates.stream().map(p->p.uuid).toList(),now+600_000L);token=UUID.randomUUID().toString();
+            if(appPlayerPages.size()>=64)appPlayerPages.remove(appPlayerPages.keySet().iterator().next());appPlayerPages.put(token,page);
+        }
+        int start=Math.min(offset,page.ids().size()),end=Math.min(start+limit,page.ids().size());List<Object> rows=new ArrayList<>();
+        for(UUID id:page.ids().subList(start,end)){PlayerProfile p=database.get(id);if(p!=null&&(!filter.equals("online")||Bukkit.getPlayer(id)!=null)&&(!filter.equals("recent")||Bukkit.getPlayer(id)==null))rows.add(appPlayer(p,false));}
+        return appMap("items",rows,"total",page.ids().size(),"profiles",database.profiles.size(),"next",end<page.ids().size()?end:-1,"snapshot",token);
+    }
+    private static Object appLocation(StoredLocation loc){return loc==null?null:appMap("world",loc.world,"x",loc.x,"y",loc.y,"z",loc.z);}
     private Map<String,Object> appPlayer(PlayerProfile p,boolean detail){
         Player online=Bukkit.getPlayer(p.uuid);
         Map<String,Object> row=appMap("id",p.uuid.toString(),"name",p.name,"online",online!=null,"client",p.clientPlatform,"device",p.bedrockDeviceModel,"brand",p.javaClientBrandValue(),"version",p.clientVersion,"firstSeen",p.firstSeen,"lastSeen",p.lastSeen,"points",p.simplexPoints(),"warnings",p.warnings.size(),"ban",p.internalBanActive(System.currentTimeMillis()),"mute",p.internalMuteActive(System.currentTimeMillis()));
-        if(detail){row.put("network",profileNetwork(p));row.put("notes",new ArrayList<>(p.notes));row.put("warningEntries",new ArrayList<>(p.warnings));row.put("previousNames",new ArrayList<>(p.previousNames));row.put("rights",Arrays.stream(powerRights()).map(r->appMap("id",r,"blocked",p.blockedRightsSet().contains(r),"until",p.temporaryBlockedRightsMap().getOrDefault(r,0L))).toList());
-            if(online!=null){Location loc=online.getLocation();row.put("live",appMap("health",online.getHealth(),"maxHealth",online.getMaxHealth(),"food",online.getFoodLevel(),"saturation",online.getSaturation(),"level",online.getLevel(),"exp",online.getExp(),"gamemode",online.getGameMode().name().toLowerCase(Locale.ROOT),"invulnerable",online.isInvulnerable(),"allowFlight",online.getAllowFlight(),"world",loc.getWorld()==null?"":loc.getWorld().getName(),"x",loc.getX(),"y",loc.getY(),"z",loc.getZ()));}
+        if(detail){row.put("deviceCount",p.devices.size());row.put("altCount",altDetection==null||altDetection.matchCache==null?null:altDetection.matchCache.counts.getOrDefault(p.uuid,0));row.put("vpnWhitelisted",vpnProtection!=null&&vpnProtection.isWhitelisted(p.uuid,p.name));row.put("logoutLocation",appLocation(p.logoutLocation));row.put("lastLocation",appLocation(p.lastLocation));row.put("network",profileNetwork(p));row.put("notes",new ArrayList<>(p.notes));row.put("warningEntries",new ArrayList<>(p.warnings));row.put("previousNames",new ArrayList<>(p.previousNames));row.put("rights",Arrays.stream(powerRights()).map(r->appMap("id",r,"blocked",p.blockedRightsSet().contains(r),"until",p.temporaryBlockedRightsMap().getOrDefault(r,0L))).toList());
+            if(online!=null){List<Object> preview=new ArrayList<>();int occupied=0;for(org.bukkit.inventory.ItemStack item:online.getInventory().getStorageContents())if(item!=null&&!item.getType().isAir()){occupied++;if(preview.size()<6)preview.add(appMap("id",String.valueOf(occupied),"name",item.getType().name().toLowerCase(Locale.ROOT).replace('_',' '),"amount",item.getAmount()));}row.put("inventoryPreview",appMap("occupied",occupied,"items",preview));Location loc=online.getLocation();row.put("live",appMap("health",online.getHealth(),"maxHealth",online.getMaxHealth(),"food",online.getFoodLevel(),"saturation",online.getSaturation(),"level",online.getLevel(),"exp",online.getExp(),"gamemode",online.getGameMode().name().toLowerCase(Locale.ROOT),"invulnerable",online.isInvulnerable(),"allowFlight",online.getAllowFlight(),"world",loc.getWorld()==null?"":loc.getWorld().getName(),"x",loc.getX(),"y",loc.getY(),"z",loc.getZ()));}
         }return row;
     }
     Object appApiMutation(String route,Map<String,Object> values,String actor){

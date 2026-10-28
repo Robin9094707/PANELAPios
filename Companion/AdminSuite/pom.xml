@@ -6,7 +6,7 @@
 
     <groupId>eu.simplexsmp</groupId>
     <artifactId>simplex-admin-suite</artifactId>
-    <version>9.1.2</version>
+    <version>9.1.3</version>
     <name>Simplex Admin Suite</name>
     <description>Crossplay-Admin-Suite mit Spielerprofilen, Moderation und Befehlsverwaltung.</description>
 

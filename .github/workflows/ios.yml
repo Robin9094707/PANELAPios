@@ -68,7 +68,7 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/PluginUploadRegressionTests -only-testing:PanelTests/PlayerNBTSearchTests -only-testing:PanelTests/SuiteIntegrationTests -only-testing:PanelTests/Panel230Tests -only-testing:PanelTests/WorkspaceUpdateTests -only-testing:PanelTests/UpdateFixTests -only-testing:PanelTests/AddonUpdateTests -only-testing:PanelTests/MarketplaceNetworkTests -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testAltDashboardAndIgnoredInfrastructureIP -only-testing:PanelUITests/PanelUITests/testJavaWorldStorageAndNewWorkspaceCards -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/PluginUploadRegressionTests -only-testing:PanelTests/PlayerNBTSearchTests -only-testing:PanelTests/SuiteIntegrationTests -only-testing:PanelTests/Panel230Tests -only-testing:PanelTests/WorkspaceUpdateTests -only-testing:PanelTests/UpdateFixTests -only-testing:PanelTests/AddonUpdateTests -only-testing:PanelTests/MarketplaceNetworkTests -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testPlayerProfile20AndTargetedSearch -only-testing:PanelUITests/PanelUITests/testAltDashboardAndIgnoredInfrastructureIP -only-testing:PanelUITests/PanelUITests/testJavaWorldStorageAndNewWorkspaceCards -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -152,14 +152,14 @@ jobs:
         run: |
           python3 tools/package-source.py
           cd target
-          sha256sum SimplexAdminSuite-9.1.2.jar SimplexAdminSuite-9.1.2-source.zip > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-9.1.3.jar SimplexAdminSuite-9.1.3-source.zip > AdminSuite-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-9.1.2.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-9.1.2-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-9.1.3.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-9.1.3-source.zip
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
 
@@ -205,9 +205,11 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 2.7.0 and Admin Suite 9.1.2 add reversible Alt-IP exclusions, defaulting to 82.165.45.159. Exclusions apply to direct/background correlation, inheritance, identity and Ultra bans. Existing derived group membership is repaired with backups while independent device/manual/other-IP evidence and explicit account bans remain.
+          Simplex Panel 2.8.0 and Admin Suite 9.1.3 introduce Player Profile 2.0: targeted server-side online/recent/search filters, bounded 50-profile pages and stable pagination snapshots. No complete player download is required before displaying results.
 
-          Includes an Alt dashboard, ranked profiles/devices, profile IP controls and explicit IP-observation purge. Player lists now keep an authenticated session snapshot and refresh only on request or after process restart. Existing data schemas, plugin folders, app identity and accounts are preserved. Old copied rights without provenance are flagged for manual review instead of guessed rollback. See source ZIP update instructions.
+          Includes consolidated profile navigation, inventory preview, direct NBT/snapshot access, logout position, confirmed VPN-whitelist switching and clear duplicate errors. Home/server summaries show online/max, existing scoreboard day counters and Europe/Berlin time. Discord settings include guild channel selection and validation outside the Minecraft tick thread.
+
+          Existing profile/database schemas, IP exclusions, configuration and app identity are preserved. Keep the plugin data folder and update the app using the same signing identity. See UPDATE-2.8.0.md / UPDATE-9.1.3.md for details.
 
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)

@@ -15,6 +15,12 @@ struct SuiteDashboardCard: View {
                 if model.busy { ProgressView() }
             }
             if let suite = model.api {
+                LabeledContent("Spieler online", value: "\(model.overview["online"].int) / \(model.overview["maxPlayers"].int)").font(.title3.bold())
+                if model.overview["scoreboard"] != .null {
+                    LabeledContent("Ingame-Tage · Hauptwelt", value: model.overview["scoreboard"]["mainDays"].string)
+                    LabeledContent("Ingame-Tage · Zweitwelt", value: model.overview["scoreboard"]["secondDays"].string)
+                }
+                if let date = SuitePlayerPresentation.date(model.overview["at"]) { LabeledContent("Serverzeit") { Text(SuiteGermanTime.text(date)).font(.caption.monospacedDigit()) } }
                 NavigationLink {
                     SuitePlayersView(suite: suite, panel: model.panel, server: model.server, actions: model.actions, initialFilter: .online)
                 } label: {
@@ -24,7 +30,7 @@ struct SuiteDashboardCard: View {
                     NavigationLink { SuitePlayerView(suite: suite, panel: model.panel, server: model.server, player: row["id"].string, actions: model.actions, initialProfile: row) } label: { SuitePlayerRow(row: row, suite: suite) }.buttonStyle(.plain)
                 }
                 if online.isEmpty { Text(model.updated == nil ? "Spielerdaten werden geladen …" : "Gerade niemand online").font(.subheadline).foregroundStyle(.secondary) }
-                if online.count > 4 { Text("Weitere Spieler in der Online-Liste").font(.caption).foregroundStyle(.secondary) }
+                if model.overview["online"].int > 4 { Text("Weitere Spieler in der Online-Liste").font(.caption).foregroundStyle(.secondary) }
                 SuitePinnedActionsView(suite:suite,actions:model.actions)
                 Divider()
                 ViewThatFits(in: .horizontal) {

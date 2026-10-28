@@ -1,3 +1,7 @@
+# Simplex Panel 2.8.0 / Admin Suite 9.1.3
+
+Player-Profil 2.0: gezielte paginierte Spielersuche, direkte Profilwerkzeuge, VPN-Ausnahme, Serverinfos und Discord-Kanalauswahl. [Updatehinweise](UPDATE-2.8.0.md).
+
 # Panel for iOS
 
 A native SwiftUI client for **your own Pterodactyl hosting account**, with Liquid Glass, iPhone/iPad layouts and no third-party runtime dependencies. Built with the iOS 26 SDK or newer; requires iOS 26+, including newer iOS releases. Not an official Pterodactyl or Kinetic application.
