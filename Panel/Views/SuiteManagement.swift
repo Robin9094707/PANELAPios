@@ -16,6 +16,7 @@ struct SuiteManagementView: View {
                 Button("Discord-Link speichern") { Task { await model.prepare("management.apply", ["operation": .string("discord"), "value": .string(discord)], summary: "Discord-Einladung ändern?\n" + discord) } }.disabled(suite.scope != "full")
             }
             Section("Verwaltung") {
+                if suite.features.contains("restart-v1") { NavigationLink("Neustart planen & abbrechen") { SuiteRestartView(suite: suite) } }
                 NavigationLink("Suite-Administratoren & Rollen") { SuiteAdminDirectory(suite: suite) }
                 NavigationLink("Geräte, Betriebssysteme & Java-Brands") { SuiteAccessRulesView(suite: suite, actions: actions) }
                 NavigationLink("Plugin-Bibliotheken prüfen") { SuiteDependencyView(suite: suite) }
@@ -32,13 +33,29 @@ struct SuiteAdminDirectory: View {
     @State private var rows: [JSON] = []
     @State private var search = ""
     @State private var error: String?
+    @State private var adding = false
+    @State private var refreshing = false
     var body: some View {
         List {
-            Section { Text("Lokale Rollen gelten vor geerbten Suite-Rechten. Offline-Spieler ohne geladene Rechtequelle werden als ungeprüft angezeigt. Operatoren und Hauptadmin bleiben geschützt.").font(.footnote).foregroundStyle(.secondary) }
-            ForEach(rows.filter { search.isEmpty || ($0["name"].string + $0["id"].string).localizedCaseInsensitiveContains(search) }, id: \.["id"].string) { row in NavigationLink { SuitePermissionView(suite: suite, player: row["id"].string, admin: true) } label: { VStack(alignment: .leading) { Text(row["name"].string); Text(row["operator"].bool ? "Operator" : row["inheritedUnknown"].bool ? "Vererbte Rechte ungeprüft" : row["role"].string + (row["effective"].bool ? " · Zugriff" : " · kein bestätigter Zugriff")).font(.caption).foregroundStyle(.secondary) } } }
-        }.panelScreen().navigationTitle("Administratoren").searchable(text: $search).task { await load() }.refreshable { await load() }.errorAlert($error)
+            Section { Text("Hier stehen nur Operatoren und Spieler mit Admin-Zugang. Persönliche Einstellungen zählen nicht dazu. Geerbte Offline-Rechte werden über LuckPerms geprüft.").font(.footnote).foregroundStyle(.secondary)
+                if refreshing { ProgressView("LuckPerms-Rechte werden geprüft …") }
+            }
+            ForEach(rows.filter { search.isEmpty || ($0["name"].string + $0["role"].string).localizedCaseInsensitiveContains(search) }, id: \.["id"].string) { row in
+                NavigationLink { SuitePermissionView(suite: suite, player: row["id"].string, admin: true) } label: {
+                    HStack { Image(systemName: row["operator"].bool ? "crown.fill" : "person.badge.shield.checkmark.fill").foregroundStyle(row["operator"].bool ? .orange : Color.accentColor)
+                        VStack(alignment: .leading) { Text(row["name"].string); Text(row["operator"].bool ? "Hauptoperator · geschützt" : row["role"].string).font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+            }
+            if rows.isEmpty && !refreshing { ContentUnavailableView("Keine weiteren Administratoren", systemImage: "person.2.badge.key.fill", description: Text("Füge einen gespeicherten Spieler hinzu und weise ihm eine Rolle zu.")) }
+            Section { Button("Spieler hinzufügen", systemImage: "person.badge.plus") { adding = true }.disabled(suite.scope != "full")
+                NavigationLink("Eigene Rollen verwalten") { SuiteRoleDirectory(suite: suite) }.disabled(suite.scope != "full")
+            }
+        }.panelScreen().navigationTitle("Admin-Team").searchable(text: $search).task { await load() }.refreshable { await load() }.errorAlert($error)
+            .sheet(isPresented: $adding, onDismiss: { Task { await load() } }) { NavigationStack { SuiteAdminAddView(suite: suite) } }
+            .task(id: refreshing) { guard refreshing else { return }; for _ in 0..<15 { do { try await Task.sleep(for: .seconds(3)); await load(); if !refreshing { break } } catch { break } } }
     }
-    func load() async { do { rows = try await suite.data("management", query: ["section":"admins"])["items"].array } catch { self.error = error.localizedDescription } }
+    func load() async { do { let result = try await suite.data("management", query: ["section":"admins"]); rows = result["items"].array; refreshing = result["refreshing"].bool } catch { self.error = error.localizedDescription } }
 }
 struct SuitePermissionView: View {
     let suite: SuiteAPI
@@ -47,25 +64,44 @@ struct SuitePermissionView: View {
     @StateObject private var model: SuiteSecurityModel
     @State private var data: JSON = .null
     @State private var search = ""
+    @State private var maxBan = "259200"
+    @State private var altBans = false
     init(suite: SuiteAPI, player: String, admin: Bool = false) { self.suite=suite; self.player=player; self.admin=admin; _model=StateObject(wrappedValue: SuiteSecurityModel(suite)) }
+    var groups: [String] { Array(Set(filtered.map { $0["group"].string.isEmpty ? "Berechtigungen" : $0["group"].string })).sorted() }
+    var filtered: [JSON] { data["items"].array.filter { search.isEmpty || ($0["name"].string + $0["description"].string + $0["id"].string).localizedCaseInsensitiveContains(search) } }
+    var locked: Bool { model.busy || suite.scope != "full" || data["protected"].bool }
     var body: some View {
         List {
             if admin {
-                Section("Lokale Rolle") { Picker("Rolle", selection: Binding(get: { data["role"].string }, set: { change("admin-role", value: $0) })) { Text("LuckPerms / Bukkit erben").tag("INHERIT"); Text("Vollzugriff auf Suite").tag("FULL"); Text("Moderator").tag("MODERATOR"); Text("Support").tag("SUPPORT"); Text("Nur lesen").tag("READ_ONLY") } }
-            } else { Section { Toggle("Alt-Accounts-Vererbung", isOn: Binding(get: { data["inherit"] == .null || data["inherit"].bool }, set: { change("inherit", value: String($0)) })) } }
-            ForEach(data["items"].array.filter { search.isEmpty || $0["id"].string.localizedCaseInsensitiveContains(search) }, id: \.["id"].string) { row in
-                VStack(alignment: .leading) {
-                    Toggle(row["name"].string, isOn: Binding(get: { row["allowed"].bool }, set: { change(admin ? "admin-right" : "right", node: row["id"].string, value: String($0)) })).disabled(model.busy || suite.scope != "full")
-                    if row["unknown"].bool { Text("Geerbter Offline-Status ungeprüft; Schalter setzt eine ausdrückliche lokale Regel.").font(.caption).foregroundStyle(.orange) }
-                    if admin { Button("Wieder vererben") { change("admin-right", node: row["id"].string, value: "inherit") }.font(.caption).disabled(suite.scope != "full") }
+                if data["protected"].bool { Label("Hauptoperator · Rechte geschützt", systemImage: "crown.fill").foregroundStyle(.orange) }
+                Section("Rolle") {
+                    Picker("Zugriffsprofil", selection: Binding(get: { data["role"].string }, set: { change("admin-role", value: $0) })) {
+                        ForEach(data["roles"].array, id: \.["id"].string) { role in Text(role["name"].string).tag(role["id"].string) }
+                    }.disabled(locked)
+                    Text("Einzelrechte haben Vorrang vor der Rolle. /sas bleibt bei jedem Adminrecht erreichbar; nicht erlaubte Aktionen werden serverseitig gesperrt.").font(.caption).foregroundStyle(.secondary)
                 }
+                Section("Bannschutz") {
+                    TextField("Maximale Banndauer in Sekunden", text: $maxBan).keyboardType(.numbersAndPunctuation)
+                    Text("259200 = 3 Tage · 0 = unbegrenzt · -1 = keine Banns. Eine eigene Rolle legt ihr Limit für alle Mitglieder fest.").font(.caption).foregroundStyle(.secondary)
+                    Toggle("Alt-Account-Banns erlauben", isOn: $altBans)
+                    Button("Bannschutz speichern") { Task { await model.prepare("management.apply", ["operation":.string("admin-limits"), "player":.string(player), "value":.string(maxBan), "altBans":.string(String(altBans))], summary:"Bannschutz ändern: \(maxBan) Sekunden; Alt-Account-Banns: \(altBans ? "erlaubt" : "gesperrt")") } }
+                }.disabled(locked || data["role"].string.hasPrefix("CUSTOM:"))
+            } else { Section { Toggle("Alt-Accounts-Vererbung", isOn: Binding(get: { data["inherit"] == .null || data["inherit"].bool }, set: { change("inherit", value: String($0)) })).disabled(locked) } }
+            ForEach(groups, id: \.self) { group in
+                Section(group) { ForEach(filtered.filter { ($0["group"].string.isEmpty ? "Berechtigungen" : $0["group"].string) == group }, id: \.["id"].string) { row in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(row["name"].string, isOn: Binding(get: { row["allowed"].bool }, set: { change(admin ? "admin-right" : "right", node: row["id"].string, value: String($0)) })).disabled(locked)
+                        Text(row["description"].string).font(.caption).foregroundStyle(.secondary)
+                        if row["unknown"].bool { Text("Geerbte Offline-Rechte noch nicht geprüft").font(.caption).foregroundStyle(.orange) }
+                        if admin { HStack { Text(row["override"].string == "inherit" ? "Von Rolle / LuckPerms" : "Ausdrückliche Einzelregel"); Spacer(); Button("Zurücksetzen") { change("admin-right", node: row["id"].string, value: "inherit") }.disabled(locked) }.font(.caption) }
+                    }
+                } }
             }
         }.panelScreen().navigationTitle(admin ? "Adminrechte" : "Spielerrechte").searchable(text: $search).task { await load() }.refreshable { await load() }.errorAlert($model.error)
-            .disabled(model.busy)
             .sheet(isPresented: Binding(get: { model.plan != nil }, set: { if !$0 { model.plan = nil } })) { SuiteSecurityConfirmation(model: model) { await load() } }
     }
-    func change(_ operation: String, node: String = "", value: String) { Task { await model.prepare("management.apply", ["operation": .string(operation),"player": .string(player),"node": .string(node),"value": .string(value)], summary: "\(operation)\n\(node) → \(value)\nSpieler: \(player)") } }
-    func load() async { do { data = try await suite.data("management", query: ["section":admin ? "admin-rights":"rights","player":player]) } catch { model.error=error.localizedDescription } }
+    func change(_ operation: String, node: String = "", value: String) { Task { await model.prepare("management.apply", ["operation": .string(operation),"player": .string(player),"node": .string(node),"value": .string(value)], summary: "Berechtigung ändern: \(node) → \(value)\nSpieler: \(player)") } }
+    func load() async { do { data = try await suite.data("management", query: ["section":admin ? "admin-rights":"rights","player":player]); maxBan=data["maxBanSeconds"].string; altBans=data["altBans"].bool } catch { model.error=error.localizedDescription } }
 }
 struct SuiteProbeView: View {
     let suite: SuiteAPI

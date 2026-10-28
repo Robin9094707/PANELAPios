@@ -1,3 +1,7 @@
+## Aktuelles Update: Panel 2.9.0 / Admin Suite 9.2.0
+
+Adminrollen, übersichtliche Rechteverwaltung, Live-Chat und Neustartsteuerung. [Update und Datenübernahme](UPDATE-2.9.0.md).
+
 # Simplex Panel 2.8.0 / Admin Suite 9.1.3
 
 Player-Profil 2.0: gezielte paginierte Spielersuche, direkte Profilwerkzeuge, VPN-Ausnahme, Serverinfos und Discord-Kanalauswahl. [Updatehinweise](UPDATE-2.8.0.md).
