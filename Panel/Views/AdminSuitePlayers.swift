@@ -31,14 +31,14 @@ struct SuitePlayersView: View {
     let server: Server
     let actions: [SuiteAction]
     var initialFilter: SuitePlayerFilter = .all
-    @StateObject private var directory = SuiteDirectory()
+    @ObservedObject private var directory: SuiteDirectory
     @State private var search = ""
     @State private var filter: SuitePlayerFilter
     init(suite: SuiteAPI, panel: PanelAPI, server: Server, actions: [SuiteAction], initialFilter: SuitePlayerFilter = .all) {
         self.suite = suite; self.panel = panel; self.server = server; self.actions = actions; self.initialFilter = initialFilter
-        _filter = State(initialValue: initialFilter)
+        _filter = State(initialValue: initialFilter); _directory = ObservedObject(wrappedValue: suite.playerDirectory)
     }
-    var visible: [JSON] { SuitePlayerPresentation.sorted(directory.rows, filter: filter) }
+    var visible: [JSON] { SuitePlayerPresentation.sorted(directory.rows.filter { search.isEmpty || ($0["name"].string + " " + $0["id"].string).localizedCaseInsensitiveContains(search) }, filter: filter) }
     var body: some View {
         List {
             Section {
@@ -55,8 +55,8 @@ struct SuitePlayersView: View {
                 if directory.next >= 0 && !directory.busy && filter != .online { Button("Weitere Spieler laden") { Task { await load(reset: false) } } }
             }
         }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Spieler").searchable(text: $search, prompt: "Name oder UUID").textInputAutocapitalization(.never).autocorrectionDisabled()
-            .task(id: search + "|" + filter.rawValue) { do { try await Task.sleep(for: .milliseconds(250)); await load(reset: true) } catch {} }
-            .refreshable { await load(reset: true) }.errorAlert($directory.error)
+            .task { await directory.snapshot(suite: suite) }
+            .refreshable { await directory.snapshot(suite: suite, force: true) }.toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Neu laden", systemImage: "arrow.clockwise") { Task { await directory.snapshot(suite: suite, force: true) } }.disabled(directory.busy) } }.errorAlert($directory.error)
     }
     func load(reset: Bool) async { await directory.load(suite: suite, query: search, filter: filter, reset: reset) }
 }
@@ -97,6 +97,11 @@ struct SuitePlayerView: View {
             }
             Section("Netzwerk & Verknüpfungen") {
                 SuiteNetworkContent(network: current["network"])
+                NavigationLink { SuiteAltDashboardView(suite: suite, panel: panel, server: server, actions: actions) } label: { Label("Alt-Account-Dashboard", systemImage: "chart.bar.xaxis") }
+                if !current["network"]["ip"].string.isEmpty {
+                    if current["network"]["altExcluded"].bool { Label("Diese IP wird für Alt-Verknüpfungen ignoriert", systemImage: "shield.lefthalf.filled").font(.caption).foregroundStyle(.orange) }
+                    NavigationLink { SuiteAltIPsView(suite: suite, initialIP: current["network"]["ip"].string) } label: { Label("Diese IP ausschließen / verwalten", systemImage: "network") }
+                }
                 NavigationLink { SuiteDataListView(suite: suite, kind: "alts", player: player, actions: actions, panel: panel, server: server) } label: { Label("Alt-Accounts & deren Profile", systemImage: "person.2.badge.key.fill") }
                 NavigationLink { SuiteVPNPlatformView(suite: suite) } label: { Label("VPN-Plattformen & Standortdiagnose", systemImage: "network") }
             }

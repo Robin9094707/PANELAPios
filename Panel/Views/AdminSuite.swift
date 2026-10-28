@@ -17,7 +17,7 @@ import SwiftUI
     func load(force: Bool = false) async {
         guard !busy else { return }
         guard configured else { api = nil; players = []; actions = []; updated = nil; loadedAt = nil; return }
-        if !force, let loadedAt, Date().timeIntervalSince(loadedAt) < 30, api != nil { return }
+        if !force, api != nil { return }
         busy = true; defer { busy = false }
         do {
             let record = SuiteConnections.shared.get(panel, server) ?? SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: "https://suite.demo.invalid", fingerprint: "", serverIdentity: "synthetic-suite")
@@ -75,6 +75,7 @@ struct SuiteHubView: View {
                 }
                 Section { NavigationLink("Suite-Verwaltung & Wartungsmodus") { SuiteManagementView(suite:api,actions:model.actions) } }
                 Section("Spieler & Moderation") {
+                    NavigationLink { SuiteAltDashboardView(suite: api, panel: panel, server: server, actions: model.actions) } label: { Label("Alt-Account-Dashboard & IP-Regeln", systemImage: "person.2.badge.key.fill") }
                     NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions) } label: { Label("Spieler, Geräte & Alt-Accounts", systemImage: "person.2.fill") }
                     NavigationLink { SuiteSettingsView(suite: api) } label: { Label("Suite-Einstellungen", systemImage: "slider.horizontal.3") }
                     NavigationLink { SuiteReadView(suite: api, path: "server.status", title: "Serverstatus") } label: { Label("Server & Neustartstatus", systemImage: "server.rack") }

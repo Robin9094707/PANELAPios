@@ -47,6 +47,25 @@ enum SuitePlayerPresentation {
     @Published private(set) var next = -1
     @Published private(set) var busy = false
     @Published var error: String?
+    private static var sessions: [String: SuiteDirectory] = [:]
+    static func shared(key: String) -> SuiteDirectory { if let value = sessions[key] { return value }; let value = SuiteDirectory(); sessions[key] = value; return value }
+    @Published private(set) var snapshotLoaded = false
+    func snapshot(suite: SuiteAPI, force: Bool = false) async {
+        guard !busy, force || !snapshotLoaded else { return }
+        busy = true; error = nil; defer { busy = false }
+        do {
+            var staged: [JSON] = [], offset = 0, seen = Set<Int>(), reportedTotal = 0
+            repeat {
+                guard seen.insert(offset).inserted else { throw PanelError(message: "Ungültige Spieler-Paginierung") }
+                let response = try await suite.data("players", query: ["offset": String(offset)])
+                try Task.checkCancellation()
+                staged = SuitePlayerPresentation.merge(staged, response["items"].array); reportedTotal = response["total"].int
+                let next = response["next"] == .null ? -1 : response["next"].int
+                if next <= offset { break }; offset = next
+            } while true
+            rows = staged; total = reportedTotal; next = -1; snapshotLoaded = true
+        } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+    }
     private var revision = UUID()
     func load(suite: SuiteAPI, query: String, filter: SuitePlayerFilter, reset: Bool) async {
         guard reset || !busy else { return }

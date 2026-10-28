@@ -164,6 +164,7 @@ final class AdminPowerToolsManager implements Listener {
         String lastSyncBy = "";
         int lastSyncCount;
         final Set<UUID> linkedAccounts = new LinkedHashSet<>();
+        final Map<UUID,Map<String,String>> originals=new LinkedHashMap<>(),applied=new LinkedHashMap<>();
 
         AltRightsPolicy(UUID source) { this.source = source; }
     }
@@ -1033,10 +1034,10 @@ final class AdminPowerToolsManager implements Listener {
             if (source == null) continue;
             if (plugin.powerAltLinkIgnored(source.uniqueId(), candidate.uniqueId())) continue;
             boolean known = policy.linkedAccounts.contains(candidate.uniqueId());
-            AltCandidate relation = known ? null : plugin.powerAltRelation(source.uniqueId(), candidate.uniqueId(), policy.minimumScore, policy.includeIpOnly);
-            if (!known && relation == null) continue;
+            AltCandidate relation = plugin.powerAltRelation(source.uniqueId(), candidate.uniqueId(), policy.minimumScore, policy.includeIpOnly);
+            if (relation == null) continue;
             boolean rightsDifferent = !sameKnownRights(candidate, source);
-            if (rightsDifferent) copyKnownRights(source, candidate);
+            if (rightsDifferent) copyPolicyRights(policy,source,candidate);
             boolean newlyLinked = policy.linkedAccounts.add(candidate.uniqueId());
             if (newlyLinked || rightsDifferent) {
                 policy.lastSyncAt = System.currentTimeMillis();
@@ -1070,7 +1071,7 @@ final class AdminPowerToolsManager implements Listener {
             SimplexAdminSuite.PlayerProfile target = plugin.expansionProfile(match.uuid);
             if (target == null) continue;
             boolean different = !sameKnownRights(target, source);
-            if (different) copyKnownRights(source, target);
+            if (different) copyPolicyRights(policy,source,target);
             policy.linkedAccounts.add(target.uniqueId());
             if (different) {
                 plugin.powerSaveProfile(target, "Alt-Rechte von " + source.displayName() + " synchronisiert (Score " + match.score + ")");
@@ -1086,6 +1087,29 @@ final class AdminPowerToolsManager implements Listener {
         record(actor, sourceUuid, source.displayName(), "ALT_RIGHTS", "Alt-Rechte synchronisiert", matches.size() + " Konten, " + changed + " Änderungen", true);
         plugin.powerAudit(actor, sourceUuid, "Alt-Rechte synchronisiert", matches.size() + " Konten / Mindestscore " + policy.minimumScore + (policy.includeIpOnly ? " / IP erlaubt" : " / starke Anker"));
         if (announce && admin != null) admin.sendMessage(plugin.prefix() + matches.size() + " passende Alt-Konten geprüft; " + changed + " Rechte-Matrizen geändert.");
+    }
+
+    private void copyPolicyRights(AltRightsPolicy policy,SimplexAdminSuite.PlayerProfile source,SimplexAdminSuite.PlayerProfile target){
+        Map<String,String> original=policy.originals.computeIfAbsent(target.uniqueId(),id->new LinkedHashMap<>());
+        for(String right:plugin.powerRights())original.putIfAbsent(right,target.inheritedRightSnapshot(right));
+        copyKnownRights(source,target);
+        Map<String,String> applied=new LinkedHashMap<>();for(String right:plugin.powerRights())applied.put(right,target.inheritedRightSnapshot(right));policy.applied.put(target.uniqueId(),applied);
+    }
+    synchronized int repairAltPolicies(){
+        int legacy=0;
+        for(AltRightsPolicy policy:altPolicies.values())for(UUID id:new ArrayList<>(policy.linkedAccounts)) {
+            if(plugin.powerAltRelation(policy.source,id,policy.minimumScore,policy.includeIpOnly)!=null)continue;
+            SimplexAdminSuite.PlayerProfile target=plugin.expansionProfile(id);Map<String,String> originals=policy.originals.get(id),applied=policy.applied.get(id);
+            if(target!=null&&originals!=null&&applied!=null){
+                for(var entry:originals.entrySet())if(target.inheritedRightSnapshot(entry.getKey()).equals(applied.get(entry.getKey()))&&(plugin.suitePolicies==null||!plugin.suitePolicies.ownsRight(id,entry.getKey()))) {
+                    boolean another=altPolicies.values().stream().anyMatch(other->other!=policy&&other.enabled&&other.linkedAccounts.contains(id)&&plugin.powerAltRelation(other.source,id,other.minimumScore,other.includeIpOnly)!=null);
+                    if(!another)target.restoreInheritedRight(entry.getKey(),entry.getValue());
+                }
+                plugin.powerSaveProfile(target,"Unbegründete Alt-Rechtevererbung nach IP-Ausschluss zurückgenommen");
+            }else if(target!=null){legacy++;record("Alt-IP-Reparatur",id,target.displayName(),"ALT_RIGHTS","Alte Rechtekopie manuell prüfen","Quelle="+policy.source+"; kein gespeicherter Ursprungszustand",false);}
+            policy.linkedAccounts.remove(id);policy.originals.remove(id);policy.applied.remove(id);
+        }
+        savePolicies();return legacy;
     }
 
     private boolean sameKnownRights(SimplexAdminSuite.PlayerProfile first, SimplexAdminSuite.PlayerProfile second) {
@@ -1720,6 +1744,9 @@ final class AdminPowerToolsManager implements Listener {
             policy.lastSyncBy = y.getString(base + ".last-sync-by", "");
             policy.lastSyncCount = Math.max(0, y.getInt(base + ".last-sync-count", 0));
             for (String value : y.getStringList(base + ".linked-accounts")) { UUID linked = parseUuid(value); if (linked != null) policy.linkedAccounts.add(linked); }
+            for(String raw:y.getStringList(base+".rights-records"))try{
+                String[] parts=raw.split(";",5);UUID target=UUID.fromString(parts[0]);policy.originals.computeIfAbsent(target,id->new LinkedHashMap<>()).put(parts[1],parts[2]);policy.applied.computeIfAbsent(target,id->new LinkedHashMap<>()).put(parts[1],parts[3]);
+            }catch(RuntimeException invalid){throw new IllegalStateException("Alt-Rechte-Rücksetzbeleg ist ungültig; Daten bleiben erhalten",invalid);}
             altPolicies.put(uuid, policy);
         }
     }
@@ -1741,6 +1768,7 @@ final class AdminPowerToolsManager implements Listener {
             y.set(base + ".last-sync-by", policy.lastSyncBy);
             y.set(base + ".last-sync-count", policy.lastSyncCount);
             y.set(base + ".linked-accounts", policy.linkedAccounts.stream().map(UUID::toString).toList());
+            List<String> records=new ArrayList<>();policy.originals.forEach((target,rights)->rights.forEach((right,value)->{String applied=policy.applied.getOrDefault(target,Map.of()).get(right);if(applied!=null)records.add(target+";"+right+";"+value+";"+applied);}));y.set(base+".rights-records",records);
         }
         save(y, policiesFile);
     }
@@ -1803,6 +1831,7 @@ final class AdminPowerToolsManager implements Listener {
             catch (AtomicMoveNotSupportedException ignored) { Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING); }
         } catch (Exception error) {
             plugin.getLogger().warning("Admin-Datendatei konnte nicht atomar gespeichert werden: " + file.getName() + " – " + error.getMessage());
+            if(file.equals(policiesFile))throw new IllegalStateException("Alt-Rechtezustand konnte nicht sicher gespeichert werden",error);
         }
     }
 

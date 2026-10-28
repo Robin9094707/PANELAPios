@@ -102,6 +102,7 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
     func view(_ path: String, values: [String: JSON] = [:]) async throws -> JSON { try await request("view", query: values.mapValues(\.string).merging(["path": path], uniquingKeysWith: { _, b in b })) }
     func prepare(_ path: String, values: [String: JSON]) async throws -> JSON { _ = try await health(); return try await request("prepare", method: "POST", body: .object(["path": .string(path), "values": .object(values)])) }
     func execute(_ ticket: String) async throws -> JSON { try await request("execute", method: "POST", body: .object(["ticket": .string(ticket)])) }
+    var playerDirectory: SuiteDirectory { SuiteDirectory.shared(key: connection.panel + "|" + connection.server + "|" + connection.endpoint + "|" + connection.fingerprint + "|" + SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()) }
     func data(_ name: String, query: [String: String] = [:]) async throws -> JSON { try await request("data/" + name, query: query) }
 }
 struct SuiteAction: Identifiable {

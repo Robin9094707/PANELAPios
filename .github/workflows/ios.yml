@@ -68,7 +68,7 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/PluginUploadRegressionTests -only-testing:PanelTests/PlayerNBTSearchTests -only-testing:PanelTests/Panel230Tests -only-testing:PanelTests/WorkspaceUpdateTests -only-testing:PanelTests/UpdateFixTests -only-testing:PanelTests/AddonUpdateTests -only-testing:PanelTests/MarketplaceNetworkTests -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testJavaWorldStorageAndNewWorkspaceCards -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/PluginUploadRegressionTests -only-testing:PanelTests/PlayerNBTSearchTests -only-testing:PanelTests/SuiteIntegrationTests -only-testing:PanelTests/Panel230Tests -only-testing:PanelTests/WorkspaceUpdateTests -only-testing:PanelTests/UpdateFixTests -only-testing:PanelTests/AddonUpdateTests -only-testing:PanelTests/MarketplaceNetworkTests -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testAltDashboardAndIgnoredInfrastructureIP -only-testing:PanelUITests/PanelUITests/testJavaWorldStorageAndNewWorkspaceCards -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -152,14 +152,14 @@ jobs:
         run: |
           python3 tools/package-source.py
           cd target
-          sha256sum SimplexAdminSuite-9.1.0.jar SimplexAdminSuite-9.1.0-source.zip > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-9.1.2.jar SimplexAdminSuite-9.1.2-source.zip > AdminSuite-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-9.1.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-9.1.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-9.1.2.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-9.1.2-source.zip
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
 
@@ -205,11 +205,9 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 2.6.0 and Admin Suite 9.1.0 repair local JAR upload validation/confirmation, resolve UUID player NBT in modern dimensions/players/data and legacy playerdata, add a bounded Panel API fallback, and expose recursive Alt-account profiles/devices and copyable raw IPs.
+          Simplex Panel 2.7.0 and Admin Suite 9.1.2 add reversible Alt-IP exclusions, defaulting to 82.165.45.159. Exclusions apply to direct/background correlation, inheritance, identity and Ultra bans. Existing derived group membership is repaired with backups while independent device/manual/other-IP evidence and explicit account bans remain.
 
-          VPN target selection: both (default), Java only, or Bedrock only. Excluded platforms skip provider queries and VPN cooldowns. Changes apply immediately through Java/Bedrock menus or the app. Optional ipwho.is location diagnostics reuse the existing 7-day persistent cache and daily budget; locations are hidden for VPN/proxy signals and unknown results. IP location is approximate, never identity proof.
-
-          Existing profiles, device links, bans, permissions, configuration files, app accounts and API pins are retained. No data schema migration. Keep the complete plugin data folder; replace only the JAR during a restart. Install the unsigned IPA with the same signing identity and bundle ID without deleting the app. Complete plugin source and update instructions are included.
+          Includes an Alt dashboard, ranked profiles/devices, profile IP controls and explicit IP-observation purge. Player lists now keep an authenticated session snapshot and refresh only on request or after process restart. Existing data schemas, plugin folders, app identity and accounts are preserved. Old copied rights without provenance are flagged for manual review instead of guessed rollback. See source ZIP update instructions.
 
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)

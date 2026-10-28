@@ -31,6 +31,8 @@ enum SuiteDemo {
             .object(["id": .string("security.ultraunban"), "description": .string("Ultrabann-Gruppe freigeben"), "group": .string("Sicherheit"), "options": .array([field("target", "Spieler oder Gruppen-ID")])]),
             .object(["id": .string("server.restart"), "description": .string("Neustart verwalten"), "group": .string("Server"), "options": .array([field("action", "Aktion"), field("seconds", "Countdown in Sekunden")])])
         ])])
+        case "data/alt-dashboard": return .object(["linkedProfiles": .number(2), "extraAccounts": .number(1), "groups": .number(1), "largestGroup": .number(2), "directPairs": .number(1), "devices": .number(3), "items": .array([.object(["id": .string(player), "name": .string("TadMC_YT"), "client": .string("JAVA"), "linked": .number(1), "devices": .number(1)])]), "next": .number(-1), "revision": .string("synthetic-ip-policy"), "excluded": .array([.string("82.165.45.159")])])
+        case "data/alt-ips": return .object(["items": .array([.object(["id": .string("82.165.45.159"), "ip": .string("82.165.45.159"), "profiles": .number(3), "excluded": .bool(true)])]), "next": .number(-1), "revision": .string("synthetic-ip-policy")])
         case "data/players":
             let rows = [profile(detail: false), otherProfile(online: true), otherProfile(online: false)].filter { (query["q"] ?? "").isEmpty || $0["name"].string.localizedCaseInsensitiveContains(query["q"] ?? "") || $0["id"].string.contains(query["q"] ?? "") }
             return .object(["items": .array(rows), "total": .number(Double(rows.count)), "next": .number(-1)])

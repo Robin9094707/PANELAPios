@@ -2,6 +2,10 @@
 
 A native SwiftUI client for **your own Pterodactyl hosting account**, with Liquid Glass, iPhone/iPad layouts and no third-party runtime dependencies. Built with the iOS 26 SDK or newer; requires iOS 26+, including newer iOS releases. Not an official Pterodactyl or Kinetic application.
 
+## Version 2.7.0 / Admin Suite 9.1.2
+
+Reversible IP evidence exclusions and repair of existing derived Alt/Ultra/identity links (82.165.45.159 excluded by default), an Alt dashboard and IP controls in app/Java/Bedrock menus, and stable player snapshots with explicit refresh. Existing data and identities are retained. Installation and repair limits: [Update 2.7.0](UPDATE-2.7.0.md).
+
 ## Version 2.6.0 / Admin Suite 9.1.0
 
 Stable upload → validation → confirmation flow; exact UUID NBT resolution for modern world dimensions and a Panel API fallback; VPN platform selection (both by default); recursive Alt profiles and devices; copyable raw IPs with optional cached approximate IP locations. Existing app identity and Suite state formats are retained. See [Update 2.6.0](UPDATE-2.6.0.md).
