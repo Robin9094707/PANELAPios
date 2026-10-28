@@ -10,6 +10,7 @@ final class VpnSettings {
     private static final String ROOT = "vpn-protection.";
     private final FileConfiguration config;
     private final boolean enabled;
+    private final String targetPlatform;
     private final boolean blockVpn;
     private final boolean blockHosting;
     private final boolean blockOnSingleHighConfidence;
@@ -25,6 +26,7 @@ final class VpnSettings {
 
     VpnSettings(FileConfiguration config) {
         this.config = config;
+        targetPlatform = platform(config.getString(ROOT + "target-platform", "both"));
         enabled = config.getBoolean(ROOT + "enabled", true);
         blockVpn = config.getBoolean(ROOT + "settings.block-vpn", true);
         blockHosting = config.getBoolean(ROOT + "settings.block-hosting-datacenter", true);
@@ -42,6 +44,11 @@ final class VpnSettings {
         bedrockPrefixes = Collections.unmodifiableList(configuredPrefixes);
     }
 
+    String targetPlatform() { return targetPlatform; }
+    static String platform(String value) { return SetHolder.VALUES.contains(value) ? value : "both"; }
+    private static final class SetHolder { static final java.util.Set<String> VALUES=java.util.Set.of("both","java","bedrock"); }
+    boolean checksPlatform(boolean bedrock) { return targetPlatform().equals("both") || targetPlatform().equals(bedrock ? "bedrock" : "java"); }
+    String platformLabel() { return switch(targetPlatform()) { case "java" -> "Nur Java"; case "bedrock" -> "Nur Bedrock"; default -> "Java und Bedrock"; }; }
     boolean enabled() { return enabled; }
     boolean blockVpn() { return blockVpn; }
     boolean blockHosting() { return blockHosting; }

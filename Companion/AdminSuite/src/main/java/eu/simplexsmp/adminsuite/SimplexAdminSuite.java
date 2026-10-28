@@ -3554,6 +3554,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         else if (slot == 32) bringPlayer(admin, target);
         else if (slot == 33) { if (!require(admin, "simplexadminsuite.utilities")) return; healOrFeed(admin, target, true, true); openPlayer(admin, target.uuid); }
         else if (slot == 34) openGameModes(admin, target.uuid);
+        else if (slot == 38) openNetworkProfile(admin,target.uuid);
         else if (slot == 39) openAltProfile(admin, target.uuid);
         else if (slot == 40) {
             if (!require(admin, "simplexadminsuite.watchlist")) return;
@@ -5274,6 +5275,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                     "&7Spieler: &f" + target.name));
         }
         if(online&&javaProbeTarget(uuid)&&has(admin,"simplexadminsuite.clientcheck"))inv.setItem(44,item(Material.SHIELD,"&bClient prüfen / Verlauf","&7Java-Prüfungen direkt verwalten","&7Ergebnisse, Schlüssel und Verbindungen."));
+        inv.setItem(38,item(Material.COMPASS,"&bRoh-IP & IP-Standort","&7IP kopieren, Diagnose und zugehörige Profile"));
         inv.setItem(49, item(Material.BARRIER, "&cZurück", "&7Zurück zum Hauptmenü."));
         LiveMenus.show(admin,inv);
     }
@@ -5370,6 +5372,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 "&7Eingabe: &f" + target.clientInput,
                 "&7UI: &f" + (target.bedrockUiProfile.isEmpty() ? "Nicht verfügbar" : target.bedrockUiProfile),
                 "&7Klick zeigt alle Rohdaten, Filter und Sperren."));
+        inv.setItem(16,item(Material.COMPASS,"&bRoh-IP & Standort","&7Kopieren, Diagnose und Spielerprofil"));
         inv.setItem(14, item(Material.MAP, "&eForensisches Deep-Link-Modell",
                 "&7Direkt: Geräte-ID, XUID, Self-Signed, IP",
                 "&7Transitiv: Konto → Gerät/IP → weiteres Konto",
@@ -5408,6 +5411,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (slot == 18 && menu.page > 0) { openAltProfile(admin, target.uuid, menu.page - 1); return; }
         if (slot == 26) { openAltProfile(admin, target.uuid, menu.page + 1); return; }
         if (slot == 49) { openPlayer(admin, target.uuid); return; }
+        if (slot == 16) { openNetworkProfile(admin,target.uuid); return; }
         if (slot == 12) { openDeviceHistory(admin, target.uuid, 0, "ALL", ""); return; }
         if (slot == 45) { if (!require(admin, "simplexadminsuite.alts.link")) return; ask(admin, target.uuid, "alt-manual-link", "Schreibe den Namen des zugehörigen Kontos. 'abbrechen' beendet die Eingabe."); return; }
         if (slot == 46) { if (!require(admin, "simplexadminsuite.alts.link")) return; ask(admin, target.uuid, "alt-ignore-link", "Schreibe den Namen des falsch erkannten Kontos. 'abbrechen' beendet die Eingabe."); return; }
@@ -6735,6 +6739,41 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     void suiteKick(Player p,String message){if(p!=null&&!emergency(p.getUniqueId()))p.kickPlayer(message==null?"Please contact server staff.":message);}
     void calendarRestart(String actor,int seconds){if(restartManager!=null&&!restartManager.schedule(actor,seconds))getLogger().info("Neustart-Zeitplan: vorhandener Countdown läuft bereits.");}
     void cancelCalendarRestart(String actor){if(restartManager!=null)restartManager.cancel(actor);}
+    void refreshVpnSettings(){if(vpnProtection!=null)vpnProtection.reload();}
+    private Map<String,Object> profileNetwork(PlayerProfile profile){
+        String raw=VpnIpCheckService.isIpLiteral(profile.lastIpMasked)?profile.lastIpMasked:null;
+        Map<String,Object> out=appMap("ip",raw==null?"":raw,"geoEnabled",getConfig().getBoolean("client-control.geo.enabled",false),"provider","ipwho.is","approximate",true);
+        if(raw==null){out.put("status","Keine Roh-IP gespeichert; frühere Hashes sind nicht umkehrbar");return out;}
+        if(GeoInsights.publicIp(raw)==null){out.put("status","Lokale/private IP · keine externe Standortabfrage");return out;}
+        VpnCheckResult vpn=vpnProtection==null?null:vpnProtection.profileResult(profile.uuid,profile.name,raw,"BEDROCK".equals(profile.clientPlatform));
+        boolean excluded=!new VpnSettings(getConfig()).checksPlatform("BEDROCK".equals(profile.clientPlatform));
+        boolean clean=vpn!=null&&!vpn.positive()&&!vpn.allProvidersFailed()&&!vpn.localAddress()&&vpn.signals()==0;
+        out.put("vpn",vpn==null?"unknown":vpn.positive()?"detected":vpn.allProvidersFailed()?"unknown":"no-signal");
+        if(!clean){out.put("status",excluded?"Diese Plattform wird nicht auf VPN geprüft; Standort bleibt ausgeblendet":vpn==null?"VPN-Status wird geprüft oder VPN-Schutz ist deaktiviert":vpn.positive()||vpn.signals()>0?"VPN-/Proxy-/Hosting-Hinweis; Standort ausgeblendet":"VPN-Prüfung ohne verlässliches Ergebnis");out.put("pending",!excluded&&vpn==null&&getConfig().getBoolean("vpn-protection.enabled",true));return out;}
+        if(securityHub==null||!getConfig().getBoolean("client-control.geo.enabled",false)){out.put("status","Standortdiagnose ist ausgeschaltet");return out;}
+        String key=geoIpKey(raw);securityHub.geo.enqueue(key,raw);GeoInsights.Result result=securityHub.geo.get(key);
+        if(result==null||System.currentTimeMillis()-result.at()>7L*86400000){out.put("pending",true);out.put("status","Ungefährer IP-Standort wird geladen; bei API-Limit später erneut versuchen");return out;}
+        out.put("location",appMap("at",result.at(),"country",result.country(),"region",result.region(),"city",result.city(),"postal",result.postal(),"isp",result.isp(),"timezone",result.timezone()));
+        out.put("status","Ungefährer Netzstandort; kein Wohnortnachweis");return out;
+    }
+    private void openNetworkProfile(Player admin,UUID id){
+        if(!adminMenuAllowed(admin,"suite.openprofile")||!has(admin,"simplexadminsuite.alts"))return;
+        PlayerProfile profile=database.get(id);if(profile==null)return;
+        Map<String,Object> data=profileNetwork(profile);String ip=String.valueOf(data.get("ip"));
+        List<AdminUpdateMenu.Button> items=new ArrayList<>();
+        items.add(AdminUpdateMenu.info("Letzte Roh-IP",ip.isBlank()?"Nicht gespeichert":ip,Material.COMPASS));
+        if(!ip.isBlank())items.add(new AdminUpdateMenu.Button("IP im Chat kopieren","Java: anklicken; Bedrock: Textfeld zum Markieren",Material.PAPER,()->{
+            if(isBedrockAdmin(admin)){adminUpdate.prompt(admin,"Roh-IP kopieren",ip,ignored->openNetworkProfile(admin,id));}
+            else {admin.closeInventory();admin.sendMessage(net.kyori.adventure.text.Component.text("IP kopieren: "+ip).clickEvent(net.kyori.adventure.text.event.ClickEvent.copyToClipboard(ip)));}
+        }));
+        items.add(AdminUpdateMenu.info("IP-Standort",String.valueOf(data.get("status"))+"\n"+String.valueOf(data.getOrDefault("location","")),Material.MAP));
+        items.add(new AdminUpdateMenu.Button("Aktualisieren","VPN- und Standortcache erneut anzeigen",Material.CLOCK,()->openNetworkProfile(admin,id)));
+        items.add(new AdminUpdateMenu.Button("Alt-Accounts","Verknüpfte Profile, Geräte und Belege",Material.PLAYER_HEAD,()->{if(!(isBedrockAdmin(admin)&&bedrockMenus.openAltPlayer(admin,id)))openAltProfile(admin,id);}));
+        items.add(new AdminUpdateMenu.Button("Alle Geräte","Geräte dieses Profils",Material.COMPARATOR,()->{if(!has(admin,"simplexadminsuite.alts.identities"))return;List<AdminUpdateMenu.Button> devices=new ArrayList<>();for(DeviceRecord d:profile.devices.values())devices.add(new AdminUpdateMenu.Button(d.model.isBlank()?d.id:d.model,d.platform+" • "+d.os,Material.COMPARATOR,()->openDeviceDiagnostics(admin,id,d.id,0,"fields")));devices.add(new AdminUpdateMenu.Button("Zurück","Netzwerk",Material.OAK_DOOR,()->openNetworkProfile(admin,id)));adminUpdate.show(admin,"Geräte · "+profile.name,devices,0);}));
+        if(has(admin,"simplexadminsuite.vpn.manage"))items.add(new AdminUpdateMenu.Button("Standortdiagnose "+(getConfig().getBoolean("client-control.geo.enabled",false)?"ausschalten":"einschalten"),"Öffentliche IPs über HTTPS an ipwho.is; Cache 7 Tage",Material.LEVER,()->{getConfig().set("client-control.geo.enabled",!getConfig().getBoolean("client-control.geo.enabled",false));saveConfig();if(securityHub!=null)securityHub.reload();openNetworkProfile(admin,id);}));
+        items.add(new AdminUpdateMenu.Button("Zurück","Spielerprofil",Material.OAK_DOOR,()->{if(!(isBedrockAdmin(admin)&&bedrockMenus.openPlayer(admin,id)))openPlayer(admin,id);}));
+        adminUpdate.show(admin,"Netzwerk · "+profile.name,items,0);
+    }
     String geoIpKey(String ip){return altDetection.fingerprint("ip",ip);}
     String profileIpKey(UUID id){PlayerProfile p=database.get(id);return p==null?"":p.lastIpHash;}
     void bindEmergencyProfiles(){for(PlayerProfile p:database.sortedProfiles())p.emergencyAccess=()->emergency(p.uuid);}
@@ -8360,11 +8399,12 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return appMap("items",items,"level",yaml.getInt("level"),"food",yaml.getInt("food"),"health",yaml.getDouble("health"),"gamemode",yaml.getString("gamemode",""),"actor",yaml.getString("created-by",""));
         }
         if(route.equals("nbt-paths")){
-            List<Object> rows=new ArrayList<>();java.nio.file.Path root=new File(".").toPath().toAbsolutePath().normalize();
-            for(World world:Bukkit.getWorlds())for(String folder:List.of("playerdata","players/data")){
-                java.nio.file.Path path=world.getWorldFolder().toPath().resolve(folder).resolve(p.uuid+".dat").toAbsolutePath().normalize();
-                if(path.startsWith(root)&&Files.isRegularFile(path)&&!Files.isSymbolicLink(path))rows.add(appMap("id","/"+root.relativize(path).toString().replace(File.separatorChar,'/'),"modified",path.toFile().lastModified(),"name",world.getName()+" · "+folder,"online",Bukkit.getPlayer(p.uuid)!=null));
-            }rows.sort((a,b)->Long.compare(((Number)((Map<?,?>)b).get("modified")).longValue(),((Number)((Map<?,?>)a).get("modified")).longValue()));return appMap("items",rows);
+            List<Object> rows=new ArrayList<>();
+            try {for(PlayerNbtLocator.Entry entry:PlayerNbtLocator.find(java.nio.file.Path.of("."),Bukkit.getWorlds().stream().map(World::getWorldFolder).toList(),p.uuid))
+                rows.add(appMap("id",entry.id(),"modified",entry.file().toFile().lastModified(),"name",entry.id().endsWith("/players/data/"+p.uuid+".dat")?"Spielerdaten · players/data":"Spielerdaten · playerdata","online",Bukkit.getPlayer(p.uuid)!=null));
+            }catch(java.io.IOException error){throw new IllegalArgumentException("NBT-Suche fehlgeschlagen: "+error.getMessage());}
+            return appMap("items",rows);
+
         }
         throw new IllegalArgumentException("Unbekannter Datenbereich.");
     }
@@ -8432,7 +8472,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     private Map<String,Object> appPlayer(PlayerProfile p,boolean detail){
         Player online=Bukkit.getPlayer(p.uuid);
         Map<String,Object> row=appMap("id",p.uuid.toString(),"name",p.name,"online",online!=null,"client",p.clientPlatform,"device",p.bedrockDeviceModel,"brand",p.javaClientBrandValue(),"version",p.clientVersion,"firstSeen",p.firstSeen,"lastSeen",p.lastSeen,"points",p.simplexPoints(),"warnings",p.warnings.size(),"ban",p.internalBanActive(System.currentTimeMillis()),"mute",p.internalMuteActive(System.currentTimeMillis()));
-        if(detail){row.put("notes",new ArrayList<>(p.notes));row.put("warningEntries",new ArrayList<>(p.warnings));row.put("previousNames",new ArrayList<>(p.previousNames));row.put("rights",Arrays.stream(powerRights()).map(r->appMap("id",r,"blocked",p.blockedRightsSet().contains(r),"until",p.temporaryBlockedRightsMap().getOrDefault(r,0L))).toList());
+        if(detail){row.put("network",profileNetwork(p));row.put("notes",new ArrayList<>(p.notes));row.put("warningEntries",new ArrayList<>(p.warnings));row.put("previousNames",new ArrayList<>(p.previousNames));row.put("rights",Arrays.stream(powerRights()).map(r->appMap("id",r,"blocked",p.blockedRightsSet().contains(r),"until",p.temporaryBlockedRightsMap().getOrDefault(r,0L))).toList());
             if(online!=null){Location loc=online.getLocation();row.put("live",appMap("health",online.getHealth(),"maxHealth",online.getMaxHealth(),"food",online.getFoodLevel(),"saturation",online.getSaturation(),"level",online.getLevel(),"exp",online.getExp(),"gamemode",online.getGameMode().name().toLowerCase(Locale.ROOT),"invulnerable",online.isInvulnerable(),"allowFlight",online.getAllowFlight(),"world",loc.getWorld()==null?"":loc.getWorld().getName(),"x",loc.getX(),"y",loc.getY(),"z",loc.getZ()));}
         }return row;
     }
@@ -10642,6 +10682,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                     + "§7Seite: §f" + (page + 1) + "/" + (maxPage + 1) + "\n\n"
                     + "§8Roh-IDs und technische Gerätedaten sind in der Gerätehistorie einsehbar. IP-only bleibt nicht kaskadensicher.";
             SimpleForm.Builder form = SimpleForm.builder().title("§l§dALT-FORENSIK: §f" + target.name).content(content);
+            form.button("§bVollständiges Spielerprofil",r->sync(()->openPlayer(admin,target.uuid)));
+            form.button("§bRoh-IP & Standort",r->sync(()->plugin.openNetworkProfile(admin,target.uuid)));
             int startIndex = page * pageSize;
             for (int index = startIndex; index < Math.min(matches.size(), startIndex + pageSize); index++) {
                 AdvancedAltDetection.AltMatch match = matches.get(index);
@@ -11640,6 +11682,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                     + "§7Freeze: " + (target.isBlocked("move") ? "§cAktiv" : "§aInaktiv");
             SimpleForm.Builder form = SimpleForm.builder().title("§l§bVERWALTUNG: §f" + target.name).content(content);
             form.button("§bSpielerakte\n§fIdentität, Sitzungen, Reports und Verläufe", response -> sync(() -> openDetails(admin, target.uuid)));
+            if(plugin.has(admin,"simplexadminsuite.alts"))form.button("§bRoh-IP & IP-Standort",response->sync(()->plugin.openNetworkProfile(admin,target.uuid)));
             if (plugin.has(admin, "simplexadminsuite.powertools.player")) form.button("§bSpielerkontrolle\n§fLive, Moderation, Inventar und Alt-Rechte", response -> sync(() -> openPlayerPowerTools(admin, target.uuid)));
             if (plugin.has(admin, "simplexadminsuite.teleport")) {
                 form.button("§aZu Spieler teleportieren", response -> sync(() -> { plugin.teleportToOnline(admin, target); openPlayer(admin, target.uuid); }));

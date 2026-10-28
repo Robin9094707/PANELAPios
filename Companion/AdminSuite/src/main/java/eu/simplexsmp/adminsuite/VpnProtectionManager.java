@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -91,6 +92,8 @@ final class VpnProtectionManager implements Listener {
         InetAddress address = event.getAddress();
         String ip = address == null ? "unknown" : address.getHostAddress();
         boolean bedrock = isBedrock(uuid, name, currentSettings);
+
+        if (!currentSettings.checksPlatform(bedrock)) return;
 
         if (whitelist.isWhitelisted(uuid, name)) {
             bypassed.incrementAndGet();
@@ -240,6 +243,22 @@ final class VpnProtectionManager implements Listener {
         openJava(admin);
     }
 
+    private final Set<String> profilePending = ConcurrentHashMap.newKeySet();
+    VpnCheckResult profileResult(UUID uuid,String name,String ip,boolean bedrock) {
+        VpnIpCheckService service=checks;VpnSettings policy=settings;
+        if(service==null||policy==null||!policy.enabled()||!policy.checksPlatform(bedrock))return null;
+        VpnCheckResult known=service.cached(ip);
+        if(known==null&&GeoInsights.publicIp(ip)!=null&&profilePending.add(ip)) {
+            Bukkit.getScheduler().runTaskAsynchronously(plugin,()->{try{service.check(ip,false);}finally{profilePending.remove(ip);}});
+        }
+        return known;
+    }
+    private void cyclePlatform(String actor) {
+        String next=switch(settings.targetPlatform()){case "both"->"java";case "java"->"bedrock";default->"both";};
+        plugin.getConfig().set("vpn-protection.target-platform",next);plugin.saveConfig();reload();
+        plugin.vpnAudit(actor,null,"VPN-Plattformen geändert",settings.platformLabel());
+    }
+
     void openJava(Player admin) {
         if (!plugin.adminMenuAllowed(admin, "vpnprotectionmanager.openjava")) return;
         VpnSettings current = settings;
@@ -260,6 +279,7 @@ final class VpnProtectionManager implements Listener {
                 "&7Blockierte und auffällige Versuche.", "&7Gespeicherte Einträge: &f" + detectionLog.size()));
         inventory.setItem(14, plugin.item(Material.BUCKET, "&eIP-Cache leeren", "&7Cache: &f" + cacheSize(), "&7Auch Join-Cooldowns werden geleert."));
         inventory.setItem(15, plugin.item(Material.COMPARATOR, "&6VPN-Modul neu laden", "&7Config, Whitelist und Provider neu laden."));
+        inventory.setItem(24, plugin.item(Material.PLAYER_HEAD, "&bGeprüfte Plattformen: &f"+current.platformLabel(), "&7Klicken: beide → Java → Bedrock", "&7Standard: Java und Bedrock"));
         inventory.setItem(19, toggleItem(current.blockHosting(), "Hosting-/Datacenter-Erkennung", "Erfasst typische VPN-Rechenzentren."));
         inventory.setItem(20, toggleItem(current.blockOnSingleHighConfidence(), "Einzelsignal mit hoher Sicherheit", "Blockiert klare VPN-/Proxy-/Tor-Signale sofort."));
         inventory.setItem(21, toggleItem(current.failOpen(), "Fail-open bei API-Ausfall", "Verhindert Fehlkicks, wenn alle APIs ausfallen."));
@@ -291,6 +311,8 @@ final class VpnProtectionManager implements Listener {
             form.button(current.enabled() ? "§cVPN-Schutz deaktivieren" : "§aVPN-Schutz aktivieren", response -> sync(() -> {
                 set("vpn-protection.enabled", !current.enabled(), admin.getName()); openBedrock(admin);
             }));
+        if (can(admin, "simplexadminsuite.vpn.manage", "simplexvpn.admin"))
+            form.button("§bGeprüfte Plattformen\n§f"+current.platformLabel(), response -> sync(() -> { cyclePlatform(admin.getName()); openBedrock(admin); }));
         if (can(admin, "simplexadminsuite.vpn.whitelist", "simplexvpn.whitelist")) {
             form.button("§bSpieler aus Datenbank\n§fWhitelist hinzufügen/entfernen", response -> sync(() -> openBedrockPlayers(admin, 0)));
             form.button("§aWhitelist anzeigen\n§f" + whitelist.entries().size() + " Einträge", response -> sync(() -> openBedrockWhitelist(admin, 0)));
@@ -319,7 +341,7 @@ final class VpnProtectionManager implements Listener {
                 openLog(admin, 0);
                 return;
             }
-            if (!List.of(10, 14, 15, 19, 20, 21, 22, 23, 28, 29, 30, 31).contains(slot)) return;
+            if (!List.of(10, 14, 15, 19, 20, 21, 22, 23, 24, 28, 29, 30, 31).contains(slot)) return;
             if (!allowed(admin, "simplexadminsuite.vpn.manage", "simplexvpn.admin")) return;
             if (slot == 10) set("vpn-protection.enabled", !settings.enabled(), admin.getName());
             else if (slot == 14) { clearCache(); plugin.vpnAudit(admin.getName(), null, "VPN-Cache geleert", "Java-Menü"); }
@@ -329,6 +351,7 @@ final class VpnProtectionManager implements Listener {
             else if (slot == 21) set("vpn-protection.settings.fail-open-if-all-apis-fail", !settings.failOpen(), admin.getName());
             else if (slot == 22) set("vpn-protection.logging.log-all-joins", !settings.logAllJoins(), admin.getName());
             else if (slot == 23) set("discord-bot.vpn-log.enabled", !plugin.getConfig().getBoolean("discord-bot.vpn-log.enabled", true), admin.getName());
+            else if (slot == 24) cyclePlatform(admin.getName());
             else if (slot == 28) toggleProvider("proxycheck", admin.getName());
             else if (slot == 29) toggleProvider("ipapi-is", admin.getName());
             else if (slot == 30) toggleProvider("ipwhois", admin.getName());

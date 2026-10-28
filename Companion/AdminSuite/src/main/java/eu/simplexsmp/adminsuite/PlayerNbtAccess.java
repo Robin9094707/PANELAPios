@@ -11,13 +11,8 @@ final class PlayerNbtAccess {
     private final SimplexAdminSuite plugin;
     PlayerNbtAccess(SimplexAdminSuite plugin) { this.plugin=plugin; }
     private Path path(UUID player,String requested) throws IOException {
-        Path root=Path.of(".").toRealPath();
-        for(World world:Bukkit.getWorlds())for(String folder:List.of("playerdata","players/data")) {
-            Path path=world.getWorldFolder().toPath().resolve(folder).resolve(player+".dat").toAbsolutePath().normalize();
-            if(!path.startsWith(root)||!Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS)||!path.equals(path.toRealPath()))continue;
-            String id="/"+root.relativize(path).toString().replace(File.separatorChar,'/');
-            if(id.equals(requested))return path;
-        }
+        for(PlayerNbtLocator.Entry entry:PlayerNbtLocator.find(Path.of("."),Bukkit.getWorlds().stream().map(World::getWorldFolder).toList(),player))
+            if(entry.id().equals(requested))return entry.file();
         throw new IllegalArgumentException("Nur die gespeicherte NBT-Datei dieses Spielers in geladenen Welten ist erlaubt.");
     }
     private static byte[] bytes(Path path) throws IOException {
