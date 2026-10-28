@@ -91,8 +91,13 @@ final class PanelUITests: XCTestCase {
         XCTAssertTrue(channel.waitForExistence(timeout: 10)); channel.tap()
         let picker = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Discord-Kanal")).firstMatch
         XCTAssertTrue(picker.waitForExistence(timeout: 10)); picker.tap()
-        XCTAssertTrue(app.staticTexts["#server-chat"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Deaktiviert / kein Kanal"].exists); capture("32-Discord-Kanalauswahl")
+        XCTAssertTrue(app.buttons["#server-chat"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Deaktiviert / kein Kanal"].exists); capture("32-Discord-Kanalauswahl")
+        app.buttons["Deaktiviert / kein Kanal"].tap()
+        let manual = app.textFields["Kanal-ID manuell"]
+        if !manual.waitForExistence(timeout: 3) { app.navigationBars.buttons.firstMatch.tap() }
+        XCTAssertTrue(manual.waitForExistence(timeout: 5))
+        XCTAssertNotEqual(manual.value as? String, "123456789012345678")
     }
     func testAltDashboardAndIgnoredInfrastructureIP() throws {
         let server = app.buttons["server-simplex1"]
