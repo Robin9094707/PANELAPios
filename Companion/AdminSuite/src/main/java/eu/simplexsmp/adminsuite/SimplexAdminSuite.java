@@ -227,6 +227,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     private AnnouncementManager announcements;
     private DutyManager duty;
     private RestartManager restartManager;
+    final AppChat appChat=new AppChat();
     private DiscordStatusManager discordStatus;
     private DiscordBotManager discordBot;
     AccountLinkManager accountLinks;
@@ -1566,7 +1567,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     private void handlePunishment(CommandSender sender, String sub, String[] args) {
         boolean muteAction = sub.contains("mute");
-        if (!has(sender, muteAction ? "simplexadminsuite.mutes" : "simplexadminsuite.bans")) {
+        if (!has(sender, "simplexadminsuite.action."+sub)) {
             sender.sendMessage(prefix() + "Dafür fehlt dir die passende Straf-Berechtigung.");
             return;
         }
@@ -2348,6 +2349,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void relayFinalChat(AsyncPlayerChatEvent event) {
+        if(!event.isCancelled() && event.getRecipients().size()>=Bukkit.getOnlinePlayers().size())appChat.record(event.getPlayer().getUniqueId().toString(),event.getPlayer().getName(),stripFormatting(event.getMessage()),"player");
         Player player = event.getPlayer();
         String message = event.getMessage();
         Bukkit.getScheduler().runTask(this, () -> {
@@ -2703,14 +2705,15 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (profile.isBlocked("fishing")) { event.setCancelled(true); player.sendMessage(playerUiText(player, prefix() + publicMessage(player, "player-controls.fishing-blocked", "Your fishing permission is currently disabled on this server."))); }
     }
 
-    @EventHandler public void onTeleport(PlayerTeleportEvent event) {
-        if(managedProbeTeleport(event.getPlayer()))return;
+    @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true) public void onTeleport(PlayerTeleportEvent event) {
+        if(dimensionBlocked(event.getPlayer(),event.getTo())){event.setCancelled(true);event.getPlayer().sendMessage(playerText(event.getPlayer(),"§cDiese Dimension ist für dich gesperrt.","§cYour access to this dimension is disabled."));return;}
+        if(dimensionEvacuations.contains(event.getPlayer().getUniqueId())||managedProbeTeleport(event.getPlayer()))return;
         Player player = event.getPlayer();
         if (has(player, "simplexadminsuite.admin")) return;
         if (blockWhileAuthenticating(player, event::setCancelled)) return;
         if (blockWhileRulesPending(player, event::setCancelled)) return;
         PlayerProfile profile = database.touch(player);
-        if (profile.isBlocked("teleportation")) {
+        if (profile.isBlocked("teleportation") && !dimensionEvacuations.contains(player.getUniqueId())) {
             event.setCancelled(true);
             player.sendMessage(playerUiText(player, prefix() + publicMessage(player, "player-controls.teleportation-blocked", "Your teleportation permission is currently disabled on this server.")));
         }
@@ -3587,13 +3590,13 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         PlayerProfile target = database.get(menu.target);
         if (target == null) return;
         if (slot == 4) { moderationOverview.open(admin, moderationSubject(target)); return; }
-        if (slot == 10) { if (!require(admin, "simplexadminsuite.bans")) return; ask(admin, target.uuid, "ban", "Schreibe den Bann-Grund. Danach kommt ein Bestätigungsmenü."); }
-        else if (slot == 11) { if (!require(admin, "simplexadminsuite.bans")) return; ask(admin, target.uuid, "tempban", "Schreibe Dauer und Grund, z.B. 1d Griefing. Standard: " + plainDuration(getConfig().getString("punishments.default-temp-duration", "1d")) + "."); }
-        else if (slot == 12) { if (!require(admin, "simplexadminsuite.bans")) return; confirm(admin, new PendingAction("unban", target.uuid, "", ""), "Entbannen", target.name, "Ban aufheben?"); }
-        else if (slot == 19) { if (!require(admin, "simplexadminsuite.mutes")) return; ask(admin, target.uuid, "mute", "Schreibe den Mute-Grund. Danach kommt ein Bestätigungsmenü."); }
-        else if (slot == 20) { if (!require(admin, "simplexadminsuite.mutes")) return; ask(admin, target.uuid, "tempmute", "Schreibe Dauer und Grund, z.B. 1d Spam. Standard: " + plainDuration(getConfig().getString("punishments.default-temp-duration", "1d")) + "."); }
-        else if (slot == 21) { if (!require(admin, "simplexadminsuite.mutes")) return; confirm(admin, new PendingAction("unmute", target.uuid, "", ""), "Mute aufheben", target.name, "Mute aufheben?"); }
-        else if (slot == 22) { if (!require(admin, "simplexadminsuite.bans")) return; ask(admin, target.uuid, "kick", "Schreibe den Kick-Grund. Danach kommt ein Bestätigungsmenü."); }
+        if (slot == 10) { if (!require(admin, "simplexadminsuite.action.ban")) return; ask(admin, target.uuid, "ban", "Schreibe den Bann-Grund. Danach kommt ein Bestätigungsmenü."); }
+        else if (slot == 11) { if (!require(admin, "simplexadminsuite.action.tempban")) return; ask(admin, target.uuid, "tempban", "Schreibe Dauer und Grund, z.B. 1d Griefing. Standard: " + plainDuration(getConfig().getString("punishments.default-temp-duration", "1d")) + "."); }
+        else if (slot == 12) { if (!require(admin, "simplexadminsuite.action.unban")) return; confirm(admin, new PendingAction("unban", target.uuid, "", ""), "Entbannen", target.name, "Ban aufheben?"); }
+        else if (slot == 19) { if (!require(admin, "simplexadminsuite.action.mute")) return; ask(admin, target.uuid, "mute", "Schreibe den Mute-Grund. Danach kommt ein Bestätigungsmenü."); }
+        else if (slot == 20) { if (!require(admin, "simplexadminsuite.action.tempmute")) return; ask(admin, target.uuid, "tempmute", "Schreibe Dauer und Grund, z.B. 1d Spam. Standard: " + plainDuration(getConfig().getString("punishments.default-temp-duration", "1d")) + "."); }
+        else if (slot == 21) { if (!require(admin, "simplexadminsuite.action.unmute")) return; confirm(admin, new PendingAction("unmute", target.uuid, "", ""), "Mute aufheben", target.name, "Mute aufheben?"); }
+        else if (slot == 22) { if (!require(admin, "simplexadminsuite.action.kick")) return; ask(admin, target.uuid, "kick", "Schreibe den Kick-Grund. Danach kommt ein Bestätigungsmenü."); }
         else if (slot == 49) openPlayer(admin, target.uuid);
     }
 
@@ -5494,7 +5497,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     private void openPunish(Player admin, UUID uuid) {
         if (!adminMenuAllowed(admin, "suite.openpunish")) return;
-        if (!has(admin, "simplexadminsuite.bans") && !has(admin, "simplexadminsuite.mutes")) { admin.sendMessage(prefix() + "Dir fehlt eine Straf-Berechtigung."); return; }
+        if (java.util.stream.Stream.of("ban","tempban","unban","kick","mute","tempmute","unmute").noneMatch(action->has(admin,"simplexadminsuite.action."+action))) { admin.sendMessage(prefix() + "Dir fehlt eine Straf-Berechtigung."); return; }
         PlayerProfile target = database.get(uuid); if (target == null) return;
         Inventory inv = LiveMenus.create(new SuiteMenu("punish", uuid, 0, null, null), 54, color("&8Strafen: &f" + target.name));
         fill(inv);
@@ -5507,7 +5510,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         inv.setItem(21, item(Material.MILK_BUCKET, "&aMute aufheben", "&7Bestätigung vor Ausführung."));
         inv.setItem(22, item(Material.IRON_DOOR, "&eKicken", "&7Grund per Chat."));
         inv.setItem(49, item(Material.BARRIER, "&cZurück", "&7Zurück zum Spieler."));
-        inv.setItem(26,item(Material.IRON_BARS,"Bannart auswählen","Account • Ultra • leise • Ghost • Entbannen")); LiveMenus.show(admin,inv);
+        inv.setItem(26,item(Material.IRON_BARS,"Bannart auswählen","Account • Ultra • leise • Ghost • Entbannen")); for(var entry:Map.of(10,"ban",11,"tempban",12,"unban",19,"mute",20,"tempmute",21,"unmute",22,"kick").entrySet())if(!has(admin,"simplexadminsuite.action."+entry.getValue()))inv.setItem(entry.getKey(),item(Material.GRAY_DYE,"&7"+AdminPermissionText.name("simplexadminsuite.action."+entry.getValue()),"&8Für deine Rolle nicht verfügbar"));
+        if(!adminAccess.altBans(admin))inv.setItem(26,item(Material.GRAY_DYE,"&7Alt-Account-Banns","&8Für deine Rolle nicht verfügbar"));
+        LiveMenus.show(admin,inv);
     }
 
     private void openRights(Player admin, UUID uuid) {
@@ -6191,9 +6196,25 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (powerTools != null) powerTools.rightsChanged(admin, target.uuid);
     }
 
+    boolean dimensionBlocked(Player player,Location location){
+        if(location==null||location.getWorld()==null)return false;PlayerProfile profile=database.get(player.getUniqueId());if(profile==null)return false;
+        return location.getWorld().getEnvironment()==World.Environment.NETHER&&profile.isBlocked("nether")||location.getWorld().getEnvironment()==World.Environment.THE_END&&profile.isBlocked("end");
+    }
+    void enforceDimension(Player player){
+        if(!dimensionBlocked(player,player.getLocation()))return;
+        for(World world:Bukkit.getWorlds())if(world.getEnvironment()==World.Environment.NORMAL){
+            Location spawn=world.getSpawnLocation();
+            // Evacuation is an administrative correction, not a player teleport privilege.
+            dimensionEvacuations.add(player.getUniqueId());try{if(!player.teleport(spawn))suiteKick(player,playerText(player,"Der Zugang zu dieser Dimension wurde entzogen.","Your access to this dimension was revoked."));}finally{dimensionEvacuations.remove(player.getUniqueId());}return;
+        }
+        suiteKick(player,playerText(player,"Der Zugang zu dieser Dimension wurde entzogen.","Your access to this dimension was revoked."));
+    }
+    private final Set<UUID> dimensionEvacuations=new HashSet<>();
+    @EventHandler public void dimensionChanged(org.bukkit.event.player.PlayerChangedWorldEvent event){enforceDimension(event.getPlayer());}
+    @EventHandler(priority=EventPriority.MONITOR) public void dimensionJoin(org.bukkit.event.player.PlayerJoinEvent event){Bukkit.getScheduler().runTask(this,()->enforceDimension(event.getPlayer()));}
     private void notifyRights(PlayerProfile target) {
-        Player online = Bukkit.getPlayerExact(target.name);
-        if (online != null) online.sendMessage(prefix() + "Your server permissions have been updated by an admin.");
+        Player online = Bukkit.getPlayer(target.uuid);
+        if (online != null) { enforceDimension(online); online.sendMessage(prefix() + "Your server permissions have been updated by an admin."); }
     }
 
     private void startTemporaryRightsCleanup() {
@@ -7116,7 +7137,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         boolean inherited = sender.hasPermission(permission) || sender.hasPermission("simplexadminsuite.*") || sender.hasPermission("*");
         if (permission.startsWith("simplexadminsuite.action.")) {
             String action = permission.substring(permission.lastIndexOf('.') + 1);
-            inherited = has(sender, Set.of("mute", "tempmute", "unmute").contains(action) ? "simplexadminsuite.mutes" : "simplexadminsuite.bans");
+            inherited = sender.isPermissionSet(permission) ? sender.hasPermission(permission) : inherited || has(sender, Set.of("mute", "tempmute", "unmute").contains(action) ? "simplexadminsuite.mutes" : "simplexadminsuite.bans");
         }
         return adminAccess == null ? inherited : adminAccess.allows(sender, permission, inherited);
     }
@@ -8139,11 +8160,12 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         return match != null && "ghost".equals(match.group.mode);
     }
     String controlBan(CommandSender sender, String name, String mode, String reason) {
+        String denied=adminAccess.punishmentError(sender,mode.equals("none")?"unban":"ban","");if(!denied.isEmpty())return denied;
+        if(!Set.of("none","account").contains(mode)&&!adminAccess.altBans(sender))return "Alt-Account-Banns sind für deine Rolle gesperrt.";
         UUID exact = controlResolve(name);
         PlayerProfile p = exact == null ? null : database.get(exact);
         if (p == null && mode.equals("none") && has(sender, "simplexadminsuite.ultraban.unban")) return altDetection.ultraUnban(sender,name).message;
         if (p == null) return "Eindeutiges gespeichertes Profil nicht gefunden. Exakten Namen oder UUID verwenden.";
-        if (!has(sender, "simplexadminsuite.bans")) return "Bannberechtigung fehlt.";
         if (mode.equals("none") && !has(sender,"simplexadminsuite.action.unban")) return "Entbannberechtigung fehlt.";
         if (mode.equals("account") && !has(sender,"simplexadminsuite.action.ban")) return "Account-Bannberechtigung fehlt.";
         if (mode.equals("none") || mode.equals("account")) {
@@ -8475,26 +8497,53 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     Object app250Data(Map<String,String> q) throws Exception {
         String section=q.getOrDefault("section","status"),raw=q.getOrDefault("player","");
         if(section.equals("status"))return appMap("maintenance",maintenance.isActive(),"reason",maintenance.reason(),"actor",maintenance.enabledByDisplay(),"discord",getConfig().getString("community.discord-invite-code",""));
-        if(section.equals("admins")){if(luckPerms!=null)luckPerms.refresh(database.sortedProfiles());List<Object> rows=new ArrayList<>();for(PlayerProfile p:database.sortedProfiles()){Player online=Bukkit.getPlayer(p.uuid);boolean known=online!=null||luckPerms!=null&&luckPerms.access(p.uuid)!=null;boolean lp=luckPerms!=null&&luckPerms.access(p.uuid)!=null&&luckPerms.access(p.uuid).allowed;rows.add(appMap("id",p.uuid.toString(),"name",p.name,"role",adminAccess.role(p.uuid).name(),"online",known,"operator",Bukkit.getOfflinePlayer(p.uuid).isOp(),"effective",online!=null?has(online,"simplexadminsuite.admin"):lp||adminAccess.role(p.uuid)!=AdminAccessManager.Role.INHERIT,"inheritedUnknown",!known&&adminAccess.role(p.uuid)==AdminAccessManager.Role.INHERIT));}return appMap("items",rows);}
+        if(section.equals("admins"))return appAdminDirectory();
+        if(section.equals("roles"))return appMap("items",adminAccess.roleCatalog(),"permissions",adminAccess.nodes().stream().filter(AdminAccessManager::administrative).map(node->appMap("id",node,"name",AdminPermissionText.name(node),"description",AdminPermissionText.description(node),"group",AdminPermissionText.group(node))).toList());
         PlayerProfile p=raw.isBlank()?null:database.get(UUID.fromString(raw));
-        if(section.equals("admin-rights")){if(p==null)throw new IllegalArgumentException("Spieler fehlt");Player online=Bukkit.getPlayer(p.uuid);if(luckPerms!=null)luckPerms.refresh(List.of(p));Map<String,Boolean> lp=luckPerms==null?Map.of():luckPerms.permissions.getOrDefault(p.uuid,Map.of());List<Object> rows=new ArrayList<>();for(String node:adminAccess.nodes()){if(AdminAccessManager.PUBLIC.contains(node)||node.endsWith(".*"))continue;Boolean local=adminAccess.override(p.uuid,node);rows.add(appMap("id",node,"name",node,"allowed",local!=null?local:online!=null?has(online,node):adminAccess.role(p.uuid)==AdminAccessManager.Role.INHERIT?lp.getOrDefault(node,false):AdminAccessManager.roleAllows(adminAccess.role(p.uuid),node),"override",local==null?"inherit":local.toString(),"unknown",online==null&&local==null&&adminAccess.role(p.uuid)==AdminAccessManager.Role.INHERIT&&!lp.containsKey(node)));}return appMap("items",rows,"role",adminAccess.role(p.uuid).name());}
-        if(section.equals("rights")){if(p==null)throw new IllegalArgumentException("Spieler fehlt");return appMap("inherit",suitePolicies.inherit(p.uuid),"items",Arrays.stream(powerRights()).map(r->appMap("id",r,"name",r,"allowed",!p.isBlocked(r))).toList());}
+        if(section.equals("admin-rights")){
+            if(p==null)throw new IllegalArgumentException("Spieler fehlt");Player online=Bukkit.getPlayer(p.uuid);if(luckPerms!=null)luckPerms.refresh(List.of(p));
+            Map<String,Boolean> lp=luckPerms==null?Map.of():luckPerms.permissions.getOrDefault(p.uuid,Map.of());List<Object> rows=new ArrayList<>();
+            for(String node:adminAccess.nodes()){if(!AdminAccessManager.administrative(node))continue;Boolean local=adminAccess.override(p.uuid,node);rows.add(appMap("id",node,"name",AdminPermissionText.name(node),"description",AdminPermissionText.description(node),"group",AdminPermissionText.group(node),"allowed",adminAccess.effective(p.uuid,node,online,lp),"override",local==null?"inherit":local.toString(),"unknown",online==null&&local==null&&adminAccess.role(p.uuid)==AdminAccessManager.Role.INHERIT&&!lp.containsKey(node)));}
+            return appMap("items",rows,"role",adminAccess.role(p.uuid)==AdminAccessManager.Role.CUSTOM?"CUSTOM:"+adminAccess.customRole(p.uuid):adminAccess.role(p.uuid).name(),"roles",adminAccess.roleCatalog(),"maxBanSeconds",adminAccess.maxBanSeconds(p.uuid),"altBans",adminAccess.altBansFor(p.uuid),"protected",Bukkit.getOfflinePlayer(p.uuid).isOp());
+        }
+        if(section.equals("rights")){if(p==null)throw new IllegalArgumentException("Spieler fehlt");return appMap("inherit",suitePolicies.inherit(p.uuid),"items",Arrays.stream(powerRights()).map(r->appMap("id",r,"name",RIGHT_NAMES.getOrDefault(r,r),"description","Spieler darf: "+RIGHT_NAMES.getOrDefault(r,r),"allowed",!p.isBlocked(r))).toList());}
         if(section.equals("probe")){if(p==null)throw new IllegalArgumentException("Spieler fehlt");return qualityOfLife.probes.appReport(p.uuid);}
         if(section.equals("dependencies")){try(var in=getResource("dependency-status.json")){return appMap("items",in==null?List.of():DiscordBotManager.Json.parse(new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8)));}}
         throw new IllegalArgumentException("Unbekannter Bereich");
+    }
+    Object appOperations(){return appMap("active",restartManager.active(),"remaining",restartManager.remainingSeconds(),"reasonDE",restartManager.reasonDE,"reasonEN",restartManager.reasonEN);}
+    Object appRestart(Map<String,Object> values,String actor){
+        String operation=String.valueOf(values.getOrDefault("operation","schedule"));
+        if(operation.equals("cancel")){if(!restartManager.cancel(actor))throw new IllegalArgumentException("Kein Neustart geplant");}
+        else if(operation.equals("schedule")){int seconds=AppApiManager.countdown(values.getOrDefault("seconds","30"));if(seconds<1||seconds>60)throw new IllegalArgumentException("Countdown muss 1–60 Sekunden betragen");if(restartManager.active())throw new IllegalArgumentException("Bereits ein Neustart geplant");
+            String de=String.valueOf(values.getOrDefault("reasonDE","")),en=String.valueOf(values.getOrDefault("reasonEN",""));if(de.length()>200||en.length()>200)throw new IllegalArgumentException("Grund: maximal 200 Zeichen je Sprache");
+            restartManager.reasonDE=stripFormatting(de);restartManager.reasonEN=stripFormatting(en);restartManager.localized=true;restartManager.schedule(actor,seconds);
+        }else throw new IllegalArgumentException("Unbekannte Neustartaktion");
+        return appMap("ok",true,"title","Neustart aktualisiert","description",operation);
+    }
+    Object appAdminDirectory() {
+        if(luckPerms!=null)luckPerms.refresh(database.sortedProfiles());List<Object> rows=new ArrayList<>();
+        for(PlayerProfile p:database.sortedProfiles()){
+            Player online=Bukkit.getPlayer(p.uuid);Map<String,Boolean> lp=luckPerms==null?Map.of():luckPerms.permissions.getOrDefault(p.uuid,Map.of());
+            if(!adminAccess.hasAccess(p.uuid,online,lp))continue;
+            rows.add(appMap("id",p.uuid.toString(),"name",p.name,"role",adminAccess.roleLabel(p.uuid),"online",online!=null,"operator",Bukkit.getOfflinePlayer(p.uuid).isOp(),"effective",true,"inheritedUnknown",false));
+        }
+        return appMap("items",rows,"refreshing",luckPerms!=null&&luckPerms.refreshing);
     }
     String appRightSnapshot(UUID id,String right){PlayerProfile p=database.get(id);return p==null?"false:0":p.inheritedRightSnapshot(right);}
     void appRightRestore(UUID id,String right,String snapshot){PlayerProfile p=database.get(id);if(p!=null){p.restoreInheritedRight(right,snapshot);database.save(p);notifyRights(p);audit.log("Alt-Vererbung aufgehoben",id,"Recht wiederhergestellt",right);}}
     void appRightDirect(UUID id,String right,boolean blocked,String actor){PlayerProfile p=database.get(id);if(p!=null&&(p.blockedRightsSet().contains(right)!=blocked||p.temporaryBlockedUntil(right)>0)){p.setBlocked(right,blocked);database.save(p);notifyRights(p);audit.log(actor,id,"Recht geändert",right+"="+blocked);}}
     Object app250Apply(Map<String,Object> v,String actor) throws Exception {
         String op=String.valueOf(v.getOrDefault("operation","")),target=String.valueOf(v.getOrDefault("player","")),value=String.valueOf(v.getOrDefault("value","")),node=String.valueOf(v.getOrDefault("node",""));
+        if(op.equals("custom-role")){adminAccess.saveCustom(actor,target,value,node,Long.parseLong(String.valueOf(v.getOrDefault("maxBanSeconds","259200"))),Boolean.parseBoolean(String.valueOf(v.getOrDefault("altBans","false"))));return appMap("ok",true,"title","Rolle gespeichert","description",value);}
         if(Set.of("maintenance","brand","inherit","right").contains(op)&&!Set.of("true","false").contains(value))throw new IllegalArgumentException("Boolean erforderlich");
         if(op.equals("maintenance")){if(value.equals("true"))maintenance.enable(actor,String.valueOf(v.getOrDefault("reason","Wartung")));else if(value.equals("false"))maintenance.disable(actor);else throw new IllegalArgumentException("Boolean erforderlich");}
         else if(op.equals("discord")){String code=DiscordInvite.parseCode(value);getConfig().set("community.discord-invite-code",code);saveConfig();if(qualityOfLife!=null)qualityOfLife.probes.access.refreshInvite();}
         else if(op.equals("ultra-delete")){target=target.toLowerCase(Locale.ROOT);var group=altDetection.ultraGroups.get(target);if(group==null)throw new IllegalArgumentException("Gruppe fehlt");if(group.active&&(group.until<=0||group.until>System.currentTimeMillis()))throw new IllegalArgumentException("Aktive Gruppe zuerst aufheben");altDetection.ultraGroups.remove(target);if(!altDetection.saveUltraBans()){altDetection.ultraGroups.put(target,group);throw new java.io.IOException("Gruppe konnte nicht dauerhaft gelöscht werden");}}
         else if(op.equals("brand")){if(node.isBlank()||node.length()>120||node.chars().anyMatch(c->c<32))throw new IllegalArgumentException("Gültigen Brand angeben");suitePolicies.set("brand."+node.toLowerCase(Locale.ROOT),value);for(Player player:Bukkit.getOnlinePlayers())suitePolicies.apply(player);}
         else {UUID id=UUID.fromString(target);PlayerProfile p=database.get(id);if(p==null)throw new IllegalArgumentException("Spieler fehlt");switch(op){
-            case "admin-role"->adminAccess.changeAuthorized(actor,id,null,null,AdminAccessManager.Role.valueOf(value));
+            case "admin-role"->adminAccess.assign(actor,id,value);
+            case "admin-limits"->adminAccess.limits(actor,id,Long.parseLong(value),Boolean.parseBoolean(String.valueOf(v.getOrDefault("altBans","false"))));
             case "admin-right"->{if(!Set.of("inherit","true","false").contains(value))throw new IllegalArgumentException("Boolean oder inherit erforderlich");adminAccess.changeAuthorized(actor,id,node,value.equals("inherit")?null:Boolean.valueOf(value),null);}
             case "inherit"->suitePolicies.changeInheritance(id,Boolean.parseBoolean(value));
             case "right"->{if(!Arrays.asList(powerRights()).contains(node))throw new IllegalArgumentException("Unbekanntes Recht");setRight(actor,p,node,!Boolean.parseBoolean(value));}
@@ -11784,7 +11833,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 form.button("§aSpieler zu mir holen", response -> sync(() -> { plugin.bringPlayer(admin, target); openPlayer(admin, target.uuid); }));
             }
             if (plugin.has(admin, "simplexadminsuite.vanish") && plugin.has(admin, "simplexadminsuite.teleport")) form.button("§5Vanish + Teleport", response -> sync(() -> { plugin.bridge.toggleVanish(admin); plugin.teleportToOnline(admin, target); openPlayer(admin, target.uuid); }));
-            if ((plugin.has(admin, "simplexadminsuite.bans") || plugin.has(admin, "simplexadminsuite.mutes"))) form.button("§cStrafen verwalten\n§7Ban, Mute, Kick", response -> sync(() -> openPunishments(admin, target.uuid)));
+            if (java.util.stream.Stream.of("ban","tempban","unban","kick","mute","tempmute","unmute").anyMatch(action->plugin.has(admin,"simplexadminsuite.action."+action))) form.button("§cStrafen verwalten\n§7Ban, Mute, Kick", response -> sync(() -> openPunishments(admin, target.uuid)));
             if (plugin.has(admin, "simplexadminsuite.rights")) form.button("§eRechte & Freeze\n§7Feingranulare Sperren", response -> sync(() -> openRights(admin, target.uuid)));
             if (plugin.has(admin, "simplexadminsuite.warns")) form.button("§6Warnungen\n§7Hinzufügen und anzeigen", response -> sync(() -> openWarnings(admin, target.uuid)));
             if (plugin.has(admin, "simplexadminsuite.snapshots")) form.button("§dInventar-Snapshots\n§7Erstellen, laden, löschen", response -> sync(() -> openSnapshots(admin, target.uuid, 0)));
@@ -11857,18 +11906,18 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             SimpleForm.Builder form = SimpleForm.builder().title("§l§cSTRAFEN: §f" + target.name)
                     .content("§7Aktiver Anbieter: §f" + plugin.punishments.providerLabel() + "\n§7Status: §f" + plugin.punishments.summary(target) + "\n\n§8Jede gefährliche Aktion benötigt eine Bestätigung.");
             form.button("§aBan-/Mute-Status aller Quellen\n§7LiteBans, Simplex und Minecraft", response -> sync(() -> plugin.moderationOverview.open(admin, plugin.moderationSubject(target))));
-            if(plugin.has(admin,"simplexadminsuite.bans"))form.button("Bannart auswählen • Ultra / leise / Ghost",r->sync(()->plugin.moderationControl.banTarget(admin,target.uuid)));
+            if(plugin.has(admin,"simplexadminsuite.action.ban")||plugin.has(admin,"simplexadminsuite.action.unban"))form.button("Bannart auswählen • Ultra / leise / Ghost",r->sync(()->plugin.moderationControl.banTarget(admin,target.uuid)));
             if(plugin.has(admin,"simplexadminsuite.restrictions"))form.button("Einschränkungsvorlagen",r->sync(()->plugin.moderationControl.restrictionTarget(admin,target.uuid)));
-            if (plugin.has(admin, "simplexadminsuite.bans")) {
-                form.button("§cPermanent bannen", response -> sync(() -> openPunishmentInput(admin, target.uuid, "ban", false)));
-                form.button("§cTemporär bannen", response -> sync(() -> openPunishmentInput(admin, target.uuid, "tempban", true)));
-                form.button("§aEntbannen", response -> sync(() -> confirm(admin, "Entbannen", "Ban für " + target.name + " wirklich aufheben?", () -> performPunishment(admin, target.uuid, "unban", "", ""), () -> openPunishments(admin, target.uuid))));
-                form.button("§eKicken", response -> sync(() -> openPunishmentInput(admin, target.uuid, "kick", false)));
+            {
+                if(plugin.has(admin,"simplexadminsuite.action.ban"))form.button("§cPermanent bannen", response -> sync(() -> openPunishmentInput(admin, target.uuid, "ban", false)));
+                if(plugin.has(admin,"simplexadminsuite.action.tempban"))form.button("§cTemporär bannen", response -> sync(() -> openPunishmentInput(admin, target.uuid, "tempban", true)));
+                if(plugin.has(admin,"simplexadminsuite.action.unban"))form.button("§aEntbannen", response -> sync(() -> confirm(admin, "Entbannen", "Ban für " + target.name + " wirklich aufheben?", () -> performPunishment(admin, target.uuid, "unban", "", ""), () -> openPunishments(admin, target.uuid))));
+                if(plugin.has(admin,"simplexadminsuite.action.kick"))form.button("§eKicken", response -> sync(() -> openPunishmentInput(admin, target.uuid, "kick", false)));
             }
-            if (plugin.has(admin, "simplexadminsuite.mutes")) {
-                form.button("§6Permanent stummschalten", response -> sync(() -> openPunishmentInput(admin, target.uuid, "mute", false)));
-                form.button("§6Temporär stummschalten", response -> sync(() -> openPunishmentInput(admin, target.uuid, "tempmute", true)));
-                form.button("§aMute aufheben", response -> sync(() -> confirm(admin, "Mute aufheben", "Mute für " + target.name + " wirklich aufheben?", () -> performPunishment(admin, target.uuid, "unmute", "", ""), () -> openPunishments(admin, target.uuid))));
+            {
+                if(plugin.has(admin,"simplexadminsuite.action.mute"))form.button("§6Permanent stummschalten", response -> sync(() -> openPunishmentInput(admin, target.uuid, "mute", false)));
+                if(plugin.has(admin,"simplexadminsuite.action.tempmute"))form.button("§6Temporär stummschalten", response -> sync(() -> openPunishmentInput(admin, target.uuid, "tempmute", true)));
+                if(plugin.has(admin,"simplexadminsuite.action.unmute"))form.button("§aMute aufheben", response -> sync(() -> confirm(admin, "Mute aufheben", "Mute für " + target.name + " wirklich aufheben?", () -> performPunishment(admin, target.uuid, "unmute", "", ""), () -> openPunishments(admin, target.uuid))));
             }
             form.button("§cZurück zum Spieler", response -> sync(() -> openPlayer(admin, target.uuid)));
             send(admin, form);
@@ -12334,9 +12383,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return executeSource(admin,action,target,name,duration,reason,false);
         }
         private boolean executeSource(CommandSender admin, String action, PlayerProfile target, String name, String duration, String reason, boolean forceInternal) {
+            if(plugin.adminAccess!=null){String denied=plugin.adminAccess.punishmentError(admin,action,duration);if(!denied.isEmpty()){admin.sendMessage(denied);return false;}}
             if (!plugin.has(admin, "simplexadminsuite.action." + action)) return false;
             String permission = action.contains("mute") ? "simplexadminsuite.mutes" : "simplexadminsuite.bans";
-            if (!plugin.has(admin, permission)) return false;
+
             if (!forceInternal && !provider.equals("internal")) { boolean ok=plugin.bridge.punishment(action,name,duration,reason); if(ok&&target!=null&&plugin.community!=null)plugin.community.recordPunishment(target.uuid,action,duration,reason,provider); return ok; }
             if (target == null) return false;
             long now = System.currentTimeMillis();
@@ -13010,6 +13060,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if (!available || refreshing) return;
             refreshing = true;
             List<PlayerProfile> snapshot = new ArrayList<>(profiles);
+            long cutoff=System.currentTimeMillis()-60_000L;
+            snapshot.removeIf(p->cache.containsKey(p.uuid)&&cache.get(p.uuid).checkedAt>cutoff);
+            snapshot.sort(java.util.Comparator.comparingLong(p->cache.containsKey(p.uuid)?cache.get(p.uuid).checkedAt:0L));
+            if(snapshot.isEmpty()){refreshing=false;return;}
             int max = Math.max(1, plugin.getConfig().getInt("staff-workspace.luckperms-max-profiles", 500));
             if (snapshot.size() > max) snapshot = new ArrayList<>(snapshot.subList(0, max));
             final List<PlayerProfile> selected = snapshot;
@@ -13809,6 +13863,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         private int remainingSeconds;
         private String initiatedBy = "System";
         private boolean restartIssued;
+        private String reasonDE="",reasonEN="";
+        private boolean localized;
 
         private RestartManager(SimplexAdminSuite plugin) { this.plugin = plugin; }
 
@@ -13824,7 +13880,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if (task != null) return false;
             initiatedBy = actor == null || actor.isBlank() ? "System" : plugin.sanitizeText(actor, 80);
             restartIssued = false;
-            remainingSeconds = Math.max(5, Math.min(300, requestedSeconds));
+            remainingSeconds = localized ? Math.max(1, Math.min(60, requestedSeconds)) : Math.max(5, Math.min(300, requestedSeconds));
             announce(remainingSeconds, true);
             if (plugin.discordStatus != null) plugin.discordStatus.markRestarting(initiatedBy, remainingSeconds);
             if (plugin.discordBot != null) plugin.discordBot.markRestarting(remainingSeconds);
@@ -13842,7 +13898,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             remainingSeconds = 0;
             restartIssued = false;
             String cancelledBy = actor == null || actor.isBlank() ? "System" : plugin.sanitizeText(actor, 80);
-            plugin.broadcastPublicText(plugin.prefix() + "The scheduled server restart was cancelled by staff.");
+            for(Player player:Bukkit.getOnlinePlayers()){player.sendMessage(plugin.playerText(player,"§aDer geplante Serverneustart wurde abgebrochen.","§aThe scheduled server restart was cancelled."));player.playSound(player.getLocation(),"block.note_block.chime",0.6f,1.2f);}
+            localized=false;reasonDE="";reasonEN="";
             if (plugin.discordBot != null) plugin.discordBot.clearRestarting();
             if (plugin.discordStatus != null) plugin.discordStatus.updateNow();
             plugin.audit.log(cancelledBy, null, "Server-Neustart abgebrochen", "Verbleibend: " + cancelledAt + " Sekunden");
@@ -13891,6 +13948,14 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         }
 
         private void announce(int seconds, boolean initial) {
+            if(localized){
+                for(Player player:Bukkit.getOnlinePlayers()){
+                    String reason=plugin.playerText(player,reasonDE.isBlank()?reasonEN:reasonDE,reasonEN.isBlank()?reasonDE:reasonEN);
+                    String message=plugin.playerText(player,"Serverneustart in "+seconds+" Sekunden.","Server restart in "+seconds+" seconds.")+(reason.isBlank()?"":" "+reason);
+                    if(initial||seconds<=10||seconds%10==0){player.sendMessage(message);player.playSound(player.getLocation(),"block.note_block.pling",0.6f,seconds<=5?1.5f:1f);}
+                    showOverlay(player,plugin.playerText(player,"SERVERNEUSTART","SERVER RESTART"),message);
+                }return;
+            }
             String fallback = initial
                     ? "Server restart scheduled by staff. Restarting in {seconds} seconds."
                     : "Server restarting in {seconds} seconds.";
@@ -13906,6 +13971,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         }
 
         private void announceNow() {
+            if(localized){for(Player player:Bukkit.getOnlinePlayers()){String text=plugin.playerText(player,"Der Server startet jetzt neu. Bitte gleich wieder verbinden.","The server is restarting now. Please reconnect shortly.");player.sendMessage(text);showOverlay(player,plugin.playerText(player,"NEUSTART","RESTARTING"),text);}return;}
             String text = plugin.getConfig().getString("operations.restart.now-message",
                     "Server is restarting now. Please reconnect shortly.");
             plugin.broadcastPublicText(plugin.prefix() + stripFormatting(text));
@@ -16390,6 +16456,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         }
 
         private void onPunishment(CommandSender admin, String action, PlayerProfile target, String duration, String reason) {
+            if(plugin.adminAccess!=null&&!plugin.adminAccess.altBans(admin))return;
             String normalized = action == null ? "" : action.toLowerCase(Locale.ROOT);
             if (normalized.equals("unban")) {
                 removeIdentityBans(target);
@@ -16618,6 +16685,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         }
 
         private CascadeResult cascadePunishment(CommandSender actor, String action, PlayerProfile source, String duration, String reason) {
+            if(!plugin.adminAccess.altBans(actor))return new CascadeResult(0,"Alt-Account-Strafen sind für deine Rolle gesperrt.");
             List<PlayerProfile> targets = new ArrayList<>(safeLinkedProfiles(source));
             int success = 0; List<String> names = new ArrayList<>();
             for (PlayerProfile target : targets) {
@@ -16697,6 +16765,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return ultraBan(actor, source, reason, "ultra");
         }
         private synchronized UltraBanResult ultraBan(CommandSender actor, PlayerProfile source, String reason, String mode) {
+            if(!plugin.adminAccess.altBans(actor))return new UltraBanResult(0,0,"Alt-Account-Banns sind für deine Rolle gesperrt.");
+            String denied=plugin.adminAccess.punishmentError(actor,"ban","");if(!denied.isEmpty())return new UltraBanResult(0,0,denied);
             if (!plugin.getConfig().getBoolean("alt-detection.ultraban.enabled", true)) return new UltraBanResult(0, 0, "Ultrabann ist in der Config deaktiviert.");
             String actorName = actor == null ? "Console" : actor.getName();
             long now = System.currentTimeMillis();

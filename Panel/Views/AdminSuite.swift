@@ -76,6 +76,7 @@ struct SuiteHubView: View {
                         }
                     }
                 }
+                if api.features.contains("public-chat-v1") { Section { NavigationLink("Serverchat live") { SuiteLiveChatView(suite:api) } } }
                 Section { NavigationLink("Suite-Verwaltung & Wartungsmodus") { SuiteManagementView(suite:api,actions:model.actions) } }
                 Section("Spieler & Moderation") {
                     NavigationLink { SuiteAltDashboardView(suite: api, panel: panel, server: server, actions: model.actions) } label: { Label("Alt-Account-Dashboard & IP-Regeln", systemImage: "person.2.badge.key.fill") }

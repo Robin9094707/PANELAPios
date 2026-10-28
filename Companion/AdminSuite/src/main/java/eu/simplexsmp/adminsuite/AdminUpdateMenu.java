@@ -498,19 +498,16 @@ final class AdminUpdateMenu implements Listener {
       return;
     }
     List<Button> b = new ArrayList<>();
-    for (Player target : Bukkit.getOnlinePlayers())
-      b.add(
-          button(
-              target.getName(),
-              rights ? "Rechte verwalten" : "Live beobachten",
-              () -> {
-                if (rights) rights(p, target.getUniqueId(), target.getName(), 0, "");
-                else plugin.adminRuntime.watch(p, target);
-              }));
+    if(rights){
+      Map<?,?> directory=(Map<?,?>)plugin.appAdminDirectory();
+      for(Object raw:(List<?>)directory.get("items")){Map<?,?> row=(Map<?,?>)raw;UUID id=UUID.fromString(String.valueOf(row.get("id")));String name=String.valueOf(row.get("name"));
+        b.add(button(name,String.valueOf(row.get("role")),()->rights(p,id,name,0,"")));}
+      b.add(button("Eigene Rollen verwalten","Rollen mit verständlichen Einzelrechten und Bannlimits",()->customRoles(p)));
+    }else for(Player target:Bukkit.getOnlinePlayers())b.add(button(target.getName(),"Live beobachten",()->plugin.adminRuntime.watch(p,target)));
     if (rights)
       b.add(
           button(
-              "Offline-Profil auswählen",
+              "Spieler zum Admin-Team hinzufügen",
               "Exakter gespeicherter Spielername oder UUID",
               () ->
                   prompt(
@@ -532,7 +529,7 @@ final class AdminUpdateMenu implements Listener {
     List<Button> b = new ArrayList<>();
     b.add(
         button(
-            "Rolle: " + roleLabel(plugin.adminAccess.role(target)),
+            "Rolle: " + plugin.adminAccess.roleLabel(target),
             "Klick: Rolle auswählen; Einzelrechte bleiben erhalten",
             () -> roles(p, target, name)));
     b.add(
@@ -545,13 +542,19 @@ final class AdminUpdateMenu implements Listener {
                     "Rechtefilter (leer = alle)",
                     filter,
                     q -> rights(p, target, name, 0, q.toLowerCase(Locale.ROOT)))));
+    if(plugin.adminAccess.role(target)==AdminAccessManager.Role.CUSTOM)b.add(button("Rollen-Bannschutz bearbeiten","Banndauer und Alt-Banns gelten für alle Mitglieder dieser Rolle",()->customRole(p,plugin.adminAccess.customRole(target),0,"")));
+    else {
+    b.add(button("Maximale Banndauer", "Aktuell: "+plugin.adminAccess.maxBanSeconds(target)+" Sekunden • -1 = kein Bann, 0 = unbegrenzt",()->prompt(p,"Maximale Banndauer in Sekunden (-1 / 0 / z. B. 259200)","259200",value->{if(!plugin.adminAccess.master(p))return;try{plugin.adminAccess.limits(p.getName(),target,Long.parseLong(value),plugin.adminAccess.altBansFor(target));}catch(RuntimeException e){plugin.menuError(p,e.getMessage());}rights(p,target,name,0,filter);})));
+    b.add(button("Alt-Account-Banns: "+(plugin.adminAccess.altBansFor(target)?"ERLAUBT":"GESPERRT"),"Zusätzliche Freigabe; Aktionsrecht und Banndauer gelten weiterhin",()->{if(!plugin.adminAccess.master(p))return;plugin.adminAccess.limits(p.getName(),target,plugin.adminAccess.maxBanSeconds(target),!plugin.adminAccess.altBansFor(target));rights(p,target,name,0,filter);}));
+    }
+    if(filter.isBlank())for(String group:plugin.adminAccess.nodes().stream().filter(AdminAccessManager::administrative).map(AdminPermissionText::group).distinct().sorted().toList())b.add(button(group,"Berechtigungen mit deutschen Beschreibungen",()->rights(p,target,name,0,group.toLowerCase(Locale.ROOT))));
     for (String node : plugin.adminAccess.nodes())
-      if (node.toLowerCase(Locale.ROOT).contains(filter)) {
+      if (!filter.isBlank() && AdminAccessManager.administrative(node) && (AdminPermissionText.group(node)+" "+AdminPermissionText.name(node)+" "+node).toLowerCase(Locale.ROOT).contains(filter)) {
         Boolean value = plugin.adminAccess.override(target, node);
         b.add(
             button(
-                node.replace("simplexadminsuite.", ""),
-                "Einzelrecht: "
+                AdminPermissionText.name(node),
+                AdminPermissionText.description(node)+" • Einzelrecht: "
                     + (value == null ? "Rolle/LuckPerms" : value ? "ERLAUBT" : "GESPERRT")
                     + " • Klick ändern",
                 () -> {
@@ -574,35 +577,36 @@ final class AdminUpdateMenu implements Listener {
                   choices.add(
                       button(
                           "Zurück", "Ohne Änderung", () -> rights(p, target, name, page, filter)));
-                  show(p, node.replace("simplexadminsuite.", ""), choices, 0);
+                  show(p, AdminPermissionText.name(node), choices, 0);
                 }));
       }
     b.add(button("Zurück", "Spielerauswahl", () -> players(p, true)));
     show(p, "Rechte: " + name, b, page);
   }
 
-  private static String roleLabel(AdminAccessManager.Role role) {
-    return switch (role) {
-      case INHERIT -> "Bestehende Rechte / LuckPerms";
-      case FULL -> "Volladmin";
-      case MODERATOR -> "Moderator";
-      case SUPPORT -> "Support";
-      case READ_ONLY -> "Lesender Zugriff";
-    };
-  }
-
+  private static String roleLabel(AdminAccessManager.Role role) { return AdminAccessManager.roleName(role); }
   private void roles(Player p, UUID id, String name) {
-    List<Button> b = new ArrayList<>();
-    String[] labels = {
-      "Bestehende Rechte / LuckPerms", "Volladmin", "Moderator", "Support", "Lesender Zugriff"
-    };
-    for (AdminAccessManager.Role role : AdminAccessManager.Role.values())
-      b.add(
-          button(
-              labels[role.ordinal()],
-              "Einzelrechte haben weiterhin Vorrang",
-              () -> change(p, id, name, null, null, role, 0, "")));
-    show(p, "Rolle: " + name, b, 0);
+    if(!plugin.adminAccess.master(p))return;List<Button> b=new ArrayList<>();
+    for(Object raw:plugin.adminAccess.roleCatalog()){Map<?,?> row=(Map<?,?>)raw;String selected=String.valueOf(row.get("id"));b.add(button(String.valueOf(row.get("name")),"Bestehende Einzelrechte bleiben erhalten",()->{if(!plugin.adminAccess.master(p))return;try{plugin.adminAccess.assign(p.getName(),id,selected);}catch(RuntimeException e){plugin.menuError(p,e.getMessage());}rights(p,id,name,0,"");}));}
+    show(p,"Rolle: "+name,b,0);
+  }
+  private void customRoles(Player p){
+    if(!plugin.adminAccess.master(p))return;List<Button> b=new ArrayList<>();
+    for(Object raw:plugin.adminAccess.roleCatalog()){Map<?,?> row=(Map<?,?>)raw;String id=String.valueOf(row.get("id"));if(id.startsWith("CUSTOM:"))b.add(button(String.valueOf(row.get("name")),"Eigene Rolle bearbeiten",()->customRole(p,id.substring(7),0,"")));}
+    b.add(button("Neue Rolle erstellen","Anzeigename frei wählen",()->prompt(p,"Rollenname","Junior-Team",name->{if(!plugin.adminAccess.master(p))return;String id="rolle-"+UUID.randomUUID().toString().substring(0,8);plugin.adminAccess.saveCustom(p.getName(),id,name,"",259200,false);customRole(p,id,0,"");})));
+    b.add(button("Zurück","Admin-Team",()->players(p,true)));show(p,"Eigene Adminrollen",b,0);
+  }
+  private void customRole(Player p,String id,int page,String group){
+    if(!plugin.adminAccess.master(p))return;Map<String,Object> role=plugin.adminAccess.customDefinition(id);List<Button> b=new ArrayList<>();
+    b.add(button("Banndauer: "+role.get("maxBanSeconds")+" Sekunden","-1 = keine Banns; 0 = unbegrenzt",()->prompt(p,"Maximale Banndauer (Sekunden)",String.valueOf(role.get("maxBanSeconds")),v->{if(!plugin.adminAccess.master(p))return;try{saveCustom(p,id,role,null,null,Long.parseLong(v),null);}catch(RuntimeException e){plugin.menuError(p,e.getMessage());}customRole(p,id,0,group);})));
+    b.add(button("Alt-Banns: "+role.get("altBans"),"Alt-Accounts nur mit dieser zusätzlichen Freigabe bannen",()->{saveCustom(p,id,role,null,null,null,!Boolean.TRUE.equals(role.get("altBans")));customRole(p,id,0,group);}));
+    if(group.isEmpty())for(String category:plugin.adminAccess.nodes().stream().filter(AdminAccessManager::administrative).map(AdminPermissionText::group).distinct().sorted().toList())b.add(button(category,"Rechte auswählen",()->customRole(p,id,0,category)));
+    else for(String node:plugin.adminAccess.nodes())if(AdminAccessManager.administrative(node)&&AdminPermissionText.group(node).equals(group)){boolean allowed=((Set<?>)role.get("permissions")).contains(node);b.add(button((allowed?"✓ ":"○ ")+AdminPermissionText.name(node),AdminPermissionText.description(node),()->{saveCustom(p,id,role,node,!allowed,null,null);customRole(p,id,page,group);}));}
+    b.add(button("Zurück",group.isEmpty()?"Rollen":"Gruppen",()->{if(group.isEmpty())customRoles(p);else customRole(p,id,0,"");}));show(p,String.valueOf(role.get("name")),b,page);
+  }
+  private void saveCustom(Player p,String id,Map<String,Object> role,String node,Boolean allowed,Long max,Boolean alt){
+    if(!plugin.adminAccess.master(p))return;Set<String> permissions=new TreeSet<>((Set<String>)role.get("permissions"));if(node!=null){if(Boolean.TRUE.equals(allowed))permissions.add(node);else permissions.remove(node);}
+    plugin.adminAccess.saveCustom(p.getName(),id,String.valueOf(role.get("name")),String.join(",",permissions),max==null?((Number)role.get("maxBanSeconds")).longValue():max,alt==null?Boolean.TRUE.equals(role.get("altBans")):alt);
   }
 
   private void change(

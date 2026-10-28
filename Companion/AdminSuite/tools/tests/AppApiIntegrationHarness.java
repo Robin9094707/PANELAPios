@@ -41,7 +41,7 @@ public final class AppApiIntegrationHarness {
             SimplexAdminSuite plugin=Moderation790Harness.plugin(dir);Moderation790Harness.set(plugin,JavaPlugin.class,"isEnabled",true);Moderation790Harness.set(plugin,SimplexAdminSuite.class,"adminActor",new ThreadLocal<String>());Moderation790Harness.set(plugin,SimplexAdminSuite.class,"pendingInputs",new ConcurrentHashMap<>());Moderation790Harness.set(plugin,SimplexAdminSuite.class,"pendingActions",new ConcurrentHashMap<>());
             Moderation790Harness.set(plugin,SimplexAdminSuite.class,"auditedConfig",new HashMap<String,String>());plugin.getConfig().set("prefix","Fixture prefix");plugin.moderationControl=new ModerationControl(plugin);
             var dbConstructor=SimplexAdminSuite.PlayerDatabase.class.getDeclaredConstructor(SimplexAdminSuite.class);dbConstructor.setAccessible(true);Moderation790Harness.set(plugin,SimplexAdminSuite.class,"database",dbConstructor.newInstance(plugin));
-            plugin.adminAccess=new AdminAccessManager(plugin);plugin.adminUpdate=new AdminUpdateMenu(plugin);
+            Moderation790Harness.set(plugin,SimplexAdminSuite.class,"appChat",new AppChat());plugin.adminAccess=new AdminAccessManager(plugin);plugin.adminUpdate=new AdminUpdateMenu(plugin);
             Moderation790Harness.set(plugin,SimplexAdminSuite.class,"unifiedMenu",new UnifiedAdminMenu(plugin));
             int port;try(var socket=new java.net.ServerSocket(0)){port=socket.getLocalPort();}
             plugin.getConfig().set("app-api.enabled",true);plugin.getConfig().set("app-api.bind","127.0.0.1");plugin.getConfig().set("app-api.port",port);plugin.getConfig().set("app-api.transport","tls");
@@ -62,6 +62,12 @@ public final class AppApiIntegrationHarness {
             check(call("/v1/notifications",read.token(),null).statusCode()==403,"read key cannot inspect push settings");
             check(call("/v1/player-nbt",read.token(),"{}").statusCode()==403,"read key cannot write NBT");
             check(call("/v1/player-nbt",manage.token(),"{}").statusCode()==403,"manage key cannot write NBT");
+            check(call("/v1/data/chat",read.token(),null).statusCode()==200,"read key may read public chat");
+            check(call("/v1/chat",read.token(),"{}").statusCode()==403,"read key cannot send chat");
+            check(call("/v1/chat",manage.token(),"{}").statusCode()==403,"manage key cannot impersonate chat sender");
+            check(call("/v1/chat",full.token(),json(Map.of("name","@a","message","Hello"))).statusCode()==400,"chat selectors rejected at transport");
+            check(call("/v1/prepare",manage.token(),json(SimplexAdminSuite.appMap("path","restart.apply","values",Map.of("operation","cancel")))).statusCode()==403,"restart requires full key");
+            check(call("/v1/view?path=restart.apply&operation=cancel",full.token(),null).statusCode()==405,"GET cannot trigger restart");
             check(call("/v1/data/management?section=admins",read.token(),null).statusCode()==403,"admin directory requires full scope");
             check(call("/v1/prepare",manage.token(),json(SimplexAdminSuite.appMap("path","management.apply","values",Map.of("operation","maintenance","value","true")))).statusCode()==403,"manage key cannot modify server/admin state");
             check(call("/v1/view?path=management.apply&operation=maintenance",full.token(),null).statusCode()==405,"GET cannot mutate management");

@@ -58,6 +58,24 @@ final class PanelUITests: XCTestCase {
         app.buttons["Alt-Accounts & deren Profile"].tap()
         XCTAssertTrue(app.staticTexts[".BedrockDemo"].waitForExistence(timeout: 10)); capture("20-Suite-Alt-Accounts")
     }
+    func testAdminRolesChatAndRestartNavigation() throws {
+        let server=app.buttons["server-simplex1"];XCTAssertTrue(server.waitForExistence(timeout:15));server.tap();selectTab("Verwalten");app.buttons["adminSuiteHub"].tap()
+        let management=app.buttons["Suite-Verwaltung & Wartungsmodus"]
+        for _ in 0..<6 { if management.isHittable {break};app.swipeUp() }
+        XCTAssertTrue(management.waitForExistence(timeout:10));management.tap()
+        app.buttons["Suite-Administratoren & Rollen"].tap()
+        XCTAssertTrue(app.staticTexts["Junior-Admin · nur kicken"].waitForExistence(timeout:10))
+        XCTAssertFalse(app.staticTexts["RecentOffline"].exists)
+        app.buttons.containing(.staticText,identifier:"TadMC_YT").firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Bannschutz"].waitForExistence(timeout:10))
+        XCTAssertTrue(app.switches["Spieler kicken"].waitForExistence(timeout:10));capture("Adminrechte-Gruppen-und-Bannschutz")
+        app.navigationBars.buttons.firstMatch.tap();app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["Neustart planen & abbrechen"].tap()
+        XCTAssertTrue(app.staticTexts["Kein Neustart geplant"].waitForExistence(timeout:10));XCTAssertTrue(app.textFields["Grund auf Deutsch (optional)"].exists || app.textViews.firstMatch.exists);capture("Lokalisierter-Neustart")
+        app.navigationBars.buttons.firstMatch.tap();app.navigationBars.buttons.firstMatch.tap()
+        let chat=app.buttons["Serverchat live"];for _ in 0..<6 {if chat.isHittable {break};app.swipeDown()}
+        XCTAssertTrue(chat.waitForExistence(timeout:10));chat.tap();XCTAssertTrue(app.textFields["Anzeigename"].waitForExistence(timeout:10));XCTAssertTrue(app.buttons["Senden"].exists);capture("App-Livechat")
+    }
     func testPlayerProfile20AndTargetedSearch() throws {
         let online = app.buttons["workspace-online-simplex1"]
         XCTAssertTrue(app.descendants(matching: .any)["home-online-count-simplex1"].firstMatch.waitForExistence(timeout: 15))

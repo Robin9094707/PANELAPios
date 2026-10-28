@@ -36,7 +36,8 @@ final class AppApiManager {
     AppApiManager(SimplexAdminSuite plugin)throws Exception{
         this.plugin=plugin;playerNbt=new PlayerNbtAccess(plugin);serverName=Bukkit.getServer().getName();security=new AppApiSecurity(plugin.getDataFolder().toPath().resolve("app-api"));controller=new DiscordAdminController(plugin,plugin.discordRelay());menus=new AppApiMenus(plugin,security);
         for(Object command:controller.guildCommands())if(command instanceof Map<?,?> c&&"sasadmin".equals(c.get("name")))flatten("",c.get("options"));
-        extra("management.apply","Suite-Verwaltung ändern","Verwaltung",List.of(field("operation","Aktion",3,true),field("player","Spieler / Gruppe",3,false),field("node","Recht / Brand",3,false),field("value","Neuer Wert",3,false),field("reason","Grund",3,false)));
+        extra("restart.apply","Serverneustart planen oder abbrechen","Server",List.of(choice("operation","Aktion","schedule","cancel"),field("seconds","Sekunden (1–60)",4,false),field("reasonDE","Grund Deutsch",3,false),field("reasonEN","Grund Englisch",3,false)));
+        extra("management.apply","Suite-Verwaltung ändern","Verwaltung",List.of(field("operation","Aktion",3,true),field("player","Spieler / Gruppe",3,false),field("node","Recht / Brand",3,false),field("value","Neuer Wert",3,false),field("reason","Grund",3,false),field("maxBanSeconds","Maximale Banndauer (Sekunden)",3,false),field("altBans","Alt-Account-Banns erlauben",3,false)));
         extra("vpn.whitelist","VPN-Ausnahme ändern","Sicherheit",List.of(field("player","Spielername oder UUID",3,true),choice("allowed","VPN-Ausnahme","true","false")));
         extra("bans.remove","Ausgewählte Sperre aufheben","Moderation",List.of(choice("source","Bannquelle","internal","client","minecraft-profile","minecraft-ip","litebans"),field("id","Eintrag / Spieler-UUID",3,true),field("expected","Geladener Stand",3,false)));
         extra("reports.update","Report bearbeiten","Moderation",List.of(field("id","Report-ID",3,true),choice("status","Status","OPEN","IN_REVIEW","RESOLVED","REJECTED"),field("note","Interne Notiz",3,false),field("expected","Geladener Stand",3,true)));
@@ -65,7 +66,12 @@ final class AppApiManager {
     private void extra(String id,String description,String group,List<?> options){actions.put(id,new LinkedHashMap<>(SimplexAdminSuite.appMap("id",id,"name",description,"description",description,"group",group,"scope",scope(id),"options",options)));}
     private static Map<String,Object> field(String id,String label,int type,boolean required){return SimplexAdminSuite.appMap("name",id,"description",label,"type",type,"required",required);}
     private static Map<String,Object> choice(String id,String label,String... values){var f=field(id,label,3,true);f.put("choices",Arrays.stream(values).map(v->SimplexAdminSuite.appMap("name",switch(v){case "health"->"Gesundheit";case "food"->"Hunger";case "saturation"->"Sättigung";case "level"->"Erfahrungslevel";case "exp"->"XP-Anteil";case "gamemode"->"Spielmodus";case "invulnerable"->"Unverwundbarkeit";case "allowFlight"->"Flug erlauben";default->v;},"value",v)).toList());return f;}
-    static String scope(String path){return Set.of("alts.ip","management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
+    static int countdown(Object value){
+        double seconds=Double.parseDouble(String.valueOf(value));
+        if(!Double.isFinite(seconds)||seconds<1||seconds>60||seconds!=(int)seconds)throw new IllegalArgumentException("Countdown muss eine ganze Zahl von 1 bis 60 Sekunden sein");
+        return (int)seconds;
+    }
+    static String scope(String path){return Set.of("restart.apply","alts.ip","management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
     void reload(){
         stopListener();menus.clear();long rev=generation.get();
         if(!plugin.getConfig().getBoolean("app-api.enabled",false)){status="Ausgeschaltet";return;}
@@ -117,8 +123,10 @@ final class AppApiManager {
             String path=x.getRequestURI().getPath(),method=x.getRequestMethod();Map<String,String> query=query(x.getRequestURI());Object result;
             if(method.equals("GET")){
                 result=switch(path){
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
-                    case "/v1/data/management"->onMain(rev,()->{if(!key.scope().equals("full")&&Set.of("admins","admin-rights").contains(query.getOrDefault("section","status")))throw new ApiError(403,"Adminrechte benötigen full-Zugriff");return plugin.app250Data(query);});
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
+                    case "/v1/data/chat"->{long after=Long.parseLong(query.getOrDefault("after","0"));yield plugin.appChat.read(after);}
+                    case "/v1/data/operations"->onMain(rev,plugin::appOperations);
+                    case "/v1/data/management"->onMain(rev,()->{if(!key.scope().equals("full")&&Set.of("admins","admin-rights","roles").contains(query.getOrDefault("section","status")))throw new ApiError(403,"Adminrechte benötigen full-Zugriff");return plugin.app250Data(query);});
                     case "/v1/player-nbt"->onMain(rev,()->playerNbt.read(query.getOrDefault("player",""),query.getOrDefault("path",""),Boolean.parseBoolean(query.getOrDefault("status","false"))));
                     case "/v1/notifications"->onMain(rev,()->{if(!key.scope().equals("full"))throw new ApiError(403,"Bark-Einrichtung benötigt full-Zugriff");if(plugin.appEvents==null)throw new ApiError(503,"Ereignismodul nicht verfügbar");return plugin.appEvents.subscription(key.id());});
                     case "/v1/data/discord-channels"->{DiscordBotManager bot=onMain(rev,()->plugin.discordRelay());if(bot==null)throw new ApiError(503,"Discord-Bot ist nicht geladen");yield bot.appChannels();}
@@ -137,6 +145,12 @@ final class AppApiManager {
                     case "/v1/data/alt-dashboard","/v1/data/alt-ips","/v1/data/events","/v1/data/vpn-whitelist","/v1/data/vpn-kicks","/v1/data/bans","/v1/data/reports","/v1/data/overview","/v1/data/statistics","/v1/data/worlds","/v1/data/plugins","/v1/data/log-status","/v1/data/players","/v1/data/profile","/v1/data/alts","/v1/data/devices","/v1/data/ultrabans","/v1/data/snapshots","/v1/data/nbt-paths","/v1/data/settings","/v1/data/inventory","/v1/data/snapshot-content"->onMain(rev,()->{Object data=plugin.appApiData(path.substring("/v1/data/".length()),query);if(path.endsWith("/settings")){Map<String,Object> envelope=object(data);for(Object entry:(List<?>)envelope.get("items")){Map<String,Object> item=object(entry);item.put("revision",AppApiSecurity.hash(DiscordBotManager.Json.stringify(item.get("value"))));}}return data;});
                     default->throw new ApiError(404,"API-Endpunkt nicht gefunden.");
                 };
+            }else if(method.equals("POST")&&path.equals("/v1/chat")){
+                if(!key.scope().equals("full"))throw new ApiError(403,"Chatversand benötigt full-Zugriff");
+                if(!rate("chat:"+key.id(),20))throw new ApiError(429,"Maximal 20 Chatnachrichten pro Minute");
+                if(!"application/json".equals(x.getRequestHeaders().getFirst("Content-Type")))throw new ApiError(415,"application/json erforderlich");
+                byte[] bytes=x.getRequestBody().readNBytes(4097);if(bytes.length>4096)throw new ApiError(413,"Nachricht zu groß");String text=new String(bytes,StandardCharsets.UTF_8);AppApiSecurity.checkJson(text);Map<String,Object> payload=object(DiscordBotManager.Json.parse(text));
+                result=onMain(rev,()->{if(!security.keys().contains(key))throw new ApiError(401,"Schlüssel widerrufen");return plugin.appChat.send(plugin,actor(key).auditName(),String.valueOf(payload.getOrDefault("name","Server")),String.valueOf(payload.getOrDefault("message","")));});
             }else if(method.equals("POST")&&path.equals("/v1/player-nbt")){
                 if(!key.scope().equals("full"))throw new ApiError(403,"Offline-NBT speichern benötigt full-Zugriff");
                 if(!rate("nbt:"+key.id(),6))throw new ApiError(429,"Maximal sechs NBT-Änderungen pro Minute");
@@ -189,6 +203,7 @@ final class AppApiManager {
                         if(isCenterAction(req.path)) {
                             if(req.path.equals("events.ack"))return plugin.appEvents.acknowledge(key.id(),req.text("id"));
                             if(req.path.equals("notifications.update")){if(plugin.appEvents==null)throw new ApiError(503,"Ereignismodul nicht verfügbar");return plugin.appEvents.configure(key.id(),req.values);}
+                            if(req.path.equals("restart.apply"))return plugin.appRestart(req.values,actor(key).auditName());
                             return plugin.appModerationMutation(req.path,req.values,actor(key).auditName());
                         }
                         if(req.path.equals("alts.ip"))return plugin.altIpApply(req.values,actor(key).auditName());
@@ -205,7 +220,7 @@ final class AppApiManager {
             try{send(x,code,SimplexAdminSuite.appMap("message",message));}catch(Exception ignored){}
         }finally{x.close();}
     }
-    private static boolean isCenterAction(String path){return Set.of("management.apply","vpn.whitelist","bans.remove","reports.update","events.ack","events.delete","events.note","events.clear","notifications.update").contains(path);}
+    private static boolean isCenterAction(String path){return Set.of("restart.apply","management.apply","vpn.whitelist","bans.remove","reports.update","events.ack","events.delete","events.note","events.clear","notifications.update").contains(path);}
     private void validateDiscordChannel(DiscordAdminController.Request req,long rev)throws Exception {
         if(!req.path.equals("settings.update")||!req.text("key").startsWith("discord-bot.")||!req.text("key").endsWith("channel-id")||req.text("value").isBlank())return;
         DiscordBotManager bot=onMain(rev,()->{checkSetting(req);return plugin.discordRelay();});
@@ -228,7 +243,7 @@ final class AppApiManager {
         if(values.size()>32)throw new IllegalArgumentException("Zu viele Felder");
         for(var entry:values.entrySet()){
             if(entry.getKey().startsWith("_")||entry.getValue() instanceof Map<?,?>||entry.getValue() instanceof List<?>)throw new IllegalArgumentException("Ungültiges Aktionsfeld");
-            String value=String.valueOf(entry.getValue());if(value.length()>4000||value.chars().anyMatch(c->c<32&&c!='\t'))throw new IllegalArgumentException("Feld enthält ungültige Zeichen oder ist zu lang");
+            String value=String.valueOf(entry.getValue());if(value.length()>(path.equals("management.apply")&&entry.getKey().equals("node")?24000:4000)||value.chars().anyMatch(c->c<32&&c!='\t'))throw new IllegalArgumentException("Feld enthält ungültige Zeichen oder ist zu lang");
         }
         Map<String,Object> schema=actions.get(path);if(schema!=null&&schema.get("options") instanceof List<?> fields)for(Object raw:fields){Map<String,Object> f=(Map<String,Object>)raw;String name=String.valueOf(f.get("name"));Object val=values.get(name);
             if(Boolean.TRUE.equals(f.get("required"))&&(val==null||String.valueOf(val).isBlank()))throw new IllegalArgumentException("Pflichtfeld fehlt: "+name);
