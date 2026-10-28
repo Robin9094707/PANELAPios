@@ -2707,7 +2707,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true) public void onTeleport(PlayerTeleportEvent event) {
         if(dimensionBlocked(event.getPlayer(),event.getTo())){event.setCancelled(true);event.getPlayer().sendMessage(playerText(event.getPlayer(),"§cDiese Dimension ist für dich gesperrt.","§cYour access to this dimension is disabled."));return;}
-        if(managedProbeTeleport(event.getPlayer()))return;
+        if(dimensionEvacuations.contains(event.getPlayer().getUniqueId())||managedProbeTeleport(event.getPlayer()))return;
         Player player = event.getPlayer();
         if (has(player, "simplexadminsuite.admin")) return;
         if (blockWhileAuthenticating(player, event::setCancelled)) return;
@@ -6205,7 +6205,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         for(World world:Bukkit.getWorlds())if(world.getEnvironment()==World.Environment.NORMAL){
             Location spawn=world.getSpawnLocation();
             // Evacuation is an administrative correction, not a player teleport privilege.
-            dimensionEvacuations.add(player.getUniqueId());try{player.teleport(spawn);}finally{dimensionEvacuations.remove(player.getUniqueId());}return;
+            dimensionEvacuations.add(player.getUniqueId());try{if(!player.teleport(spawn))suiteKick(player,playerText(player,"Der Zugang zu dieser Dimension wurde entzogen.","Your access to this dimension was revoked."));}finally{dimensionEvacuations.remove(player.getUniqueId());}return;
         }
         suiteKick(player,playerText(player,"Der Zugang zu dieser Dimension wurde entzogen.","Your access to this dimension was revoked."));
     }
@@ -6213,7 +6213,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     @EventHandler public void dimensionChanged(org.bukkit.event.player.PlayerChangedWorldEvent event){enforceDimension(event.getPlayer());}
     @EventHandler(priority=EventPriority.MONITOR) public void dimensionJoin(org.bukkit.event.player.PlayerJoinEvent event){Bukkit.getScheduler().runTask(this,()->enforceDimension(event.getPlayer()));}
     private void notifyRights(PlayerProfile target) {
-        Player online = Bukkit.getPlayerExact(target.name);
+        Player online = Bukkit.getPlayer(target.uuid);
         if (online != null) { enforceDimension(online); online.sendMessage(prefix() + "Your server permissions have been updated by an admin."); }
     }
 
@@ -8516,7 +8516,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     Object appRestart(Map<String,Object> values,String actor){
         String operation=String.valueOf(values.getOrDefault("operation","schedule"));
         if(operation.equals("cancel")){if(!restartManager.cancel(actor))throw new IllegalArgumentException("Kein Neustart geplant");}
-        else if(operation.equals("schedule")){int seconds=Integer.parseInt(String.valueOf(values.getOrDefault("seconds","30")));if(seconds<1||seconds>60)throw new IllegalArgumentException("Countdown muss 1–60 Sekunden betragen");if(restartManager.active())throw new IllegalArgumentException("Bereits ein Neustart geplant");
+        else if(operation.equals("schedule")){Object rawSeconds=values.getOrDefault("seconds","30");int seconds=rawSeconds instanceof Number n?n.intValue():Integer.parseInt(String.valueOf(rawSeconds));if(seconds<1||seconds>60)throw new IllegalArgumentException("Countdown muss 1–60 Sekunden betragen");if(restartManager.active())throw new IllegalArgumentException("Bereits ein Neustart geplant");
             String de=String.valueOf(values.getOrDefault("reasonDE","")),en=String.valueOf(values.getOrDefault("reasonEN",""));if(de.length()>200||en.length()>200)throw new IllegalArgumentException("Grund: maximal 200 Zeichen je Sprache");
             restartManager.reasonDE=stripFormatting(de);restartManager.reasonEN=stripFormatting(en);restartManager.localized=true;restartManager.schedule(actor,seconds);
         }else throw new IllegalArgumentException("Unbekannte Neustartaktion");
@@ -11834,7 +11834,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 form.button("§aSpieler zu mir holen", response -> sync(() -> { plugin.bringPlayer(admin, target); openPlayer(admin, target.uuid); }));
             }
             if (plugin.has(admin, "simplexadminsuite.vanish") && plugin.has(admin, "simplexadminsuite.teleport")) form.button("§5Vanish + Teleport", response -> sync(() -> { plugin.bridge.toggleVanish(admin); plugin.teleportToOnline(admin, target); openPlayer(admin, target.uuid); }));
-            if ((plugin.has(admin, "simplexadminsuite.bans") || plugin.has(admin, "simplexadminsuite.mutes"))) form.button("§cStrafen verwalten\n§7Ban, Mute, Kick", response -> sync(() -> openPunishments(admin, target.uuid)));
+            if (java.util.stream.Stream.of("ban","tempban","unban","kick","mute","tempmute","unmute").anyMatch(action->plugin.has(admin,"simplexadminsuite.action."+action))) form.button("§cStrafen verwalten\n§7Ban, Mute, Kick", response -> sync(() -> openPunishments(admin, target.uuid)));
             if (plugin.has(admin, "simplexadminsuite.rights")) form.button("§eRechte & Freeze\n§7Feingranulare Sperren", response -> sync(() -> openRights(admin, target.uuid)));
             if (plugin.has(admin, "simplexadminsuite.warns")) form.button("§6Warnungen\n§7Hinzufügen und anzeigen", response -> sync(() -> openWarnings(admin, target.uuid)));
             if (plugin.has(admin, "simplexadminsuite.snapshots")) form.button("§dInventar-Snapshots\n§7Erstellen, laden, löschen", response -> sync(() -> openSnapshots(admin, target.uuid, 0)));
@@ -11907,7 +11907,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             SimpleForm.Builder form = SimpleForm.builder().title("§l§cSTRAFEN: §f" + target.name)
                     .content("§7Aktiver Anbieter: §f" + plugin.punishments.providerLabel() + "\n§7Status: §f" + plugin.punishments.summary(target) + "\n\n§8Jede gefährliche Aktion benötigt eine Bestätigung.");
             form.button("§aBan-/Mute-Status aller Quellen\n§7LiteBans, Simplex und Minecraft", response -> sync(() -> plugin.moderationOverview.open(admin, plugin.moderationSubject(target))));
-            if(plugin.has(admin,"simplexadminsuite.bans"))form.button("Bannart auswählen • Ultra / leise / Ghost",r->sync(()->plugin.moderationControl.banTarget(admin,target.uuid)));
+            if(plugin.has(admin,"simplexadminsuite.action.ban")||plugin.has(admin,"simplexadminsuite.action.unban"))form.button("Bannart auswählen • Ultra / leise / Ghost",r->sync(()->plugin.moderationControl.banTarget(admin,target.uuid)));
             if(plugin.has(admin,"simplexadminsuite.restrictions"))form.button("Einschränkungsvorlagen",r->sync(()->plugin.moderationControl.restrictionTarget(admin,target.uuid)));
             {
                 if(plugin.has(admin,"simplexadminsuite.action.ban"))form.button("§cPermanent bannen", response -> sync(() -> openPunishmentInput(admin, target.uuid, "ban", false)));

@@ -24,7 +24,14 @@ enum SuiteDemo {
     static func response(_ path: String, query: [String: String]) -> JSON {
         if let value = operations[path] { return value }
         switch path {
-        case "health": return .object(["apiVersion": .number(1), "serverId": .string("synthetic-suite"), "version": .string("8.4.0"), "features": .array([.string("overview")]), "scope": .string("full")])
+        case "health": return .object(["apiVersion": .number(1), "serverId": .string("synthetic-suite"), "version": .string("8.4.0"), "features": .array([.string("overview"),.string("admin-roles-v3"),.string("public-chat-v1"),.string("restart-v1")]), "scope": .string("full")])
+        case "data/operations": return .object(["active":.bool(false),"remaining":.number(0)])
+        case "data/chat": return .object(["items":.array([]),"cursor":.string("0")])
+        case "data/management":
+            if query["section"] == "status" { return .object(["maintenance":.bool(false),"discord":.string("simplex")]) }
+            if query["section"] == "admins" { return .object(["items":.array([.object(["id":.string(player),"name":.string("TadMC_YT"),"role":.string("Junior-Admin · nur kicken"),"effective":.bool(true)])])]) }
+            if query["section"] == "roles" { return .object(["items":.array(roleTemplates),"permissions":.array(adminRights)]) }
+            return .object(["items":.array(adminRights),"role":.string("JUNIOR_ADMIN"),"roles":.array(roleTemplates),"maxBanSeconds":.number(-1),"altBans":.bool(false)])
         case "schema": return .object(["actions": .array([
             .object(["id": .string("player.punish"), "description": .string("Strafen und Warnungen"), "group": .string("Spieler"), "options": .array([field("player", "Spieler"), .object(["name": .string("type"), "description": .string("Strafaktion"), "required": .bool(true), "type": .number(3), "choices": .array([.object(["name": .string("Bannen"), "value": .string("ban")]), .object(["name": .string("Entbannen"), "value": .string("unban")])])])])]),
             .object(["id": .string("security.ultraban"), "description": .string("Ultrabann ausführen"), "group": .string("Sicherheit"), "options": .array([field("player", "Spieler")])]),
@@ -56,6 +63,15 @@ enum SuiteDemo {
         default: return .null
         }
     }
+    static var roleTemplates: [JSON] { [
+        .object(["id":.string("JUNIOR_ADMIN"),"name":.string("Junior-Admin · nur kicken"),"maxBanSeconds":.number(-1)]),
+        .object(["id":.string("TEMP_MODERATOR"),"name":.string("Zeitbann-Moderator · maximal 3 Tage"),"maxBanSeconds":.number(259200)]),
+        .object(["id":.string("FULL"),"name":.string("Volladministrator"),"maxBanSeconds":.number(0)])
+    ] }
+    static var adminRights: [JSON] { [
+        .object(["id":.string("simplexadminsuite.action.kick"),"name":.string("Spieler kicken"),"description":.string("Erlaubt das Entfernen eines Spielers vom Server."),"group":.string("Moderation"),"allowed":.bool(true),"override":.string("inherit")]),
+        .object(["id":.string("simplexadminsuite.action.tempban"),"name":.string("Zeitweise bannen"),"description":.string("Erlaubt Zeitbanns innerhalb des Rollenlimits."),"group":.string("Moderation"),"allowed":.bool(false),"override":.string("inherit")])
+    ] }
     static func otherProfile(online: Bool) -> JSON {
         .object(["id": .string(online ? "bedrock-demo" : "offline-demo"), "name": .string(online ? ".BedrockDemo" : "RecentOffline"), "online": .bool(online), "client": .string("BEDROCK"), "device": .string(online ? "iPhone · Demo" : "Samsung · Demo"), "version": .string("26.3"), "lastSeen": .number(Date().addingTimeInterval(-300).timeIntervalSince1970 * 1000)])
     }
