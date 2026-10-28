@@ -9,6 +9,28 @@ final class SuiteIntegrationTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubProtocol.self]
         return try SuiteAPI(SuiteConnection(panel: "https://panel.example", server: "server", endpoint: "https://suite.example", fingerprint: "", serverIdentity: "server"), token: "fixture", session: URLSession(configuration: config))
     }
+    @MainActor func testSnapshotStaysStableAcrossReopeningUntilExplicitRefresh() async throws {
+        var calls = 0
+        StubProtocol.handler = { _ in calls += 1; return (200, try JSONEncoder().encode(JSON.object(["items": .array([self.row(calls == 1 ? "old" : "new", online: false, seen: Double(calls))]), "total": .number(1), "next": .number(-1)]))) }
+        defer { StubProtocol.handler = nil }
+        let api = try client(), directory = SuiteDirectory()
+        await directory.snapshot(suite: api)
+        await directory.snapshot(suite: api)
+        XCTAssertEqual(calls, 1); XCTAssertEqual(directory.rows.first?["id"].string, "old")
+        await directory.snapshot(suite: api, force: true)
+        XCTAssertEqual(calls, 2); XCTAssertEqual(directory.rows.first?["id"].string, "new")
+    }
+    @MainActor func testFailedSnapshotRefreshPreservesExistingRowsAndSessionCacheIsScoped() async throws {
+        let api = try client(), directory = SuiteDirectory()
+        StubProtocol.handler = { _ in (200, try JSONEncoder().encode(JSON.object(["items": .array([self.row("stable", online: false, seen: 1)]), "total": .number(1), "next": .number(-1)]))) }
+        defer { StubProtocol.handler = nil }
+        await directory.snapshot(suite: api)
+        StubProtocol.handler = { _ in (500, Data()) }
+        await directory.snapshot(suite: api, force: true)
+        XCTAssertEqual(directory.rows.first?["id"].string, "stable"); XCTAssertNotNil(directory.error)
+        XCTAssertTrue(SuiteDirectory.shared(key: "test-one") === SuiteDirectory.shared(key: "test-one"))
+        XCTAssertFalse(SuiteDirectory.shared(key: "test-one") === SuiteDirectory.shared(key: "test-two"))
+    }
     @MainActor func testRecentOfflinePlayersUseAllPagesBeforeGlobalSorting() async throws {
         var offsets: [String] = []
         StubProtocol.handler = { request in

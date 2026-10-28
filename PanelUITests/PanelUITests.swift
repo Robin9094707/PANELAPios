@@ -60,6 +60,22 @@ final class PanelUITests: XCTestCase {
         app.buttons["Alt-Accounts & Belege"].tap()
         XCTAssertTrue(app.staticTexts[".BedrockDemo"].waitForExistence(timeout: 10)); capture("20-Suite-Alt-Accounts")
     }
+    func testAltDashboardAndIgnoredInfrastructureIP() throws {
+        let server = app.buttons["server-simplex1"]
+        XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap()
+        XCTAssertTrue(app.buttons["showPlayers"].waitForExistence(timeout: 10))
+        selectTab("Verwalten")
+        XCTAssertTrue(app.buttons["adminSuiteHub"].waitForExistence(timeout: 10)); app.buttons["adminSuiteHub"].tap()
+        let dashboard = app.buttons["Alt-Account-Dashboard & IP-Regeln"]
+        for _ in 0..<5 { if dashboard.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(dashboard.waitForExistence(timeout: 10)); dashboard.tap()
+        XCTAssertTrue(app.staticTexts["Größte Gruppe"].waitForExistence(timeout: 10)); capture("29-Alt-Dashboard")
+        let ips = app.buttons["IP-Ausschlüsse verwalten"]
+        for _ in 0..<5 { if ips.isHittable { break }; app.swipeUp() }
+        ips.tap()
+        XCTAssertTrue(app.staticTexts["82.165.45.159"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Für Alt-Erkennung ausgeschlossen"].exists); capture("30-Alt-IP-Regeln")
+    }
     func testIntegratedSuitePlayersSearchDevicesAndOffline() throws {
         let online = app.buttons["workspace-online-simplex1"]
         XCTAssertTrue(online.waitForExistence(timeout: 15)); online.tap()

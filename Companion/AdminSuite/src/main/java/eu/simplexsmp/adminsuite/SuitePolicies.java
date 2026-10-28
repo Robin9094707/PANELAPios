@@ -5,6 +5,7 @@ import org.bukkit.*;import org.bukkit.entity.Player;import org.bukkit.event.*;im
 final class SuitePolicies implements Listener {
  final SimplexAdminSuite plugin;final Path file;final Properties state=new Properties();
  SuitePolicies(SimplexAdminSuite p)throws IOException{plugin=p;file=p.getDataFolder().toPath().resolve("suite-policies.properties");if(Files.exists(file))try(Reader r=Files.newBufferedReader(file)){state.load(r);}Bukkit.getPluginManager().registerEvents(this,p);}
+ synchronized boolean ownsRight(UUID id,String right){return state.containsKey("right."+id+"."+right);}
  synchronized boolean inherit(UUID id){return Boolean.parseBoolean(state.getProperty("inherit."+id,"true"));}
  synchronized void set(String key,String value)throws IOException{Properties next=new Properties();next.putAll(state);next.setProperty(key,value);AtomicState.save(file,next,"Suite policies v1");state.clear();state.putAll(next);}
  synchronized void changeInheritance(UUID id,boolean enabled)throws IOException{set("inherit."+id,Boolean.toString(enabled));Set<UUID> targets=new HashSet<>(plugin.controlLinked(id));targets.add(id);for(UUID target:targets)reconcileAll(target);}
