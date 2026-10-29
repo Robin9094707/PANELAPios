@@ -1,4 +1,5 @@
 import XCTest
+import os
 @testable import Panel
 
 /// Panel 3.0.0: admin center, player management and the update splash.
@@ -109,6 +110,7 @@ final class AdminCenterTests: XCTestCase {
         XCTAssertFalse(requested.contains("/v1/data/reports"), "modules not advertised are not requested")
     }
     @MainActor func testOlderSuiteReportCountsFollowPagination() async throws {
+        let reportRequests = OSAllocatedUnfairLock(initialState: 0)
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubProtocol.self]
         StubProtocol.handler = { request in
             let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
@@ -117,6 +119,7 @@ final class AdminCenterTests: XCTestCase {
             case "/v1/data/overview": return (200, Data(#"{"online":0,"maxPlayers":10}"#.utf8))
             case "/v1/data/players": return (200, Data(#"{"items":[],"total":0,"next":-1}"#.utf8))
             case "/v1/data/reports":
+                reportRequests.withLock { $0 += 1 }
                 let offset = Int(components.queryItems?.first { $0.name == "offset" }?.value ?? "0") ?? 0
                 let status = offset == 0 ? "OPEN" : "IN_REVIEW"
                 let items = (0..<100).map { #"{"id":"\#(offset + $0)","status":"\#(status)"}"# }.joined(separator: ",")
@@ -130,6 +133,14 @@ final class AdminCenterTests: XCTestCase {
         let center = SuiteAdminCenterModel(); await center.load(suite)
         XCTAssertEqual(center.dashboard["moderation"]["openReports"].int, 100); XCTAssertEqual(center.dashboard["moderation"]["reviewReports"].int, 100, "second page is counted")
         XCTAssertFalse(center.dashboard["reportsPartial"].bool)
+        // Polling within a minute reuses the counted reports instead of walking all pages again.
+        reportRequests.withLock { $0 = 0 }
+        await center.load(suite)
+        XCTAssertEqual(reportRequests.withLock { $0 }, 0); XCTAssertEqual(center.dashboard["moderation"]["reviewReports"].int, 100)
+        center.now = { Date().addingTimeInterval(SuiteAdminCenterModel.reportCacheSeconds + 1) }
+        await center.load(suite)
+        XCTAssertEqual(reportRequests.withLock { $0 }, 2, "stale cache walks both pages again")
         XCTAssertEqual(SuiteAdminDashboard.alerts(.object(["reportsPartial": .bool(true), "moderation": .object(["openReports": .number(1)])])).first?.title, "1+ offene Reports")
+        XCTAssertEqual(SuiteAdminDashboard.alerts(.object(["moderation": .object(["internalBans": .number(1), "ultrabans": .number(1), "warnedPlayers": .number(1)])])).map(\.title), ["1 aktiver Suite-Bann", "1 aktiver Ultrabann", "1 Spieler mit Warnung"])
     }
 }

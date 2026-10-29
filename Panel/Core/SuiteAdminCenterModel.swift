@@ -81,10 +81,11 @@ enum SuiteAdminDashboard {
         let more = dashboard["reportsPartial"].bool ? "+" : ""
         if open > 0 { result.append(SuiteAdminAlert(kind: .reports, title: open == 1 && more.isEmpty ? "1 offener Report" : "\(open)\(more) offene Reports", detail: review > 0 ? "\(review) weitere in Bearbeitung" : "Warten auf Bearbeitung", symbol: "flag.fill", critical: true)) }
         else if review > 0 { result.append(SuiteAdminAlert(kind: .reports, title: review == 1 ? "1 Report in Bearbeitung" : "\(review) Reports in Bearbeitung", detail: "Keine neuen Reports", symbol: "flag.fill", critical: false)) }
-        if moderation["internalBans"].int > 0 { result.append(SuiteAdminAlert(kind: .bans, title: "\(moderation["internalBans"].int) aktive Suite-Banns", detail: "Interne Sperren der Admin Suite", symbol: "hand.raised.fill", critical: false)) }
+        let bans = moderation["internalBans"].int, ultrabans = moderation["ultrabans"].int, warned = moderation["warnedPlayers"].int
+        if bans > 0 { result.append(SuiteAdminAlert(kind: .bans, title: bans == 1 ? "1 aktiver Suite-Bann" : "\(bans) aktive Suite-Banns", detail: "Interne Sperren der Admin Suite", symbol: "hand.raised.fill", critical: false)) }
         if moderation["mutes"].int > 0 { result.append(SuiteAdminAlert(kind: .mutes, title: "\(moderation["mutes"].int) stummgeschaltet", detail: "Aktive Chat-Sperren", symbol: "speaker.slash.fill", critical: false)) }
-        if moderation["ultrabans"].int > 0 { result.append(SuiteAdminAlert(kind: .ultrabans, title: "\(moderation["ultrabans"].int) aktive Ultrabanns", detail: "Identitätsgruppen gesperrt", symbol: "shield.slash.fill", critical: false)) }
-        if moderation["warnedPlayers"].int > 0 { result.append(SuiteAdminAlert(kind: .warnings, title: "\(moderation["warnedPlayers"].int) Spieler mit Warnungen", detail: "Im Filter „Auffällig“ ansehen", symbol: "exclamationmark.triangle.fill", critical: false)) }
+        if ultrabans > 0 { result.append(SuiteAdminAlert(kind: .ultrabans, title: ultrabans == 1 ? "1 aktiver Ultrabann" : "\(ultrabans) aktive Ultrabanns", detail: "Identitätsgruppen gesperrt", symbol: "shield.slash.fill", critical: false)) }
+        if warned > 0 { result.append(SuiteAdminAlert(kind: .warnings, title: warned == 1 ? "1 Spieler mit Warnung" : "\(warned) Spieler mit Warnungen", detail: "Im Filter „Auffällig“ ansehen", symbol: "exclamationmark.triangle.fill", critical: false)) }
         return result
     }
     static func tpsLevel(_ tps: Double) -> Int { tps <= 0 ? -1 : tps >= 18 ? 0 : tps >= 15 ? 1 : 2 }
@@ -96,14 +97,18 @@ enum SuiteAdminDashboard {
 
 @MainActor final class SuiteAdminCenterModel: ObservableObject {
     static let reportPageLimit = 20
+    /// Report pages are re-read at most once a minute so polling stays far below the suite's 180 requests/minute key limit.
+    static let reportCacheSeconds: TimeInterval = 60
     @Published var dashboard: JSON = .null
     @Published var updated: Date?
     @Published var error: String?
     @Published var busy = false
     private(set) var suite: SuiteAPI?
+    private var cachedReports: (value: JSON, at: Date)?
+    var now: () -> Date = Date.init
     func load(_ suite: SuiteAPI) async {
         guard !busy else { return }
-        if self.suite !== suite { self.suite = suite; dashboard = .null; updated = nil }
+        if self.suite !== suite { self.suite = suite; dashboard = .null; updated = nil; cachedReports = nil }
         busy = true; defer { busy = false }
         do {
             let value: JSON
@@ -120,8 +125,14 @@ enum SuiteAdminDashboard {
         // Optional modules: a missing module never hides the core dashboard.
         let restart = suite.features.contains("restart-v1") ? ((try? await suite.data("operations")) ?? .null) : .null
         let maintenance = suite.features.contains("management-v2") ? ((try? await suite.data("management", query: ["section": "status"])) ?? .null) : .null
-        let reports = suite.features.contains("moderation-center-v1") ? await allReports(suite) : .null
+        let reports = suite.features.contains("moderation-center-v1") ? await recentReports(suite) : .null
         return SuiteAdminDashboard.legacy(overview: summary, players: online, restart: restart, maintenance: maintenance, reports: reports)
+    }
+    private func recentReports(_ suite: SuiteAPI) async -> JSON {
+        if let cached = cachedReports, now().timeIntervalSince(cached.at) < Self.reportCacheSeconds { return cached.value }
+        let value = await allReports(suite)
+        if value != .null { cachedReports = (value, now()) }
+        return value
     }
     /// Older suites page reports by 100; follow `next` so backlog counts are complete (bounded to 2,000 entries).
     private func allReports(_ suite: SuiteAPI) async -> JSON {
