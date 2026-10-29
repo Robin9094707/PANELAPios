@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SuiteDashboardCard: View {
     @ObservedObject var model: SuiteModel
+    /// Passed through to the admin center; not observed so live stats do not redraw this card.
+    let live: LiveServer
     var online: [JSON] { model.players.filter { $0["online"].bool } }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -26,6 +28,9 @@ struct SuiteDashboardCard: View {
                 } label: {
                     HStack { Label("Online-Spieler", systemImage: "person.2.fill"); Spacer(); Image(systemName: "chevron.right").font(.caption) }
                 }.accessibilityIdentifier("showPlayers")
+                NavigationLink { SuiteAdminCenterView(model: model, live: live) } label: {
+                    HStack { Label("Admin-Zentrale", systemImage: "shield.lefthalf.filled"); Spacer(); Image(systemName: "chevron.right").font(.caption) }
+                }.accessibilityIdentifier("openAdminCenter")
                 ForEach(Array(online.prefix(4)), id: \.["id"].string) { row in
                     NavigationLink { SuitePlayerView(suite: suite, panel: model.panel, server: model.server, player: row["id"].string, actions: model.actions, initialProfile: row) } label: { SuitePlayerRow(row: row, suite: suite) }.buttonStyle(.plain)
                 }

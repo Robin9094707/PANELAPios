@@ -68,7 +68,7 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/PluginUploadRegressionTests -only-testing:PanelTests/PlayerNBTSearchTests -only-testing:PanelTests/SuiteIntegrationTests -only-testing:PanelTests/Panel230Tests -only-testing:PanelTests/WorkspaceUpdateTests -only-testing:PanelTests/UpdateFixTests -only-testing:PanelTests/AddonUpdateTests -only-testing:PanelTests/MarketplaceNetworkTests -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/AdminRolesTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelUITests/PanelUITests/testAdminRolesChatAndRestartNavigation -only-testing:PanelUITests/PanelUITests/testDiscordSettingsChannelSelection -only-testing:PanelUITests/PanelUITests/testPlayerProfile20AndTargetedSearch -only-testing:PanelUITests/PanelUITests/testAltDashboardAndIgnoredInfrastructureIP -only-testing:PanelUITests/PanelUITests/testJavaWorldStorageAndNewWorkspaceCards -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/PluginUploadRegressionTests -only-testing:PanelTests/PlayerNBTSearchTests -only-testing:PanelTests/SuiteIntegrationTests -only-testing:PanelTests/Panel230Tests -only-testing:PanelTests/WorkspaceUpdateTests -only-testing:PanelTests/UpdateFixTests -only-testing:PanelTests/AddonUpdateTests -only-testing:PanelTests/MarketplaceNetworkTests -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/AdminRolesTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelTests/AdminCenterTests -only-testing:PanelUITests/PanelUITests/testAdminCenterPlayerManagementAndWhatsNew -only-testing:PanelUITests/PanelUITests/testStatisticsDeviceDrilldown -only-testing:PanelUITests/PanelUITests/testIntegratedSuitePlayersSearchDevicesAndOffline -only-testing:PanelUITests/PanelUITests/testAdminRolesChatAndRestartNavigation -only-testing:PanelUITests/PanelUITests/testDiscordSettingsChannelSelection -only-testing:PanelUITests/PanelUITests/testPlayerProfile20AndTargetedSearch -only-testing:PanelUITests/PanelUITests/testAltDashboardAndIgnoredInfrastructureIP -only-testing:PanelUITests/PanelUITests/testJavaWorldStorageAndNewWorkspaceCards -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -152,14 +152,14 @@ jobs:
         run: |
           python3 tools/package-source.py
           cd target
-          sha256sum SimplexAdminSuite-9.2.0.jar SimplexAdminSuite-9.2.0-source.zip > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-9.3.0.jar SimplexAdminSuite-9.3.0-source.zip > AdminSuite-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-9.2.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-9.2.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-9.3.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-9.3.0-source.zip
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
 
@@ -205,11 +205,11 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 2.9.0 and Admin Suite 9.2.0: administrative access directory, German grouped permission descriptions, Junior Admin / temporary moderation / custom roles, server-side ban limits and explicit alternative-account ban controls.
+          Simplex Panel 3.0.0 and Admin Suite 9.3.0: new Admin tab (admin center) with live status, alerts for reports, bans, maintenance and restarts, team online, online player heads and every suite tool in one grid.
 
-          Includes live public server chat (20 messages, foreground-session only), named app senders, cancellable 1–60 second restarts with per-player German/English announcements and sound, plus dimension access enforcement for portals, homes and plugin teleports.
+          Player management: status badges (ban, mute, warnings, team), swipe and context actions, server-side filters "Auffällig" and "Neu", local favourites and recently viewed players, profile action bar (message, kick, warn, mute, temp ban, ban, note) and a moderation record with playtime, warnings, notes and previous names. A one-time "Was ist neu" splash appears after updating.
 
-          Existing databases, profiles, connections and permission identifiers are preserved. Permission state gets an atomic migration backup. Keep the plugin data folder and install the unsigned IPA using the same bundle ID/signing identity. See UPDATE-2.9.0.md and UPDATE-9.2.0.md.
+          Existing databases, profiles, app keys, connections, layouts and permission identifiers are preserved; 9.3.0 only adds endpoints and filters. App 3.0.0 also works with Admin Suite 9.2.0 and older (features fall back automatically). Keep the plugin data folder and install the unsigned IPA using the same bundle ID/signing identity. See UPDATE-3.0.0.md and UPDATE-9.3.0.md.
 
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)

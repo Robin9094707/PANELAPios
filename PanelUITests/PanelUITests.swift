@@ -238,7 +238,10 @@ final class PanelUITests: XCTestCase {
     func testStatisticsDeviceDrilldown() throws {
         let server = app.buttons["server-simplex1"]
         XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap()
-        selectTab("Statistiken")
+        selectTab("Admin")
+        let statistics = app.buttons["adminCenterStatistics"]
+        for _ in 0..<8 { if statistics.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(statistics.waitForExistence(timeout: 10)); statistics.tap()
         XCTAssertTrue(app.staticTexts["suiteStatisticsTitle"].waitForExistence(timeout: 10)); capture("27-Statistics-Dashboard")
         let models = app.buttons["statistics-models"]
         for _ in 0..<6 { if models.isHittable { break }; app.swipeUp() }
@@ -249,7 +252,11 @@ final class PanelUITests: XCTestCase {
         let player = app.buttons.containing(.staticText, identifier: ".BedrockDemo").firstMatch
         XCTAssertTrue(player.waitForExistence(timeout: 10)); capture("26-Statistics-Device-Players")
         player.tap()
-        XCTAssertTrue(app.buttons["Alle Geräte anzeigen"].waitForExistence(timeout: 10))
+        // The profile header and action bar sit above the device link; the list builds rows lazily.
+        let devices = app.buttons["Alle Geräte anzeigen"]
+        XCTAssertTrue(app.buttons["player-favorite"].waitForExistence(timeout: 10))
+        for _ in 0..<6 { if devices.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(devices.waitForExistence(timeout: 10))
     }
     func testSuiteOperationsStructuredTelemetry() throws {
         let server = app.buttons["server-simplex1"]
@@ -288,6 +295,47 @@ final class PanelUITests: XCTestCase {
         for _ in 0..<6 { if app.buttons["reset-dashboard"].isHittable { break }; app.swipeUp() }
         app.buttons["reset-dashboard"].tap(); app.alerts.buttons["confirm-reset-dashboard"].firstMatch.tap()
         app.buttons["finish-dashboard"].tap()
+    }
+    func testAdminCenterPlayerManagementAndWhatsNew() throws {
+        executionTimeAllowance = 300
+        app.terminate(); app.launchArguments.append("--whats-new"); app.launch()
+        let proceed = app.buttons["whatsNewContinue"]
+        XCTAssertTrue(proceed.waitForExistence(timeout: 15)); XCTAssertTrue(app.staticTexts["whatsNewTitle"].exists); capture("40-Was-ist-neu")
+        proceed.tap()
+        XCTAssertTrue(proceed.waitForNonExistence(timeout: 10))
+        let server = app.buttons["server-simplex1"]
+        XCTAssertTrue(server.waitForExistence(timeout: 15)); server.tap()
+        XCTAssertTrue(app.buttons["openAdminCenter"].waitForExistence(timeout: 10))
+        selectTab("Admin")
+        XCTAssertTrue(app.staticTexts["adminCenterTitle"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["1 offener Report"].waitForExistence(timeout: 10)); capture("41-Admin-Zentrale")
+        let online = app.buttons["adminCenterOnline-TadMC_YT"]
+        XCTAssertTrue(online.waitForExistence(timeout: 10)); online.tap()
+        XCTAssertTrue(app.buttons["player-quick-Kicken"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["player-quick-Nachricht"].exists)
+        let favorite = app.buttons["player-favorite"]
+        XCTAssertTrue(favorite.waitForExistence(timeout: 5)); favorite.tap(); capture("42-Profil-Schnellaktionen")
+        app.buttons["player-quick-Kicken"].tap()
+        XCTAssertTrue(app.buttons["Aktion prüfen"].waitForExistence(timeout: 10)); capture("43-Kick-Vorschau")
+        app.buttons["Fertig"].firstMatch.tap()
+        for _ in 0..<8 { if app.staticTexts["Moderationsakte"].isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(app.staticTexts["Moderationsakte"].exists); capture("44-Moderationsakte")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let favorites = app.staticTexts["Favoriten"]
+        for _ in 0..<6 { if favorites.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(favorites.waitForExistence(timeout: 10))
+        let players = app.buttons["adminCenterPlayers"]
+        for _ in 0..<6 { if players.isHittable { break }; app.swipeDown() }
+        XCTAssertTrue(players.waitForExistence(timeout: 10)); players.tap()
+        let flagged = app.buttons["player-filter-flagged"]
+        XCTAssertTrue(flagged.waitForExistence(timeout: 10)); flagged.tap()
+        XCTAssertTrue(app.staticTexts[".BedrockDemo"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["RecentOffline"].exists); capture("45-Filter-Auffaellig")
+        // Restore the shared simulator state: remove the favorite again.
+        flagged.tap()
+        let entry = app.buttons.containing(.staticText, identifier: "TadMC_YT").firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 10)); entry.tap()
+        XCTAssertTrue(favorite.waitForExistence(timeout: 10)); favorite.tap()
     }
     func testConnectionFormRequiresURLAndClientKey() throws {
         app.swipeUp()

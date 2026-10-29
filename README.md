@@ -1,4 +1,8 @@
-## Aktuelles Update: Panel 2.9.0 / Admin Suite 9.2.0
+## Aktuelles Update: Panel 3.0.0 / Admin Suite 9.3.0
+
+Neue Admin-Zentrale als eigener Tab, überarbeitete Spielerverwaltung mit Köpfen, Badges, Filtern, Wischaktionen, Favoriten und Profil-Aktionsleiste sowie ein „Was ist neu“-Splash nach dem Update. [Update und Datenübernahme](UPDATE-3.0.0.md) · [Suite 9.3.0](Companion/AdminSuite/UPDATE-9.3.0.md).
+
+# Simplex Panel 2.9.0 / Admin Suite 9.2.0
 
 Adminrollen, übersichtliche Rechteverwaltung, Live-Chat und Neustartsteuerung. [Update und Datenübernahme](UPDATE-2.9.0.md).
 

@@ -233,6 +233,7 @@ struct SettingsView: View {
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("syntaxColors") private var syntaxColors = true
     @AppStorage("haptics") private var haptics = true
+    @AppStorage("suite.playerHeads") private var playerHeads = true
     @State private var remove: PanelProfile?
     var body: some View {
         NavigationStack {
@@ -241,6 +242,7 @@ struct SettingsView: View {
                 Section("Editor & Bedienung") { Toggle("Syntaxfarben im Texteditor", isOn: $syntaxColors); Toggle("Haptisches Feedback", isOn: $haptics) }
                 Section("Widgets & Übertragungen") { NavigationLink("Server-Widgets einrichten") { WidgetSettingsView() }; TransferLink() }
                 Section("Sicherheit") { Toggle("App mit Face ID / Gerätecode sperren", isOn: $store.biometricLock) }
+                Section { Toggle("Spielerköpfe anzeigen", isOn: $playerHeads) } header: { Text("Admin Suite") } footer: { Text("Lädt öffentliche Avatare von Java-Spielern über mc-heads.net. Bedrock-Spieler zeigen weiterhin ihr Plattformsymbol.") }
                 Section("Gespeicherte Panels") {
                     ForEach(store.profiles) { p in HStack { VStack(alignment: .leading) { Text(p.name); Text(p.provider.title + " · " + p.url).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Entfernen", systemImage: "trash", role: .destructive) { remove = p }.labelStyle(.iconOnly) } }
                     if store.profiles.isEmpty { Text("Noch kein Panel gespeichert").foregroundStyle(.secondary) }
@@ -248,6 +250,7 @@ struct SettingsView: View {
                 if let api = store.api { Section("Account") { NavigationLink(api.amp == nil ? "Account & Sicherheit" : "AMP-Zugang") { if api.amp != nil { AMPAccountView(api: api) } else { AccountView(api: api) } } } }
                 Section {
                     LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")
+                    if let release = WhatsNew.release(for: WhatsNew.current) { NavigationLink { WhatsNewView(release: release, embedded: true) } label: { Label("Was ist neu", systemImage: "sparkles") }.accessibilityIdentifier("settingsWhatsNew") }
                     Text("Unabhängiger Client für Pterodactyl und CubeCoders AMP. Funktionen und Limits richten sich nach deinem Hoster und deinen Panel-Berechtigungen.").font(.footnote).foregroundStyle(.secondary)
                 }
             }.panelScreen().navigationTitle("Einstellungen").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
