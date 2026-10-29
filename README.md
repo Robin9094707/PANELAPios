@@ -1,4 +1,8 @@
-## Aktuelles Update: Panel 3.0.0 / Admin Suite 9.3.0
+## Aktuelles Update: Panel 3.1.0 / Admin Suite 9.4.0
+
+Support-Tickets für Minecraft, Discord und die App (mit Diagnose und Bark), dauerhafter Serverchat, Geyser-/Floodgate-Updates und eine Plugin-Zentrale per Puzzleteil auf der Serverseite. [Update 3.1.0](UPDATE-3.1.0.md) · [Suite 9.4.0](Companion/AdminSuite/UPDATE-9.4.0.md).
+
+# Simplex Panel 3.0.0 / Admin Suite 9.3.0
 
 Neue Admin-Zentrale als eigener Tab, überarbeitete Spielerverwaltung mit Köpfen, Badges, Filtern, Wischaktionen, Favoriten und Profil-Aktionsleiste sowie ein „Was ist neu“-Splash nach dem Update. [Update und Datenübernahme](UPDATE-3.0.0.md) · [Suite 9.3.0](Companion/AdminSuite/UPDATE-9.3.0.md).
 

@@ -129,7 +129,7 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class SimplexAdminSuite extends JavaPlugin implements Listener, CommandExecutor, org.bukkit.command.TabCompleter {
-    private static final String VERSION = "9.3.0";
+    private static final String VERSION = "9.4.0";
     private static final int CURRENT_DATA_SCHEMA = 17;
     private static final int DEFAULT_MAX_CHAT_LINES = 100;
     private static final int DEFAULT_MAX_ACTION_LINES = 240;
@@ -231,6 +231,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     private DiscordStatusManager discordStatus;
     private DiscordBotManager discordBot;
     AccountLinkManager accountLinks;
+    TicketManager tickets;
     ServerStatistics serverStatistics;
     PlayerCommandManager playerCommands;
     private final long suiteBootTime = System.currentTimeMillis();
@@ -305,6 +306,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     SurvivalGuard survivalGuard;
     public void onEnable() {
         saveDefaultConfig();
+        appChat.attach(getDataFolder().toPath().resolve("app-chat.properties"));
         SuiteExpansion.migrateBeforeLoad(this);
         adminAccess = new AdminAccessManager(this);
         adminRuntime = new AdminRuntime(this);
@@ -365,6 +367,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         Bukkit.getPluginManager().registerEvents(deliveries,this);
         deliveries.start(); register("shop"); register("delivery"); register("spcurrency");
         register("simplexprofile"); register("feedback");
+        try { tickets = new TicketManager(this, getDataFolder().toPath().resolve("tickets")); Bukkit.getPluginManager().registerEvents(tickets, this); tickets.start(); register("ticket"); }
+        catch (java.io.IOException e) { getLogger().warning("Ticketsystem nicht verfügbar; vorhandene Ticketdateien bleiben erhalten: " + e.getMessage()); }
         serverStatistics = new ServerStatistics(this);
         luckPerms = new LuckPermsBridge(this);
         playerCommands = new PlayerCommandManager(this);
@@ -485,10 +489,12 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     public void onDisable() {
         if (appApi != null) appApi.stop();
+        appChat.stop();
         if (appEvents != null) appEvents.stop();
         if (detectors != null) detectors.stop();
         if (qualityOfLife != null) qualityOfLife.stop();
         if(deliveries!=null)deliveries.stop();
+        if(tickets!=null)tickets.stop();
         Bukkit.getServicesManager().unregisterAll(this);
         if (community != null) community.stop();
         if (connectionDiagnostics != null) connectionDiagnostics.stop();
@@ -730,6 +736,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return handlePasswordCommand(sender, label, Arrays.copyOfRange(args, 1, args.length));
         }
         if (rootCommand.equals("simplexprofile") || rootCommand.equals("feedback")) return community.command(sender, rootCommand, args);
+        if (rootCommand.equals("ticket")) { if (tickets == null) sender.sendMessage(prefix() + "Ticketsystem nicht verfügbar."); else tickets.command(sender, args); return true; }
         if (rootCommand.equals("discord")) return args.length == 0 ? discordInvite.show(sender) : discordInvite.set(sender, args);
         if (sender instanceof Player && adminSecurity != null && adminSecurity.isLocked((Player) sender)) {
             sender.sendMessage(prefix() + "Admin authentication is required before commands can be used.");
@@ -1770,6 +1777,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return connectionDiagnostics.complete(sender, Arrays.copyOfRange(args, 1, args.length));
         if(root.equals("simplexprofile")) return args.length==1?filter(List.of("settings","history","stats","feedback"),args[0]):List.of();
         if(root.equals("feedback")) return List.of();
+        if(root.equals("ticket")) return tickets == null ? List.of() : tickets.complete(sender, args);
         if(root.equals("link"))return args.length==1?filter(List.of("status","unlink","entlinken"),args[0]):List.of();
         if(root.equals("unlink"))return List.of();
         if (root.equals("discord") || root.equals("setdiscord")) return Collections.emptyList();
@@ -2180,6 +2188,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         Player player = event.getPlayer();
         if (adminRuntime != null && adminRuntime.blocked(player)) { event.setCancelled(true); return; }
         if (adminUpdate != null && adminUpdate.acceptText(player, event.getMessage())) { event.setCancelled(true); return; }
+        if (tickets != null && tickets.acceptText(player, event.getMessage())) { event.setCancelled(true); return; }
 
         final String entered = event.getMessage();
         if (moderationControl != null && moderationControl.gateChat(player, entered)) { event.setCancelled(true); return; }
@@ -6626,10 +6635,12 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         return new RelayAvatarService.Identity(player.getUniqueId(), player.getName(), bedrock, xuid);
     }
 
-    void relayDiscordToMinecraft(String displayName, String text) {
+    void relayDiscordToMinecraft(String displayName, String text) { relayDiscordToMinecraft(displayName, text, null); }
+    void relayDiscordToMinecraft(String displayName, String text, UUID linked) {
         String safeName = RelayText.plain(displayName, 64);
         String safeText = RelayText.plain(text, 1000);
         if (safeName.isBlank() || safeText.isBlank()) return;
+        appChat.record(linked == null ? "" : linked.toString(), safeName, safeText, "discord");
         Bukkit.getScheduler().runTask(this, () -> {
             String formatted = color("&8[&9Discord&8] &7") + safeName + color("&8: &f") + safeText;
             for (Player online : Bukkit.getOnlinePlayers()) online.sendMessage(formatted);
@@ -8533,8 +8544,63 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             "moderation",appMap("openReports",open,"reviewReports",review,"internalBans",bans,"mutes",mutes,"warnedPlayers",warned,"ultrabans",ultra),
             "maintenance",maintenance==null?null:appMap("active",maintenance.isActive(),"reason",maintenance.reason()),
             "restart",restartManager==null?null:appMap("active",restartManager.active(),"remaining",restartManager.remainingSeconds()),
-            "players",online,"staff",full?staff:null,"reports",openReports,"events",events,
+            "players",online,"staff",full?staff:null,"reports",openReports,"events",events,"tickets",tickets==null||!tickets.enabled()?null:tickets.store.counts(),
             "scoreboard",nativeScoreboard==null?null:appMap("mainDays",nativeScoreboard.mainDays(),"secondDays",nativeScoreboard.secondDays()));
+    }
+    /** Main thread: plugin/file snapshot only; hashing and network run on the app worker. */
+    Object appCrossplayInstalled(){
+        List<Object> rows=new ArrayList<>();
+        for(String[] item:new String[][]{{"geyser","Geyser-Spigot"},{"floodgate","floodgate"}}){
+            CrossplayUpdateManager.InstalledPluginSnapshot snap=crossplayUpdates==null?CrossplayUpdateManager.InstalledPluginSnapshot.missing():crossplayUpdates.installedPluginSnapshot(item[1]);
+            File update=null;try{update=new File(getDataFolder().getParentFile(),"update");Object configured=relayReflect(Bukkit.class.getMethod("getServer").invoke(null),"getUpdateFolderFile");if(configured instanceof File folder)update=folder;}catch(Exception ignored){}
+            File staged=snap.file==null||update==null?null:new File(update,snap.file.getName());
+            rows.add(appMap("id",item[0],"name",item[1],"version",snap.version,"file",snap.file==null?"":snap.file.getAbsolutePath(),"staged",staged==null?"":staged.getAbsolutePath()));
+        }
+        return appMap("items",rows,"status",crossplayUpdates==null?"Nicht geladen":crossplayUpdates.summary(),"lastCheck",crossplayUpdates==null?0L:crossplayUpdates.lastCheck,"autoCheck",getConfig().getBoolean("crossplay-updates.auto-check",true),"busy",crossplayUpdates!=null&&crossplayUpdates.busy.get());
+    }
+    private static volatile Map<String,Object[]> crossplayLatest=new java.util.concurrent.ConcurrentHashMap<>();
+    /** App worker: compares local SHA-256 values with the latest GeyserMC build metadata (cached 10 minutes). */
+    @SuppressWarnings("unchecked") Object appCrossplayStatus(Object installed)throws Exception{
+        Map<String,Object> envelope=new LinkedHashMap<>((Map<String,Object>)installed);List<Object> out=new ArrayList<>();
+        HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).followRedirects(HttpClient.Redirect.NEVER).build();
+        for(Object raw:(List<Object>)envelope.get("items")){
+            Map<String,Object> row=new LinkedHashMap<>((Map<String,Object>)raw);String id=String.valueOf(row.get("id"));
+            String file=String.valueOf(row.remove("file")),staged=String.valueOf(row.remove("staged"));
+            row.put("installed",!file.isBlank());row.put("sha256",file.isBlank()?"":crossplayHash(new File(file)));
+            File stagedFile=staged.isBlank()?null:new File(staged);row.put("stagedSha256",stagedFile!=null&&stagedFile.isFile()?crossplayHash(stagedFile):"");
+            Object[] cached=crossplayLatest.get(id);
+            if(cached==null||System.currentTimeMillis()-(Long)cached[0]>600_000L){
+                try{
+                    HttpRequest request=HttpRequest.newBuilder(URI.create("https://download.geysermc.org/v2/projects/"+id+"/versions/latest/builds/latest")).timeout(Duration.ofSeconds(15)).header("User-Agent","SimplexAdminSuite/"+VERSION).header("Accept","application/json").GET().build();
+                    HttpResponse<String> response=client.send(request,HttpResponse.BodyHandlers.ofString());
+                    if(response.statusCode()!=200||response.body().length()>262_144)throw new IllegalStateException("HTTP "+response.statusCode());
+                    cached=new Object[]{System.currentTimeMillis(),DiscordBotManager.Json.parse(response.body())};crossplayLatest.put(id,cached);
+                }catch(Exception error){row.put("error","GeyserMC nicht erreichbar: "+error.getClass().getSimpleName());}
+            }
+            if(cached!=null&&cached[1] instanceof Map<?,?> build){
+                String latest=build.get("downloads") instanceof Map<?,?> d&&d.get("spigot") instanceof Map<?,?> spigot?String.valueOf(spigot.get("sha256")):"";
+                row.put("latestVersion",String.valueOf(build.get("version")));row.put("latestBuild",build.get("build") instanceof Number n?n.longValue():0L);row.put("latestSha256",latest);
+                row.put("latestTime",String.valueOf(build.get("time")));
+                List<Object> changes=new ArrayList<>();if(build.get("changes") instanceof List<?> list)for(Object change:list){if(changes.size()>=5)break;if(change instanceof Map<?,?> c)changes.add(stripFormatting(String.valueOf(c.get("summary"))));}
+                row.put("changes",changes);
+                boolean current=!latest.isBlank()&&latest.equalsIgnoreCase(String.valueOf(row.get("sha256")));
+                row.put("upToDate",current);row.put("updateStaged",!latest.isBlank()&&latest.equalsIgnoreCase(String.valueOf(row.get("stagedSha256"))));
+            }
+            out.add(row);
+        }
+        envelope.put("items",out);return envelope;
+    }
+    private static String crossplayHash(File file){
+        if(file==null||!file.isFile()||file.length()>200L*1024*1024)return "";
+        try(InputStream in=Files.newInputStream(file.toPath())){MessageDigest digest=MessageDigest.getInstance("SHA-256");byte[] buffer=new byte[65536];int read;while((read=in.read(buffer))>=0)if(read>0)digest.update(buffer,0,read);return java.util.HexFormat.of().formatHex(digest.digest());}catch(Exception e){return "";}
+    }
+    Object appCrossplayAction(String path,Map<String,Object> values,String actor){
+        if(crossplayUpdates==null)throw new IllegalArgumentException("Crossplay-Updates sind nicht geladen");
+        if(path.equals("crossplay.auto")){boolean enabled=Boolean.parseBoolean(String.valueOf(values.getOrDefault("enabled","true")));crossplayUpdates.setAutoEnabled(enabled,actor);return appMap("ok",true,"title","Automatische Prüfung "+(enabled?"aktiv":"aus"),"description","Geyser und Floodgate werden "+(enabled?"regelmäßig geprüft und für den nächsten Neustart vorgemerkt.":"nur noch manuell geprüft."));}
+        if(crossplayUpdates.busy.get())throw new IllegalArgumentException("Eine Prüfung läuft bereits");
+        boolean restart=Boolean.parseBoolean(String.valueOf(values.getOrDefault("restart","false")));
+        crossplayLatest.clear();crossplayUpdates.checkAndStage(Bukkit.getConsoleSender(),restart);suiteAudit(actor,"Crossplay-Update angefordert",restart?"mit Neustart":"vormerken");
+        return appMap("ok",true,"title","Crossplay-Update gestartet","description","Geyser und Floodgate werden geprüft und sicher im Paper-Updateordner vorgemerkt."+(restart?" Danach startet der Neustart-Countdown.":" Paper übernimmt sie beim nächsten Neustart."));
     }
     Object appOperations(){return appMap("active",restartManager.active(),"remaining",restartManager.remainingSeconds(),"reasonDE",restartManager.reasonDE,"reasonEN",restartManager.reasonEN);}
     Object appRestart(Map<String,Object> values,String actor){

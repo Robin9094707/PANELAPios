@@ -96,6 +96,7 @@ final class DiscordBotManager {
     private final ScheduledExecutorService heartbeatExecutor;
     private final File stateFile;
     private final DiscordAdminController adminController;
+    final TicketDiscord tickets;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean(false);
     private final AtomicBoolean statusCaptureScheduled = new AtomicBoolean(false);
@@ -188,6 +189,7 @@ final class DiscordBotManager {
                 mapOf("type",4,"name","priority","description","0 Normal / 1 Wichtig / 2 Dringend","required",false,"min_value",0,"max_value",2))),
             mapOf("type",1,"name","status","description","Zustellung und Bestätigung eines Spielers anzeigen","options",List.of(mapOf("type",3,"name","minecraft","description","Spielername oder UUID (auch offline)","required",true,"autocomplete",true),mapOf("type",4,"name","page","description","Seite","required",false,"min_value",1,"max_value",1000))),
             mapOf("type",1,"name","delete","description","Eine noch unbestätigte Nachricht löschen","options",List.of(mapOf("type",3,"name","id","description","Nachrichten-ID","required",true))))));
+        commands.add(tickets.command());
         DiscordCommandSchema.validate(commands);
         return commands;
     }
@@ -403,7 +405,7 @@ final class DiscordBotManager {
     private void deliverLinkedChat(String user,AccountLinks.Link link,String name,String text,String channel,long receivedAt){
         // Both paths recheck identity/channel immediately before forwarding.
         plugin.runAdminTask(()->{AccountLinks.Link current=plugin.accountLinks.store.byDiscord(user);if(System.currentTimeMillis()-receivedAt>60000||!running.get()||!relayChannelId().equals(channel)||!relayEnabled())return;if(plugin.getConfig().getBoolean("discord-bot.linking.required",true)&&(current==null||link!=null&&!current.minecraft().equals(link.minecraft())))return;
-            var p=current==null?null:plugin.expansionProfile(current.minecraft());plugin.relayDiscordToMinecraft(p==null?name:p.displayName(),text);
+            var p=current==null?null:plugin.expansionProfile(current.minecraft());plugin.relayDiscordToMinecraft(p==null?name:p.displayName(),text,current==null?null:current.minecraft());
         });
     }
     void validateLinkTarget(String discord)throws Exception {
@@ -482,6 +484,7 @@ final class DiscordBotManager {
         this.diagnostics = new DiscordDiagnostics(plugin.getLogger()::warning);
         this.stateFile = new File(plugin.getDataFolder(), "discord-bot-state.yml");
         this.adminController = new DiscordAdminController(plugin, this);
+        this.tickets = new TicketDiscord(plugin, this);
         loadState();
         loadStatisticsState();
     }
@@ -1411,7 +1414,7 @@ final class DiscordBotManager {
             guildRolePermissions.remove(string(data.get("role_id")));
         } else if (type.equals("MESSAGE_CREATE")) handleDiscordMessage(data);
         else if (type.equals("INTERACTION_CREATE")) handleInteraction(data);
-        else if(type.equals("CHANNEL_DELETE")&&guildId().equals(string(data.get("guild_id")))){String deleted=string(data.get("id"));featureJob(()->{if(deleted.equals(statisticsChannel))clearStatisticsChannel();});}
+        else if((type.equals("CHANNEL_DELETE")||type.equals("THREAD_DELETE"))&&guildId().equals(string(data.get("guild_id")))){String deleted=string(data.get("id"));if(plugin.tickets!=null)plugin.tickets.store.channelDeleted(deleted);featureJob(()->{if(deleted.equals(statisticsChannel))clearStatisticsChannel();});}
     }
 
     @SuppressWarnings("unchecked")
@@ -1433,6 +1436,7 @@ final class DiscordBotManager {
         if (name.isBlank()) name = string(author.get("username"));
         String userId = string(author.get("id"));
         String channelId = string(message.get("channel_id"));
+        if (tickets.message(message, member, author, channelId)) return;
         if(relayEnabled()&&relayChannelId().equals(channelId)&&plugin.getConfig().getBoolean("discord-bot.linking.required",true)&&plugin.accountLinks.store.byDiscord(userId)==null){receiveLinkedChat(message,userId,name);return;}
         DiscordAdminController.Request inline = inlineEnabled() ? DiscordAdminController.parseInline(content, inlinePrefix()) : null;
         if (inline != null) inline = responseContext(inline, false);
@@ -1470,7 +1474,7 @@ final class DiscordBotManager {
         if (!enabled() || !configured()) return "Discord-Bot ist nicht vollständig eingerichtet.";
         if (applicationId.isBlank()) return "Discord-Gateway ist noch nicht READY; die Befehle werden beim Verbindungsaufbau automatisch synchronisiert.";
         registerCommands(actor);
-        return "Synchronisierung von `/sasadmin`, `/ssmp`, `/link`, `/unlink`, `/serverstats`, `/accountadmin`, `/shop`, `/myaccount` und `/quicknote` mit der konfigurierten Guild wurde gestartet.";
+        return "Synchronisierung von `/sasadmin`, `/ssmp`, `/link`, `/unlink`, `/serverstats`, `/accountadmin`, `/shop`, `/myaccount`, `/quicknote` und `/ticket` mit der konfigurierten Guild wurde gestartet.";
     }
 
     private void registerCommands(String actor) {
@@ -1500,6 +1504,7 @@ final class DiscordBotManager {
         lastInteractionAt = System.currentTimeMillis();
         int interactionType = intValue(interaction.get("type"), 0);
         Map<String, Object> data = interaction.get("data") instanceof Map ? (Map<String, Object>) interaction.get("data") : Collections.emptyMap();
+        if(tickets.interaction(interaction,data,interactionType))return;
         if(featureInteraction(interaction,data,interactionType))return;
         if (interactionType == 3) { handleComponent(interaction, data); return; }
         if (interactionType == 4) { handleAutocomplete(interaction, data); return; }
@@ -2413,6 +2418,25 @@ final class DiscordBotManager {
         String hint=switch(status){case 401->" Check the configured bot token.";case 403->" Check bot channel permissions and role hierarchy.";case 429->" Discord rate limit; retry later.";default->"";};
         if(responseBody!=null&&responseBody.contains("50007"))hint=" Direct messages are disabled or blocked; use the verification button or Discord /link.";
         lastError=detail+hint;diagnostics.failure(method+" "+DiscordDiagnostics.route(path),detail+hint);
+    }
+
+    // Package-private bridge for TicketDiscord; it reuses this bot's token, rate-limit handling and workers.
+    HttpResponse<String> ticketHttp(String method, String path, String body) throws Exception { return featureRequest(method, path, body); }
+    boolean ticketJob(Runnable action) { return featureJob(action); }
+    void ticketRespond(String id, String token, int type, Map<String, Object> data) { respondData(id, token, type, data); }
+    void ticketEdit(String token, Map<String, Object> data) { editOriginalData(token, data); }
+    String ticketGuild() { return guildId(); }
+    String ticketApplication() { return applicationId; }
+    boolean ticketRunning() { return running.get() && connected && !applicationId.isBlank(); }
+    /** Discord owner, Administrators (if allowed) and configured full admin roles. Independent of admin channel lists. */
+    boolean ticketAdmin(Map<String, Object> member, String userId) {
+        if (userId != null && userId.equals(guildOwnerId)) return true;
+        if (plugin.getConfig().getBoolean("discord-bot.admin.allow-discord-administrator", true) && hasAdministrator(member)) return true;
+        return intersects(roleIds(member), plugin.getConfig().getStringList("discord-bot.admin.role-ids"));
+    }
+    boolean ticketStaff(Map<String, Object> member, String userId, Collection<String> staffRoles) {
+        return ticketAdmin(member, userId) || intersects(roleIds(member), staffRoles)
+                || intersects(roleIds(member), plugin.getConfig().getStringList("discord-bot.admin.read-only-role-ids"));
     }
 
     private String token() { return plugin.getConfig().getString("discord-bot.token", "").trim(); }

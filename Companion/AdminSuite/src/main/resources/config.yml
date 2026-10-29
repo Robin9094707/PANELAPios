@@ -1064,6 +1064,23 @@ restart-calendar:
 quick-delivery:
   delay-seconds: 30
 
+# Support-Tickets (9.4.0): /ticket im Spiel, Discord-Panel über den vorhandenen Admin-Suite-Bot, Simplex Panel App.
+tickets:
+  enabled: true
+  delivery-delay-seconds: 20 # Antworten erst nach so viel ununterbrochener Online-Zeit zustellen
+  max-open-per-player: 3
+  create-cooldown-seconds: 60
+  join-hint: true # höchstens einmal pro Woche ein kurzer /ticket-Hinweis
+  bark: true # neue Tickets an Bark; Notfall-Tickets als kritische Ereignisse
+  discord:
+    enabled: true
+    channel-id: '' # Panelkanal; /ticket setup in Discord oder App
+    mode: thread # thread = private Threads im Panelkanal, channel = eigene Kanäle in category-id
+    category-id: ''
+    staff-role-ids: [] # leer = discord-bot.admin.role-ids
+    log-channel-id: ''
+    ping-staff: true
+
 # Optional und standardmäßig aus. Bestehende Integrationen/Daten bleiben unverändert.
 app-api:
   enabled: false

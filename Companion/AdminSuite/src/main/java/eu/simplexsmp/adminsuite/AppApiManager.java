@@ -53,6 +53,8 @@ final class AppApiManager {
         extra("world.update","Welteinstellung ändern","Welten",List.of(field("world","Weltname oder UUID",3,true),choice("field","Einstellung","time","weather","difficulty","pvp","autosave"),field("value","Neuer Wert",3,true)));
         extra("plugins.stage","Plugin-Update vormerken","Plugins",List.of(field("filename","Installierte JAR",3,true),field("expected","SHA-256 der installierten JAR",3,true),field("sha256","SHA-256 des Updates",3,true),field("name","Plugin-Name",3,true),field("main","Hauptklasse",3,true),field("version","Neue Version",3,true)));
         extra("logs.retry","Private Discord-Protokolle erneut versuchen","Server",List.of());
+        extra("crossplay.update","Geyser & Floodgate aktualisieren","Plugins",List.of(choice("restart","Danach neu starten","false","true")));
+        extra("crossplay.auto","Automatische Crossplay-Prüfung","Plugins",List.of(choice("enabled","Automatisch prüfen","true","false")));
         extra("suite.command","Weitere Suite-Befehle","Werkzeuge",List.of(choice("root","Suite-Befehl","sas","delivery","shop","spcurrency","connection"),field("command","Argumente ohne /sas",3,true)));
     }
     @SuppressWarnings("unchecked") private void flatten(String prefix,Object options){
@@ -71,7 +73,7 @@ final class AppApiManager {
         if(!Double.isFinite(seconds)||seconds<1||seconds>60||seconds!=(int)seconds)throw new IllegalArgumentException("Countdown muss eine ganze Zahl von 1 bis 60 Sekunden sein");
         return (int)seconds;
     }
-    static String scope(String path){return Set.of("restart.apply","alts.ip","management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
+    static String scope(String path){return Set.of("restart.apply","alts.ip","management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","crossplay.update","crossplay.auto","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
     void reload(){
         stopListener();menus.clear();long rev=generation.get();
         if(!plugin.getConfig().getBoolean("app-api.enabled",false)){status="Ausgeschaltet";return;}
@@ -123,8 +125,12 @@ final class AppApiManager {
             String path=x.getRequestURI().getPath(),method=x.getRequestMethod();Map<String,String> query=query(x.getRequestURI());Object result;
             if(method.equals("GET")){
                 result=switch(path){
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"time",System.currentTimeMillis());
                     case "/v1/data/chat"->{long after=Long.parseLong(query.getOrDefault("after","0"));yield plugin.appChat.read(after);}
+                    case "/v1/data/crossplay"->{Object installed=onMain(rev,plugin::appCrossplayInstalled);yield plugin.appCrossplayStatus(installed);}
+                    case "/v1/data/tickets"->onMain(rev,()->tickets().appList(query));
+                    case "/v1/data/ticket"->onMain(rev,()->{long id;try{id=Long.parseLong(query.getOrDefault("id",""));}catch(NumberFormatException e){throw new IllegalArgumentException("Ticket-ID fehlt");}return tickets().appTicket(id);});
+                    case "/v1/data/ticket-settings"->{if(!key.scope().equals("full"))throw new ApiError(403,"Ticketeinstellungen benötigen full-Zugriff");Map<String,Object> settings=onMain(rev,()->tickets().settings());DiscordBotManager bot=onMain(rev,()->plugin.discordRelay());yield bot==null?settings:bot.tickets.appSettings(settings);}
                     case "/v1/data/operations"->onMain(rev,plugin::appOperations);
                     case "/v1/data/admin-dashboard"->onMain(rev,()->plugin.appAdminDashboard(key.scope().equals("full")));
                     case "/v1/data/management"->onMain(rev,()->{if(!key.scope().equals("full")&&Set.of("admins","admin-rights","roles").contains(query.getOrDefault("section","status")))throw new ApiError(403,"Adminrechte benötigen full-Zugriff");return plugin.app250Data(query);});
@@ -152,6 +158,22 @@ final class AppApiManager {
                 if(!"application/json".equals(x.getRequestHeaders().getFirst("Content-Type")))throw new ApiError(415,"application/json erforderlich");
                 byte[] bytes=x.getRequestBody().readNBytes(4097);if(bytes.length>4096)throw new ApiError(413,"Nachricht zu groß");String text=new String(bytes,StandardCharsets.UTF_8);AppApiSecurity.checkJson(text);Map<String,Object> payload=object(DiscordBotManager.Json.parse(text));
                 result=onMain(rev,()->{if(!security.keys().contains(key))throw new ApiError(401,"Schlüssel widerrufen");return plugin.appChat.send(plugin,actor(key).auditName(),String.valueOf(payload.getOrDefault("name","Server")),String.valueOf(payload.getOrDefault("message","")));});
+            }else if(method.equals("POST")&&path.equals("/v1/chat/clear")){
+                if(!key.scope().equals("full"))throw new ApiError(403,"Chatverlauf leeren benötigt full-Zugriff");
+                if(!rate("chat-clear:"+key.id(),6))throw new ApiError(429,"Bitte kurz warten");
+                result=onMain(rev,()->{if(!security.keys().contains(key))throw new ApiError(401,"Schlüssel widerrufen");return plugin.appChat.clear(plugin,actor(key).auditName());});
+            }else if(method.equals("POST")&&(path.equals("/v1/tickets")||path.equals("/v1/tickets/settings"))){
+                boolean settings=path.endsWith("/settings");
+                if(settings?!key.scope().equals("full"):!AppApiSecurity.permitted(key,"manage"))throw new ApiError(403,settings?"Ticketeinstellungen benötigen full-Zugriff":"Tickets bearbeiten benötigt manage- oder full-Zugriff");
+                if(!rate("tickets:"+key.id(),40))throw new ApiError(429,"Zu viele Ticketaktionen. Bitte kurz warten.");
+                String type=x.getRequestHeaders().getFirst("Content-Type");if(type==null||!type.toLowerCase(Locale.ROOT).startsWith("application/json"))throw new ApiError(415,"application/json erforderlich");
+                byte[] bytes=x.getRequestBody().readNBytes(16385);if(bytes.length>16384)throw new ApiError(413,"Anfrage zu groß");
+                String text=new String(bytes,StandardCharsets.UTF_8);AppApiSecurity.checkJson(text);Map<String,Object> input=new LinkedHashMap<>(object(DiscordBotManager.Json.parse(text)));
+                boolean panel=settings&&Boolean.TRUE.equals(input.remove("postPanel"));
+                Object saved=onMain(rev,()->{if(!security.keys().contains(key))throw new ApiError(401,"Schlüssel widerrufen");return settings?(input.isEmpty()?tickets().settings():tickets().saveSettings(input,actor(key).auditName())):tickets().appAction(input,actor(key).auditName(),key.scope().equals("full"));});
+                if(panel){DiscordBotManager bot=onMain(rev,()->plugin.discordRelay());if(bot==null)throw new ApiError(503,"Discord-Bot ist nicht geladen");String message=bot.tickets.postPanel(bot.tickets.channelId());
+                    result=SimplexAdminSuite.appMap("ok",!message.isBlank(),"title",message.isBlank()?"Panel nicht gepostet":"Ticket-Panel gepostet","description",message.isBlank()?bot.tickets.lastError():"Das Panel im Ticketkanal ist aktuell.");}
+                else result=saved;
             }else if(method.equals("POST")&&path.equals("/v1/player-nbt")){
                 if(!key.scope().equals("full"))throw new ApiError(403,"Offline-NBT speichern benötigt full-Zugriff");
                 if(!rate("nbt:"+key.id(),6))throw new ApiError(429,"Maximal sechs NBT-Änderungen pro Minute");
@@ -205,6 +227,7 @@ final class AppApiManager {
                             if(req.path.equals("events.ack"))return plugin.appEvents.acknowledge(key.id(),req.text("id"));
                             if(req.path.equals("notifications.update")){if(plugin.appEvents==null)throw new ApiError(503,"Ereignismodul nicht verfügbar");return plugin.appEvents.configure(key.id(),req.values);}
                             if(req.path.equals("restart.apply"))return plugin.appRestart(req.values,actor(key).auditName());
+                            if(req.path.startsWith("crossplay."))return plugin.appCrossplayAction(req.path,req.values,actor(key).auditName());
                             return plugin.appModerationMutation(req.path,req.values,actor(key).auditName());
                         }
                         if(req.path.equals("alts.ip"))return plugin.altIpApply(req.values,actor(key).auditName());
@@ -221,7 +244,8 @@ final class AppApiManager {
             try{send(x,code,SimplexAdminSuite.appMap("message",message));}catch(Exception ignored){}
         }finally{x.close();}
     }
-    private static boolean isCenterAction(String path){return Set.of("restart.apply","management.apply","vpn.whitelist","bans.remove","reports.update","events.ack","events.delete","events.note","events.clear","notifications.update").contains(path);}
+    private TicketManager tickets(){if(plugin.tickets==null)throw new ApiError(503,"Ticketsystem nicht geladen");return plugin.tickets;}
+    private static boolean isCenterAction(String path){return Set.of("crossplay.update","crossplay.auto","restart.apply","management.apply","vpn.whitelist","bans.remove","reports.update","events.ack","events.delete","events.note","events.clear","notifications.update").contains(path);}
     private void validateDiscordChannel(DiscordAdminController.Request req,long rev)throws Exception {
         if(!req.path.equals("settings.update")||!req.text("key").startsWith("discord-bot.")||!req.text("key").endsWith("channel-id")||req.text("value").isBlank())return;
         DiscordBotManager bot=onMain(rev,()->{checkSetting(req);return plugin.discordRelay();});

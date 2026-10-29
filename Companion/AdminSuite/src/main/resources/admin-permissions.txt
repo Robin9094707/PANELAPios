@@ -344,3 +344,5 @@ simplexadminsuite.discord.links
 simplexadminsuite.community.admin
 
 simplexadminsuite.commands.admin
+
+simplexadminsuite.tickets.staff

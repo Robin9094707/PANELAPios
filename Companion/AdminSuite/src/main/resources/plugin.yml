@@ -1,6 +1,6 @@
 name: SimplexAdminSuite
 main: eu.simplexsmp.adminsuite.SimplexAdminSuite
-version: 9.3.0
+version: 9.4.0
 api-version: '26.2'
 author: RJ
 website: https://simplexsmp.eu
@@ -61,6 +61,10 @@ commands:
   feedback:
     description: Send feedback to the server team or read replies.
     usage: /feedback [message]
+  ticket:
+    description: Open support tickets and read staff replies (Java menus, Bedrock forms).
+    usage: /ticket [new|list|view id|reply id text|close id|staff]
+    aliases: [tickets, supportticket]
   link:
     description: Link your Minecraft account to Discord.
     usage: /link [code|status|unlink]
@@ -207,6 +211,9 @@ permissions:
     default: op
   simplexadminsuite.delivery.admin:
     default: op
+  simplexadminsuite.tickets.staff:
+    description: View, answer, claim and close support tickets in game.
+    default: op
   simplexadminsuite.connection:
     description: Inspect connection diagnostics and retained disconnect reasons.
     default: op
@@ -310,6 +317,7 @@ permissions:
       simplexadminsuite.fun.admin: true
       simplexadminsuite.shop.admin: true
       simplexadminsuite.delivery.admin: true
+      simplexadminsuite.tickets.staff: true
       simplexadminsuite.fart.use: true
       simplexadminsuite.fart.bypass: true
       simplexadminsuite.burp.use: true

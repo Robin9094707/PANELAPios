@@ -223,10 +223,14 @@ struct SuiteBarkSettingsView: View {
     @State private var quietEnd="07:00"
     @State private var timezone="Europe/Berlin"
     @State private var quietKinds: Set<String> = []
-    var encodedRules: String { events.map { event in let id=event.0;return [id,selected.contains(id) ? (rules[id] ?? (["ban","ban-evasion","overload"].contains(id) ? critical:level)):"off",sounds[id] ?? (["ban","ban-evasion","overload"].contains(id) ? criticalSound:sound),repeats.contains(id) ? "120":"0"].joined(separator:":") }.joined(separator:";") }
+    var encodedRules: String { events.map { event in let id=event.0;return [id,selected.contains(id) ? (rules[id] ?? (Self.criticalKinds.contains(id) ? critical:level)):"off",sounds[id] ?? (Self.criticalKinds.contains(id) ? criticalSound:sound),repeats.contains(id) ? "120":"0"].joined(separator:":") }.joined(separator:";") }
     @Environment(\.dismiss) private var dismiss
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteSecurityModel(suite)) }
-    private let events = [("first-join","Neue Spieler"),("join","Alle Beitritte"),("client-brand","Ungewöhnlicher Client-Brand"),("client-check","Client-Prüfungen"),("ban","Sperren"),("ban-evasion","Bannumgehungsversuche"),("vpn-kick","VPN-Kicks"),("report","Neue Reports"),("overload","Längere Serverüberlastung"),("guard","Spielerschutz korrigiert"),("admin","Admin-Aktionen")]
+    static let criticalKinds: Set<String> = ["ban", "ban-evasion", "overload", "ticket-urgent"]
+    static let ticketEvents = [("ticket","Neue Support-Tickets"),("ticket-urgent","Notfall-Tickets")]
+    private let baseEvents = [("first-join","Neue Spieler"),("join","Alle Beitritte"),("client-brand","Ungewöhnlicher Client-Brand"),("client-check","Client-Prüfungen"),("ban","Sperren"),("ban-evasion","Bannumgehungsversuche"),("vpn-kick","VPN-Kicks"),("report","Neue Reports"),("overload","Längere Serverüberlastung"),("guard","Spielerschutz korrigiert"),("admin","Admin-Aktionen")]
+    /// Ticket events exist from Admin Suite 9.4.0; older suites reject unknown rule types.
+    private var events: [(String, String)] { suite.features.contains("tickets-v1") ? baseEvents + Self.ticketEvents : baseEvents }
     var body: some View {
         Form {
             Section("Bark verbinden") {
@@ -238,8 +242,8 @@ struct SuiteBarkSettingsView: View {
             Section("Ereignisse einzeln konfigurieren") {
                 ForEach(events,id:\.0){event in NavigationLink(event.1) { Form {
                     Toggle("Abonniert",isOn:Binding(get:{selected.contains(event.0)},set:{if $0{selected.insert(event.0)}else{selected.remove(event.0)}}))
-                    interruption("Dringlichkeit",selection:Binding(get:{rules[event.0] ?? (["ban","ban-evasion","overload"].contains(event.0) ? critical:level)},set:{rules[event.0]=$0}))
-                    Picker("Klang",selection:Binding(get:{sounds[event.0] ?? (["ban","ban-evasion","overload"].contains(event.0) ? criticalSound:sound)},set:{sounds[event.0]=$0})){ForEach(Array(Set(["minuet","alarm","bell",sounds[event.0] ?? (["ban","ban-evasion","overload"].contains(event.0) ? criticalSound:sound)])).sorted(),id:\.self){Text($0).tag($0)}};TextField("Eigener Bark-Klang",text:Binding(get:{sounds[event.0] ?? (["ban","ban-evasion","overload"].contains(event.0) ? criticalSound:sound)},set:{sounds[event.0]=$0})).textInputAutocapitalization(.never)
+                    interruption("Dringlichkeit",selection:Binding(get:{rules[event.0] ?? (Self.criticalKinds.contains(event.0) ? critical:level)},set:{rules[event.0]=$0}))
+                    Picker("Klang",selection:Binding(get:{sounds[event.0] ?? (Self.criticalKinds.contains(event.0) ? criticalSound:sound)},set:{sounds[event.0]=$0})){ForEach(Array(Set(["minuet","alarm","bell",sounds[event.0] ?? (Self.criticalKinds.contains(event.0) ? criticalSound:sound)])).sorted(),id:\.self){Text($0).tag($0)}};TextField("Eigener Bark-Klang",text:Binding(get:{sounds[event.0] ?? (Self.criticalKinds.contains(event.0) ? criticalSound:sound)},set:{sounds[event.0]=$0})).textInputAutocapitalization(.never)
                     Toggle("Alle 2 Minuten bis Bestätigung wiederholen",isOn:Binding(get:{repeats.contains(event.0)},set:{if $0{repeats.insert(event.0)}else{repeats.remove(event.0)}}))
                     Text("Bestätigen in der Ereignisglocke beim jeweiligen Ereignis. Bark- oder iOS-Einstellungen können die Zustellung begrenzen.").font(.footnote).foregroundStyle(.secondary)
                 }.navigationTitle(event.1) } }
@@ -259,34 +263,38 @@ struct SuiteBarkSettingsView: View {
             Section { Button("Einstellungen speichern", systemImage: "checkmark.shield") { Task { await model.prepare("notifications.update", ["key": .string(key), "enabled": .string(String(enabled)), "events": .string(selected.sorted().joined(separator: ",")), "level": .string(level), "critical": .string(critical), "sound": .string(sound), "criticalSound": .string(criticalSound),"rules":.string(encodedRules),"quietMode":.string(quietMode),"quietStart":.string(quietStart),"quietEnd":.string(quietEnd),"timezone":.string(timezone),"quietKinds":.string(quietKinds.sorted().joined(separator:","))], summary: enabled ? "Bark für \(selected.count) Ereignisarten aktivieren?\nNormale Hinweise: \(level)\nKritische Ereignisse: \(critical)" : "Bark-Benachrichtigungen deaktivieren?") } }.disabled(model.busy || suite.scope != "full"); if !delivery.isEmpty { Text(delivery).font(.footnote).foregroundStyle(.secondary) } }
         }.panelScreen().navigationTitle("Benachrichtigungen").navigationBarTitleDisplayMode(.inline).errorAlert($model.error)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() } } }
-            .task { do { let value = try await suite.request("notifications"); configured = value["configured"].bool; enabled = value["enabled"].bool; selected = Set(value["events"].string.split(separator: ",").map(String.init)); level = value["level"].string; critical = value["critical"].string; sound = value["sound"].string; criticalSound = value["criticalSound"].string; delivery = value["deliveryStatus"].string; quietMode=value["quietMode"].string.isEmpty ? "off":value["quietMode"].string;quietStart=value["quietStart"].string.isEmpty ? "22:00":value["quietStart"].string;quietEnd=value["quietEnd"].string.isEmpty ? "07:00":value["quietEnd"].string;timezone=value["timezone"].string.isEmpty ? "Europe/Berlin":value["timezone"].string;quietKinds=Set(value["quietKinds"].string.split(separator:",").map(String.init));for rule in value["rules"].string.split(separator:";"){let a=rule.split(separator:":",omittingEmptySubsequences:false).map(String.init);if a.count==4 {if a[1] != "off"{rules[a[0]]=a[1]};sounds[a[0]]=a[2];if a[1]=="off"{selected.remove(a[0])}else{selected.insert(a[0])};if a[3] != "0"{repeats.insert(a[0])}}} } catch { model.error = error.localizedDescription } }
+            .task { do { let value = try await suite.request("notifications"); configured = value["configured"].bool; enabled = value["enabled"].bool; selected = Set(value["events"].string.split(separator: ",").map(String.init)); level = value["level"].string; critical = value["critical"].string; sound = value["sound"].string; criticalSound = value["criticalSound"].string; delivery = value["deliveryStatus"].string; quietMode=value["quietMode"].string.isEmpty ? "off":value["quietMode"].string;quietStart=value["quietStart"].string.isEmpty ? "22:00":value["quietStart"].string;quietEnd=value["quietEnd"].string.isEmpty ? "07:00":value["quietEnd"].string;timezone=value["timezone"].string.isEmpty ? "Europe/Berlin":value["timezone"].string;quietKinds=Set(value["quietKinds"].string.split(separator:",").map(String.init));for rule in value["rules"].string.split(separator:";"){let a=rule.split(separator:":",omittingEmptySubsequences:false).map(String.init);if a.count==4 {if a[1] != "off"{rules[a[0]]=a[1]};sounds[a[0]]=a[2];if a[1]=="off"{selected.remove(a[0])}else{selected.insert(a[0])};if a[3] != "0"{repeats.insert(a[0])}}}; if suite.features.contains("tickets-v1") { for kind in Self.ticketEvents.map(\.0) where !value["rules"].string.contains(kind + ":") { selected.insert(kind) } } } catch { model.error = error.localizedDescription } }
             .sheet(isPresented: Binding(get: { model.plan != nil }, set: { if !$0 { model.plan = nil } })) { SuiteSecurityConfirmation(model: model) { key = ""; configured = true; dismiss() } }
     }
     func interruption(_ title: String, selection: Binding<String>) -> some View { Picker(title, selection: selection) { Text("Normal").tag("active"); Text("Nur Liste (still)").tag("passive"); Text("Zeitkritisch").tag("timeSensitive"); Text("Kritischer Alarm").tag("critical") } }
 }
 
 struct SuiteEventInboxView: View {
+    /// Bark ticket notifications open the same server picker, leading to the ticket list.
+    var tickets = false
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         List {
             if let panel = store.api {
                 ForEach(store.servers.filter { SuiteConnections.shared.get(panel, $0) != nil }) { server in
-                    NavigationLink(server.name) { SuiteEventConnectedView(panel: panel, server: server) }
+                    NavigationLink(server.name) { SuiteEventConnectedView(panel: panel, server: server, tickets: tickets) }
                 }
                 if !store.servers.contains(where: { SuiteConnections.shared.get(panel, $0) != nil }) { Text("Für das ausgewählte Panel ist noch keine Admin Suite verbunden.").foregroundStyle(.secondary) }
             } else { Text("Öffne deinen gespeicherten Panel-Zugang, um die Serverereignisse anzuzeigen.") }
-        }.panelScreen().navigationTitle("Serverereignisse").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
+        }.panelScreen().navigationTitle(tickets ? "Support-Tickets" : "Serverereignisse").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
     }
 }
 struct SuiteEventConnectedView: View {
     let panel: PanelAPI
     let server: Server
+    var tickets = false
     @StateObject private var model: SuiteModel
-    init(panel: PanelAPI, server: Server) { self.panel = panel; self.server = server; _model = StateObject(wrappedValue: SuiteModel(panel: panel, server: server)) }
+    init(panel: PanelAPI, server: Server, tickets: Bool = false) { self.panel = panel; self.server = server; self.tickets = tickets; _model = StateObject(wrappedValue: SuiteModel(panel: panel, server: server)) }
     var body: some View {
         Group {
-            if let suite = model.api, model.health["features"].array.contains(.string("events-v1")) { SuiteSecurityCenterView(suite: suite, panel: panel, server: server, actions: model.actions, area: .events) }
+            if tickets, let suite = model.api, model.health["features"].array.contains(.string("tickets-v1")) { SuiteTicketsView(suite: suite, panel: panel, server: server) }
+            else if let suite = model.api, model.health["features"].array.contains(.string("events-v1")) { SuiteSecurityCenterView(suite: suite, panel: panel, server: server, actions: model.actions, area: .events) }
             else { List { if model.busy { ProgressView("Verbinden …") }; Text(model.error ?? "Admin Suite 9.0 oder neuer wird für diesen Bereich benötigt.").foregroundStyle(.secondary); Button("Erneut verbinden") { Task { await model.load(force: true) } } }.panelScreen() }
         }.task { await model.load() }
     }
