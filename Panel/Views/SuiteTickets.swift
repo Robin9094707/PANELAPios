@@ -299,10 +299,10 @@ struct SuiteTicketSettingsView: View {
                 } header: { Text("Minecraft") } footer: { Text("Spieler öffnen Tickets mit /ticket – Java mit Menüs und Chat, Bedrock mit nativen Formularen. Antworten des Teams warten, bis der Spieler online ist, und kommen als privater Ping mit Öffnen-Link (Java) bzw. /ticket view (Bedrock). Notfall-Tickets kommen bei Bark als kritischer Alarm, außer während deiner Ruhezeit (Benachrichtigungen → Ruhezeiten).") }
                 Section {
                     Toggle("Tickets auf Discord", isOn: $discordEnabled)
-                    Picker("Ticketkanal (Panel)", selection: $channelId) { Text("Nicht festgelegt").tag(""); ForEach(channels, id: \.["id"].string) { row in Text("#" + row["name"].string).tag(row["id"].string) } }
+                    Picker("Ticketkanal (Panel)", selection: $channelId) { Text("Nicht festgelegt").tag(""); unlisted(channelId, in: data["channels"]); ForEach(channels, id: \.["id"].string) { row in Text("#" + row["name"].string).tag(row["id"].string) } }
                     Picker("Ticket-Art", selection: $mode) { Text("Private Threads im Ticketkanal").tag("thread"); Text("Eigene private Kanäle").tag("channel") }
-                    if mode == "channel" { Picker("Kategorie für Ticketkanäle", selection: $categoryId) { Text("Keine Kategorie").tag(""); ForEach(data["categories"].array, id: \.["id"].string) { row in Text(row["name"].string).tag(row["id"].string) } } }
-                    Picker("Protokollkanal (optional)", selection: $logChannelId) { Text("Keiner").tag(""); ForEach(channels, id: \.["id"].string) { row in Text("#" + row["name"].string).tag(row["id"].string) } }
+                    if mode == "channel" { Picker("Kategorie für Ticketkanäle", selection: $categoryId) { Text("Keine Kategorie").tag(""); unlisted(categoryId, in: data["categories"]); ForEach(data["categories"].array, id: \.["id"].string) { row in Text(row["name"].string).tag(row["id"].string) } } }
+                    Picker("Protokollkanal (optional)", selection: $logChannelId) { Text("Keiner").tag(""); unlisted(logChannelId, in: data["channels"]); ForEach(channels, id: \.["id"].string) { row in Text("#" + row["name"].string).tag(row["id"].string) } }
                     Toggle("Teamrollen bei neuen Tickets erwähnen", isOn: $pingStaff)
                 } header: { Text("Discord · gleicher Bot wie die Admin Suite") } footer: { Text(data["botReady"].bool ? (data["botConnected"].bool ? "Der Admin-Suite-Bot ist verbunden – kein zusätzliches Token nötig. Alternativ in Discord: /ticket setup." : "Der Bot ist eingerichtet, aber gerade nicht verbunden.") : "Zuerst den Discord-Bot der Admin Suite einrichten (Discord-Einstellungen). Tickets funktionieren auch ohne Discord im Spiel und in der App.") }
                 Section {
@@ -333,6 +333,10 @@ struct SuiteTicketSettingsView: View {
             .task { await load() }.refreshable { await load() }
     }
     var channels: [JSON] { data["channels"].array.sorted { $0["position"].int < $1["position"].int } }
+    /// A saved ID stays selectable when Discord is offline or did not list it, so saving other settings never erases it.
+    @ViewBuilder func unlisted(_ id: String, in rows: JSON) -> some View {
+        if !id.isEmpty && !rows.array.contains(where: { $0["id"].string == id }) { Text("Gespeichert · " + id).tag(id) }
+    }
     func load() async {
         busy = true; defer { busy = false }
         do {
@@ -340,9 +344,6 @@ struct SuiteTicketSettingsView: View {
             enabled = value["enabled"].bool; discordEnabled = value["discordEnabled"].bool; channelId = value["channelId"].string; mode = value["mode"].string == "channel" ? "channel" : "thread"
             categoryId = value["categoryId"].string; logChannelId = value["logChannelId"].string; roles = Set(value["staffRoleIds"].array.map(\.string))
             maxOpen = max(1, value["maxOpen"].int); cooldown = value["cooldown"].int; delay = max(5, value["deliveryDelay"].int); joinHint = value["joinHint"].bool; bark = value["bark"].bool; pingStaff = value["pingStaff"].bool
-            // Pickers need their current value among the options, even if Discord did not list it.
-            let known = Set(value["channels"].array.map { $0["id"].string }); if !channelId.isEmpty && !known.contains(channelId) { channelId = "" }; if !logChannelId.isEmpty && !known.contains(logChannelId) { logChannelId = "" }
-            if !categoryId.isEmpty && !value["categories"].array.contains(where: { $0["id"].string == categoryId }) { categoryId = "" }
         } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
     }
     func save(panel: Bool) async {

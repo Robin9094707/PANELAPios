@@ -9,6 +9,7 @@ struct HomeView: View {
     @State private var transfers = false
     @State private var widgets = false
     @State private var suiteEvents = false
+    @State private var suiteTickets = false
     @State private var search = ""
     @State private var editLayout = false
     @State private var iconRevision = 0
@@ -51,7 +52,8 @@ struct HomeView: View {
                 .sheet(isPresented: $transfers) { TransfersView() }
                 .sheet(isPresented: $widgets) { NavigationStack { WidgetSettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { widgets = false } } } } }
                 .sheet(isPresented: $suiteEvents) { NavigationStack { SuiteEventInboxView() } }
-                .onOpenURL { url in if url.host == "suite-events" { suiteEvents = true }; if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
+                .sheet(isPresented: $suiteTickets) { NavigationStack { SuiteEventInboxView(tickets: true) } }
+                .onOpenURL { url in if url.host == "suite-events" { suiteEvents = true }; if url.host == "suite-tickets" { suiteTickets = true }; if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
                 .task(id: store.api.map { ObjectIdentifier($0) }) { await store.refresh(); await store.pollPresence() }
         }
     }

@@ -270,27 +270,31 @@ struct SuiteBarkSettingsView: View {
 }
 
 struct SuiteEventInboxView: View {
+    /// Bark ticket notifications open the same server picker, leading to the ticket list.
+    var tickets = false
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         List {
             if let panel = store.api {
                 ForEach(store.servers.filter { SuiteConnections.shared.get(panel, $0) != nil }) { server in
-                    NavigationLink(server.name) { SuiteEventConnectedView(panel: panel, server: server) }
+                    NavigationLink(server.name) { SuiteEventConnectedView(panel: panel, server: server, tickets: tickets) }
                 }
                 if !store.servers.contains(where: { SuiteConnections.shared.get(panel, $0) != nil }) { Text("Für das ausgewählte Panel ist noch keine Admin Suite verbunden.").foregroundStyle(.secondary) }
             } else { Text("Öffne deinen gespeicherten Panel-Zugang, um die Serverereignisse anzuzeigen.") }
-        }.panelScreen().navigationTitle("Serverereignisse").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
+        }.panelScreen().navigationTitle(tickets ? "Support-Tickets" : "Serverereignisse").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
     }
 }
 struct SuiteEventConnectedView: View {
     let panel: PanelAPI
     let server: Server
+    var tickets = false
     @StateObject private var model: SuiteModel
-    init(panel: PanelAPI, server: Server) { self.panel = panel; self.server = server; _model = StateObject(wrappedValue: SuiteModel(panel: panel, server: server)) }
+    init(panel: PanelAPI, server: Server, tickets: Bool = false) { self.panel = panel; self.server = server; self.tickets = tickets; _model = StateObject(wrappedValue: SuiteModel(panel: panel, server: server)) }
     var body: some View {
         Group {
-            if let suite = model.api, model.health["features"].array.contains(.string("events-v1")) { SuiteSecurityCenterView(suite: suite, panel: panel, server: server, actions: model.actions, area: .events) }
+            if tickets, let suite = model.api, model.health["features"].array.contains(.string("tickets-v1")) { SuiteTicketsView(suite: suite, panel: panel, server: server) }
+            else if let suite = model.api, model.health["features"].array.contains(.string("events-v1")) { SuiteSecurityCenterView(suite: suite, panel: panel, server: server, actions: model.actions, area: .events) }
             else { List { if model.busy { ProgressView("Verbinden …") }; Text(model.error ?? "Admin Suite 9.0 oder neuer wird für diesen Bereich benötigt.").foregroundStyle(.secondary); Button("Erneut verbinden") { Task { await model.load(force: true) } } }.panelScreen() }
         }.task { await model.load() }
     }

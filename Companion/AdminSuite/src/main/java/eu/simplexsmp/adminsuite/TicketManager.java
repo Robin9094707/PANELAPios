@@ -70,8 +70,12 @@ final class TicketManager implements Listener {
         });
     }
     TicketStore.Message staffReply(long id,String author,String authorId,String source,String text,boolean fromDiscord){
+        TicketStore.Ticket before=store.get(id);boolean wasClosed=before!=null&&!before.active();
         TicketStore.Message m=store.reply(id,author,authorId,"staff",source,text);
-        TicketDiscord d=discord();if(!fromDiscord&&d!=null)d.forwardAsync(id,m);
+        TicketDiscord d=discord();
+        // A staff reply reopens a closed ticket; unlock the thread/channel first (jobs run in order).
+        if(wasClosed&&d!=null)d.reopenedAsync(id,author,!fromDiscord);
+        if(!fromDiscord&&d!=null)d.forwardAsync(id,m);
         plugin.runAdminTask(()->plugin.suiteAudit(author,"Ticket beantwortet","#"+id+" ("+source+")"));
         return m;
     }
