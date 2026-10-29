@@ -1,12 +1,18 @@
 import SwiftUI
 import WebKit
+import UIKit
 
 struct AddonUpdateCenter: View {
     let api: PanelAPI
     let server: Server
     @ObservedObject var model: AddonUpdateModel
     let importFile: (String, URL) -> Void
+    /// Stages a downloaded, hash-verified JAR without the per-file sheet (plugins only).
+    var stageVerified: ((String, URL) async throws -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    @State private var importTarget: AddonImportTarget?
+    @State private var batch = ""
+    @State private var batchResult: String?
     @State private var entries: [JSON] = []
     @State private var settings = false
     @State private var mapping: AddonInventory?
@@ -23,7 +29,12 @@ struct AddonUpdateCenter: View {
                 Text("Installierte JARs werden per Prüfsumme erkannt. Unbekannte Projekte einmalig zuordnen. Nur passende Versionen werden angeboten; Abhängigkeiten vor dem Installieren prüfen.").font(.footnote).foregroundStyle(.secondary)
                 if model.busy { ProgressView(model.progress).font(.caption) }
                 Button("Jetzt auf Updates prüfen", systemImage: "arrow.clockwise") { Task { await load(force: true) } }.disabled(model.busy || working)
-                if working { ProgressView("Download prüfen …") }
+                if working { ProgressView(batch.isEmpty ? "Download prüfen …" : batch) }
+                if stageVerified != nil && !verified.isEmpty {
+                    Button("Alle \(verified.count) geprüften Updates vormerken", systemImage: "square.and.arrow.down.on.square") { stageAll() }.buttonStyle(.glassProminent).disabled(model.busy || working)
+                    Text("Nur Updates mit Prüfsumme und vom Anbieter bestätigter Minecraft-Version (Modrinth, Hangar, GeyserMC). Jede JAR wird vor dem Vormerken mit der installierten verglichen; Paper übernimmt sie beim nächsten Neustart.").font(.caption).foregroundStyle(.secondary)
+                }
+                if let batchResult { Label(batchResult, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.secondary) }
             }
             ForEach(model.rows) { item in
                 Section {
@@ -34,6 +45,9 @@ struct AddonUpdateCenter: View {
                         Label(status?.text ?? "Noch nicht geprüft", systemImage: status?.release == nil ? "info.circle" : "arrow.down.circle.fill").font(.subheadline).foregroundStyle(status?.release == nil ? Color.secondary : Color.panelAccent)
                         if let next = status?.release {
                             Button("\(next.provider.title) · \(next.version) prüfen") { release = AddonReleaseSelection(item: item, release: next) }.buttonStyle(.glass).disabled(working)
+                        }
+                        if model.cache.links[item.filename] == nil, let proposal = model.suggestions[item.filename] {
+                            Button("Vorschlag übernehmen: \(proposal.provider.title) · \(proposal.project)", systemImage: "sparkles") { do { try model.accept(item); Task { await load(force: true) } } catch { self.error = error.localizedDescription } }.font(.caption).buttonStyle(.glass)
                         }
                         Button(model.cache.links[item.filename].map { "Quelle: \($0.provider.title) · \($0.project)" } ?? "Quelle zuordnen", systemImage: "link") { mapping = item }.font(.caption)
                     }.padding(.vertical, 4)
@@ -47,6 +61,13 @@ struct AddonUpdateCenter: View {
             .sheet(isPresented: $settings, onDismiss: { Task { await load() } }) { AddonProviderSettings(api: api, server: server, model: model) }
             .sheet(item: $mapping, onDismiss: { Task { await load() } }) { item in AddonMappingView(model: model, item: item) }
             .sheet(item: $release, onDismiss: deliverReceived) { selection in releaseDetails(selection) }
+            .sheet(item: $importTarget, onDismiss: deliverReceived) { target in
+                FileImportPicker(retainSelection: true) { result in
+                    if case .success(let urls) = result, let url = urls.first { received = (target.filename, url) }
+                    else if case .failure(let failure) = result { error = failure.localizedDescription }
+                    importTarget = nil
+                }.ignoresSafeArea()
+            }
             .sheet(item: $browser, onDismiss: deliverReceived) { selection in
                 AddonDownloadBrowser(url: selection.url) { result in
                     switch result {
@@ -62,6 +83,32 @@ struct AddonUpdateCenter: View {
                     browser = nil
                 }
             }
+    }
+    var verified: [AddonReleaseSelection] {
+        model.rows.compactMap { item in
+            guard let release = model.cache.statuses[item.filename]?.release, release.download != nil, release.compatibility,
+                  [release.sha1, release.sha256, release.sha512].contains(where: { !($0 ?? "").isEmpty }) else { return nil }
+            return AddonReleaseSelection(item: item, release: release)
+        }
+    }
+    func stageAll() {
+        guard let stageVerified else { return }
+        let selections = verified; working = true; batchResult = nil
+        Task {
+            var done: [String] = [], failed: [String] = []
+            for (index, selection) in selections.enumerated() {
+                batch = "\(index + 1) / \(selections.count) · \(selection.item.name)"
+                do {
+                    let file = try await model.client.download(selection.release)
+                    defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+                    try await stageVerified(selection.item.filename, file); done.append(selection.item.name)
+                } catch { failed.append(selection.item.name + ": " + error.localizedDescription) }
+            }
+            batch = ""; working = false
+            batchResult = (done.isEmpty ? "" : "Vorgemerkt: " + done.joined(separator: ", ") + ". ") + (failed.isEmpty ? "Neustart übernimmt die Updates." : "Nicht vorgemerkt: " + failed.joined(separator: " · "))
+            if !done.isEmpty { Feedback.success() }
+            await load(force: true)
+        }
     }
     func deliverReceived() {
         guard let received else { return }; self.received = nil
@@ -86,6 +133,10 @@ struct AddonUpdateCenter: View {
                     if working { ProgressView("Download läuft · Fortschritt unter Übertragungen") }
                     if selection.release.download != nil {
                         Button("Download laden und JAR prüfen", systemImage: "arrow.down.circle") { fetch(selection) }.disabled(working)
+                    }
+                    Button("Heruntergeladene JAR auswählen", systemImage: "doc.badge.arrow.up") {
+                        release = nil
+                        Task { try? await Task.sleep(for: .milliseconds(400)); importTarget = AddonImportTarget(filename: selection.item.filename) }
                     }
                     Button("Anbieterseite / gekaufter Download", systemImage: "globe") {
                         guard let url = URL(string: selection.release.website), url.scheme == "https" else { error = "Keine sichere Anbieterseite verfügbar."; return }
@@ -112,6 +163,7 @@ struct AddonUpdateCenter: View {
 }
 struct AddonReleaseSelection: Identifiable { let id = UUID(); let item: AddonInventory; let release: AddonRelease }
 struct AddonBrowserSelection: Identifiable { let id = UUID(); let url: URL; let filename: String }
+struct AddonImportTarget: Identifiable { let id = UUID(); let filename: String }
 
 struct AddonMappingView: View {
     @ObservedObject var model: AddonUpdateModel
@@ -133,7 +185,7 @@ struct AddonMappingView: View {
         NavigationStack {
             Form {
                 Section(item.name) {
-                    Picker("Anbieter", selection: $provider) { ForEach(AddonProvider.allCases) { p in if p != .spigot || model.kind == .plugin { Text(p.title).tag(p) } } }
+                    Picker("Anbieter", selection: $provider) { ForEach(AddonProvider.available(for: model.kind)) { p in Text(p.title).tag(p) } }
                     TextField("Plugin-/Mod-Name", text: $query)
                     Button("Projekte suchen") { search() }.disabled(busy)
                     if busy { ProgressView() }
@@ -228,39 +280,74 @@ struct AddonDownloadBrowser: View {
     @Environment(\.dismiss) private var dismiss
     @State private var issue: String?
     @State private var host = ""
+    @State private var reload = 0
+    @State private var importing = false
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 Label(host.isEmpty ? (url.host ?? "Anbieter") : host, systemImage: "lock.shield").font(.caption).padding(8)
                 if let issue { Text(issue).font(.caption).foregroundStyle(.orange).padding(8) }
-                Text("Anmelden, ggf. CAPTCHA selbst lösen und Download wählen. Für Web-Downloads die Vorschau geöffnet lassen. Falls die Seite die Vorschau ablehnt: in Safari laden und die JAR über „Update-Datei hochladen“ auswählen.").font(.caption).foregroundStyle(.secondary).padding(.horizontal).padding(.bottom, 8)
-                MarketplaceWebView(url: url, status: { host = $0 }, failure: { issue = $0 }, result: result)
-            }.navigationTitle("Anbieter-Download").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .bottomBar) { Link("In Safari öffnen", destination: url) }; ToolbarItem(placement: .confirmationAction) { Button("Schließen") { dismiss() } } }
+                Text("Anmelden, Sicherheitsprüfung abwarten und Download wählen. Hängt die Cloudflare-Prüfung: „Neu laden“ oder in Safari laden und die JAR danach mit „JAR aus Dateien“ übernehmen – Safari speichert sie unter Dateien › Downloads.").font(.caption).foregroundStyle(.secondary).padding(.horizontal).padding(.bottom, 8)
+                MarketplaceWebView(url: url, reload: reload, status: { host = $0 }, failure: { issue = $0 }, result: result)
+            }.navigationTitle("Anbieter-Download").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .bottomBar) { Link("In Safari öffnen", destination: url) }
+                    ToolbarItem(placement: .bottomBar) { Button("JAR aus Dateien", systemImage: "doc.badge.arrow.up") { importing = true } }
+                    ToolbarItem(placement: .topBarLeading) { Button("Neu laden", systemImage: "arrow.clockwise") { issue = nil; reload += 1 } }
+                    ToolbarItem(placement: .confirmationAction) { Button("Schließen") { dismiss() } }
+                }
+                .sheet(isPresented: $importing) {
+                    FileImportPicker(retainSelection: true) { selection in
+                        importing = false
+                        switch selection {
+                        case .success(let urls): if let file = urls.first { result(.success(file)) }
+                        case .failure(let failure): issue = failure.localizedDescription
+                        }
+                    }.ignoresSafeArea()
+                }
         }
     }
 }
 struct MarketplaceWebView: UIViewRepresentable {
     let url: URL
+    var reload = 0
     let status: (String) -> Void
     let failure: (String) -> Void
     let result: (Result<URL, Error>) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration(); config.websiteDataStore = .default()
+        // Cloudflare's challenge stalls for the bare WebKit user agent; present the same Safari suffix as Mobile Safari.
+        config.applicationNameForUserAgent = Self.safariSuffix
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        config.defaultWebpagePreferences.preferredContentMode = .mobile
         let web = WKWebView(frame: .zero, configuration: config); web.navigationDelegate = context.coordinator; web.uiDelegate = context.coordinator; web.allowsBackForwardNavigationGestures = true
-        web.load(URLRequest(url: url)); return web
+        web.load(URLRequest(url: url)); context.coordinator.reload = reload; return web
     }
-    func updateUIView(_ view: WKWebView, context: Context) { }
+    static var safariSuffix: String {
+        let parts = UIDevice.current.systemVersion.split(separator: ".")
+        return "Version/" + (parts.first.map(String.init) ?? "26") + "." + (parts.dropFirst().first.map(String.init) ?? "0") + " Mobile/15E148 Safari/604.1"
+    }
+    func updateUIView(_ view: WKWebView, context: Context) {
+        guard context.coordinator.reload != reload else { return }
+        context.coordinator.reload = reload
+        if view.url == nil || view.url?.absoluteString == "about:blank" { view.load(URLRequest(url: url)) } else { view.reloadFromOrigin() }
+    }
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) { view.stopLoading(); coordinator.cancel() }
     @MainActor final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
         let parent: MarketplaceWebView
         var files: [ObjectIdentifier: URL] = [:]
         var downloads: [ObjectIdentifier: WKDownload] = [:]
+        var reload = 0
         init(_ parent: MarketplaceWebView) { self.parent = parent }
         func cancel() { for download in downloads.values { download.cancel { _ in } }; for file in files.values { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }; downloads = [:]; files = [:] }
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard let url = action.request.url, url.scheme == "https" || url.absoluteString == "about:blank" else { decisionHandler(.cancel); return }
-            if action.targetFrame?.isMainFrame != false { parent.status(url.host ?? "Anbieter") }
+            guard let url = action.request.url else { decisionHandler(.cancel); return }
+            let main = action.targetFrame?.isMainFrame != false
+            // Challenge widgets run in about:/blob:/data: subframes; top-level pages stay HTTPS-only.
+            let allowed = main ? (url.scheme == "https" || url.absoluteString == "about:blank") : ["https", "about", "blob", "data"].contains(url.scheme ?? "")
+            guard allowed else { decisionHandler(.cancel); return }
+            if main { parent.status(url.host ?? "Anbieter") }
             decisionHandler(action.shouldPerformDownload ? .download : .allow)
         }
         func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {

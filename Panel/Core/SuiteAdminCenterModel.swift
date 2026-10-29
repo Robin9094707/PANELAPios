@@ -46,7 +46,7 @@ extension SuiteAPI {
 }
 
 struct SuiteAdminAlert: Identifiable, Equatable {
-    enum Kind: String { case restart, maintenance, reports, bans, mutes, warnings, ultrabans }
+    enum Kind: String { case restart, maintenance, tickets, reports, bans, mutes, warnings, ultrabans }
     let kind: Kind
     let title: String
     let detail: String
@@ -77,6 +77,10 @@ enum SuiteAdminDashboard {
         let restart = dashboard["restart"], maintenance = dashboard["maintenance"], moderation = dashboard["moderation"]
         if restart["active"].bool { result.append(SuiteAdminAlert(kind: .restart, title: "Neustart läuft", detail: "In \(restart["remaining"].int) Sekunden", symbol: "timer", critical: true)) }
         if maintenance["active"].bool { result.append(SuiteAdminAlert(kind: .maintenance, title: "Wartungsmodus aktiv", detail: maintenance["reason"].string.isEmpty ? "Nur Teammitglieder können beitreten" : maintenance["reason"].string, symbol: "wrench.and.screwdriver.fill", critical: true)) }
+        // Admin Suite 9.4.0 adds support tickets; urgent tickets are treated like a critical alert.
+        let tickets = dashboard["tickets"], urgent = tickets["urgent"].int, openTickets = tickets["open"].int
+        if urgent > 0 { result.append(SuiteAdminAlert(kind: .tickets, title: urgent == 1 ? "1 Notfall-Ticket" : "\(urgent) Notfall-Tickets", detail: openTickets > 0 ? "\(openTickets) Tickets warten auf das Team" : "Dringend prüfen", symbol: "light.beacon.max.fill", critical: true)) }
+        else if openTickets > 0 { result.append(SuiteAdminAlert(kind: .tickets, title: openTickets == 1 ? "1 offenes Ticket" : "\(openTickets) offene Tickets", detail: tickets["answered"].int > 0 ? "\(tickets["answered"].int) beantwortet, warten auf Spieler" : "Warten auf eine Antwort", symbol: "ticket.fill", critical: false)) }
         let open = moderation["openReports"].int, review = moderation["reviewReports"].int
         let more = dashboard["reportsPartial"].bool ? "+" : ""
         if open > 0 { result.append(SuiteAdminAlert(kind: .reports, title: open == 1 && more.isEmpty ? "1 offener Report" : "\(open)\(more) offene Reports", detail: review > 0 ? "\(review) weitere in Bearbeitung" : "Warten auf Bearbeitung", symbol: "flag.fill", critical: true)) }

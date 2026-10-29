@@ -74,7 +74,7 @@ public final class Release920Harness {
             for(Object seconds:List.of(0,-1,61,30.5,Double.NaN,Double.POSITIVE_INFINITY,4294967326L))denied(()->AppApiManager.countdown(seconds),"invalid restart countdown must fail");
             check(AppApiManager.scope("restart.apply").equals("full"),"restart requires full key");
             for(String node:access.nodes())if(AdminAccessManager.administrative(node)){check(!AdminPermissionText.name(node).isBlank()&&!AdminPermissionText.description(node).isBlank(),"German permission copy: "+node);}
-            AppChat chat=new AppChat();for(int i=0;i<30;i++)chat.record("","Player","Message "+i,"player");Map<?,?> page=(Map<?,?>)chat.read(0);check(((List<?>)page.get("items")).size()==20,"chat bound to 20");check(((List<?>)((Map<?,?>)chat.read(30)).get("items")).isEmpty(),"foreground baseline has no old messages");
+            AppChat chat=new AppChat();for(int i=0;i<60;i++)chat.record("","Player","Message "+i,"player");Map<?,?> page=(Map<?,?>)chat.read(0);check(((List<?>)page.get("items")).size()==AppChat.LIMIT,"chat bound to the app history limit");check(((List<?>)((Map<?,?>)chat.read(60)).get("items")).isEmpty(),"foreground baseline has no old messages");
             denied(()->AppChat.validateName("@a"),"selector name rejected");denied(()->AppChat.validateMessage("hi\nstop"),"newline rejected");check(AppChat.validateMessage("/say hello <click:run_command:'/op x'>").startsWith("/say"),"commands remain literal message text");
             System.out.println("Release920Harness: "+checks+" production checks passed");
         }finally{f.set(null,old);try(var paths=Files.walk(folder)){for(Path path:paths.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(path);}}

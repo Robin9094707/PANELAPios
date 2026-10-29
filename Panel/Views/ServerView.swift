@@ -14,6 +14,7 @@ struct ServerView: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var workspace: WorkspaceStore
     @State private var commandLibrary = false
+    @State private var pluginHub = false
     @ObservedObject private var suiteConnections = SuiteConnections.shared
     @StateObject private var suite: SuiteModel
     @State private var refreshing = false
@@ -85,6 +86,7 @@ struct ServerView: View {
             .sheet(isPresented: $historySheet) { ConsoleHistorySheet(historyKey: historyKey) { command = $0; historyCursor = CommandHistoryCursor(); tab = 1 } }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
             .sheet(isPresented: $commandLibrary) { CommandLibrary(api: api, server: server) { command = $0 } }
+            .sheet(isPresented: $pluginHub) { PluginHubSheet(api: api, server: server, suite: suite.api, runCommand: { command = $0; tab = 1 }, editLayout: { editLayout = true }) }
             .errorAlert($error)
     }
     func publishStatus() {
@@ -152,7 +154,7 @@ struct ServerView: View {
     }
     var identityCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-                HStack { ServerIconView(api: api, server: server, enabled: workspace.isMinecraft(api, server) && !server.data["invocation"].string.lowercased().contains("bedrock_server") && !server.data["container"]["image"].string.lowercased().contains("bedrock"), revision: iconRevision); VStack(alignment: .leading, spacing: 8) { Text(server.name).font(.largeTitle.bold()); Text(server.address).font(.system(.subheadline, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled) }; Spacer(); StatePill(state: live.state) }
+                HStack { ServerIconView(api: api, server: server, enabled: workspace.isMinecraft(api, server) && !server.data["invocation"].string.lowercased().contains("bedrock_server") && !server.data["container"]["image"].string.lowercased().contains("bedrock"), revision: iconRevision); VStack(alignment: .leading, spacing: 8) { Text(server.name).font(.largeTitle.bold()); Text(server.address).font(.system(.subheadline, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled) }; Spacer(); if workspace.isMinecraft(api, server) { Button("Plugins & Schnellzugriffe", systemImage: "puzzlepiece.extension.fill") { pluginHub = true }.labelStyle(.iconOnly).buttonStyle(.glass).controlSize(.small).accessibilityIdentifier("pluginHub") }; StatePill(state: live.state) }
                 HStack(spacing: 7) { Circle().fill(live.connected ? Color.green : Color.orange).frame(width: 6, height: 6); Text(live.connection); Spacer(); if let updated = live.lastUpdate { Text(updated, style: .time).monospacedDigit() } }.font(.caption).foregroundStyle(.secondary)
                 if let issue = live.issue, !live.connected { Label(issue, systemImage: "wifi.exclamationmark").font(.footnote).foregroundStyle(.orange).card() }
                 AccessSummary(access: api.access, api: api, server: server.id)

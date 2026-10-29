@@ -30,9 +30,14 @@ struct PluginsView: View {
                 if busy { ProgressView("JAR prüfen / Update vormerken …") }
                 if let message { Label(message, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(Color.panelAccent) }
                 NavigationLink {
-                    AddonUpdateCenter(api: api, server: server, model: updates) { filename, url in inspect(url, filename: filename) }
+                    AddonUpdateCenter(api: api, server: server, model: updates, importFile: { filename, url in inspect(url, filename: filename) }, stageVerified: { filename, url in
+                        // Same identity checks as the manual dialog: name and main class must match the installed JAR.
+                        let value = try await makeCandidate(url, filename: filename)
+                        defer { try? FileManager.default.removeItem(at: value.file.deletingLastPathComponent()) }
+                        try await commit(value)
+                    })
                 } label: {
-                    Label(updates.cache.statuses.values.contains(where: { $0.release != nil }) ? "Updates verfügbar · Modrinth, Spigot & CurseForge" : "Modrinth, Spigot & CurseForge", systemImage: "arrow.triangle.2.circlepath")
+                    Label(updates.cache.statuses.values.contains(where: { $0.release != nil }) ? "Updates verfügbar · Update-Center öffnen" : "Update-Center · Modrinth, Hangar, Spigot, GeyserMC & CurseForge", systemImage: "arrow.triangle.2.circlepath")
                 }
                 if updates.busy { ProgressView(updates.progress).font(.caption) }
                 NavigationLink("Plugin-Dateien & Konfigurationen") { FilesView(api: api, server: server, root: "/plugins") }
@@ -84,9 +89,15 @@ struct PluginsView: View {
         busy = true; message = nil
         Task { defer { busy = false; let folder = url.deletingLastPathComponent(); if folder.lastPathComponent.hasPrefix("addon-") || folder.lastPathComponent.hasPrefix("market-") || folder.lastPathComponent.hasPrefix("import-") { try? FileManager.default.removeItem(at: folder) } }; do {
             guard !api.demo else { throw PanelError(message: "Updates sind im Demomodus deaktiviert.") }
+            let result = try await makeCandidate(url, filename: filename)
+            candidate = result; stagedLocal = result.file
+        } catch { self.error = error.localizedDescription } }
+    }
+    func makeCandidate(_ url: URL, filename: String) async throws -> PluginUpdateCandidate {
+            guard !api.demo else { throw PanelError(message: "Updates sind im Demomodus deaktiviert.") }
             let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
             let installedData = try await PluginUpdateFiles(api: api, server: server.id).read("/plugins/" + filename)
-            let result = try await Task.detached(priority: .userInitiated) {
+            return try await Task.detached(priority: .userInitiated) {
                 let resource = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
                 guard resource.isRegularFile == true else { throw PanelError(message: "Bitte eine einzelne JAR-Datei auswählen, keinen Ordner.") }
                 let size = resource.fileSize ?? 0
@@ -99,8 +110,6 @@ struct PluginsView: View {
                 let local = folder.appendingPathComponent(next.versionedFilename); try nextData.write(to: local)
                 return PluginUpdateCandidate(filename: filename, file: local, installed: old, next: next, originalHash: PluginArchive.digest(installedData), report: report)
             }.value
-            candidate = result; stagedLocal = result.file
-        } catch { self.error = error.localizedDescription } }
     }
     func commit(_ value: PluginUpdateCandidate) async throws {
         busy = true; defer { busy = false }

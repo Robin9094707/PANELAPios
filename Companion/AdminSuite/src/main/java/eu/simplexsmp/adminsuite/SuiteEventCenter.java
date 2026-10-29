@@ -12,7 +12,7 @@ import org.bukkit.entity.Player;
 
 /** Bounded independent event ledger. Existing punishment/report/profile formats are untouched. */
 final class SuiteEventCenter {
-    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin");
+    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent");
     static final Set<String> LEVELS = Set.of("active","passive","timeSensitive","critical");
     private final SimplexAdminSuite plugin;
     private final Path eventsFile, subscriptionsFile;
@@ -113,16 +113,17 @@ final class SuiteEventCenter {
             if(onlyOwner!=null&&!owner.equals(onlyOwner))continue;
             if(plugin.appApi==null||plugin.appApi.security.keys().stream().noneMatch(k->k.id().equals(owner)&&k.scope().equals("full")))continue;
             String type=String.valueOf(row.get("type"));String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
-            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type))continue;
+            // Tickets reach every Bark subscriber until the app stores an explicit rule for them.
+            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true)))continue;
             boolean critical=Boolean.TRUE.equals(row.get("critical"));String level=rule==null?copy.getProperty(prefix+(critical?"critical":"level"),"active"):rule[1];
             if(level.equals("off")||!BarkPolicy.allowed(copy,prefix,type,level,java.time.Instant.now()))continue;
             String sound=rule==null?copy.getProperty(prefix+(critical?"criticalSound":"sound"),"minuet"):rule[2];int repeat=rule==null?0:Integer.parseInt(rule[3]);
 
             if(repeated){boolean retained;synchronized(this){retained=events.containsKey(String.valueOf(row.get("id")));}if(repeat==0||!retained){acknowledge(owner,String.valueOf(row.get("id")));continue;}}
             long now=System.currentTimeMillis();String rate=prefix+type;
-            if(now-cooldown.getOrDefault(rate,0L)<(type.equals("first-join")?3000:30_000))continue;
+            if(now-cooldown.getOrDefault(rate,0L)<(type.equals("first-join")||type.startsWith("ticket")?3000:30_000))continue;
             cooldown.put(rate,now);
-            Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",copy.getProperty(prefix+"key",""),"title",row.get("title"),"body",row.get("body"),"group","Simplex Admin Suite","level",level,"sound",sound,"isArchive",1,"url","panel://suite-events");
+            Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",copy.getProperty(prefix+"key",""),"title",row.get("title"),"body",row.get("body"),"group","Simplex Admin Suite","level",level,"sound",sound,"isArchive",1,"url",type.startsWith("ticket")?"panel://suite-tickets":"panel://suite-events");
             String player=String.valueOf(row.getOrDefault("player",""));if(player.matches("[a-fA-F0-9-]{36}")){String avatar=plugin.discordRelay()==null?"":plugin.discordRelay().appAvatar(UUID.fromString(player));payload.put("icon",avatar.isBlank()?"https://mc-heads.net/avatar/"+player+"/128":avatar);}
             payload.put("id",String.valueOf(row.get("id")));
             String alarm="alarm."+owner+"."+row.get("id");
