@@ -129,7 +129,7 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class SimplexAdminSuite extends JavaPlugin implements Listener, CommandExecutor, org.bukkit.command.TabCompleter {
-    private static final String VERSION = "9.0.5";
+    private static final String VERSION = "9.3.0";
     private static final int CURRENT_DATA_SCHEMA = 17;
     private static final int DEFAULT_MAX_CHAT_LINES = 100;
     private static final int DEFAULT_MAX_ACTION_LINES = 240;
@@ -8511,6 +8511,31 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(section.equals("dependencies")){try(var in=getResource("dependency-status.json")){return appMap("items",in==null?List.of():DiscordBotManager.Json.parse(new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8)));}}
         throw new IllegalArgumentException("Unbekannter Bereich");
     }
+    static final long APP_NEW_PLAYER_MILLIS=7L*86_400_000L;
+    private static boolean appFlagged(PlayerProfile p,long now){return p.internalBanActive(now)||p.internalMuteActive(now)||!p.warnings.isEmpty();}
+    /** One bounded read for the app's admin center. Every module is optional; missing modules report null. */
+    Object appAdminDashboard(boolean full){
+        long now=System.currentTimeMillis();Runtime runtime=Runtime.getRuntime();double mspt=-1;try{Object value=Bukkit.class.getMethod("getAverageTickTime").invoke(null);if(value instanceof Number n)mspt=n.doubleValue();}catch(ReflectiveOperationException ignored){}
+        int bans=0,mutes=0,warned=0,new24=0,newWeek=0,active24=0;
+        if(database!=null)for(PlayerProfile p:database.profiles.values()){if(p.internalBanActive(now))bans++;if(p.internalMuteActive(now))mutes++;if(!p.warnings.isEmpty())warned++;if(p.firstSeen>=now-86_400_000L)new24++;if(p.firstSeen>=now-APP_NEW_PLAYER_MILLIS)newWeek++;if(p.lastSeen>=now-86_400_000L)active24++;}
+        int open=0,review=0;List<Object> openReports=new ArrayList<>();
+        if(reports!=null)for(ReportCase r:reports.sortedReports()){if(r.status==ReportStatus.OPEN)open++;else if(r.status==ReportStatus.IN_REVIEW)review++;else continue;if(openReports.size()<3)openReports.add(appMap("id",Long.toString(r.id),"name",r.targetName,"player",r.targetUuid==null?"":r.targetUuid.toString(),"category",r.category,"status",r.status.name(),"created",r.createdAt));}
+        int ultra=0;if(altDetection!=null)for(var group:altDetection.ultraGroups.values())if(group.active&&(group.until<=0||group.until>now))ultra++;
+        List<Object> online=new ArrayList<>(),staff=new ArrayList<>();
+        List<Player> players=new ArrayList<>(Bukkit.getOnlinePlayers());players.sort(Comparator.comparing((Player x)->x.getName().toLowerCase(Locale.ROOT)));
+        for(Player live:players){
+            PlayerProfile p=database==null?null:database.get(live.getUniqueId());if(p!=null&&online.size()<100)online.add(appPlayer(p,false));
+            if(full&&adminAccess!=null){Map<String,Boolean> lp=luckPerms==null?Map.of():luckPerms.permissions.getOrDefault(live.getUniqueId(),Map.of());if(adminAccess.hasAccess(live.getUniqueId(),live,lp))staff.add(appMap("id",live.getUniqueId().toString(),"name",live.getName(),"role",adminAccess.roleLabel(live.getUniqueId()),"operator",live.isOp()));}
+        }
+        List<Object> events=new ArrayList<>();if(appEvents!=null){Object data=appEvents.data("",0);if(data instanceof Map<?,?> envelope&&envelope.get("items") instanceof List<?> items)for(Object item:items){if(events.size()>=5)break;events.add(item);}}
+        return appMap("at",now,"version",getDescription().getVersion(),"tps",discordAdminTps(),"mspt",mspt,"ramUsed",runtime.totalMemory()-runtime.freeMemory(),"ramMax",runtime.maxMemory(),"uptime",now-suiteBootTime,
+            "online",Bukkit.getOnlinePlayers().size(),"maxPlayers",serverMaxPlayers(),"profiles",database==null?0:database.profiles.size(),"new24h",new24,"newWeek",newWeek,"active24h",active24,
+            "moderation",appMap("openReports",open,"reviewReports",review,"internalBans",bans,"mutes",mutes,"warnedPlayers",warned,"ultrabans",ultra),
+            "maintenance",maintenance==null?null:appMap("active",maintenance.isActive(),"reason",maintenance.reason()),
+            "restart",restartManager==null?null:appMap("active",restartManager.active(),"remaining",restartManager.remainingSeconds()),
+            "players",online,"staff",full?staff:null,"reports",openReports,"events",events,
+            "scoreboard",nativeScoreboard==null?null:appMap("mainDays",nativeScoreboard.mainDays(),"secondDays",nativeScoreboard.secondDays()));
+    }
     Object appOperations(){return appMap("active",restartManager.active(),"remaining",restartManager.remainingSeconds(),"reasonDE",restartManager.reasonDE,"reasonEN",restartManager.reasonEN);}
     Object appRestart(Map<String,Object> values,String actor){
         String operation=String.valueOf(values.getOrDefault("operation","schedule"));
@@ -8587,7 +8612,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     private final Map<String,AppPlayerPage> appPlayerPages=new LinkedHashMap<>();
     private Object appPlayerPage(Map<String,String> q,String query,int offset){
         String filter=q.getOrDefault("filter","all");
-        if(!Set.of("all","online","recent").contains(filter))throw new IllegalArgumentException("Unbekannter Spielerfilter");
+        if(!Set.of("all","online","recent","flagged","new").contains(filter))throw new IllegalArgumentException("Unbekannter Spielerfilter");
         int limit=50;try{limit=Math.max(1,Math.min(100,Integer.parseInt(q.getOrDefault("limit","50"))));}catch(NumberFormatException ignored){}
         long now=System.currentTimeMillis();appPlayerPages.entrySet().removeIf(e->e.getValue().expires()<now);
         String selection=filter+"|"+query,token=q.getOrDefault("snapshot","");AppPlayerPage page=null;
@@ -8600,9 +8625,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if(filter.equals("online")){for(Player live:Bukkit.getOnlinePlayers()){PlayerProfile p=database.get(live.getUniqueId());if(p!=null)candidates.add(p);}}
             else candidates.addAll(database.profiles.values());
             Set<UUID> online=new HashSet<>();for(Player live:Bukkit.getOnlinePlayers())online.add(live.getUniqueId());
-            candidates.removeIf(p->filter.equals("recent")&&online.contains(p.uuid)||!query.isBlank()&&!(p.name.toLowerCase(Locale.ROOT).contains(query)||p.uuid.toString().contains(query)));
+            candidates.removeIf(p->filter.equals("recent")&&online.contains(p.uuid)||filter.equals("flagged")&&!appFlagged(p,now)||filter.equals("new")&&p.firstSeen<now-APP_NEW_PLAYER_MILLIS||!query.isBlank()&&!(p.name.toLowerCase(Locale.ROOT).contains(query)||p.uuid.toString().contains(query)));
             Comparator<PlayerProfile> names=Comparator.comparing((PlayerProfile p)->p.name.toLowerCase(Locale.ROOT)).thenComparing(p->p.uuid);
             if(filter.equals("online"))candidates.sort(names);
+            else if(filter.equals("new"))candidates.sort(Comparator.comparingLong((PlayerProfile p)->p.firstSeen).reversed().thenComparing(names));
             else candidates.sort(Comparator.comparing((PlayerProfile p)->filter.equals("all")&&!online.contains(p.uuid)).thenComparing(Comparator.comparingLong((PlayerProfile p)->p.lastSeen).reversed()).thenComparing(names));
             page=new AppPlayerPage(selection,candidates.stream().map(p->p.uuid).toList(),now+600_000L);token=UUID.randomUUID().toString();
             if(appPlayerPages.size()>=64)appPlayerPages.remove(appPlayerPages.keySet().iterator().next());appPlayerPages.put(token,page);
@@ -8616,6 +8642,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         Player online=Bukkit.getPlayer(p.uuid);
         Map<String,Object> row=appMap("id",p.uuid.toString(),"name",p.name,"online",online!=null,"client",p.clientPlatform,"device",p.bedrockDeviceModel,"brand",p.javaClientBrandValue(),"version",p.clientVersion,"firstSeen",p.firstSeen,"lastSeen",p.lastSeen,"points",p.simplexPoints(),"warnings",p.warnings.size(),"ban",p.internalBanActive(System.currentTimeMillis()),"mute",p.internalMuteActive(System.currentTimeMillis()));
         if(detail){row.put("deviceCount",p.devices.size());row.put("altCount",altDetection==null||altDetection.matchCache==null?null:altDetection.matchCache.counts.getOrDefault(p.uuid,0));row.put("vpnWhitelisted",vpnProtection!=null&&vpnProtection.isWhitelisted(p.uuid,p.name));row.put("logoutLocation",appLocation(p.logoutLocation));row.put("lastLocation",appLocation(p.lastLocation));row.put("network",profileNetwork(p));row.put("notes",new ArrayList<>(p.notes));row.put("warningEntries",new ArrayList<>(p.warnings));row.put("previousNames",new ArrayList<>(p.previousNames));row.put("rights",Arrays.stream(powerRights()).map(r->appMap("id",r,"blocked",p.blockedRightsSet().contains(r),"until",p.temporaryBlockedRightsMap().getOrDefault(r,0L))).toList());
+            ServerStatistics.Profile stats=p.statisticsSnapshot();row.put("activity",appMap("playMillis",stats.play(),"afkMillis",stats.afk(),"sessions",stats.sessions(),"devices",stats.devices()));
+            if(adminAccess!=null){Map<String,Boolean> lp=luckPerms==null?Map.of():luckPerms.permissions.getOrDefault(p.uuid,Map.of());row.put("staff",adminAccess.hasAccess(p.uuid,online,lp)?adminAccess.roleLabel(p.uuid):"");}
             if(online!=null){List<Object> preview=new ArrayList<>();int occupied=0;for(org.bukkit.inventory.ItemStack item:online.getInventory().getStorageContents())if(item!=null&&!item.getType().isAir()){occupied++;if(preview.size()<6)preview.add(appMap("id",String.valueOf(occupied),"name",item.getType().name().toLowerCase(Locale.ROOT).replace('_',' '),"amount",item.getAmount()));}row.put("inventoryPreview",appMap("occupied",occupied,"items",preview));Location loc=online.getLocation();row.put("live",appMap("health",online.getHealth(),"maxHealth",online.getMaxHealth(),"food",online.getFoodLevel(),"saturation",online.getSaturation(),"level",online.getLevel(),"exp",online.getExp(),"gamemode",online.getGameMode().name().toLowerCase(Locale.ROOT),"invulnerable",online.isInvulnerable(),"allowFlight",online.getAllowFlight(),"world",loc.getWorld()==null?"":loc.getWorld().getName(),"x",loc.getX(),"y",loc.getY(),"z",loc.getZ()));}
         }return row;
     }

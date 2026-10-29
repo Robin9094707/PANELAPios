@@ -8,8 +8,17 @@ enum RequestFailure {
 }
 
 enum SuitePlayerFilter: String, CaseIterable, Identifiable {
-    case all = "Alle", online = "Online", recent = "Zuletzt online"
+    case all = "Alle", online = "Online", recent = "Zuletzt online", flagged = "Auffällig", new = "Neu"
     var id: String { rawValue }
+    /// Segmented choices understood by every suite version.
+    static let primary: [SuitePlayerFilter] = [.all, .online, .recent]
+    /// Server-side filters added with Admin Suite 9.3.0 (players-filters-v3).
+    static let extended: [SuitePlayerFilter] = [.flagged, .new]
+    var parameter: String { switch self { case .all: return "all"; case .online: return "online"; case .recent: return "recent"; case .flagged: return "flagged"; case .new: return "new" } }
+    var symbol: String { switch self { case .all: return "person.3"; case .online: return "dot.radiowaves.left.and.right"; case .recent: return "clock"; case .flagged: return "exclamationmark.triangle.fill"; case .new: return "sparkles" } }
+    var sectionTitle: String { switch self { case .recent: return "Offline · zuletzt gesehen zuerst"; case .flagged: return "Bann, Stummschaltung oder Warnung"; case .new: return "Neu in den letzten 7 Tagen"; default: return rawValue } }
+    /// Local presence check; server-only filters are already applied upstream.
+    func includes(_ row: JSON) -> Bool { switch self { case .online: return row["online"].bool; case .recent: return !row["online"].bool; default: return true } }
 }
 
 enum SuitePlayerPresentation {
@@ -22,9 +31,10 @@ enum SuitePlayerPresentation {
         return Date(timeIntervalSince1970: value.double / 1000)
     }
     static func sorted(_ rows: [JSON], filter: SuitePlayerFilter) -> [JSON] {
-        let selected = rows.filter { filter == .all || (filter == .online ? $0["online"].bool : !$0["online"].bool) }
+        let selected = rows.filter { filter.includes($0) }
         return selected.sorted { a, b in
-            if filter == .all && a["online"].bool != b["online"].bool { return a["online"].bool }
+            if filter == .new && a["firstSeen"].double != b["firstSeen"].double { return a["firstSeen"].double > b["firstSeen"].double }
+            if (filter == .all || filter == .flagged) && a["online"].bool != b["online"].bool { return a["online"].bool }
             if !a["online"].bool && a["lastSeen"].double != b["lastSeen"].double { return a["lastSeen"].double > b["lastSeen"].double }
             return a["name"].string.localizedStandardCompare(b["name"].string) == .orderedAscending
         }
@@ -67,7 +77,7 @@ enum SuitePlayerPresentation {
         selected = key; busy = true; error = nil
         defer { if revision == stamp { busy = false } }
         do {
-            var params = ["q": q, "filter": filter == .online ? "online" : filter == .recent ? "recent" : "all", "offset": reset ? "0" : String(next), "limit": "50"]
+            var params = ["q": q, "filter": filter.parameter, "offset": reset ? "0" : String(next), "limit": "50"]
             if !reset && !snapshot.isEmpty { params["snapshot"] = snapshot }
             let response = try await suite.data("players", query: params)
             guard revision == stamp, !Task.isCancelled else { return }

@@ -4,15 +4,21 @@ struct SuitePlayerRow: View {
     let row: JSON
     var suite: SuiteAPI? = nil
     @State private var resolved: PlayerPlatform?
+    @ObservedObject private var bookmarks = SuitePlayerBookmarks.shared
     var platform: PlayerPlatform { resolved ?? PlayerPlatform.resolve(row) }
+    var favorite: Bool { suite.map { bookmarks.isFavorite($0.bookmarkScope, row["id"].string) } ?? false }
     var body: some View {
         HStack(spacing: 12) {
-            PlayerPlatformIcon(platform: platform)
+            SuitePlayerAvatar(row: row, size: 36, platformOverride: platform)
             VStack(alignment: .leading, spacing: 4) {
-                Text(row["name"].string).font(.headline).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 5) {
+                    Text(row["name"].string).font(.headline).fixedSize(horizontal: false, vertical: true)
+                    if favorite { Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow).accessibilityLabel("Favorit") }
+                }
                 Text(platform.title).font(.subheadline).foregroundStyle(.secondary)
                 if platform != .java { Text(SuitePlayerPresentation.device(row)).font(.caption).foregroundStyle(.secondary).lineLimit(nil).fixedSize(horizontal: false, vertical: true) }
                 if !row["online"].bool, let date = SuitePlayerPresentation.date(row["lastSeen"]) { Text("Zuletzt online: " + date.formatted(.relative(presentation: .named))).font(.caption).foregroundStyle(.secondary) }
+                SuitePlayerBadges(row: row)
             }
             Spacer(minLength: 4)
             Label(row["online"].bool ? "Online" : "Offline", systemImage: "circle.fill").labelStyle(.iconOnly).font(.caption2).foregroundStyle(row["online"].bool ? Color.green : .secondary.opacity(0.5))
@@ -25,6 +31,41 @@ struct SuitePlayerRow: View {
         }
     }
 }
+/// Prepared suite action opened from swipe actions or the profile action bar.
+struct SuiteQuickAction: Identifiable {
+    let id = UUID()
+    let action: SuiteAction
+    let preset: [String: JSON]
+    var title: String
+}
+struct SuiteQuickActionSheet: View {
+    let suite: SuiteAPI
+    let item: SuiteQuickAction
+    var done: () -> Void
+    var body: some View {
+        NavigationStack { SuiteActionView(suite: suite, action: item.action, preset: item.preset).navigationTitle(item.title).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { done() } } } }
+    }
+}
+enum SuitePlayerQuickActions {
+    /// Builds the moderation shortcuts that the connected suite actually offers.
+    static func make(_ actions: [SuiteAction], player: String, row: JSON) -> [(title: String, symbol: String, role: ButtonRole?, item: SuiteQuickAction)] {
+        var result: [(title: String, symbol: String, role: ButtonRole?, item: SuiteQuickAction)] = []
+        func add(_ id: String, _ title: String, _ symbol: String, _ preset: [String: JSON], role: ButtonRole? = nil) {
+            guard let action = actions.first(where: { $0.id == id }) else { return }
+            var values = preset; values["player"] = .string(player)
+            result.append((title, symbol, role, SuiteQuickAction(action: action, preset: values, title: title)))
+        }
+        add("player.message", "Nachricht", "envelope.fill", [:])
+        if row["online"].bool { add("player.punish", "Kicken", "rectangle.portrait.and.arrow.right", ["type": .string("kick")], role: .destructive) }
+        add("player.punish", "Verwarnen", "exclamationmark.triangle.fill", ["type": .string("warn")])
+        if row["mute"].bool { add("player.punish", "Entmuten", "speaker.wave.2.fill", ["type": .string("unmute")]) }
+        else { add("player.punish", "Zeitweise muten", "speaker.slash.fill", ["type": .string("tempmute")]) }
+        if row["ban"].bool { add("player.punish", "Entbannen", "lock.open.fill", ["type": .string("unban")]) }
+        else { add("player.punish", "Zeitbann", "clock.badge.xmark", ["type": .string("tempban")], role: .destructive); add("player.punish", "Bannen", "hand.raised.fill", ["type": .string("ban")], role: .destructive) }
+        add("player.notes", "Notiz", "note.text.badge.plus", ["operation": .string("add")])
+        return result
+    }
+}
 struct SuitePlayersView: View {
     let suite: SuiteAPI
     let panel: PanelAPI
@@ -32,25 +73,38 @@ struct SuitePlayersView: View {
     let actions: [SuiteAction]
     var initialFilter: SuitePlayerFilter = .all
     @ObservedObject private var directory: SuiteDirectory
+    @ObservedObject private var bookmarks = SuitePlayerBookmarks.shared
     @State private var search = ""
     @State private var lastSelection = ""
     @State private var filter: SuitePlayerFilter
+    @State private var quick: SuiteQuickAction?
     init(suite: SuiteAPI, panel: PanelAPI, server: Server, actions: [SuiteAction], initialFilter: SuitePlayerFilter = .all) {
-        self.suite = suite; self.panel = panel; self.server = server; self.actions = actions; self.initialFilter = initialFilter
-        _filter = State(initialValue: initialFilter); _directory = ObservedObject(wrappedValue: suite.playerDirectory)
+        self.suite = suite; self.panel = panel; self.server = server; self.actions = actions
+        // Older suites reject the 9.3.0 filters; fall back to the full list instead of failing.
+        let supported = SuitePlayerFilter.primary.contains(initialFilter) || suite.features.contains("players-filters-v3")
+        self.initialFilter = supported ? initialFilter : .all
+        _filter = State(initialValue: supported ? initialFilter : .all); _directory = ObservedObject(wrappedValue: suite.playerDirectory)
     }
-    var visible: [JSON] { directory.rows.filter { filter == .all || (filter == .online ? $0["online"].bool : !$0["online"].bool) } }
+    var visible: [JSON] { directory.rows.filter { filter.includes($0) } }
+    var favorites: [SuitePlayerBookmarks.Entry] { bookmarks.favorites(suite.bookmarkScope) }
     var body: some View {
         List {
             Section {
-                Picker("Spieler anzeigen", selection: $filter) { ForEach(SuitePlayerFilter.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
+                Picker("Spieler anzeigen", selection: $filter) { ForEach(SuitePlayerFilter.primary) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
+                if suite.features.contains("players-filters-v3") { extendedFilters }
                 LabeledContent("Gefundene Profile", value: String(directory.total))
-                Text("Gezielte Suche · 50 Profile pro Seite. Bereits geladene Listen bleiben beim Zurückgehen erhalten.").font(.footnote).foregroundStyle(.secondary)
+                Text("Gezielte Suche · 50 Profile pro Seite. Wische über einen Spieler für Schnellaktionen.").font(.footnote).foregroundStyle(.secondary)
             }
-            Section(filter == .recent ? "Offline · zuletzt gesehen zuerst" : filter.rawValue) {
-                ForEach(visible, id: \.["id"].string) { row in
-                    NavigationLink { SuitePlayerView(suite: suite, panel: panel, server: server, player: row["id"].string, actions: actions, initialProfile: row) } label: { SuitePlayerRow(row: row, suite: suite) }
+            if search.isEmpty && !favorites.isEmpty && filter == .all {
+                Section("Favoriten") {
+                    ForEach(favorites) { entry in
+                        NavigationLink { SuitePlayerView(suite: suite, panel: panel, server: server, player: entry.id, actions: actions) } label: { Label(entry.name, systemImage: "star.fill").labelStyle(SuiteFavoriteLabelStyle()) }
+                            .swipeActions { Button("Entfernen", systemImage: "star.slash") { bookmarks.toggleFavorite(suite.bookmarkScope, id: entry.id, name: entry.name) } }
+                    }
                 }
+            }
+            Section(filter.sectionTitle) {
+                ForEach(visible, id: \.["id"].string) { row in playerRow(row) }
                 if directory.busy { ProgressView("Spieler laden …") }
                 if visible.isEmpty && !directory.busy { ContentUnavailableView("Keine Spieler gefunden", systemImage: "person.crop.circle.badge.questionmark", description: Text("Suche nach einem Namen oder wechsle den Filter.")) }
                 if directory.next >= 0 && !directory.busy { Button("Weitere Spieler laden") { Task { await load(reset: false) } } }
@@ -58,8 +112,44 @@ struct SuitePlayersView: View {
         }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Spieler").searchable(text: $search, prompt: "Name oder UUID").textInputAutocapitalization(.never).autocorrectionDisabled()
             .task(id: filter.rawValue + "|" + search) { do { if !search.isEmpty { try await Task.sleep(for: .milliseconds(300)) }; try Task.checkCancellation(); let selection = filter.rawValue + "|" + search; let freshSearch = !search.isEmpty && selection != lastSelection; lastSelection = selection; await load(reset: true, force: freshSearch) } catch {} }
             .refreshable { await load(reset: true, force: true) }.toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Neu laden", systemImage: "arrow.clockwise") { Task { await load(reset: true, force: true) } }.disabled(directory.busy) } }.errorAlert($directory.error)
+            .sheet(item: $quick, onDismiss: { Task { await load(reset: true, force: true) } }) { item in SuiteQuickActionSheet(suite: suite, item: item) { quick = nil } }
+    }
+    func playerRow(_ row: JSON) -> some View {
+        let quickActions = SuitePlayerQuickActions.make(actions, player: row["id"].string, row: row)
+        let swipe = quickActions.filter { ["Nachricht", "Kicken", "Verwarnen"].contains($0.title) }
+        let favorite = bookmarks.isFavorite(suite.bookmarkScope, row["id"].string)
+        return NavigationLink { SuitePlayerView(suite: suite, panel: panel, server: server, player: row["id"].string, actions: actions, initialProfile: row) } label: { SuitePlayerRow(row: row, suite: suite) }
+            .swipeActions(edge: .leading) {
+                Button(favorite ? "Favorit entfernen" : "Favorit", systemImage: favorite ? "star.slash" : "star.fill") { bookmarks.toggleFavorite(suite.bookmarkScope, id: row["id"].string, name: row["name"].string) }.tint(.yellow)
+            }
+            .swipeActions(edge: .trailing) {
+                ForEach(Array(swipe.enumerated()), id: \.offset) { _, entry in
+                    Button(entry.title, systemImage: entry.symbol) { quick = entry.item }.tint(Self.swipeTint(entry.title))
+                }
+            }
+            .contextMenu {
+                Button("Spielername kopieren", systemImage: "doc.on.doc") { Clipboard.copy(row["name"].string) }
+                Button("UUID kopieren", systemImage: "number") { Clipboard.copy(row["id"].string) }
+                ForEach(Array(quickActions.enumerated()), id: \.offset) { _, entry in Button(entry.title, systemImage: entry.symbol, role: entry.role) { quick = entry.item } }
+            }
+    }
+    static func swipeTint(_ title: String) -> Color { switch title { case "Kicken": return .red; case "Verwarnen": return .orange; default: return .blue } }
+    var extendedFilters: some View {
+        HStack(spacing: 8) {
+            ForEach(SuitePlayerFilter.extended) { option in
+                let selected = filter == option
+                Button { filter = selected ? .all : option } label: {
+                    Label(option.rawValue, systemImage: option.symbol).font(.subheadline.weight(.medium)).padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(selected ? Color.panelAccent.opacity(0.22) : Color.secondary.opacity(0.10), in: Capsule())
+                }.buttonStyle(.plain).accessibilityIdentifier("player-filter-" + option.parameter).accessibilityAddTraits(selected ? .isSelected : [])
+            }
+            Spacer()
+        }
     }
     func load(reset: Bool, force: Bool = false) async { await directory.load(suite: suite, query: search, filter: filter, reset: reset, force: force) }
+}
+struct SuiteFavoriteLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View { HStack(spacing: 10) { configuration.icon.foregroundStyle(.yellow); configuration.title } }
 }
 struct SuitePlayerView: View {
     let suite: SuiteAPI
@@ -74,13 +164,24 @@ struct SuitePlayerView: View {
     @State private var vpnSheet = false
     @State private var updated: Date?
     @State private var resolved: PlayerPlatform?
+    @State private var quick: SuiteQuickAction?
+    @ObservedObject private var bookmarks = SuitePlayerBookmarks.shared
     var current: JSON { profile == .null ? initialProfile : profile }
+    var favorite: Bool { bookmarks.isFavorite(suite.bookmarkScope, player) }
     var live: JSON { current["live"] }
     var name: String { current["name"].string.isEmpty ? player : current["name"].string }
     var body: some View {
         List {
             Section {
-                HStack(spacing: 14) { PlayerPlatformIcon(platform: resolved ?? PlayerPlatform.resolve(current), size: 38); VStack(alignment: .leading) { Text(name).font(.title2.bold()).textSelection(.enabled); Label(current["online"].bool ? "Online" : "Offline", systemImage: "circle.fill").font(.caption).foregroundStyle(current["online"].bool ? .green : .secondary) } }
+                HStack(spacing: 14) {
+                    SuitePlayerAvatar(row: current, size: 56, platformOverride: resolved ?? PlayerPlatform.resolve(current))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(name).font(.title2.bold()).textSelection(.enabled)
+                        Label(current["online"].bool ? "Online" : "Offline", systemImage: "circle.fill").font(.caption).foregroundStyle(current["online"].bool ? .green : .secondary)
+                        if !current["staff"].string.isEmpty { Label(current["staff"].string, systemImage: "person.badge.shield.checkmark.fill").font(.caption).foregroundStyle(Color.panelAccent) }
+                        SuitePlayerBadges(row: current)
+                    }
+                }.padding(.vertical, 4)
                 CopyButton(text: name, title: "Spielername kopieren")
                 CopyButton(text: player, title: "UUID kopieren")
                 LabeledContent("Client", value: current["client"].string)
@@ -92,6 +193,7 @@ struct SuitePlayerView: View {
                 LabeledContent("Simplex Points", value: current["points"].string)
                 LabeledContent("Warnungen", value: current["warnings"].string)
             }
+            quickActionSection
             Section("Inventar & Speicherstand") {
                 if current["inventoryPreview"] != .null {
                     LabeledContent("Belegte Inventarplätze", value: current["inventoryPreview"]["occupied"].string + " / 36")
@@ -133,8 +235,7 @@ struct SuitePlayerView: View {
                     NavigationLink { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player)]) } label: { Label("Ultrabann", systemImage: "shield.slash.fill").foregroundStyle(.red) }.accessibilityIdentifier("player-ultraban")
                 }
                 if let action = actions.first(where: { $0.id == "player.punish" }) {
-                    NavigationLink { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player), "type": .string("ban")]) } label: { Label("Bannen / weitere Strafen", systemImage: "hand.raised.fill") }
-                    if current["online"].bool { NavigationLink { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player), "type": .string("kick")]) } label: { Label("Kicken", systemImage: "rectangle.portrait.and.arrow.right") } }
+                    NavigationLink { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player)]) } label: { Label("Alle Strafen & Warnungen", systemImage: "hand.raised.fill") }
                 }
             }
             if live != .null {
@@ -150,6 +251,7 @@ struct SuitePlayerView: View {
                     if let action = actions.first(where: { $0.id == "player.vitals" }) { NavigationLink("Live-Werte bearbeiten") { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player)]) } }
                 }
             }
+            moderationRecord
             Section { DisclosureGroup("Spielerakte & gespeicherte Daten") {
                 ForEach([("player.info", "Vollständige Spielerakte"), ("player.identity", "Identität & Ultrabann"), ("player.history", "Aktions- und Chatverlauf")], id: \.0) { route, title in NavigationLink(title) { SuiteReadView(suite: suite, path: route, title: title, values: ["player": .string(player), "category": .string("all")]) } }
             }
@@ -164,9 +266,50 @@ struct SuitePlayerView: View {
                 Text("Live-Werte stammen direkt aus der Suite. NBT-Dateien sind ein separater Speicherstand. Mit Admin Suite 9 können sie bei laufendem Server gespeichert werden, wenn der Spieler offline ist.").font(.footnote).foregroundStyle(.secondary)
             }
         }.panelScreen().navigationTitle(name).navigationBarTitleDisplayMode(.inline).task(id: automatic) { await load(); for _ in 0..<12 { guard current["network"]["pending"].bool && !Task.isCancelled else { break }; do { try await Task.sleep(for: .seconds(2)) } catch { return }; await load() }; while automatic && !Task.isCancelled { do { try await Task.sleep(for: .seconds(15)) } catch { return }; await load() } }.refreshable { await load() }.errorAlert($error)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(favorite ? "Favorit entfernen" : "Als Favorit markieren", systemImage: favorite ? "star.fill" : "star") { bookmarks.toggleFavorite(suite.bookmarkScope, id: player, name: name) }.tint(.yellow).accessibilityIdentifier("player-favorite") } }
+            .sheet(item: $quick, onDismiss: { Task { await load() } }) { item in SuiteQuickActionSheet(suite: suite, item: item) { quick = nil } }
             .sheet(isPresented: $vpnSheet, onDismiss: { Task { await load() } }) { NavigationStack { SuiteActionView(suite: suite, action: .make("vpn.whitelist", "VPN-Ausnahme ändern"), preset: ["player": .string(player), "allowed": .string(current["vpnWhitelisted"].bool ? "false" : "true")]) } }
     }
-    func load() async { do { profile = try await suite.data("profile", query: ["player": player]); updated = Date()
+    @ViewBuilder var quickActionSection: some View {
+        let quickActions = SuitePlayerQuickActions.make(actions, player: player, row: current)
+        if !quickActions.isEmpty {
+            Section {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(quickActions.enumerated()), id: \.offset) { _, entry in
+                            Button { quick = entry.item } label: {
+                                VStack(spacing: 6) { Image(systemName: entry.symbol).font(.title3); Text(entry.title).font(.caption.weight(.medium)).lineLimit(1) }
+                                    .frame(minWidth: 72).padding(.vertical, 10).padding(.horizontal, 8)
+                                    .background((entry.role != nil ? Color.red : Color.panelAccent).opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                                    .foregroundStyle(entry.role != nil ? Color.red : Color.panelAccent)
+                            }.buttonStyle(.plain).accessibilityIdentifier("player-quick-" + entry.title)
+                        }
+                    }.padding(.vertical, 2)
+                }
+            } header: { Text("Moderation") } footer: { Text("Jede Aktion wird vor der Ausführung von der Suite geprüft und muss bestätigt werden.") }
+        }
+    }
+    @ViewBuilder var moderationRecord: some View {
+        let warnings = current["warningEntries"].array, notes = current["notes"].array, names = current["previousNames"].array, activity = current["activity"]
+        if !warnings.isEmpty || !notes.isEmpty || !names.isEmpty || activity != .null {
+            Section("Moderationsakte") {
+                if activity != .null {
+                    LabeledContent("Spielzeit", value: Self.duration(activity["playMillis"].double))
+                    LabeledContent("Sitzungen", value: activity["sessions"].string)
+                    if activity["afkMillis"].double > 0 { LabeledContent("Davon AFK", value: Self.duration(activity["afkMillis"].double)) }
+                }
+                if let first = SuitePlayerPresentation.date(current["firstSeen"]) { LabeledContent("Erster Besuch") { Text(SuiteGermanTime.text(first)).font(.caption) } }
+                if !warnings.isEmpty { DisclosureGroup("Warnungen · \(warnings.count)") { ForEach(Array(warnings.enumerated()), id: \.offset) { _, entry in Text(cleanConsole(entry.string)).font(.subheadline).textSelection(.enabled) } } }
+                if !notes.isEmpty { DisclosureGroup("Teamnotizen · \(notes.count)") { ForEach(Array(notes.enumerated()), id: \.offset) { _, entry in Text(cleanConsole(entry.string)).font(.subheadline).textSelection(.enabled) } } }
+                if !names.isEmpty { DisclosureGroup("Frühere Namen · \(names.count)") { ForEach(Array(names.enumerated()), id: \.offset) { _, entry in Text(entry.string).font(.subheadline).textSelection(.enabled) } } }
+            }
+        }
+    }
+    static func duration(_ millis: Double) -> String {
+        guard millis > 0 else { return "–" }
+        return Duration.milliseconds(millis).formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 2))
+    }
+    func load() async { do { profile = try await suite.data("profile", query: ["player": player]); updated = Date(); bookmarks.visited(suite.bookmarkScope, id: player, name: profile["name"].string)
         resolved = nil
         if PlayerPlatform.resolve(profile) == .unknown, profile["client"].string.uppercased() == "BEDROCK" { resolved = await suite.platforms.platform(player, suite: suite) } } catch { if !Task.isCancelled { self.error = error.localizedDescription } } }
 }

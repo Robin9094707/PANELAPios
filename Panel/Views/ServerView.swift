@@ -48,7 +48,7 @@ struct ServerView: View {
             Tab("Konsole", systemImage: "terminal", value: 1) { AccessBoundary(access: api.access, server: server.id, permission: "websocket.connect") { console } }
             Tab("Dateien", systemImage: "folder", value: 2) { AccessBoundary(access: api.access, server: server.id, permission: "file.read") { FilesView(api: api, server: server, root: initialFolder ?? "/") } }
             if suite.configured {
-                Tab("Statistiken", systemImage: "chart.bar.xaxis", value: 5) { SuiteStatisticsView(model: suite, live: live) }
+                Tab("Admin", systemImage: "shield.lefthalf.filled", value: 5) { SuiteAdminCenterView(model: suite, live: live) }
             }
             Tab("Mehr", systemImage: "ellipsis", value: 4) {
                 List {
@@ -160,7 +160,7 @@ struct ServerView: View {
         }
     }
     @ViewBuilder var playersSection: some View {
-                if suite.configured { SuiteDashboardCard(model: suite) }
+                if suite.configured { SuiteDashboardCard(model: suite, live: live) }
                 if workspace.isMinecraft(api, server) {
                     if !suite.configured { PlayersCard(live: live, api: api, server: server, suite: suite) }
                     TPSCard(live: live, api: api, server: server)
