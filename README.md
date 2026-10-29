@@ -1,4 +1,8 @@
-## Aktuelles Update: Panel 3.1.0 / Admin Suite 9.4.0
+## Aktuelles Update: Panel 3.2.0 / Admin Suite 9.5.0
+
+Bilder und Dateien in Tickets, Erwähnen, Bark je Ticket-Priorität, Warnungen verwerfen, schnellere Statistiken und GitHub als Update-Quelle. [Update 3.2.0](UPDATE-3.2.0.md) · [Suite 9.5.0](Companion/AdminSuite/UPDATE-9.5.0.md).
+
+# Panel 3.1.0 / Admin Suite 9.4.0
 
 Support-Tickets für Minecraft, Discord und die App (mit Diagnose und Bark), dauerhafter Serverchat, Geyser-/Floodgate-Updates und eine Plugin-Zentrale per Puzzleteil auf der Serverseite. [Update 3.1.0](UPDATE-3.1.0.md) · [Suite 9.4.0](Companion/AdminSuite/UPDATE-9.4.0.md).
 

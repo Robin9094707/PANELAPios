@@ -178,21 +178,68 @@ final class TicketDiscord {
         String content=str(message.get("content")).trim();if(content.startsWith("//"))return true;
         String userId=str(author.get("id")),name=display(member,author);String text=RelayText.fromDiscord(message,true);if(text.isBlank())return true;
         try{
-            if(bot.ticketStaff(member,userId,staffRoles())&&!userId.equals(t.discordUser))manager().staffReply(t.id,name,userId,"discord",text,true);
-            else if(userId.equals(t.discordUser)||linkedOwner(userId,t))manager().playerReply(t.id,name,userId,"discord",text,true);
+            TicketStore.Message m=null;
+            if(bot.ticketStaff(member,userId,staffRoles())&&!userId.equals(t.discordUser))m=manager().staffReply(t.id,name,userId,"discord",text,true);
+            else if(userId.equals(t.discordUser)||linkedOwner(userId,t))m=manager().playerReply(t.id,name,userId,"discord",text,true);
+            if(m!=null&&message.get("attachments") instanceof List<?> files&&!files.isEmpty()){long ticket=t.id,messageId=m.id();bot.ticketJob(()->download(ticket,messageId,files));}
         }catch(IllegalArgumentException ignored){}
         return true;
     }
+    /** Copies Discord attachments (max 4, 8 MiB each) into the ticket so the app can show them after Discord's CDN links expire. */
+    private void download(long ticket,long message,List<?> files){
+        List<Map<String,Object>> stored=new ArrayList<>();
+        for(Object raw:files){
+            if(stored.size()>=4||!(raw instanceof Map<?,?> a))continue;
+            String url=str(a.get("url")),name=str(a.get("filename")),type=str(a.get("content_type"));long size=a.get("size") instanceof Number n?n.longValue():0;
+            if(size<=0||size>TicketStore.MAX_ATTACHMENT)continue;
+            try{
+                java.net.URI uri=java.net.URI.create(url);String host=uri.getHost()==null?"":uri.getHost();
+                if(!"https".equals(uri.getScheme())||!(host.equals("cdn.discordapp.com")||host.equals("media.discordapp.net")))continue;
+                byte[] data=bot.ticketDownload(uri,TicketStore.MAX_ATTACHMENT);
+                stored.add(manager().store.storeAttachment(ticket,name,type.split(";")[0].trim().toLowerCase(Locale.ROOT),data));
+            }catch(Exception e){lastError="Anhang "+name+": "+e.getClass().getSimpleName();}
+        }
+        if(!stored.isEmpty())try{manager().store.attach(ticket,message,stored);}catch(IllegalArgumentException ignored){}
+    }
+    /** Keeps line breaks and simple Markdown; neutralises mentions. */
+    static String body(String text,int max){String value=text==null?"":text.replace("\r","").replace("@","@\u200b");return TicketStore.clip(value,max);}
     void openedAsync(long id){bot.ticketJob(()->{TicketStore.Ticket t=manager().store.get(id);if(t!=null&&t.channel.isBlank()&&ready())createChannel(t);});}
-    void forwardAsync(long id,TicketStore.Message m){bot.ticketJob(()->{
+    void forwardAsync(long id,TicketStore.Message m){forwardAsync(id,m,false);}
+    @SuppressWarnings("unchecked") void forwardAsync(long id,TicketStore.Message m,boolean mention){bot.ticketJob(()->{
         TicketStore.Ticket t=manager().store.get(id);if(t==null||!ready())return;
         String channel=t.channel.isBlank()?createChannel(t):t.channel;if(channel.isBlank())return;
         boolean staff=m.role().equals("staff");
         String label=staff?("🛡️ "+m.author()+" · Team"+(m.source().equals("app")?" (App)":" (Minecraft)")):("💬 "+m.author()+" · "+(m.source().equals("discord")?"Discord":"Minecraft"));
-        Map<String,Object> embed=mapOf("author",mapOf("name",TicketStore.clip(label,250)),"description",RelayText.discord(m.text(),3900),"color",staff?0x5865F2:0x8B5CF6,"timestamp",java.time.Instant.ofEpochMilli(m.at()).toString());
+        Map<String,Object> embed=mapOf("author",mapOf("name",TicketStore.clip(label,250)),"description",body(m.text(),3900),"color",staff?0x5865F2:0x8B5CF6,"timestamp",java.time.Instant.ofEpochMilli(m.at()).toString());
         if(!staff&&t.owner!=null)((Map<String,Object>)embed.get("author")).put("icon_url","https://mc-heads.net/avatar/"+t.owner+"/64");
         if(staff&&t.owner!=null&&!m.delivered())embed.put("footer",mapOf("text","Zustellung in Minecraft nach "+manager().deliveryDelay()+" s Online-Zeit"));
-        post(channel,mapOf("embeds",List.of(embed),"allowed_mentions",mapOf("parse",List.of())));
+        boolean ping=mention&&t.discordUser.matches("[0-9]{5,25}");
+        Map<String,Object> payload=mapOf("embeds",List.of(embed),"allowed_mentions",ping?mapOf("parse",List.of(),"users",List.of(t.discordUser)):mapOf("parse",List.of()));
+        if(ping)payload.put("content","<@"+t.discordUser+">");
+        if(m.attachments().isEmpty()){post(channel,payload);return;}
+        // Files go up as real Discord attachments; images are shown inline by Discord.
+        List<Object[]> files=new ArrayList<>();List<Object> meta=new ArrayList<>();
+        for(Map<String,Object> a:m.attachments()){
+            try{byte[] data=java.nio.file.Files.readAllBytes(manager().store.attachmentFile(id,str(a.get("id"))));String file=str(a.get("name")).replaceAll("[^A-Za-z0-9._-]","_");meta.add(mapOf("id",files.size(),"filename",file));files.add(new Object[]{file,str(a.get("type")),data});}
+            catch(Exception e){lastError="Anhang nicht lesbar: "+e.getClass().getSimpleName();}
+        }
+        payload.put("attachments",meta);
+        if(Boolean.TRUE.equals(m.attachments().get(0).get("image"))&&!files.isEmpty())embed.put("image",mapOf("url","attachment://"+files.get(0)[0]));
+        try{HttpResponse<String> r=bot.ticketMultipart("/channels/"+channel+"/messages",DiscordBotManager.Json.stringify(payload),files);if(r.statusCode()/100!=2)lastError="Anhang an Discord: HTTP "+r.statusCode()+" "+DiscordDiagnostics.detail(r.body(),"");}
+        catch(Exception e){lastError="Anhang an Discord: "+e.getClass().getSimpleName();}
+    });}
+    /** Deleted in the app: remove the thread/channel; if Discord refuses, archive/lock it instead. */
+    void deletedAsync(long id,String channel,String mode,String owner,String actor){bot.ticketJob(()->{
+        if(!bot.enabled()||!bot.configured()||!channel.matches("[0-9]{15,22}"))return;
+        try{
+            HttpResponse<String> r=bot.ticketHttp("DELETE","/channels/"+channel,null);
+            if(r.statusCode()/100!=2&&r.statusCode()!=404){
+                if(mode.equals("channel")){if(owner.matches("[0-9]{5,25}"))bot.ticketHttp("PUT","/channels/"+channel+"/permissions/"+owner,DiscordBotManager.Json.stringify(mapOf("type",1,"allow",Long.toString(VIEW|HISTORY),"deny",Long.toString(SEND))));}
+                else bot.ticketHttp("PATCH","/channels/"+channel,DiscordBotManager.Json.stringify(mapOf("archived",true,"locked",true)));
+                lastError="Ticket #"+id+": Discord-Thread/-Kanal nur geschlossen (Löschen: HTTP "+r.statusCode()+", Rechte „Threads/Kanäle verwalten“ prüfen)";
+            }
+        }catch(Exception e){lastError="Ticket #"+id+" löschen: "+e.getClass().getSimpleName();}
+        log(id,"🗑️ Ticket #"+id+" gelöscht von "+RelayText.discord(actor,64),0x99AAB5);
     });}
     void closedAsync(long id,String actor){bot.ticketJob(()->{
         TicketStore.Ticket t=manager().store.get(id);if(t==null||t.channel.isBlank()||!ready())return;
@@ -242,7 +289,7 @@ final class TicketDiscord {
             fields.add(mapOf("name","Thema / Topic","value",TicketManager.category(t.category,true),"inline",true));
             fields.add(mapOf("name","Priorität / Priority","value",(t.priority.equals("urgent")?"🚨 ":"")+TicketManager.priority(t.priority,true),"inline",true));
             fields.add(mapOf("name","Quelle / Source","value",t.source.equals("discord")?"Discord":t.source.equals("app")?"App":"Minecraft","inline",true));
-            Map<String,Object> embed=mapOf("title",TicketStore.clip("🎫 Ticket #"+t.id+" · "+RelayText.plain(t.subject,200),250),"description",first==null?"":RelayText.discord(first.text(),3500),"color",color(t.priority),"fields",fields,
+            Map<String,Object> embed=mapOf("title",TicketStore.clip("🎫 Ticket #"+t.id+" · "+RelayText.plain(t.subject,200),250),"description",first==null?"":body(first.text(),3500),"color",color(t.priority),"fields",fields,
                 "footer",mapOf("text","Antworten hier erreichen den Spieler auch im Spiel · Nachrichten mit // bleiben intern"),"timestamp",java.time.Instant.ofEpochMilli(t.created).toString());
             if(t.owner!=null)embed.put("thumbnail",mapOf("url","https://mc-heads.net/avatar/"+t.owner+"/128"));
             post(channel,mapOf("content",mention.toString().trim(),"allowed_mentions",mapOf("parse",List.of(),"roles",roles,"users",t.discordUser.matches("[0-9]{5,25}")?List.of(t.discordUser):List.of()),"embeds",List.of(embed),

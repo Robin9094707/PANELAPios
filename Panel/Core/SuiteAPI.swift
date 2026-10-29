@@ -70,11 +70,27 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
     }
     func request(_ path: String, method: String = "GET", query: [String: String] = [:], body: JSON? = nil) async throws -> JSON {
         if demo { guard method == "GET" else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }; return SuiteDemo.response(path, query: query) }
+        let data = try await transfer(path, method: method, query: query, body: try body.map { try JSONEncoder().encode($0) }, contentType: "application/json", limit: 8 * 1024 * 1024)
+        return try JSONDecoder().decode(JSON.self, from: data)
+    }
+    /// Binary GET (ticket attachments), bounded to 16 MiB.
+    func raw(_ path: String, query: [String: String] = [:]) async throws -> Data {
+        guard !demo else { throw PanelError(message: "Im Demomodus nicht verfügbar.") }
+        return try await transfer(path, method: "GET", query: query, body: nil, contentType: nil, limit: 16 * 1024 * 1024)
+    }
+    /// Binary POST (ticket attachments) with a JSON reply.
+    func upload(_ path: String, query: [String: String], data: Data, contentType: String) async throws -> JSON {
+        guard !demo else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }
+        return try JSONDecoder().decode(JSON.self, from: try await transfer(path, method: "POST", query: query, body: data, contentType: contentType, limit: 8 * 1024 * 1024))
+    }
+    private func transfer(_ path: String, method: String, query: [String: String], body: Data?, contentType: String?, limit: Int) async throws -> Data {
         guard !path.contains(".."), !path.contains("://"), !path.contains("?") else { throw PanelError(message: "Ungültiger Suite-Pfad.") }
         var c = URLComponents(url: try Self.endpoint(connection.endpoint).appendingPathComponent("v1").appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         c.queryItems = query.isEmpty ? nil : query.sorted(by: { $0.key < $1.key }).map { URLQueryItem(name: $0.key, value: $0.value) }
+        // "+" is literal in URLComponents but a space for the suite's form decoder.
+        c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         var request = URLRequest(url: c.url!); request.httpMethod = method; request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization"); request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let body { request.httpBody = try JSONEncoder().encode(body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        if let body { request.httpBody = body; request.setValue(contentType ?? "application/octet-stream", forHTTPHeaderField: "Content-Type") }
         let data: Data
         let response: URLResponse
         do {
@@ -88,8 +104,8 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
             throw error
         }
         try PanelAPI.validate(data, response: response)
-        guard data.count <= 8 * 1024 * 1024 else { throw PanelError(message: "Suite-Antwort zu groß.") }
-        return try JSONDecoder().decode(JSON.self, from: data)
+        guard data.count <= limit else { throw PanelError(message: "Suite-Antwort zu groß.") }
+        return data
     }
     func health() async throws -> JSON {
         let result = try await request("health")

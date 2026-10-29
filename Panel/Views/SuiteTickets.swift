@@ -1,4 +1,7 @@
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
+import UIKit
 
 /// Labels shared by the ticket list, detail and settings. Values match Admin Suite 9.4.0.
 enum SuiteTicketText {
@@ -143,39 +146,89 @@ struct SuiteTicketDetailView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var notice: String?
+    @State private var deleted = false
     @State private var confirmDelete = false
     @State private var confirmClose = false
+    @State private var confirmDiscard = false
+    @State private var confirmMention = false
+    @State private var mention = false
+    @State private var photos: [PhotosPickerItem] = []
+    @State private var drafts: [SuiteTicketDraft] = []
+    @State private var importing = false
+    @State private var preview: SuiteTicketPreview?
     var canManage: Bool { suite.scope == "full" || suite.scope == "manage" }
     var active: Bool { ticket["status"].string != "closed" }
+    var attachmentsSupported: Bool { suite.features.contains("tickets-v2") }
+    var waiting: [JSON] { ticket["items"].array.filter { $0["role"].string == "staff" && !$0["delivered"].bool } }
+    var canMention: Bool { attachmentsSupported && !ticket["discordUser"].string.isEmpty && !ticket["channel"].string.isEmpty }
     var body: some View {
+        Group {
+            if deleted { ContentUnavailableView("Ticket gelöscht", systemImage: "trash", description: Text("Ticket #\(id) wurde entfernt.")) }
+            else { content }
+        }.navigationTitle("Ticket #" + id).navigationBarTitleDisplayMode(.inline)
+    }
+    var content: some View {
         ScrollViewReader { proxy in
             List {
                 if ticket == .null { ProgressView("Ticket wird geladen …") }
                 else {
                     header
-                    Section("Verlauf") {
-                        ForEach(Array(ticket["items"].array.enumerated()), id: \.offset) { _, message in SuiteTicketBubble(message: message, deliveryDelay: ticket["deliveryDelay"].int, ownerOnline: ticket["ownerOnline"].bool).listRowSeparator(.hidden).id("m-" + message["id"].string) }
-                    }
-                    if canManage {
+                    if !waiting.isEmpty && canManage && attachmentsSupported {
                         Section {
-                            TextField(active ? "Antwort an " + ticket["ownerName"].string : "Antwort öffnet das Ticket wieder", text: $reply, axis: .vertical).lineLimit(2...8).accessibilityIdentifier("ticketReply")
-                            Button { Task { await send() } } label: { Label(busy ? "Senden …" : "Antwort senden", systemImage: "paperplane.fill") }.buttonStyle(.glassProminent).disabled(busy || reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            if let notice { Label(notice, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary) }
-                        } header: { Text("Antworten") } footer: { Text(deliveryHint).id("composer") }
-                    } else { Section { Text("Zum Antworten wird ein manage- oder full-App-Zugang benötigt.").font(.footnote).foregroundStyle(.secondary) } }
+                            Label(waiting.count == 1 ? "1 Antwort wartet auf den Spieler" : "\(waiting.count) Antworten warten auf den Spieler", systemImage: "clock.badge").font(.subheadline)
+                            Button("Zustellung im Spiel verwerfen", systemImage: "xmark.bin", role: .destructive) { confirmDiscard = true }
+                        } footer: { Text("Verworfene Antworten bleiben im Verlauf und auf Discord, werden dem Spieler im Spiel aber nicht mehr zugestellt.") }
+                    }
+                    Section("Verlauf") {
+                        ForEach(Array(ticket["items"].array.enumerated()), id: \.offset) { _, message in
+                            SuiteTicketBubble(message: message, ownerOnline: ticket["ownerOnline"].bool, suite: suite, ticket: id, preview: $preview)
+                                .listRowSeparator(.hidden).id("m-" + message["id"].string)
+                                .contextMenu {
+                                    Button("Text kopieren", systemImage: "doc.on.doc") { Clipboard.copy(message["text"].string) }
+                                    if canManage && attachmentsSupported && message["role"].string == "staff" && !message["delivered"].bool { Button("Zustellung verwerfen", systemImage: "xmark.bin", role: .destructive) { Task { await perform(["action": .string("discard"), "message": .string(message["id"].string)]) } } }
+                                }
+                        }
+                    }
+                    if canManage { composer } else { Section { Text("Zum Antworten wird ein manage- oder full-App-Zugang benötigt.").font(.footnote).foregroundStyle(.secondary) } }
                 }
-            }.panelScreen().navigationTitle("Ticket #" + id).navigationBarTitleDisplayMode(.inline).errorAlert($error)
+            }.panelScreen().errorAlert($error)
                 .toolbar { if canManage && ticket != .null { actionsMenu } }
                 .refreshable { await load() }
                 .task(id: scenePhase) {
                     guard scenePhase == .active else { return }
                     await load(); if let last = ticket["items"].array.last { proxy.scrollTo("m-" + last["id"].string, anchor: .bottom) }
-                    while !Task.isCancelled { do { try await Task.sleep(for: .seconds(5)) } catch { return }; await load() }
+                    while !Task.isCancelled && !deleted { do { try await Task.sleep(for: .seconds(5)) } catch { return }; await load() }
                 }
                 .onChange(of: ticket["items"].array.count) { old, new in if new > old, let last = ticket["items"].array.last { withAnimation { proxy.scrollTo("m-" + last["id"].string, anchor: .bottom) } } }
-                .confirmationDialog("Ticket endgültig löschen?", isPresented: $confirmDelete, titleVisibility: .visible) { Button("Löschen", role: .destructive) { Task { if await perform(["action": .string("delete")]) { dismiss() } } } } message: { Text("Das Ticket und sein Verlauf werden auf dem Server entfernt. Ein Discord-Thread bleibt bestehen.") }
+                .onChange(of: photos) { _, items in Task { await addPhotos(items) } }
+                .sheet(item: $preview) { SuiteTicketImageViewer(suite: suite, ticket: id, preview: $0) }
+                .sheet(isPresented: $importing) { FileImportPicker(multiple: true, retainSelection: true) { result in importing = false; if case .success(let urls) = result { addFiles(urls) } else if case .failure(let failure) = result { error = failure.localizedDescription } }.ignoresSafeArea() }
+                .confirmationDialog("Ticket endgültig löschen?", isPresented: $confirmDelete, titleVisibility: .visible) { Button("Löschen", role: .destructive) { Task { await delete() } } } message: { Text(active ? "Das Ticket ist noch offen. Es wird geschlossen und gelöscht; der Discord-Thread bzw. -Kanal wird entfernt oder – falls Discord das nicht erlaubt – geschlossen." : "Das Ticket und sein Verlauf werden entfernt; der Discord-Thread bzw. -Kanal wird entfernt oder geschlossen.") }
                 .confirmationDialog("Ticket schließen?", isPresented: $confirmClose, titleVisibility: .visible) { Button("Schließen", role: .destructive) { Task { await perform(["action": .string("close")]) } } } message: { Text("Der Spieler erhält einen Hinweis. Auf Discord wird der Ticket-Thread archiviert.") }
+                .confirmationDialog("Wartende Zustellungen verwerfen?", isPresented: $confirmDiscard, titleVisibility: .visible) { Button("Verwerfen", role: .destructive) { Task { await perform(["action": .string("discard"), "message": .string("0")]) } } } message: { Text("\(waiting.count) Antwort(en) werden dem Spieler im Spiel nicht mehr zugestellt.") }
+                .confirmationDialog("\(ticket["ownerName"].string) auf Discord erwähnen?", isPresented: $confirmMention, titleVisibility: .visible) { Button("Mit Erwähnung senden") { Task { await send(confirmed: true) } } } message: { Text("Der Bot schreibt @\(ticket["ownerName"].string) im Discord-Ticket an; der Spieler bekommt eine Discord-Benachrichtigung.") }
         }
+    }
+    var composer: some View {
+        Section {
+            TextField(active ? "Antwort an " + ticket["ownerName"].string : "Antwort öffnet das Ticket wieder", text: $reply, axis: .vertical).lineLimit(2...8).accessibilityIdentifier("ticketReply")
+            if !drafts.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) { ForEach(drafts) { draft in SuiteTicketDraftChip(draft: draft) { drafts.removeAll { $0.id == draft.id } } } }
+                }
+            }
+            if attachmentsSupported {
+                HStack(spacing: 10) {
+                    PhotosPicker(selection: $photos, maxSelectionCount: 4, matching: .images) { Label("Bilder", systemImage: "photo.on.rectangle") }.buttonStyle(.glass)
+                    Button("Datei", systemImage: "paperclip") { importing = true }.buttonStyle(.glass)
+                    Spacer()
+                }
+                if canMention { Toggle(isOn: $mention) { Label("\(ticket["ownerName"].string) auf Discord erwähnen", systemImage: "at") } }
+            }
+            Button { Task { await send(confirmed: false) } } label: { Label(busy ? "Senden …" : (drafts.isEmpty ? "Antwort senden" : "Senden (\(drafts.count) Anhang\(drafts.count == 1 ? "" : "e"))"), systemImage: "paperplane.fill") }
+                .buttonStyle(.glassProminent).disabled(busy || (reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && drafts.isEmpty))
+            if let notice { Label(notice, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary) }
+        } header: { Text("Antworten") } footer: { Text(deliveryHint + " **Fett**, *kursiv* und Zeilenumbrüche werden übernommen.") }
     }
     var deliveryHint: String {
         if ticket["owner"].string.isEmpty { return "Die Antwort erscheint im Discord-Ticket des Spielers." }
@@ -219,30 +272,230 @@ struct SuiteTicketDetailView: View {
             if suite.scope == "full" { Button("Löschen", systemImage: "trash", role: .destructive) { confirmDelete = true } }
         } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("Ticketaktionen")
     }
+    static func isMissing(_ error: Error) -> Bool { let text = error.localizedDescription.lowercased(); return text.contains("nicht gefunden") || text.contains("not found") }
     func load() async {
+        guard !deleted else { return }
         do { ticket = try await suite.data("ticket", query: ["id": id]) }
-        catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+        catch {
+            if RequestFailure.isCancellation(error) { return }
+            // Deleted elsewhere (Discord, another device): show a calm empty state instead of an alert.
+            if Self.isMissing(error) { deleted = true } else { self.error = error.localizedDescription }
+        }
     }
     @discardableResult func perform(_ values: [String: JSON]) async -> Bool {
         busy = true; defer { busy = false }
         var body = values; body["id"] = .string(id)
         do {
             let result = try await suite.request("tickets", method: "POST", body: .object(body))
+            if result["deleted"].bool { deleted = true; return true }
             if result["ticket"] != .null { ticket = result["ticket"] } else { await load() }
             notice = result["description"].string; Feedback.success(); return true
-        } catch { self.error = error.localizedDescription; return false }
+        } catch {
+            if Self.isMissing(error) { deleted = true; return false }
+            self.error = error.localizedDescription; return false
+        }
     }
-    func send() async {
-        let text = reply.trimmingCharacters(in: .whitespacesAndNewlines); guard !text.isEmpty else { return }
-        if await perform(["action": .string("reply"), "text": .string(text)]) { reply = "" }
+    func delete() async {
+        // Old suites (9.4.0) need the ticket closed first so Discord is archived before removal.
+        if active && !attachmentsSupported { guard await perform(["action": .string("close")]) else { return } }
+        if await perform(["action": .string("delete")]) || deleted { deleted = true; Feedback.success(); try? await Task.sleep(for: .milliseconds(700)); dismiss() }
+    }
+    func send(confirmed: Bool) async {
+        let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || !drafts.isEmpty else { return }
+        if mention && canMention && !confirmed { confirmMention = true; return }
+        if drafts.isEmpty {
+            if await perform(["action": .string("reply"), "text": .string(text), "mention": .bool(mention && canMention)]) { reply = ""; mention = false }
+            return
+        }
+        busy = true; defer { busy = false }
+        do {
+            for (index, draft) in drafts.enumerated() {
+                let result = try await suite.upload("tickets/upload", query: ["id": id, "name": draft.name, "text": index == 0 ? text : "", "mention": String(index == 0 && mention && canMention)], data: draft.data, contentType: draft.type)
+                if result["ticket"] != .null { ticket = result["ticket"] }
+            }
+            drafts = []; reply = ""; mention = false; notice = "Anhänge gesendet."; Feedback.success()
+        } catch { self.error = error.localizedDescription }
+    }
+    func addPhotos(_ items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { continue }
+            // Re-encode as JPEG: HEIC is not shown by Discord and very large photos exceed the 8 MiB limit.
+            let scaled = SuiteTicketDraft.downscale(image, maxPixel: 2400)
+            guard let jpeg = scaled.jpegData(compressionQuality: 0.82), jpeg.count <= 8 * 1024 * 1024 else { error = "Ein Bild ist zu groß."; continue }
+            drafts.append(SuiteTicketDraft(name: "bild-\(drafts.count + 1).jpg", type: "image/jpeg", data: jpeg, thumbnail: scaled))
+        }
+        photos = []; if drafts.count > 4 { drafts = Array(drafts.prefix(4)); notice = "Maximal 4 Anhänge pro Nachricht." }
+    }
+    func addFiles(_ urls: [URL]) {
+        for url in urls.prefix(max(0, 4 - drafts.count)) {
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            guard let data = try? Data(contentsOf: url), !data.isEmpty, data.count <= 8 * 1024 * 1024 else { error = "Dateien bis 8 MiB werden unterstützt."; continue }
+            let type = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+            drafts.append(SuiteTicketDraft(name: url.lastPathComponent, type: type, data: data, thumbnail: type.hasPrefix("image/") ? UIImage(data: data) : nil))
+        }
+    }
+}
+
+struct SuiteTicketDraft: Identifiable {
+    let id = UUID()
+    let name: String
+    let type: String
+    let data: Data
+    let thumbnail: UIImage?
+    static func downscale(_ image: UIImage, maxPixel: CGFloat) -> UIImage {
+        let largest = max(image.size.width, image.size.height) * image.scale
+        guard largest > maxPixel else { return image }
+        let factor = maxPixel / largest, size = CGSize(width: image.size.width * image.scale * factor, height: image.size.height * image.scale * factor)
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+    }
+}
+
+struct SuiteTicketDraftChip: View {
+    let draft: SuiteTicketDraft
+    let remove: () -> Void
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let image = draft.thumbnail { Image(uiImage: image).resizable().scaledToFill() }
+                else { VStack(spacing: 4) { Image(systemName: "doc.fill").font(.title2); Text(draft.name).font(.caption2).lineLimit(2) }.padding(6).foregroundStyle(.secondary) }
+            }.frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 12)).background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            Button(action: remove) { Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.6)) }.buttonStyle(.plain).offset(x: 6, y: -6).accessibilityLabel("Anhang entfernen")
+        }.padding(.top, 6)
+    }
+}
+
+/// Attachment bytes are cached in memory per suite and ticket; thumbnails reuse the full image.
+@MainActor final class SuiteAttachmentCache {
+    static let shared = SuiteAttachmentCache()
+    private let cache = NSCache<NSString, NSData>()
+    init() { cache.totalCostLimit = 64 * 1024 * 1024 }
+    func data(_ suite: SuiteAPI, ticket: String, id: String) async throws -> Data {
+        let key = (suite.bookmarkScope + "|" + ticket + "|" + id) as NSString
+        if let cached = cache.object(forKey: key) { return cached as Data }
+        let data = try await suite.raw("ticket-file", query: ["ticket": ticket, "id": id])
+        cache.setObject(data as NSData, forKey: key, cost: data.count); return data
+    }
+}
+
+struct SuiteTicketPreview: Identifiable { let id = UUID(); let images: [JSON]; let index: Int }
+
+struct SuiteTicketThumbnail: View {
+    let suite: SuiteAPI
+    let ticket: String
+    let attachment: JSON
+    @State private var image: UIImage?
+    @State private var failed = false
+    var body: some View {
+        ZStack {
+            if let image { Image(uiImage: image).resizable().scaledToFill() }
+            else if failed { Image(systemName: "photo.badge.exclamationmark").foregroundStyle(.secondary) }
+            else { ProgressView() }
+        }.frame(width: 110, height: 110).clipShape(RoundedRectangle(cornerRadius: 12)).background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            .task(id: attachment["id"].string) {
+                do { let data = try await SuiteAttachmentCache.shared.data(suite, ticket: ticket, id: attachment["id"].string); image = await Task.detached { UIImage(data: data).map { SuiteTicketDraft.downscale($0, maxPixel: 360) } }.value; failed = image == nil }
+                catch { failed = true }
+            }
+    }
+}
+
+struct SuiteTicketAttachments: View {
+    let suite: SuiteAPI
+    let ticket: String
+    let items: [JSON]
+    @Binding var preview: SuiteTicketPreview?
+    @State private var share: ShareItem?
+    @State private var loading: String?
+    var images: [JSON] { items.filter { $0["image"].bool } }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !images.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(images.enumerated()), id: \.offset) { index, item in
+                            Button { preview = SuiteTicketPreview(images: images, index: index) } label: { SuiteTicketThumbnail(suite: suite, ticket: ticket, attachment: item) }.buttonStyle(.plain).accessibilityLabel("Bild " + item["name"].string)
+                        }
+                    }
+                }
+            }
+            ForEach(items.filter { !$0["image"].bool }, id: \.["id"].string) { item in
+                Button { Task { await open(item) } } label: {
+                    HStack { Image(systemName: "doc.fill"); VStack(alignment: .leading) { Text(item["name"].string).font(.caption.weight(.semibold)).lineLimit(1); Text(bytes(item["size"].double)).font(.caption2).foregroundStyle(.secondary) }; Spacer(); if loading == item["id"].string { ProgressView() } else { Image(systemName: "square.and.arrow.down") } }
+                        .padding(8).background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                }.buttonStyle(.plain)
+            }
+        }.sheet(item: $share) { ShareSheet(url: $0.url) }
+    }
+    func open(_ item: JSON) async {
+        loading = item["id"].string; defer { loading = nil }
+        guard let data = try? await SuiteAttachmentCache.shared.data(suite, ticket: ticket, id: item["id"].string) else { return }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ticket-" + UUID().uuidString)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = item["name"].string.replacingOccurrences(of: "/", with: "_")
+        let url = folder.appendingPathComponent(name.isEmpty ? "datei" : name)
+        if (try? data.write(to: url)) != nil { share = ShareItem(url: url) }
+    }
+}
+
+struct SuiteTicketImageViewer: View {
+    let suite: SuiteAPI
+    let ticket: String
+    let preview: SuiteTicketPreview
+    @Environment(\.dismiss) private var dismiss
+    @State private var index = 0
+    @State private var loaded: [String: UIImage] = [:]
+    @State private var share: ShareItem?
+    var body: some View {
+        NavigationStack {
+            TabView(selection: $index) {
+                ForEach(Array(preview.images.enumerated()), id: \.offset) { offset, item in
+                    SuiteZoomableImage(image: loaded[item["id"].string]).tag(offset)
+                        .task { if loaded[item["id"].string] == nil, let data = try? await SuiteAttachmentCache.shared.data(suite, ticket: ticket, id: item["id"].string) { loaded[item["id"].string] = UIImage(data: data) } }
+                }
+            }.tabViewStyle(.page(indexDisplayMode: preview.images.count > 1 ? .always : .never)).background(.black)
+                .navigationTitle(preview.images.indices.contains(index) ? preview.images[index]["name"].string : "Bild").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
+                    ToolbarItem(placement: .topBarLeading) { Button("Teilen", systemImage: "square.and.arrow.up") { shareCurrent() }.disabled(!preview.images.indices.contains(index) || loaded[preview.images[index]["id"].string] == nil) }
+                }
+                .sheet(item: $share) { ShareSheet(url: $0.url) }
+        }.onAppear { index = preview.index }
+    }
+    func shareCurrent() {
+        let item = preview.images[index]
+        guard let image = loaded[item["id"].string], let data = image.jpegData(compressionQuality: 0.95) else { return }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ticket-\(ticket)-\(index + 1).jpg")
+        if (try? data.write(to: url)) != nil { share = ShareItem(url: url) }
+    }
+}
+
+struct SuiteZoomableImage: View {
+    let image: UIImage?
+    @State private var scale: CGFloat = 1
+    @GestureState private var pinch: CGFloat = 1
+    var body: some View {
+        ZStack {
+            Color.black
+            if let image {
+                Image(uiImage: image).resizable().scaledToFit().scaleEffect(scale * pinch)
+                    .gesture(MagnifyGesture().updating($pinch) { value, state, _ in state = value.magnification }.onEnded { value in scale = min(5, max(1, scale * value.magnification)) })
+                    .onTapGesture(count: 2) { withAnimation { scale = scale > 1 ? 1 : 2.5 } }
+            } else { ProgressView().tint(.white) }
+        }
     }
 }
 
 struct SuiteTicketBubble: View {
     let message: JSON
-    let deliveryDelay: Int
     let ownerOnline: Bool
+    var suite: SuiteAPI? = nil
+    var ticket = ""
+    @Binding var preview: SuiteTicketPreview?
     var role: String { message["role"].string }
+    /// Inline Markdown (bold, italic, links) with preserved line breaks; falls back to plain text.
+    var formatted: AttributedString { (try? AttributedString(markdown: message["text"].string, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(message["text"].string) }
     var body: some View {
         if role == "system" {
             Text(message["text"].string).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).multilineTextAlignment(.center)
@@ -254,10 +507,16 @@ struct SuiteTicketBubble: View {
                         Text(message["author"].string).font(.caption.weight(.semibold))
                         Text(role == "staff" ? "Team · " + SuiteTicketText.source(message["source"].string) : SuiteTicketText.source(message["source"].string)).font(.caption2).foregroundStyle(.secondary)
                     }
-                    Text(message["text"].string).textSelection(.enabled).padding(10).background(role == "staff" ? Color.panelAccent.opacity(0.18) : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                    if !(message["attachments"].array.isEmpty == false && message["text"].string.hasPrefix("📎 ")) {
+                        Text(formatted).textSelection(.enabled).padding(10).background(role == "staff" ? Color.panelAccent.opacity(0.18) : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                    }
+                    if let suite, !message["attachments"].array.isEmpty { SuiteTicketAttachments(suite: suite, ticket: ticket, items: message["attachments"].array, preview: $preview) }
                     HStack(spacing: 4) {
                         if let date = SuitePlayerPresentation.date(message["at"]) { Text(date, style: .time) }
-                        if role == "staff" { Image(systemName: message["delivered"].bool ? "checkmark.circle.fill" : "clock"); Text(message["delivered"].bool ? "zugestellt" : (ownerOnline ? "wird zugestellt" : "wartet auf Spieler")) }
+                        if role == "staff" {
+                            if message["discarded"].bool { Image(systemName: "xmark.bin"); Text("im Spiel verworfen") }
+                            else { Image(systemName: message["delivered"].bool ? "checkmark.circle.fill" : "clock"); Text(message["delivered"].bool ? "zugestellt" : (ownerOnline ? "wird zugestellt" : "wartet auf Spieler")) }
+                        }
                     }.font(.caption2).foregroundStyle(.secondary)
                 }
                 if role != "staff" { Spacer(minLength: 40) }

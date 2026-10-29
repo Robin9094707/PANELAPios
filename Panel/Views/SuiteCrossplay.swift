@@ -68,7 +68,28 @@ struct SuiteCrossplayCard: View {
     }
     func load() async {
         loading = true; defer { loading = false }
-        do { data = try await suite.data("crossplay"); error = nil } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+        do { data = await Self.complete(try await suite.data("crossplay")); error = nil } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+    }
+    /// If the server could not reach GeyserMC, the app asks download.geysermc.org itself and compares the server-reported SHA-256.
+    static func complete(_ value: JSON, client: MarketplaceClient = MarketplaceClient()) async -> JSON {
+        var envelope = value.object
+        var items: [JSON] = []
+        for row in value["items"].array {
+            var object = row.object
+            if row["installed"].bool, row["latestSha256"].string.isEmpty, !row["sha256"].string.isEmpty,
+               let build = try? await client.json("download.geysermc.org", "/v2/projects/" + row["id"].string + "/versions/latest/builds/latest") {
+                let latest = build["downloads"]["spigot"]["sha256"].string.lowercased()
+                if !latest.isEmpty {
+                    object["latestSha256"] = .string(latest); object["latestVersion"] = build["version"]; object["latestBuild"] = build["build"]
+                    object["upToDate"] = .bool(latest == row["sha256"].string.lowercased()); object["updateStaged"] = .bool(latest == row["stagedSha256"].string.lowercased())
+                    object["changes"] = .array(build["changes"].array.prefix(5).map { $0["summary"] })
+                    object["error"] = nil
+                }
+            }
+            items.append(.object(object))
+        }
+        envelope["items"] = .array(items)
+        return .object(envelope)
     }
 }
 

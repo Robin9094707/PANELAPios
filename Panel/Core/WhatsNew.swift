@@ -18,6 +18,14 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "3.2.0", title: "Simplex Panel 3.2", summary: "Bilder in Tickets, Benachrichtigungen je Dringlichkeit und deutlich schnellere Statistiken.", items: [
+            WhatsNewItem(symbol: "photo.on.rectangle.angled", title: "Bilder & Dateien in Tickets", detail: "Anhänge aus Discord erscheinen mit Vorschau im Ticket. Du kannst selbst Bilder und Dateien senden – sie landen direkt im Discord-Ticket."),
+            WhatsNewItem(symbol: "at", title: "Spieler erwähnen", detail: "Auf Wunsch erwähnt der Bot den Spieler im Discord-Ticket – nach deiner Bestätigung."),
+            WhatsNewItem(symbol: "bell.badge.fill", title: "Bark je Dringlichkeit", detail: "Niedrig still, Normal normal, Hoch als dringende Mitteilung, Notfall als kritischer Alarm – Ruhezeiten werden beachtet."),
+            WhatsNewItem(symbol: "xmark.bin.fill", title: "Aufräumen", detail: "Wartende Zustellungen verwerfen, Tickets direkt löschen (Discord-Thread inklusive) und Spielerwarnungen verwerfen."),
+            WhatsNewItem(symbol: "chart.bar.xaxis", title: "Schnellere Statistiken", detail: "Alle Profile in einer Anfrage und sofortige Anzeige des letzten Stands."),
+            WhatsNewItem(symbol: "arrow.triangle.2.circlepath", title: "Plugin-Updates", detail: "GitHub-Releases als Quelle, weniger erneutes Scannen und zuverlässiger Geyser-/Floodgate-Status.")
+        ]),
         WhatsNewRelease(version: "3.1.0", title: "Simplex Panel 3.1", summary: "Support-Tickets für Minecraft, Discord und die App, ein dauerhafter Serverchat und deutlich schlauere Plugin-Updates.", items: [
             WhatsNewItem(symbol: "ticket.fill", title: "Support-Tickets", detail: "Spieler öffnen Tickets mit /ticket (Java-Menüs, native Bedrock-Formulare) oder über das Discord-Panel. Du antwortest in der App, im Spiel oder auf Discord – Antworten warten, bis der Spieler online ist."),
             WhatsNewItem(symbol: "bell.and.waves.left.and.right.fill", title: "Bark für Tickets", detail: "Neue Tickets kommen per Bark, Notfall-Tickets außerhalb der Ruhezeit als kritischer Alarm."),

@@ -12,8 +12,11 @@ final class TicketStore {
     static final List<String> STATUSES=List.of("open","answered","closed");
     static final int MAX_TICKETS=5000,MAX_MESSAGES=300,MAX_TEXT=1500;
 
-    record Message(long id,String author,String authorId,String role,String source,String text,long at,boolean delivered) {
-        Map<String,Object> json(){return SimplexAdminSuite.appMap("id",id,"author",author,"authorId",authorId,"role",role,"source",source,"text",text,"at",at,"delivered",delivered);}
+    /** Attachments are metadata only ({id,name,type,size,image}); bytes live under files/<ticket>/<id>. */
+    record Message(long id,String author,String authorId,String role,String source,String text,long at,boolean delivered,boolean discarded,List<Map<String,Object>> attachments) {
+        Message(long id,String author,String authorId,String role,String source,String text,long at,boolean delivered){this(id,author,authorId,role,source,text,at,delivered,false,List.of());}
+        Message with(boolean delivered,boolean discarded,List<Map<String,Object>> attachments){return new Message(id,author,authorId,role,source,text,at,delivered,discarded,List.copyOf(attachments));}
+        Map<String,Object> json(){Map<String,Object> row=SimplexAdminSuite.appMap("id",id,"author",author,"authorId",authorId,"role",role,"source",source,"text",text,"at",at,"delivered",delivered);if(discarded)row.put("discarded",true);if(!attachments.isEmpty())row.put("attachments",new ArrayList<>(attachments));return row;}
     }
     static final class Ticket {
         long id,created,updated,closedAt,sequence;
@@ -69,10 +72,16 @@ final class TicketStore {
         t.priority=valid(PRIORITIES,str(m.get("priority")),"normal");t.status=valid(STATUSES,str(m.get("status")),"open");t.language=str(m.get("language")).equals("de")?"de":"en";
         t.subject=str(m.get("subject"));t.claimedBy=str(m.get("claimedBy"));t.closedBy=str(m.get("closedBy"));t.channel=str(m.get("channel"));t.channelMode=str(m.get("channelMode"));
         if(m.get("items") instanceof List<?> list)for(Object item:list)if(item instanceof Map<?,?> r)
-            t.messages.add(new Message(num(r.get("id")),str(r.get("author")),str(r.get("authorId")),str(r.get("role")),str(r.get("source")),str(r.get("text")),num(r.get("at")),!Boolean.FALSE.equals(r.get("delivered"))));
+            t.messages.add(new Message(num(r.get("id")),str(r.get("author")),str(r.get("authorId")),str(r.get("role")),str(r.get("source")),str(r.get("text")),num(r.get("at")),!Boolean.FALSE.equals(r.get("delivered")),Boolean.TRUE.equals(r.get("discarded")),attachments(r.get("attachments"))));
         for(Message msg:t.messages)t.sequence=Math.max(t.sequence,msg.id);
         if(t.id<=0)throw new IllegalArgumentException("ticket id");return t;
     }
+    @SuppressWarnings("unchecked") private static List<Map<String,Object>> attachments(Object raw){
+        if(!(raw instanceof List<?> list))return List.of();List<Map<String,Object>> out=new ArrayList<>();
+        for(Object item:list)if(item instanceof Map<?,?> m&&str(m.get("id")).matches(ATTACHMENT_ID))out.add(new LinkedHashMap<>((Map<String,Object>)m));
+        return List.copyOf(out);
+    }
+    static final String ATTACHMENT_ID="[a-f0-9]{32}";
     private static long num(Object v){return v instanceof Number n?n.longValue():0L;}
     private static String str(Object v){return v==null?"":String.valueOf(v);}
     private static String valid(List<String> values,String value,String fallback){return values.contains(value)?value:fallback;}
@@ -137,7 +146,32 @@ final class TicketStore {
     synchronized Ticket priority(long id,String priority){if(!PRIORITIES.contains(priority))throw new IllegalArgumentException("Priorität ungültig");Ticket t=require(id);t.priority=priority;t.updated=System.currentTimeMillis();persist(t);return t;}
     synchronized Ticket channel(long id,String channel,String mode){Ticket t=require(id);t.channel=channel==null?"":channel;t.channelMode=mode==null?"":mode;persist(t);return t;}
     synchronized Ticket linkDiscord(long id,String discord){Ticket t=require(id);t.discordUser=discord==null?"":discord;persist(t);return t;}
-    synchronized boolean delete(long id){Ticket t=tickets.remove(id);if(t==null)return false;remove(id);refreshWaiting();return true;}
+    synchronized boolean delete(long id){Ticket t=tickets.remove(id);if(t==null)return false;remove(id);refreshWaiting();
+        Path files=folder.resolve("files").resolve(Long.toString(id));try{writer.execute(()->{try(var paths=Files.walk(files)){for(Path path:paths.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(path);}catch(IOException ignored){}});}catch(RejectedExecutionException ignored){}
+        return true;}
+    /** Staff can drop replies that should no longer reach the player; message 0 discards all pending replies. */
+    synchronized int discard(long ticket,long message){
+        Ticket t=require(ticket);int count=0;
+        for(int i=0;i<t.messages.size();i++){Message m=t.messages.get(i);if(!m.delivered&&(message==0||m.id==message)){t.messages.set(i,m.with(true,true,m.attachments));count++;}}
+        if(count>0)persist(t);return count;
+    }
+    synchronized Message attach(long ticket,long message,List<Map<String,Object>> items){
+        Ticket t=require(ticket);
+        for(int i=0;i<t.messages.size();i++){Message m=t.messages.get(i);if(m.id==message){List<Map<String,Object>> all=new ArrayList<>(m.attachments);all.addAll(items);Message next=m.with(m.delivered,m.discarded,all.subList(0,Math.min(all.size(),10)));t.messages.set(i,next);persist(t);return next;}}
+        throw new IllegalArgumentException("Nachricht nicht gefunden");
+    }
+    Path attachmentFile(long ticket,String id){if(!id.matches(ATTACHMENT_ID))throw new IllegalArgumentException("Ungültiger Anhang");return folder.resolve("files").resolve(Long.toString(ticket)).resolve(id);}
+    /** Writes bytes synchronously (caller is a worker thread) and returns the stored metadata. */
+    Map<String,Object> storeAttachment(long ticket,String name,String type,byte[] data)throws IOException{
+        if(data.length==0||data.length>MAX_ATTACHMENT)throw new IllegalArgumentException("Datei leer oder größer als 8 MiB");
+        synchronized(this){require(ticket);}
+        String id=UUID.randomUUID().toString().replace("-","");Path file=attachmentFile(ticket,id);Files.createDirectories(file.getParent());
+        Path temp=Files.createTempFile(file.getParent(),id,".tmp");try{Files.write(temp,data);Files.move(temp,file,StandardCopyOption.REPLACE_EXISTING);}finally{Files.deleteIfExists(temp);}
+        String clean=clean(name,80).replaceAll("[\\\\/:*?\"<>|]","_");if(clean.isBlank())clean="datei";
+        String mime=type==null||!type.matches("[a-z]+/[a-z0-9.+-]{1,60}")?"application/octet-stream":type;
+        return SimplexAdminSuite.appMap("id",id,"name",clean,"type",mime,"size",(long)data.length,"image",mime.startsWith("image/"));
+    }
+    static final int MAX_ATTACHMENT=8*1024*1024;
     synchronized void channelDeleted(String channel){for(Ticket t:tickets.values())if(channel.equals(t.channel)){t.channel="";persist(t);}}
 
     record Pending(long ticket,String subject,Message message) { }
@@ -151,7 +185,7 @@ final class TicketStore {
     }
     synchronized void delivered(long ticket,long message){
         Ticket t=tickets.get(ticket);if(t==null)return;
-        for(int i=0;i<t.messages.size();i++){Message m=t.messages.get(i);if(m.id==message&&!m.delivered){t.messages.set(i,new Message(m.id,m.author,m.authorId,m.role,m.source,m.text,m.at,true));persist(t);return;}}
+        for(int i=0;i<t.messages.size();i++){Message m=t.messages.get(i);if(m.id==message&&!m.delivered){t.messages.set(i,m.with(true,m.discarded,m.attachments));persist(t);return;}}
     }
 
     synchronized Object list(String filter,String query,int offset){

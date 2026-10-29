@@ -171,6 +171,23 @@ struct SuiteRecordedHistory: Sendable {
         let id = UUID(); revision = id; detailRevision = UUID(); detailsBusy = false
         busy = true; error = nil
         defer { if revision == id { busy = false } }
+        if updated == nil { await restore(suite: suite) }  // cached numbers appear while the refresh runs
+        if suite.features.contains("statistics-v2") {
+            // Admin Suite 9.5.0: every profile and its latest device in one request; history loads in parallel.
+            async let historyLoad: Void = loadHistory(panel: panel, server: server)
+            do {
+                let response = try await suite.data("statistics-rows")
+                try Task.checkCancellation()
+                let rows = response["items"].array
+                var metadata: [String: JSON] = [:]; for (key, value) in response["devices"].object { metadata[key] = value }
+                let result = await Task.detached(priority: .userInitiated) { SuiteStatisticsSnapshot(rows: rows, devices: metadata) }.value
+                guard revision == id, !Task.isCancelled else { _ = await historyLoad; return }
+                devices = metadata; snapshot = result; updated = Date(); expected = response["total"].int; complete = true; loadedDeviceCount = metadata.count
+                persist(suite: suite, rows: rows, devices: metadata)
+            } catch { if revision == id, !RequestFailure.isCancellation(error), !Task.isCancelled { self.error = error.localizedDescription } }
+            _ = await historyLoad
+            return
+        }
         do {
             var rows: [JSON] = []; var offset = 0; var pages = 0; var next = -1; var total = 0
             repeat {
@@ -193,6 +210,27 @@ struct SuiteRecordedHistory: Sendable {
             loadedDeviceCount = devices.count
             await loadHistory(panel: panel, server: server)
         } catch { if revision == id, !RequestFailure.isCancellation(error), !Task.isCancelled { self.error = error.localizedDescription } }
+    }
+    /// Last statistics rows per suite are kept in Caches so the page shows numbers immediately on open.
+    private struct Cached: Codable { let rows: [JSON]; let devices: [String: JSON]; let at: Date }
+    private func cacheURL(_ suite: SuiteAPI) -> URL? {
+        guard let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let name = suite.bookmarkScope.map { $0.isLetter || $0.isNumber ? String($0) : "_" }.joined()
+        return folder.appendingPathComponent("suite-statistics-" + name + ".json")
+    }
+    private func restore(suite: SuiteAPI) async {
+        guard !suite.demo, let url = cacheURL(suite) else { return }
+        let decoded = await Task.detached(priority: .userInitiated) { () -> (Cached, SuiteStatisticsSnapshot)? in
+            guard let data = try? Data(contentsOf: url), let cached = try? JSONDecoder().decode(Cached.self, from: data) else { return nil }
+            return (cached, SuiteStatisticsSnapshot(rows: cached.rows, devices: cached.devices))
+        }.value
+        guard let decoded, updated == nil else { return }
+        devices = decoded.0.devices; snapshot = decoded.1; updated = decoded.0.at; loadedDeviceCount = decoded.0.devices.count; expected = decoded.0.rows.count
+    }
+    private func persist(suite: SuiteAPI, rows: [JSON], devices: [String: JSON]) {
+        guard !suite.demo, let url = cacheURL(suite) else { return }
+        let value = Cached(rows: rows, devices: devices, at: Date())
+        Task.detached(priority: .utility) { if let data = try? JSONEncoder().encode(value) { try? data.write(to: url, options: .atomic) } }
     }
     private func loadHistory(panel: PanelAPI, server: Server) async {
         if panel.demo {

@@ -3,12 +3,12 @@ import Combine
 import CryptoKit
 
 enum AddonProvider: String, Codable, CaseIterable, Identifiable {
-    case modrinth, spigot, curseforge, hangar, geysermc
+    case modrinth, spigot, curseforge, hangar, geysermc, github
     var id: String { rawValue }
-    var title: String { switch self { case .modrinth: return "Modrinth"; case .spigot: return "Spigot"; case .curseforge: return "CurseForge"; case .hangar: return "Hangar"; case .geysermc: return "GeyserMC" } }
+    var title: String { switch self { case .modrinth: return "Modrinth"; case .spigot: return "Spigot"; case .curseforge: return "CurseForge"; case .hangar: return "Hangar"; case .geysermc: return "GeyserMC"; case .github: return "GitHub" } }
     /// Providers offered for this kind of JAR; Spigot and Hangar only host server plugins.
-    static func available(for kind: AddonKind) -> [AddonProvider] { kind == .plugin ? allCases : [.modrinth, .curseforge, .geysermc] }
-    var idPattern: String { switch self { case .modrinth: return #"^[A-Za-z0-9_-]{1,100}$"#; case .hangar: return #"^[A-Za-z0-9_.-]{1,100}$"#; case .geysermc: return #"^(geyser|floodgate)$"#; default: return #"^[0-9]{1,15}$"# } }
+    static func available(for kind: AddonKind) -> [AddonProvider] { kind == .plugin ? allCases : [.modrinth, .curseforge, .geysermc, .github] }
+    var idPattern: String { switch self { case .modrinth: return #"^[A-Za-z0-9_-]{1,100}$"#; case .hangar: return #"^[A-Za-z0-9_.-]{1,100}$"#; case .geysermc: return #"^(geyser|floodgate)$"#; case .github: return #"^[A-Za-z0-9_.-]{1,39}/[A-Za-z0-9_.-]{1,100}$"#; default: return #"^[0-9]{1,15}$"# } }
 }
 enum AddonKind: String, Codable { case plugin, mod
     var directory: String { self == .plugin ? "/plugins" : "/mods" }
@@ -112,11 +112,11 @@ final class MarketplaceClient {
         self.session = session ?? URLSession(configuration: config, delegate: MarketplaceRedirect(), delegateQueue: nil)
     }
     func json(_ host: String, _ path: String, query: [String: String] = [:], body: JSON? = nil) async throws -> JSON {
-        guard ["api.modrinth.com", "api.spiget.org", "api.curseforge.com", "hangar.papermc.io", "download.geysermc.org"].contains(host), !path.contains("..") else { throw PanelError(message: "Ungültiger Anbieter.") }
+        guard ["api.modrinth.com", "api.spiget.org", "api.curseforge.com", "hangar.papermc.io", "download.geysermc.org", "api.github.com"].contains(host), !path.contains("..") else { throw PanelError(message: "Ungültiger Anbieter.") }
         var c = URLComponents(); c.scheme = "https"; c.host = host; c.path = path
         c.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         var request = URLRequest(url: c.url!); request.setValue("Robin9094707/SimplexPanel/2.2.0 (github.com/Robin9094707/PANELAPios)", forHTTPHeaderField: "User-Agent")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(host == "api.github.com" ? "application/vnd.github+json" : "application/json", forHTTPHeaderField: "Accept")
         if host == "api.curseforge.com" {
             let key = (try? Vault.read(Self.curseKeyID)) ?? ""
             guard !key.isEmpty else { throw PanelError(message: "Für CurseForge zuerst einen eigenen API-Schlüssel in Anbieter-Einstellungen hinterlegen.") }
@@ -125,7 +125,7 @@ final class MarketplaceClient {
         if let body { request.httpMethod = "POST"; request.httpBody = try JSONEncoder().encode(body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let (data, response) = try await session.data(for: request)
         if (response as? HTTPURLResponse)?.statusCode == 404 { return .null }
-        if (response as? HTTPURLResponse)?.statusCode == 429 { throw PanelError(message: "Anbieter-Limit erreicht. Bitte später erneut prüfen.") }
+        if (response as? HTTPURLResponse)?.statusCode == 429 || (host == "api.github.com" && (response as? HTTPURLResponse)?.statusCode == 403) { throw PanelError(message: "Anbieter-Limit erreicht. Bitte später erneut prüfen.") }
         try PanelAPI.validate(data, response: response)
         guard data.count <= 8 * 1024 * 1024 else { throw PanelError(message: "Anbieterantwort zu groß.") }
         return try JSONDecoder().decode(JSON.self, from: data)
@@ -147,6 +147,9 @@ final class MarketplaceClient {
             guard kind == .plugin else { return [] }
             let result = try await json("hangar.papermc.io", "/api/v1/projects", query: ["q": q, "limit": "15", "offset": "0"])
             return result["result"].array.map { AddonSearchResult(id: $0["namespace"]["slug"].string, name: $0["name"].string, provider: provider, website: "https://hangar.papermc.io/" + $0["namespace"]["owner"].string + "/" + $0["namespace"]["slug"].string) }
+        case .github:
+            let result = try await json("api.github.com", "/search/repositories", query: ["q": q + " in:name", "per_page": "10"])
+            return result["items"].array.map { AddonSearchResult(id: $0["full_name"].string, name: $0["full_name"].string, provider: provider, website: $0["html_url"].string) }
         case .geysermc:
             return ["geyser", "floodgate"].filter { $0.contains(q.lowercased()) || q.lowercased().contains($0) }.map { AddonSearchResult(id: $0, name: $0 == "geyser" ? "Geyser" : "Floodgate", provider: provider, website: "https://geysermc.org/download") }
         }
@@ -256,6 +259,20 @@ final class MarketplaceClient {
             let dependencies = version["pluginDependencies"]["PAPER"].array.filter { $0["required"].bool }.map { "Erforderlich: " + $0["name"].string }
             let release = AddonRelease(id: version["id"].string, title: version["name"].string, provider: .hangar, version: version["name"].string, filename: file["fileInfo"]["name"].string.isEmpty ? installed.filename : file["fileInfo"]["name"].string, download: direct.isEmpty ? nil : direct, website: "https://hangar.papermc.io/" + version["author"].string + "/" + mapping.project, sha1: nil, sha512: nil, sha256: sha.isEmpty ? nil : sha, notes: String(version["description"].string.prefix(12000)), compatibility: true, published: ScheduleTime.parse(version["createdAt"].string), dependencies: dependencies)
             return (mapping, AddonStatus(text: "Update verfügbar", release: release))
+        case .github:
+            // Releases with exactly one JAR (or one matching the installed name); GitHub publishes SHA-256 digests per asset.
+            let releases = try await json("api.github.com", "/repos/" + mapping.project + "/releases", query: ["per_page": "10"])
+            guard let release = releases.array.first(where: { !$0["draft"].bool && (target.beta || !$0["prerelease"].bool) }) else { return (mapping, AddonStatus(text: "Kein GitHub-Release", release: nil)) }
+            let jars = release["assets"].array.filter { $0["name"].string.lowercased().hasSuffix(".jar") && !$0["name"].string.lowercased().contains("sources") && !$0["name"].string.lowercased().contains("javadoc") }
+            let stem = installed.name.lowercased().filter { $0.isLetter || $0.isNumber }
+            let matching = jars.filter { $0["name"].string.lowercased().filter { $0.isLetter || $0.isNumber }.hasPrefix(stem) }
+            guard let asset = matching.count == 1 ? matching.first : jars.count == 1 ? jars.first : nil else { return (mapping, AddonStatus(text: jars.isEmpty ? "Release ohne JAR" : "Mehrere JARs im Release – auf GitHub wählen", release: nil)) }
+            let digest = asset["digest"].string.lowercased(), sha = digest.hasPrefix("sha256:") ? String(digest.dropFirst(7)) : ""
+            if !sha.isEmpty && sha == installed.fingerprint.sha256.lowercased() { return (mapping, AddonStatus(text: "Aktuell", release: nil)) }
+            let version = release["tag_name"].string
+            if Self.newer(version, than: installed.version) == false { return (mapping, AddonStatus(text: "Kein neueres Release", release: nil)) }
+            let item = AddonRelease(id: release["id"].string, title: release["name"].string.isEmpty ? version : release["name"].string, provider: .github, version: version, filename: asset["name"].string, download: asset["browser_download_url"].string, website: release["html_url"].string, sha1: nil, sha512: nil, sha256: sha.isEmpty ? nil : sha, notes: String(release["body"].string.prefix(12000)), compatibility: false, published: ScheduleTime.parse(release["published_at"].string), dependencies: [])
+            return (mapping, AddonStatus(text: "Neues Release · Kompatibilität prüfen", release: item))
         case .geysermc:
             let platform = Self.geyserPlatform(target)
             let build = try await json("download.geysermc.org", "/v2/projects/" + mapping.project + "/versions/latest/builds/latest")
@@ -304,13 +321,15 @@ final class MarketplaceClient {
     let kind: AddonKind
     let scope: String
     let client: MarketplaceClient
-    private var lastScan = Date.distantPast
+    private var lastScan = Date.distantPast { didSet { UserDefaults.standard.set(lastScan.timeIntervalSince1970, forKey: scope + ".lastScan") } }
     init(api: PanelAPI, server: Server, kind: AddonKind, client: MarketplaceClient = MarketplaceClient()) {
         self.kind = kind; self.client = client
         scope = "addons.v1." + PluginArchive.digest(Data((api.base.absoluteString + "|" + server.id + "|" + kind.rawValue).utf8))
         cache = (try? JSONDecoder().decode(AddonCache.self, from: UserDefaults.standard.data(forKey: scope) ?? Data())) ?? AddonCache()
         if UserDefaults.standard.data(forKey: scope) == nil { cache.target.loader = kind == .plugin ? "paper" : "fabric" }
         rows = cache.inventory.values.sorted { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }
+        // Unchanged JARs are not rescanned when the update center is reopened shortly after the last check.
+        let stored = UserDefaults.standard.double(forKey: scope + ".lastScan"); if stored > 0 { lastScan = Date(timeIntervalSince1970: stored) }
     }
     func save() { UserDefaults.standard.set(try? JSONEncoder().encode(cache), forKey: scope) }
     func setTarget(_ target: AddonTarget) { cache.target = target; cache.statuses = [:]; lastScan = .distantPast; save() }
@@ -369,7 +388,7 @@ final class MarketplaceClient {
                     }
                     cache.inventory[name] = item; cache.statuses[name] = nil
                 }
-                if let item = cache.inventory[name], force || cache.statuses[name] == nil || Date().timeIntervalSince(cache.statuses[name]!.checked) > 3600 {
+                if let item = cache.inventory[name], force || cache.statuses[name] == nil || Date().timeIntervalSince(cache.statuses[name]!.checked) > 6 * 3600 {
                     let (link, status) = try await client.latest(item, link: cache.links[name], target: cache.target)
                     cache.links[name] = link; cache.statuses[name] = status
                     if link == nil, suggestions[name] == nil, let proposal = await client.suggest(item, kind: kind) { suggestions[name] = proposal }

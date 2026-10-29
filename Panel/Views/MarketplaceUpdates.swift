@@ -325,8 +325,9 @@ struct MarketplaceWebView: UIViewRepresentable {
         web.load(URLRequest(url: url)); context.coordinator.reload = reload; return web
     }
     static var safariSuffix: String {
-        let parts = UIDevice.current.systemVersion.split(separator: ".")
-        return "Version/" + (parts.first.map(String.init) ?? "26") + "." + (parts.dropFirst().first.map(String.init) ?? "0") + " Mobile/15E148 Safari/604.1"
+        let parts = UIDevice.current.systemVersion.split(separator: ".").map(String.init)
+        let major: String = parts.first ?? "26", minor: String = parts.count > 1 ? parts[1] : "0"
+        return "Version/\(major).\(minor) Mobile/15E148 Safari/604.1"
     }
     func updateUIView(_ view: WKWebView, context: Context) {
         guard context.coordinator.reload != reload else { return }
