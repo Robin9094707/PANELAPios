@@ -299,7 +299,7 @@ struct SuitePlayerView: View {
                     if activity["afkMillis"].double > 0 { LabeledContent("Davon AFK", value: Self.duration(activity["afkMillis"].double)) }
                 }
                 if let first = SuitePlayerPresentation.date(current["firstSeen"]) { LabeledContent("Erster Besuch") { Text(SuiteGermanTime.text(first)).font(.caption) } }
-                if !warnings.isEmpty { DisclosureGroup("Warnungen · \(warnings.count)") { ForEach(Array(warnings.enumerated()), id: \.offset) { _, entry in Text(cleanConsole(entry.string)).font(.subheadline).textSelection(.enabled) } } }
+                if !warnings.isEmpty { SuiteWarningsDisclosure(suite: suite, player: player, warnings: warnings) { await load() } }
                 if !notes.isEmpty { DisclosureGroup("Teamnotizen · \(notes.count)") { ForEach(Array(notes.enumerated()), id: \.offset) { _, entry in Text(cleanConsole(entry.string)).font(.subheadline).textSelection(.enabled) } } }
                 if !names.isEmpty { DisclosureGroup("Frühere Namen · \(names.count)") { ForEach(Array(names.enumerated()), id: \.offset) { _, entry in Text(entry.string).font(.subheadline).textSelection(.enabled) } } }
             }
@@ -488,5 +488,35 @@ struct SuiteSettingEditor: View {
     var body: some View {
         Form { Section { Text(setting["name"].string).font(.headline); Text(setting["hint"].string).font(.footnote).foregroundStyle(.secondary); Text(setting["id"].string).font(.caption.monospaced()).textSelection(.enabled) }; Section("Wert") { if setting["id"].string.hasPrefix("discord-bot.") && setting["id"].string.hasSuffix("channel-id") { SuiteDiscordChannelPicker(suite: suite, value: $value) } else if setting["kind"].string == "bool" { Toggle("Aktiv", isOn: $toggle) } else { TextField("Wert", text: $value, axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled(); if setting["kind"].string == "list" { Text("Listeneinträge mit | trennen.").font(.caption).foregroundStyle(.secondary) } } }; Section { Button("Änderung prüfen") { apply = true }.disabled(suite.scope != "full" || suite.demo) } }.panelScreen().navigationTitle("Einstellung ändern").task { guard !initialized else { return }; initialized = true; value = setting["kind"].string == "list" ? setting["value"].array.map(\.string).joined(separator: " | ") : setting["value"].string; toggle = setting["value"].bool }
             .sheet(isPresented: $apply) { NavigationStack { SuiteActionView(suite: suite, action: .make("settings.update", "Suite-Einstellung speichern"), preset: ["expected": setting["revision"], "key": setting["id"], "value": .string(setting["kind"].string == "bool" ? String(toggle) : value)]) } }
+    }
+}
+
+/// Warnings in the moderation record; Admin Suite 9.5.0 lets staff dismiss single or all warnings after confirmation.
+struct SuiteWarningsDisclosure: View {
+    let suite: SuiteAPI
+    let player: String
+    let warnings: [JSON]
+    let reload: () async -> Void
+    @StateObject private var model: SuiteSecurityModel
+    init(suite: SuiteAPI, player: String, warnings: [JSON], reload: @escaping () async -> Void) {
+        self.suite = suite; self.player = player; self.warnings = warnings; self.reload = reload
+        _model = StateObject(wrappedValue: SuiteSecurityModel(suite))
+    }
+    var canDismiss: Bool { suite.features.contains("player-warnings-v1") && (suite.scope == "full" || suite.scope == "manage") }
+    var body: some View {
+        DisclosureGroup("Warnungen · \(warnings.count)") {
+            ForEach(Array(warnings.enumerated()), id: \.offset) { index, entry in
+                Text(cleanConsole(entry.string)).font(.subheadline).textSelection(.enabled)
+                    .swipeActions { if canDismiss { Button("Verwerfen", systemImage: "xmark.bin", role: .destructive) { dismiss(index, entry.string) } } }
+                    .contextMenu { if canDismiss { Button("Warnung verwerfen", systemImage: "xmark.bin", role: .destructive) { dismiss(index, entry.string) } } }
+            }
+            if canDismiss && warnings.count > 1 { Button("Alle Warnungen verwerfen", systemImage: "trash", role: .destructive) { Task { await model.prepare("player.warnings", ["player": .string(player), "operation": .string("clear")], summary: "Alle \(warnings.count) Warnungen dieses Spielers verwerfen?\nSie verschwinden aus Profil, Badges und Filter „Auffällig“.") } } }
+            if canDismiss { Text("Wischen oder lange drücken, um eine Warnung zu verwerfen (z. B. automatische Client-Hinweise).").font(.caption).foregroundStyle(.secondary) }
+        }
+        .errorAlert($model.error)
+        .sheet(isPresented: Binding(get: { model.plan != nil }, set: { if !$0 { model.plan = nil } })) { SuiteSecurityConfirmation(model: model) { await reload() } }
+    }
+    func dismiss(_ index: Int, _ text: String) {
+        Task { await model.prepare("player.warnings", ["player": .string(player), "operation": .string("remove"), "index": .string(String(index)), "expected": .string(text)], summary: "Diese Warnung verwerfen?\n" + cleanConsole(text)) }
     }
 }

@@ -68,7 +68,7 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/PluginUploadRegressionTests -only-testing:PanelTests/PlayerNBTSearchTests -only-testing:PanelTests/SuiteIntegrationTests -only-testing:PanelTests/Panel230Tests -only-testing:PanelTests/WorkspaceUpdateTests -only-testing:PanelTests/UpdateFixTests -only-testing:PanelTests/AddonUpdateTests -only-testing:PanelTests/MarketplaceNetworkTests -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/AdminRolesTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelTests/AdminCenterTests -only-testing:PanelTests/Panel310Tests -only-testing:PanelTests/CrossplayNetworkTests -only-testing:PanelUITests/PanelUITests/testAdminCenterPlayerManagementAndWhatsNew -only-testing:PanelUITests/PanelUITests/testStatisticsDeviceDrilldown -only-testing:PanelUITests/PanelUITests/testIntegratedSuitePlayersSearchDevicesAndOffline -only-testing:PanelUITests/PanelUITests/testAdminRolesChatAndRestartNavigation -only-testing:PanelUITests/PanelUITests/testDiscordSettingsChannelSelection -only-testing:PanelUITests/PanelUITests/testPlayerProfile20AndTargetedSearch -only-testing:PanelUITests/PanelUITests/testAltDashboardAndIgnoredInfrastructureIP -only-testing:PanelUITests/PanelUITests/testJavaWorldStorageAndNewWorkspaceCards -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/PluginUploadRegressionTests -only-testing:PanelTests/PlayerNBTSearchTests -only-testing:PanelTests/SuiteIntegrationTests -only-testing:PanelTests/Panel230Tests -only-testing:PanelTests/WorkspaceUpdateTests -only-testing:PanelTests/UpdateFixTests -only-testing:PanelTests/AddonUpdateTests -only-testing:PanelTests/MarketplaceNetworkTests -only-testing:PanelTests/AdminSuiteTests -only-testing:PanelTests/ConsoleStatisticsTests -only-testing:PanelTests/WidgetMetricsTests -only-testing:PanelTests/AdminRolesTests -only-testing:PanelTests/PlayerPermissionFixTests -only-testing:PanelTests/AMPTests -only-testing:PanelTests/PluginDetailsTests -only-testing:PanelTests/PanelTests -only-testing:PanelTests/AdminCenterTests -only-testing:PanelTests/Panel310Tests -only-testing:PanelTests/CrossplayNetworkTests -only-testing:PanelTests/Panel320Tests -only-testing:PanelUITests/PanelUITests/testAdminCenterPlayerManagementAndWhatsNew -only-testing:PanelUITests/PanelUITests/testStatisticsDeviceDrilldown -only-testing:PanelUITests/PanelUITests/testIntegratedSuitePlayersSearchDevicesAndOffline -only-testing:PanelUITests/PanelUITests/testAdminRolesChatAndRestartNavigation -only-testing:PanelUITests/PanelUITests/testDiscordSettingsChannelSelection -only-testing:PanelUITests/PanelUITests/testPlayerProfile20AndTargetedSearch -only-testing:PanelUITests/PanelUITests/testAltDashboardAndIgnoredInfrastructureIP -only-testing:PanelUITests/PanelUITests/testJavaWorldStorageAndNewWorkspaceCards -only-testing:PanelUITests/PanelUITests/testSuiteOperationsStructuredTelemetry -only-testing:PanelUITests/PanelUITests/testDemoDashboardConsoleFilesBackupsAndManagement -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 360 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -152,14 +152,14 @@ jobs:
         run: |
           python3 tools/package-source.py
           cd target
-          sha256sum SimplexAdminSuite-9.4.0.jar SimplexAdminSuite-9.4.0-source.zip > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-9.5.0.jar SimplexAdminSuite-9.5.0-source.zip > AdminSuite-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-9.4.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-9.4.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-9.5.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-9.5.0-source.zip
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
 
@@ -205,11 +205,9 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 3.1.0 and Admin Suite 9.4.0: support tickets for Minecraft (/ticket with Java menus and native Bedrock forms), Discord (panel, private threads or channels on the existing Admin Suite bot, no second token) and the app (list, conversation, settings and live Discord permission diagnostics). Staff replies wait until the player has been online for 20 seconds; urgent tickets trigger a critical Bark alert outside quiet hours.
+          Simplex Panel 3.2.0 and Admin Suite 9.5.0: ticket attachments both ways (Discord images/files are stored by the suite and shown with previews in the app; the app sends photos and files into the Discord ticket), optional confirmed @mention of the ticket owner, discarding pending in-game deliveries, deleting tickets including their Discord thread/channel, Bark levels per ticket priority (low silent, normal regular, high time-sensitive, urgent critical; quiet hours respected), dismissable player warnings, Lunar Client and other versioned client brands recognised, a much faster statistics page (single request plus on-device cache), a robust Geyser/Floodgate status and GitHub releases as an additional plugin update source.
 
-          Persistent public server chat (last 50 messages with player heads, cleared only via the trash button), Geyser/Floodgate status and staged updates from the app, a puzzle-piece plugin hub on the server start page, and smarter plugin updates: Hangar and GeyserMC sources, source suggestions, staging all verified updates at once, free Spigot downloads via the Spiget CDN and a fix for the stalled Cloudflare check in the built-in browser.
-
-          Existing data is preserved: Admin Suite 9.4.0 only adds files (tickets/, app-chat.properties) and config keys under tickets.*; app keys, TLS fingerprint, Bark settings and Discord links stay unchanged. App 3.1.0 keeps all saved panels, suite pairings, layouts and favourites and works with older suites (new features hide automatically). See UPDATE-3.1.0.md and Companion/AdminSuite/UPDATE-9.4.0.md.
+          Fully compatible with 3.1.0/9.4.0 data: existing tickets, ticket settings, Bark rules, chat history and pairings keep working; 9.5.0 only adds files under tickets/files and new optional fields. See UPDATE-3.2.0.md and Companion/AdminSuite/UPDATE-9.5.0.md.
 
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)

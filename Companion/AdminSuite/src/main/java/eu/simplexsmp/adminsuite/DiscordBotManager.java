@@ -2428,6 +2428,35 @@ final class DiscordBotManager {
     String ticketGuild() { return guildId(); }
     String ticketApplication() { return applicationId; }
     boolean ticketRunning() { return running.get() && connected && !applicationId.isBlank(); }
+    /** multipart/form-data upload with payload_json and files[n]; same token, timeout and failure diagnostics. */
+    HttpResponse<String> ticketMultipart(String path, String payloadJson, List<Object[]> files) throws Exception {
+        String boundary = "SAS-" + UUID.randomUUID();
+        java.io.ByteArrayOutputStream body = new java.io.ByteArrayOutputStream();
+        body.writeBytes(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n" + payloadJson + "\r\n").getBytes(StandardCharsets.UTF_8));
+        for (int i = 0; i < files.size(); i++) {
+            Object[] file = files.get(i);
+            body.writeBytes(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"files[" + i + "]\"; filename=\"" + file[0] + "\"\r\nContent-Type: " + file[1] + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+            body.writeBytes((byte[]) file[2]); body.writeBytes("\r\n".getBytes(StandardCharsets.UTF_8));
+        }
+        body.writeBytes(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        HttpRequest request = HttpRequest.newBuilder(URI.create(API + path)).timeout(Duration.ofSeconds(60)).header("Authorization", "Bot " + token())
+                .header("User-Agent", "SimplexAdminSuite/" + plugin.getDescription().getVersion()).header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray())).build();
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (response.statusCode() / 100 != 2) recordHttpFailure("POST", path, response.statusCode(), response.body());
+        return response;
+    }
+    /** Downloads a Discord CDN attachment without credentials, bounded to max bytes. */
+    byte[] ticketDownload(URI uri, int max) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(30)).header("User-Agent", "SimplexAdminSuite/" + plugin.getDescription().getVersion()).GET().build();
+        HttpResponse<java.io.InputStream> response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        try (java.io.InputStream in = response.body()) {
+            if (response.statusCode() != 200) throw new java.io.IOException("HTTP " + response.statusCode());
+            byte[] data = in.readNBytes(max + 1);
+            if (data.length > max) throw new java.io.IOException("Datei zu groß");
+            return data;
+        }
+    }
     /** Discord owner, Administrators (if allowed) and configured full admin roles. Independent of admin channel lists. */
     boolean ticketAdmin(Map<String, Object> member, String userId) {
         if (userId != null && userId.equals(guildOwnerId)) return true;

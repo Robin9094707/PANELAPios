@@ -129,7 +129,7 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class SimplexAdminSuite extends JavaPlugin implements Listener, CommandExecutor, org.bukkit.command.TabCompleter {
-    private static final String VERSION = "9.4.0";
+    private static final String VERSION = "9.5.0";
     private static final int CURRENT_DATA_SCHEMA = 17;
     private static final int DEFAULT_MAX_CHAT_LINES = 100;
     private static final int DEFAULT_MAX_ACTION_LINES = 240;
@@ -8444,6 +8444,19 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             Runtime runtime=Runtime.getRuntime();double mspt=-1;try{Object value=Bukkit.class.getMethod("getAverageTickTime").invoke(null);if(value instanceof Number n)mspt=n.doubleValue();}catch(ReflectiveOperationException ignored){}
             return appMap("at",System.currentTimeMillis(),"tps",discordAdminTps(),"mspt",mspt,"ramUsed",runtime.totalMemory()-runtime.freeMemory(),"ramMax",runtime.maxMemory(),"uptime",System.currentTimeMillis()-suiteBootTime,"online",Bukkit.getOnlinePlayers().size(),"maxPlayers",serverMaxPlayers(),"profiles",database.profiles.size(),"scoreboard",nativeScoreboard==null?null:appMap("mainDays",nativeScoreboard.mainDays(),"secondDays",nativeScoreboard.secondDays(),"mainWorld",getConfig().getString("scoreboard.main-world","world"),"secondWorld",getConfig().getString("scoreboard.second-world.name","survival2")),"timezone","Europe/Berlin","serverTime",java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss z",Locale.GERMANY).withZone(java.time.ZoneId.of("Europe/Berlin")).format(Instant.now()),"worlds",Bukkit.getWorlds().size(),"version",getDescription().getVersion());
         }
+        if(route.equals("statistics-rows")){
+            // One request for the app's statistics page: every profile plus its latest device (Bedrock models, inputs, languages).
+            long now=System.currentTimeMillis();
+            if(statisticsRowsCache!=null&&now-statisticsRowsAt<20_000L&&statisticsRowsProfiles==database.profiles.size())return statisticsRowsCache;
+            List<Object> rows=new ArrayList<>();Map<String,Object> devices=new LinkedHashMap<>();
+            for(PlayerProfile p:database.sortedProfiles()){
+                rows.add(appPlayer(p,false));DeviceRecord latest=null;
+                for(DeviceRecord d:p.devices.values())if(latest==null||d.lastSeen>latest.lastSeen)latest=d;
+                if(latest!=null)devices.put(p.uuid.toString(),appMap("name",latest.model.isBlank()?latest.platform:latest.model,"platform",latest.platform,"os",latest.os,"version",latest.gameVersion,"language",latest.language,"input",latest.currentInput,"lastSeen",latest.lastSeen));
+            }
+            Object result=appMap("items",rows,"devices",devices,"total",rows.size(),"at",now);
+            statisticsRowsCache=result;statisticsRowsAt=now;statisticsRowsProfiles=database.profiles.size();return result;
+        }
         if(route.equals("statistics")){
             long play=0,afk=0,sessions=0,points=0;int warnings=0,bans=0,mutes=0,recent=0,new24=0;long now=System.currentTimeMillis();
             Map<String,Integer> platforms=new java.util.TreeMap<>(),versions=new java.util.TreeMap<>(),models=new java.util.TreeMap<>();
@@ -8562,7 +8575,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     /** App worker: compares local SHA-256 values with the latest GeyserMC build metadata (cached 10 minutes). */
     @SuppressWarnings("unchecked") Object appCrossplayStatus(Object installed)throws Exception{
         Map<String,Object> envelope=new LinkedHashMap<>((Map<String,Object>)installed);List<Object> out=new ArrayList<>();
-        HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).followRedirects(HttpClient.Redirect.NEVER).build();
+        HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).followRedirects(HttpClient.Redirect.NORMAL).build();
         for(Object raw:(List<Object>)envelope.get("items")){
             Map<String,Object> row=new LinkedHashMap<>((Map<String,Object>)raw);String id=String.valueOf(row.get("id"));
             String file=String.valueOf(row.remove("file")),staged=String.valueOf(row.remove("staged"));
@@ -8573,9 +8586,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 try{
                     HttpRequest request=HttpRequest.newBuilder(URI.create("https://download.geysermc.org/v2/projects/"+id+"/versions/latest/builds/latest")).timeout(Duration.ofSeconds(15)).header("User-Agent","SimplexAdminSuite/"+VERSION).header("Accept","application/json").GET().build();
                     HttpResponse<String> response=client.send(request,HttpResponse.BodyHandlers.ofString());
-                    if(response.statusCode()!=200||response.body().length()>262_144)throw new IllegalStateException("HTTP "+response.statusCode());
+                    if(response.statusCode()!=200)throw new IllegalStateException("HTTP "+response.statusCode());
+                    if(response.body().length()>4_000_000)throw new IllegalStateException("Antwort zu groß");
                     cached=new Object[]{System.currentTimeMillis(),DiscordBotManager.Json.parse(response.body())};crossplayLatest.put(id,cached);
-                }catch(Exception error){row.put("error","GeyserMC nicht erreichbar: "+error.getClass().getSimpleName());}
+                }catch(Exception error){row.put("error","GeyserMC nicht erreichbar: "+(error.getMessage()==null?error.getClass().getSimpleName():error.getMessage()));}
             }
             if(cached!=null&&cached[1] instanceof Map<?,?> build){
                 String latest=build.get("downloads") instanceof Map<?,?> d&&d.get("spigot") instanceof Map<?,?> spigot?String.valueOf(spigot.get("sha256")):"";
@@ -8601,6 +8615,22 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         boolean restart=Boolean.parseBoolean(String.valueOf(values.getOrDefault("restart","false")));
         crossplayLatest.clear();crossplayUpdates.checkAndStage(Bukkit.getConsoleSender(),restart);suiteAudit(actor,"Crossplay-Update angefordert",restart?"mit Neustart":"vormerken");
         return appMap("ok",true,"title","Crossplay-Update gestartet","description","Geyser und Floodgate werden geprüft und sicher im Paper-Updateordner vorgemerkt."+(restart?" Danach startet der Neustart-Countdown.":" Paper übernimmt sie beim nächsten Neustart."));
+    }
+    private Object statisticsRowsCache;private long statisticsRowsAt;private int statisticsRowsProfiles;
+    /** Removes automatic or manual warnings from a profile; the expected text guards against concurrent edits. */
+    Object appWarnings(Map<String,Object> values,String actor){
+        UUID id=discordAdminResolvePlayer(String.valueOf(values.getOrDefault("player","")));PlayerProfile p=id==null?null:database.get(id);
+        if(p==null)throw new IllegalArgumentException("Spielerprofil nicht gefunden");
+        String operation=String.valueOf(values.getOrDefault("operation","remove"));int removed;
+        synchronized(p.warnings){
+            if(operation.equals("clear")){removed=p.warnings.size();p.warnings.clear();}
+            else if(operation.equals("remove")){String expected=String.valueOf(values.getOrDefault("expected",""));int index;try{index=Integer.parseInt(String.valueOf(values.getOrDefault("index","-1")));}catch(NumberFormatException e){index=-1;}
+                if(index<0||index>=p.warnings.size()||!p.warnings.get(index).equals(expected))throw new IllegalArgumentException("Warnung wurde zwischenzeitlich geändert. Profil neu laden.");
+                p.warnings.remove(index);removed=1;}
+            else throw new IllegalArgumentException("Unbekannte Aktion");
+        }
+        p.addAction("Warnungen verworfen durch "+actor+": "+removed);database.save(p);audit.log(actor,p.uuid,"Warnungen verworfen",operation+" · "+removed);statisticsRowsCache=null;
+        return appMap("ok",true,"title",removed==1?"Warnung verworfen":removed+" Warnungen verworfen","description","Die Spielerakte von "+p.name+" wurde aktualisiert.");
     }
     Object appOperations(){return appMap("active",restartManager.active(),"remaining",restartManager.remainingSeconds(),"reasonDE",restartManager.reasonDE,"reasonEN",restartManager.reasonEN);}
     Object appRestart(Map<String,Object> values,String actor){

@@ -12,7 +12,7 @@ import org.bukkit.entity.Player;
 
 /** Bounded independent event ledger. Existing punishment/report/profile formats are untouched. */
 final class SuiteEventCenter {
-    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent");
+    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent","ticket-low","ticket-high");
     static final Set<String> LEVELS = Set.of("active","passive","timeSensitive","critical");
     private final SimplexAdminSuite plugin;
     private final Path eventsFile, subscriptionsFile;
@@ -48,11 +48,14 @@ final class SuiteEventCenter {
             record("overload",null,"Server länger überlastet",String.format(Locale.GERMANY,"TPS seit mindestens einer Minute unter 16 (aktuell %.1f).",tps[0]),true);
         }
     }
-    void record(String type, UUID player, String title, String body, boolean critical) {
+    void record(String type, UUID player, String title, String body, boolean critical) { record(type, player, title, body, critical, null); }
+    /** levelHint sets the Bark interruption level when the subscriber has no explicit rule for this event type. */
+    void record(String type, UUID player, String title, String body, boolean critical, String levelHint) {
         Map<String,Object> row;
         synchronized(this) {
             String id=String.format(Locale.ROOT,"%013d-%s",System.currentTimeMillis(),UUID.randomUUID());
             row=SimplexAdminSuite.appMap("id",id,"time",System.currentTimeMillis(),"type",type,"player",player==null?"":player.toString(),"title",ClientBrands.evidence(title),"body",clip(body,1500),"critical",critical,"note","");
+            if(levelHint!=null&&LEVELS.contains(levelHint))row.put("level",levelHint);
             events.put(id,row);while(events.size()>2000)events.remove(events.keySet().iterator().next());
         }
         try { worker.execute(() -> {try {persist();push(row);}catch(Exception e){deliveryStatus="Versand oder Speicherung fehlgeschlagen";plugin.getLogger().warning("App-Ereignisse: Speicherung/Versand fehlgeschlagen ("+e.getClass().getSimpleName()+")");}}); }
@@ -115,7 +118,8 @@ final class SuiteEventCenter {
             String type=String.valueOf(row.get("type"));String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
             // Tickets reach every Bark subscriber until the app stores an explicit rule for them.
             if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true)))continue;
-            boolean critical=Boolean.TRUE.equals(row.get("critical"));String level=rule==null?copy.getProperty(prefix+(critical?"critical":"level"),"active"):rule[1];
+            boolean critical=Boolean.TRUE.equals(row.get("critical"));String hint=row.get("level") instanceof String h&&LEVELS.contains(h)?h:null;
+            String level=rule!=null?rule[1]:hint!=null?hint:copy.getProperty(prefix+(critical?"critical":"level"),"active");
             if(level.equals("off")||!BarkPolicy.allowed(copy,prefix,type,level,java.time.Instant.now()))continue;
             String sound=rule==null?copy.getProperty(prefix+(critical?"criticalSound":"sound"),"minuet"):rule[2];int repeat=rule==null?0:Integer.parseInt(rule[3]);
 

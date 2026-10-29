@@ -65,23 +65,29 @@ final class TicketManager implements Listener {
         plugin.runAdminTask(()->{
             plugin.suiteAudit(name,"Ticket erstellt","#"+id+" · "+prio+" · "+subject);
             if(plugin.appEvents!=null&&plugin.getConfig().getBoolean("tickets.bark",true))
-                plugin.appEvents.record(prio.equals("urgent")?"ticket-urgent":"ticket",owner,(prio.equals("urgent")?"🚨 Notfall-Ticket #":"Neues Ticket #")+id+" · "+name,category(cat,true)+" · "+priority(prio,true)+"\n"+subject,prio.equals("urgent"));
+                plugin.appEvents.record(barkType(prio),owner,(prio.equals("urgent")?"🚨 Notfall-Ticket #":prio.equals("high")?"⚠️ Dringendes Ticket #":"Neues Ticket #")+id+" · "+name,category(cat,true)+" · "+priority(prio,true)+"\n"+subject,prio.equals("urgent"),barkLevel(prio));
             for(Player staff:Bukkit.getOnlinePlayers())if(staff(staff)&&!staff.getUniqueId().equals(owner))notifyStaff(staff,id,t(staff,(prio.equals("urgent")?"§c§lNotfall-Ticket":"§bNeues Ticket")+" §7#"+id+" von §f"+name+"§7: §f"+TicketStore.clip(subject,60),(prio.equals("urgent")?"§c§lUrgent ticket":"§bNew ticket")+" §7#"+id+" from §f"+name+"§7: §f"+TicketStore.clip(subject,60)));
         });
     }
-    TicketStore.Message staffReply(long id,String author,String authorId,String source,String text,boolean fromDiscord){
+    /** Bark type and interruption level follow the ticket priority: low silent, normal regular, high time-sensitive, urgent critical. */
+    static String barkType(String priority){return switch(priority){case "low"->"ticket-low";case "high"->"ticket-high";case "urgent"->"ticket-urgent";default->"ticket";};}
+    static String barkLevel(String priority){return switch(priority){case "low"->"passive";case "high"->"timeSensitive";case "urgent"->"critical";default->"active";};}
+    TicketStore.Message staffReply(long id,String author,String authorId,String source,String text,boolean fromDiscord){return staffReply(id,author,authorId,source,text,fromDiscord,List.of(),false);}
+    TicketStore.Message staffReply(long id,String author,String authorId,String source,String text,boolean fromDiscord,List<Map<String,Object>> attachments,boolean mention){
         TicketStore.Ticket before=store.get(id);boolean wasClosed=before!=null&&!before.active();
+        if((text==null||text.isBlank())&&!attachments.isEmpty())text="📎 "+String.join(", ",attachments.stream().map(a->String.valueOf(a.get("name"))).toList());
         TicketStore.Message m=store.reply(id,author,authorId,"staff",source,text);
+        if(!attachments.isEmpty())m=store.attach(id,m.id(),attachments);
         TicketDiscord d=discord();
         // A staff reply reopens a closed ticket; unlock the thread/channel first (jobs run in order).
         if(wasClosed&&d!=null)d.reopenedAsync(id,author,!fromDiscord);
-        if(!fromDiscord&&d!=null)d.forwardAsync(id,m);
+        if(!fromDiscord&&d!=null)d.forwardAsync(id,m,mention);
         plugin.runAdminTask(()->plugin.suiteAudit(author,"Ticket beantwortet","#"+id+" ("+source+")"));
         return m;
     }
     TicketStore.Message playerReply(long id,String author,String authorId,String source,String text,boolean fromDiscord){
         TicketStore.Message m=store.reply(id,author,authorId,"player",source,text);
-        TicketDiscord d=discord();if(!fromDiscord&&d!=null)d.forwardAsync(id,m);
+        TicketDiscord d=discord();if(!fromDiscord&&d!=null)d.forwardAsync(id,m,false);
         TicketStore.Ticket ticket=store.get(id);UUID owner=ticket==null?null:ticket.owner;
         plugin.runAdminTask(()->{for(Player staff:Bukkit.getOnlinePlayers())if(staff(staff)&&!staff.getUniqueId().equals(owner))notifyStaff(staff,id,t(staff,"§bTicket §7#"+id+"§b: neue Antwort von §f"+author,"§bTicket §7#"+id+"§b: new reply from §f"+author));});
         return m;
@@ -116,8 +122,11 @@ final class TicketManager implements Listener {
             long since=onlineSince.computeIfAbsent(p.getUniqueId(),k->now);
             if(now-since<delay)continue;
             List<TicketStore.Pending> pending=store.pending(p.getUniqueId());
-            for(TicketStore.Pending item:pending){deliver(p,item);store.delivered(item.ticket(),item.message().id());}
-            if(!pending.isEmpty())p.playSound(p.getLocation(),"minecraft:block.note_block.chime",0.8F,1.2F);
+            boolean urgent=false;
+            for(TicketStore.Pending item:pending){deliver(p,item);store.delivered(item.ticket(),item.message().id());TicketStore.Ticket t=store.get(item.ticket());urgent|=t!=null&&Set.of("high","urgent").contains(t.priority);}
+            // Player#playSound and the action bar reach only this player.
+            if(!pending.isEmpty()){p.playSound(p.getLocation(),urgent?"minecraft:block.note_block.bell":"minecraft:block.note_block.chime",0.9F,1.2F);p.playSound(p.getLocation(),"minecraft:entity.experience_orb.pickup",0.5F,1.4F);
+                p.sendActionBar(Component.text(t(p,"📩 Neue Ticket-Antwort vom Team","📩 New ticket reply from staff")).color(NamedTextColor.AQUA));}
             hint(p,now,since);
         }
     }
@@ -125,7 +134,8 @@ final class TicketManager implements Listener {
         long id=item.ticket();boolean staffReply=item.message().role().equals("staff");
         String head=staffReply?t(p,"§b§l[Ticket #"+id+"] §bAntwort von §f"+item.message().author()+" §7(Team)","§b§l[Ticket #"+id+"] §bReply from §f"+item.message().author()+" §7(staff)"):"§b§l[Ticket #"+id+"] §7"+item.message().text();
         p.sendMessage(head);
-        if(staffReply)p.sendMessage("§f"+TicketStore.clip(item.message().text(),400));
+        if(staffReply)for(String line:TicketStore.clip(item.message().text(),600).split("\n"))p.sendMessage("§f"+line);
+        if(!item.message().attachments().isEmpty())p.sendMessage(t(p,"§7📎 "+item.message().attachments().size()+" Anhang/Anhänge – im Discord-Ticket sichtbar","§7📎 "+item.message().attachments().size()+" attachment(s) – visible in the Discord ticket"));
         TicketStore.Ticket ticket=store.get(id);
         actions(p,id,false,ticket!=null&&ticket.active());
     }
@@ -332,15 +342,31 @@ final class TicketManager implements Listener {
         try{id=Long.parseLong(String.valueOf(input.getOrDefault("id","0")));}catch(NumberFormatException e){throw new IllegalArgumentException("Ticket-ID ungültig");}
         String text=String.valueOf(input.getOrDefault("text",""));
         switch(action){
-            case "reply"->{TicketStore.Message m=staffReply(id,actor,"app","app",text,false);return SimplexAdminSuite.appMap("ok",true,"title","Antwort gespeichert","description",m.delivered()?"Zugestellt.":"Wird nach "+deliveryDelay()+" Sekunden Online-Zeit in Minecraft zugestellt.","ticket",appTicket(id));}
+            case "reply"->{TicketStore.Message m=staffReply(id,actor,"app","app",text,false,List.of(),Boolean.TRUE.equals(input.get("mention"))||"true".equals(String.valueOf(input.get("mention"))));return SimplexAdminSuite.appMap("ok",true,"title","Antwort gespeichert","description",m.delivered()?"Zugestellt.":"Wird nach "+deliveryDelay()+" Sekunden Online-Zeit in Minecraft zugestellt.","ticket",appTicket(id));}
             case "close"->close(id,actor,false);
             case "reopen"->reopen(id,actor,false);
             case "claim"->claim(id,actor,false);
             case "priority"->priority(id,String.valueOf(input.getOrDefault("priority","normal")),actor,false);
-            case "delete"->{if(!full)throw new IllegalArgumentException("Löschen benötigt full-Zugriff");if(!store.delete(id))throw new IllegalArgumentException("Ticket nicht gefunden");plugin.suiteAudit(actor,"Ticket gelöscht","#"+id);return SimplexAdminSuite.appMap("ok",true,"title","Ticket gelöscht","description","#"+id+" wurde entfernt.");}
+            case "delete"->{
+                if(!full)throw new IllegalArgumentException("Löschen benötigt full-Zugriff");
+                TicketStore.Ticket ticket=store.get(id);if(ticket==null)return SimplexAdminSuite.appMap("ok",true,"deleted",true,"title","Ticket gelöscht","description","#"+id+" war bereits entfernt.");
+                String channel=ticket.channel,mode=ticket.channelMode,owner=ticket.discordUser;store.delete(id);
+                TicketDiscord d=discord();if(d!=null&&!channel.isBlank())d.deletedAsync(id,channel,mode,owner,actor);
+                plugin.suiteAudit(actor,"Ticket gelöscht","#"+id);
+                return SimplexAdminSuite.appMap("ok",true,"deleted",true,"title","Ticket gelöscht","description","#"+id+" wurde entfernt"+(channel.isBlank()?".":"; der Discord-Thread/-Kanal wird gelöscht bzw. geschlossen."));
+            }
+            case "discard"->{long message;try{message=Long.parseLong(String.valueOf(input.getOrDefault("message","0")));}catch(NumberFormatException e){message=0;}
+                int count=store.discard(id,message);plugin.suiteAudit(actor,"Ticket-Zustellung verworfen","#"+id+" · "+count);
+                return SimplexAdminSuite.appMap("ok",true,"title",count==1?"Zustellung verworfen":count+" Zustellungen verworfen","description","Diese Antworten werden dem Spieler nicht mehr im Spiel zugestellt.","ticket",appTicket(id));}
             default->throw new IllegalArgumentException("Unbekannte Ticketaktion");
         }
         return SimplexAdminSuite.appMap("ok",true,"title","Ticket aktualisiert","description","#"+id,"ticket",appTicket(id));
+    }
+    /** App upload (worker thread): stores the file, adds it as a staff reply and posts it to Discord. */
+    Object appUpload(long id,String name,String type,byte[] data,String text,boolean mention,String actor)throws java.io.IOException{
+        Map<String,Object> meta=store.storeAttachment(id,name,type,data);
+        TicketStore.Message m=staffReply(id,actor,"app","app",text,false,List.of(meta),mention);
+        return SimplexAdminSuite.appMap("ok",true,"title","Anhang gesendet","description",m.delivered()?"Zugestellt.":"Im Spiel als Hinweis nach "+deliveryDelay()+" s Online-Zeit; auf Discord sofort sichtbar.","ticket",appTicket(id));
     }
     static final List<String> SETTINGS=List.of("enabled","delivery-delay-seconds","max-open-per-player","create-cooldown-seconds","join-hint","bark","discord.enabled","discord.channel-id","discord.mode","discord.category-id","discord.staff-role-ids","discord.log-channel-id","discord.ping-staff");
     Map<String,Object> settings(){
