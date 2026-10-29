@@ -252,7 +252,11 @@ final class PanelUITests: XCTestCase {
         let player = app.buttons.containing(.staticText, identifier: ".BedrockDemo").firstMatch
         XCTAssertTrue(player.waitForExistence(timeout: 10)); capture("26-Statistics-Device-Players")
         player.tap()
-        XCTAssertTrue(app.buttons["Alle Geräte anzeigen"].waitForExistence(timeout: 10))
+        // The profile header and action bar sit above the device link; the list builds rows lazily.
+        let devices = app.buttons["Alle Geräte anzeigen"]
+        XCTAssertTrue(app.buttons["player-favorite"].waitForExistence(timeout: 10))
+        for _ in 0..<6 { if devices.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(devices.waitForExistence(timeout: 10))
     }
     func testSuiteOperationsStructuredTelemetry() throws {
         let server = app.buttons["server-simplex1"]
