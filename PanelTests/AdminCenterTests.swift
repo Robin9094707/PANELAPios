@@ -108,4 +108,28 @@ final class AdminCenterTests: XCTestCase {
         XCTAssertFalse(requested.contains("/v1/data/admin-dashboard"), "9.2.0 suites are never asked for the new endpoint")
         XCTAssertFalse(requested.contains("/v1/data/reports"), "modules not advertised are not requested")
     }
+    @MainActor func testOlderSuiteReportCountsFollowPagination() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubProtocol.self]
+        StubProtocol.handler = { request in
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+            switch components.path {
+            case "/v1/health": return (200, Data(#"{"apiVersion":1,"serverId":"old-suite","version":"9.2.0","scope":"read","features":["overview","moderation-center-v1"]}"#.utf8))
+            case "/v1/data/overview": return (200, Data(#"{"online":0,"maxPlayers":10}"#.utf8))
+            case "/v1/data/players": return (200, Data(#"{"items":[],"total":0,"next":-1}"#.utf8))
+            case "/v1/data/reports":
+                let offset = Int(components.queryItems?.first { $0.name == "offset" }?.value ?? "0") ?? 0
+                let status = offset == 0 ? "OPEN" : "IN_REVIEW"
+                let items = (0..<100).map { #"{"id":"\#(offset + $0)","status":"\#(status)"}"# }.joined(separator: ",")
+                return (200, Data(#"{"items":[\#(items)],"next":\#(offset == 0 ? 100 : -1),"total":200}"#.utf8))
+            default: return (404, Data("{}".utf8))
+            }
+        }
+        defer { StubProtocol.handler = nil }
+        let suite = try SuiteAPI(SuiteConnection(panel: "https://panel.invalid", server: "old", endpoint: "https://suite.invalid", fingerprint: "", serverIdentity: ""), token: "sas_synthetic", session: URLSession(configuration: config))
+        _ = try await suite.health()
+        let center = SuiteAdminCenterModel(); await center.load(suite)
+        XCTAssertEqual(center.dashboard["moderation"]["openReports"].int, 100); XCTAssertEqual(center.dashboard["moderation"]["reviewReports"].int, 100, "second page is counted")
+        XCTAssertFalse(center.dashboard["reportsPartial"].bool)
+        XCTAssertEqual(SuiteAdminDashboard.alerts(.object(["reportsPartial": .bool(true), "moderation": .object(["openReports": .number(1)])])).first?.title, "1+ offene Reports")
+    }
 }

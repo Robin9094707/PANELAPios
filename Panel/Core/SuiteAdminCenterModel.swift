@@ -67,6 +67,7 @@ enum SuiteAdminDashboard {
             let open = reports["items"].array.filter { ["OPEN", "IN_REVIEW"].contains($0["status"].string) }
             value["moderation"] = .object(["openReports": .number(Double(open.filter { $0["status"].string == "OPEN" }.count)), "reviewReports": .number(Double(open.filter { $0["status"].string == "IN_REVIEW" }.count))])
             value["reports"] = .array(Array(open.prefix(3)))
+            if reports["partial"].bool { value["reportsPartial"] = .bool(true) }
         }
         value["legacy"] = .bool(true)
         return .object(value)
@@ -77,7 +78,8 @@ enum SuiteAdminDashboard {
         if restart["active"].bool { result.append(SuiteAdminAlert(kind: .restart, title: "Neustart läuft", detail: "In \(restart["remaining"].int) Sekunden", symbol: "timer", critical: true)) }
         if maintenance["active"].bool { result.append(SuiteAdminAlert(kind: .maintenance, title: "Wartungsmodus aktiv", detail: maintenance["reason"].string.isEmpty ? "Nur Teammitglieder können beitreten" : maintenance["reason"].string, symbol: "wrench.and.screwdriver.fill", critical: true)) }
         let open = moderation["openReports"].int, review = moderation["reviewReports"].int
-        if open > 0 { result.append(SuiteAdminAlert(kind: .reports, title: open == 1 ? "1 offener Report" : "\(open) offene Reports", detail: review > 0 ? "\(review) weitere in Bearbeitung" : "Warten auf Bearbeitung", symbol: "flag.fill", critical: true)) }
+        let more = dashboard["reportsPartial"].bool ? "+" : ""
+        if open > 0 { result.append(SuiteAdminAlert(kind: .reports, title: open == 1 && more.isEmpty ? "1 offener Report" : "\(open)\(more) offene Reports", detail: review > 0 ? "\(review) weitere in Bearbeitung" : "Warten auf Bearbeitung", symbol: "flag.fill", critical: true)) }
         else if review > 0 { result.append(SuiteAdminAlert(kind: .reports, title: review == 1 ? "1 Report in Bearbeitung" : "\(review) Reports in Bearbeitung", detail: "Keine neuen Reports", symbol: "flag.fill", critical: false)) }
         if moderation["internalBans"].int > 0 { result.append(SuiteAdminAlert(kind: .bans, title: "\(moderation["internalBans"].int) aktive Suite-Banns", detail: "Interne Sperren der Admin Suite", symbol: "hand.raised.fill", critical: false)) }
         if moderation["mutes"].int > 0 { result.append(SuiteAdminAlert(kind: .mutes, title: "\(moderation["mutes"].int) stummgeschaltet", detail: "Aktive Chat-Sperren", symbol: "speaker.slash.fill", critical: false)) }
@@ -93,6 +95,7 @@ enum SuiteAdminDashboard {
 }
 
 @MainActor final class SuiteAdminCenterModel: ObservableObject {
+    static let reportPageLimit = 20
     @Published var dashboard: JSON = .null
     @Published var updated: Date?
     @Published var error: String?
@@ -117,7 +120,20 @@ enum SuiteAdminDashboard {
         // Optional modules: a missing module never hides the core dashboard.
         let restart = suite.features.contains("restart-v1") ? ((try? await suite.data("operations")) ?? .null) : .null
         let maintenance = suite.features.contains("management-v2") ? ((try? await suite.data("management", query: ["section": "status"])) ?? .null) : .null
-        let reports = suite.features.contains("moderation-center-v1") ? ((try? await suite.data("reports")) ?? .null) : .null
+        let reports = suite.features.contains("moderation-center-v1") ? await allReports(suite) : .null
         return SuiteAdminDashboard.legacy(overview: summary, players: online, restart: restart, maintenance: maintenance, reports: reports)
+    }
+    /// Older suites page reports by 100; follow `next` so backlog counts are complete (bounded to 2,000 entries).
+    private func allReports(_ suite: SuiteAPI) async -> JSON {
+        var items: [JSON] = [], offset = 0, loaded = false, partial = false
+        for page in 0..<Self.reportPageLimit {
+            guard let response = try? await suite.data("reports", query: ["offset": String(offset)]) else { partial = loaded; break }
+            loaded = true; items += response["items"].array
+            let next = response["next"] == .null ? -1 : response["next"].int
+            guard next > offset else { break }
+            offset = next
+            if page == Self.reportPageLimit - 1 { partial = true }
+        }
+        return loaded ? .object(["items": .array(items), "partial": .bool(partial)]) : .null
     }
 }
