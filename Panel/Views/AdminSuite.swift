@@ -23,7 +23,7 @@ import SwiftUI
         do {
             let record = SuiteConnections.shared.get(panel, server) ?? SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: "https://suite.demo.invalid", fingerprint: "", serverIdentity: "synthetic-suite")
             let client: SuiteAPI
-            if let existing = api, existing.connection == record { client = existing }
+            if let existing = api, existing.connection == record, !force { client = existing }
             else { client = try SuiteAPI(record, token: panel.demo ? "" : nil, demo: panel.demo) }
             let status = try await client.health()
             try Task.checkCancellation()
