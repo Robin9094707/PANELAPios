@@ -211,26 +211,27 @@ struct SuiteAdminCenterView: View {
         return VStack(alignment: .leading, spacing: 12) {
             Label("Werkzeuge", systemImage: "square.grid.2x2.fill").font(.headline)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
-                SuiteToolTile(title: "Spieler", symbol: "person.2.fill", tint: Color.panelAccent) { SuitePlayersView(suite: suite, panel: model.panel, server: model.server, actions: model.actions) }
-                if features.contains("tickets-v1") { SuiteToolTile(title: "Tickets", symbol: "ticket.fill", tint: .mint, badge: dashboard["tickets"]["open"].int, identifier: "adminCenterTickets") { SuiteTicketsView(suite: suite, panel: model.panel, server: model.server) } }
+                SuiteToolTile(title: "Spieler", symbol: "person.2.fill", tint: Color.panelAccent) { SuitePlayersView(suite: suite, panel: model.panel, server: model.server, actions: model.actions) } .disabled(!suite.can("data.players"))
+                if features.contains("tickets-v1") { SuiteToolTile(title: "Tickets", symbol: "ticket.fill", tint: .mint, badge: dashboard["tickets"]["open"].int, identifier: "adminCenterTickets") { SuiteTicketsView(suite: suite, panel: model.panel, server: model.server) }.disabled(!suite.can("data.tickets")) }
                 if features.contains("public-chat-v1") { SuiteToolTile(title: "Serverchat", symbol: "bubble.left.and.text.bubble.right.fill", tint: .blue) { SuiteLiveChatView(suite: suite) } }
                 if features.contains("moderation-center-v1") {
-                    SuiteToolTile(title: "Reports", symbol: "flag.fill", tint: .orange, badge: dashboard["moderation"]["openReports"].int) { SuiteSecurityCenterView(suite: suite, panel: model.panel, server: model.server, actions: model.actions, area: .reports) }
-                    SuiteToolTile(title: "Banns", symbol: "hand.raised.fill", tint: .red) { SuiteSecurityCenterView(suite: suite, panel: model.panel, server: model.server, actions: model.actions, area: .bans) }
+                    SuiteToolTile(title: "Reports", symbol: "flag.fill", tint: .orange, badge: dashboard["moderation"]["openReports"].int) { SuiteSecurityCenterView(suite: suite, panel: model.panel, server: model.server, actions: model.actions, area: .reports) } .disabled(!suite.can("data.reports"))
+                    SuiteToolTile(title: "Banns", symbol: "hand.raised.fill", tint: .red) { SuiteSecurityCenterView(suite: suite, panel: model.panel, server: model.server, actions: model.actions, area: .bans) } .disabled(!suite.can("data.bans"))
                     SuiteToolTile(title: "VPN-Schutz", symbol: "network", tint: .indigo) { SuiteSecurityCenterView(suite: suite, panel: model.panel, server: model.server, actions: model.actions, area: .vpn) }
                 }
-                if features.contains("events-v1") { SuiteToolTile(title: "Ereignisse", symbol: "bell.badge.fill", tint: .pink) { SuiteSecurityCenterView(suite: suite, panel: model.panel, server: model.server, actions: model.actions, area: .events) } }
-                SuiteToolTile(title: "Alt-Accounts", symbol: "person.2.badge.key.fill", tint: .purple) { SuiteAltDashboardView(suite: suite, panel: model.panel, server: model.server, actions: model.actions) }
-                SuiteToolTile(title: "Ultrabanns", symbol: "shield.slash.fill", tint: .red) { SuiteUltraView(suite: suite, actions: model.actions) }
-                if features.contains("admin-roles-v3") && suite.scope == "full" { SuiteToolTile(title: "Admin-Team", symbol: "person.badge.shield.checkmark.fill", tint: Color.panelSecondary) { SuiteAdminDirectory(suite: suite) } }
-                if features.contains("crossplay-v1") { SuiteToolTile(title: "Geyser & Floodgate", symbol: "gamecontroller.fill", tint: .green) { SuiteCrossplayView(suite: suite) } }
-                if features.contains("restart-v1") { SuiteToolTile(title: "Neustart", symbol: "arrow.clockwise.circle.fill", tint: .orange) { SuiteRestartView(suite: suite) } }
-                SuiteToolTile(title: "Verwaltung", symbol: "wrench.and.screwdriver.fill", tint: .gray) { SuiteManagementView(suite: suite, actions: model.actions) }
-                SuiteToolTile(title: "Discord", symbol: "bubble.left.and.bubble.right.fill", tint: .indigo) { SuiteDiscordView(suite: suite) }
-                SuiteToolTile(title: "Statistiken", symbol: "chart.bar.xaxis", tint: .teal, identifier: "adminCenterStatistics") { SuiteStatisticsView(model: model, live: live) }
-                if features.contains("overview") { SuiteToolTile(title: "Serverbetrieb", symbol: "chart.xyaxis.line", tint: .green) { SuiteOperationsView(suite: suite, actions: model.actions) } }
-                SuiteToolTile(title: "Einstellungen", symbol: "slider.horizontal.3", tint: .gray) { SuiteSettingsView(suite: suite) }
+                if features.contains("events-v1") { SuiteToolTile(title: "Ereignisse", symbol: "bell.badge.fill", tint: .pink) { SuiteSecurityCenterView(suite: suite, panel: model.panel, server: model.server, actions: model.actions, area: .events) }.disabled(!suite.can("data.events")) }
+                SuiteToolTile(title: "Alt-Accounts", symbol: "person.2.badge.key.fill", tint: .purple) { SuiteAltDashboardView(suite: suite, panel: model.panel, server: model.server, actions: model.actions) } .disabled(!suite.can("data.alt-dashboard"))
+                SuiteToolTile(title: "Ultrabanns", symbol: "shield.slash.fill", tint: .red) { SuiteUltraView(suite: suite, actions: model.actions) } .disabled(!suite.can("data.ultrabans"))
+                if features.contains("admin-roles-v3") && suite.scope == "full" { SuiteToolTile(title: "Admin-Team", symbol: "person.badge.shield.checkmark.fill", tint: Color.panelSecondary) { SuiteAdminDirectory(suite: suite) }.disabled(!suite.can("data.management")) }
+                if features.contains("crossplay-v1") { SuiteToolTile(title: "Geyser & Floodgate", symbol: "gamecontroller.fill", tint: .green) { SuiteCrossplayView(suite: suite) }.disabled(!suite.can("data.crossplay")) }
+                if features.contains("restart-v1") { SuiteToolTile(title: "Neustart", symbol: "arrow.clockwise.circle.fill", tint: .orange) { SuiteRestartView(suite: suite) }.disabled(!suite.can("data.operations")) }
+                SuiteToolTile(title: "Verwaltung", symbol: "wrench.and.screwdriver.fill", tint: .gray) { SuiteManagementView(suite: suite, actions: model.actions) } .disabled(!suite.can("data.management"))
+                SuiteToolTile(title: "Discord", symbol: "bubble.left.and.bubble.right.fill", tint: .indigo) { SuiteDiscordView(suite: suite) } .disabled(!suite.can("data.discord-channels"))
+                SuiteToolTile(title: "Statistiken", symbol: "chart.bar.xaxis", tint: .teal, identifier: "adminCenterStatistics") { SuiteStatisticsView(model: model, live: live) } .disabled(!suite.can("data.statistics"))
+                if features.contains("overview") { SuiteToolTile(title: "Serverbetrieb", symbol: "chart.xyaxis.line", tint: .green) { SuiteOperationsView(suite: suite, actions: model.actions) }.disabled(!suite.can("data.overview")) }
+                SuiteToolTile(title: "Einstellungen", symbol: "slider.horizontal.3", tint: .gray) { SuiteSettingsView(suite: suite) } .disabled(!suite.can("data.settings"))
                 SuiteToolTile(title: "Alle Funktionen", symbol: "magnifyingglass", tint: Color.panelAccent) { SuiteActionsView(suite: suite, actions: model.actions.filter { !["menu.action", "settings.update"].contains($0.id) }, title: "Alle Funktionen") }
+                if features.contains("accounts-v1") { SuiteToolTile(title: "Zugänge & Serverregeln", symbol: "person.badge.key.fill", tint: .indigo) { SuiteUpgradeView(suite: suite) } }
                 SuiteToolTile(title: "Kopplung", symbol: "key.horizontal.fill", tint: .secondary, identifier: "adminCenterHub") { SuiteHubView(panel: model.panel, server: model.server, model: model) }
             }
             SuitePinnedActionsView(suite: suite, actions: model.actions)

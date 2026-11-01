@@ -55,6 +55,12 @@ final class AccountLinks {
         Link old=links.get(id);if(old==null||!old.discord.equals(expectedDiscord))return false;
         Map<UUID,Link> next=new LinkedHashMap<>(links);next.remove(id);persist(next);links=Collections.unmodifiableMap(next);codes.entrySet().removeIf(e->e.getValue().discord.equals(old.discord));return true;
     }
+    synchronized Link replace(UUID id,String expectedDiscord,String discord,String name)throws IOException{
+        if(!discord.matches("[0-9]{5,25}"))throw new IllegalArgumentException("Invalid Discord ID");
+        Link old=links.get(id);if(!Objects.equals(old==null?"":old.discord(),expectedDiscord))throw new IllegalArgumentException("Link changed. Reload first.");
+        Link occupied=byDiscord(discord);if(occupied!=null&&!occupied.minecraft().equals(id))throw new IllegalArgumentException("Discord account already linked to another player");
+        Map<UUID,Link> next=new LinkedHashMap<>(links);Link update=new Link(id,discord,name,System.currentTimeMillis());next.put(id,update);persist(next);links=Collections.unmodifiableMap(next);codes.entrySet().removeIf(e->e.getValue().discord.equals(discord)||old!=null&&e.getValue().discord.equals(old.discord()));return update;
+    }
     synchronized Link rename(UUID id,String expected,String name)throws IOException {
         Link old=links.get(id);if(old==null||!old.discord.equals(expected))return null;
         if(old.name.equals(name))return old;

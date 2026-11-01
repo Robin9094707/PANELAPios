@@ -74,7 +74,7 @@ struct SuiteTicketsView: View {
                 if model.next > 0 { Button("Weitere laden") { Task { await model.load(filter, query: query, more: true) } }.disabled(model.busy) }
             } header: { HStack { Text("Tickets"); Spacer(); if model.busy { ProgressView().controlSize(.small) } } }
         }.panelScreen().navigationTitle("Tickets").searchable(text: $query, prompt: "Ticket, Spieler oder Betreff").errorAlert($model.error)
-            .toolbar { if suite.scope == "full" { NavigationLink { SuiteTicketSettingsView(suite: suite) } label: { Image(systemName: "gearshape") }.accessibilityLabel("Ticketeinstellungen") } }
+            .toolbar { if suite.scope == "full" { NavigationLink { SuiteTicketSettingsView(suite: suite) } label: { Image(systemName: "gearshape") }.disabled(!suite.can("data.ticket-settings")).accessibilityLabel("Ticketeinstellungen") } }
             .refreshable { await model.load(filter, query: query) }
             .onChange(of: filter) { _, value in Task { await model.load(value, query: query) } }
             .task(id: query) { try? await Task.sleep(for: .milliseconds(250)); await model.load(filter, query: query) }
@@ -156,7 +156,7 @@ struct SuiteTicketDetailView: View {
     @State private var drafts: [SuiteTicketDraft] = []
     @State private var importing = false
     @State private var preview: SuiteTicketPreview?
-    var canManage: Bool { suite.scope == "full" || suite.scope == "manage" }
+    var canManage: Bool { (suite.scope == "full" || suite.scope == "manage") && suite.can("ticket.reply") }
     var active: Bool { ticket["status"].string != "closed" }
     var attachmentsSupported: Bool { suite.features.contains("tickets-v2") }
     var waiting: [JSON] { ticket["items"].array.filter { $0["role"].string == "staff" && !$0["delivered"].bool } }
@@ -176,7 +176,7 @@ struct SuiteTicketDetailView: View {
                     if !waiting.isEmpty && canManage && attachmentsSupported {
                         Section {
                             Label(waiting.count == 1 ? "1 Antwort wartet auf den Spieler" : "\(waiting.count) Antworten warten auf den Spieler", systemImage: "clock.badge").font(.subheadline)
-                            Button("Zustellung im Spiel verwerfen", systemImage: "xmark.bin", role: .destructive) { confirmDiscard = true }
+                            Button("Zustellung im Spiel verwerfen", systemImage: "xmark.bin", role: .destructive) { confirmDiscard = true }.disabled(!suite.can("ticket.discard"))
                         } footer: { Text("Verworfene Antworten bleiben im Verlauf und auf Discord, werden dem Spieler im Spiel aber nicht mehr zugestellt.") }
                     }
                     Section("Verlauf") {
@@ -189,10 +189,10 @@ struct SuiteTicketDetailView: View {
                                 }
                         }
                     }
-                    if canManage { composer } else { Section { Text("Zum Antworten wird ein manage- oder full-App-Zugang benötigt.").font(.footnote).foregroundStyle(.secondary) } }
+                    if canManage { composer } else { Section { Text("Antworten ist mit diesem Zugang nicht freigegeben.").font(.footnote).foregroundStyle(.secondary) } }
                 }
             }.panelScreen().errorAlert($error)
-                .toolbar { if canManage && ticket != .null { actionsMenu } }
+                .toolbar { if suite.scope != "read" && ticket != .null { actionsMenu } }
                 .refreshable { await load() }
                 .task(id: scenePhase) {
                     guard scenePhase == .active else { return }
@@ -264,12 +264,12 @@ struct SuiteTicketDetailView: View {
     var actionsMenu: some View {
         Menu {
             if active {
-                Button("Übernehmen", systemImage: "person.fill.checkmark") { Task { await perform(["action": .string("claim")]) } }
-                Menu("Priorität", systemImage: "flag") { ForEach(SuiteTicketText.priorities, id: \.self) { value in Button(SuiteTicketText.priority(value), systemImage: ticket["priority"].string == value ? "checkmark" : "flag") { Task { await perform(["action": .string("priority"), "priority": .string(value)]) } } } }
-                Button("Ticket schließen", systemImage: "lock", role: .destructive) { confirmClose = true }
-            } else { Button("Wieder öffnen", systemImage: "lock.open") { Task { await perform(["action": .string("reopen")]) } } }
+                Button("Übernehmen", systemImage: "person.fill.checkmark") { Task { await perform(["action": .string("claim")]) } }.disabled(!suite.can("ticket.claim"))
+                Menu("Priorität", systemImage: "flag") { ForEach(SuiteTicketText.priorities, id: \.self) { value in Button(SuiteTicketText.priority(value), systemImage: ticket["priority"].string == value ? "checkmark" : "flag") { Task { await perform(["action": .string("priority"), "priority": .string(value)]) } }.disabled(!suite.can("ticket.priority")) } }
+                Button("Ticket schließen", systemImage: "lock", role: .destructive) { confirmClose = true }.disabled(!suite.can("ticket.close"))
+            } else { Button("Wieder öffnen", systemImage: "lock.open") { Task { await perform(["action": .string("reopen")]) } }.disabled(!suite.can("ticket.reopen")) }
             Button("Verlauf kopieren", systemImage: "doc.on.doc") { Clipboard.copy(ticket["items"].array.map { $0["author"].string + ": " + $0["text"].string }.joined(separator: "\n")) }
-            if suite.scope == "full" { Button("Löschen", systemImage: "trash", role: .destructive) { confirmDelete = true } }
+            if suite.scope == "full" { Button("Löschen", systemImage: "trash", role: .destructive) { confirmDelete = true }.disabled(!suite.can("ticket.delete")) }
         } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("Ticketaktionen")
     }
     static func isMissing(_ error: Error) -> Bool { let text = error.localizedDescription.lowercased(); return text.contains("nicht gefunden") || text.contains("not found") }

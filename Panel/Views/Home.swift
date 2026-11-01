@@ -5,6 +5,7 @@ struct HomeView: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var workspace: WorkspaceStore
     @State private var add = false
+    @State private var directSuite = false
     @State private var settings = false
     @State private var transfers = false
     @State private var widgets = false
@@ -24,6 +25,9 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    if !suiteConnections.values.filter({ $0.panel.hasPrefix("suite-direct:") }).isEmpty {
+                        VStack(alignment: .leading, spacing: 12) { Label("Direkte Admin-Suite-Zugänge", systemImage: "lock.shield").font(.headline); ForEach(suiteConnections.values.filter { $0.panel.hasPrefix("suite-direct:") }) { record in NavigationLink { SuiteDirectDashboard(connection: record) } label: { Label(record.panel.replacingOccurrences(of: "suite-direct:", with: "") + " · " + record.endpoint, systemImage: "server.rack") } } }.card()
+                    }
                     if let api = store.api {
                         if api.amp != nil { NavigationLink { AMPApplicationsView(api: api) } label: { Label("Python App Runner & AMP-Anwendungen", systemImage: "terminal.fill").frame(maxWidth: .infinity, alignment: .leading).card() }.buttonStyle(.plain) }
                         ForEach(layouts.cards(layoutKey, scope: .home)) { card in homeCard(card, api: api) }
@@ -38,6 +42,7 @@ struct HomeView: View {
                         Menu {
                             ForEach(store.profiles) { p in Button { store.select(p.id) } label: { Label(p.name, systemImage: store.selected == p.id && !store.demo ? "checkmark.circle.fill" : "server.rack") } }
                             Button("Panel hinzufügen", systemImage: "plus") { add = true }
+                            Button("Mit Admin-Suite-Benutzer anmelden", systemImage: "person.badge.key") { directSuite = true }
                             if store.demo { Button("Demo verlassen") { store.exitDemo() } }
                         } label: { Label(store.demo ? "Demo" : store.active?.name ?? "Panels", systemImage: "square.stack") }
                     }
@@ -48,6 +53,7 @@ struct HomeView: View {
                 .navigationDestination(for: Server.self) { server in if let api = store.api { ServerView(api: api, server: server).id("\(store.selected?.uuidString ?? "demo")-\(server.id)") } }
                 .sheet(isPresented: $editLayout) { DashboardEditor(scope: .home, layoutKey: layoutKey) }
                 .sheet(isPresented: $add) { AddPanelView() }
+                .sheet(isPresented: $directSuite) { SuiteDirectLoginView() }
                 .sheet(isPresented: $settings) { SettingsView() }
                 .sheet(isPresented: $transfers) { TransfersView() }
                 .sheet(isPresented: $widgets) { NavigationStack { WidgetSettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { widgets = false } } } } }

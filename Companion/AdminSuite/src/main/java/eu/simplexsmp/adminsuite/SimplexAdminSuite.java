@@ -129,7 +129,7 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class SimplexAdminSuite extends JavaPlugin implements Listener, CommandExecutor, org.bukkit.command.TabCompleter {
-    private static final String VERSION = "9.5.0";
+    private static final String VERSION = "9.6.0";
     private static final int CURRENT_DATA_SCHEMA = 17;
     private static final int DEFAULT_MAX_CHAT_LINES = 100;
     private static final int DEFAULT_MAX_ACTION_LINES = 240;
@@ -231,6 +231,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     private DiscordStatusManager discordStatus;
     private DiscordBotManager discordBot;
     AccountLinkManager accountLinks;
+    OnlineWatchManager onlineWatches;
+    MemoryRestartGuard memoryGuard;
     TicketManager tickets;
     ServerStatistics serverStatistics;
     PlayerCommandManager playerCommands;
@@ -352,6 +354,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         playerData = new PlayerDataManager(this);
         openAi = new OpenAiIntegration(this);
         try { accountLinks = new AccountLinkManager(this); } catch (java.io.IOException e) { throw new IllegalStateException("Discord-Verknüpfungen konnten nicht sicher geladen werden",e); }
+        try {onlineWatches=new OnlineWatchManager(this);onlineWatches.start();Bukkit.getPluginManager().registerEvents(onlineWatches,this);Bukkit.getPluginManager().registerEvents(new WatchInventory(new UUID(0,0),List.of()),this);}catch(java.io.IOException e){throw new IllegalStateException("Online notifications could not be loaded; file preserved",e);}
+        memoryGuard=new MemoryRestartGuard(this);memoryGuard.start();
         community = new PlayerCommunityManager(this);
         LiveMenus.configure(this);Bukkit.getPluginManager().registerEvents(new LiveMenus(),this);
         Bukkit.getPluginManager().registerEvents(community, this);
@@ -500,6 +504,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (connectionDiagnostics != null) connectionDiagnostics.stop();
         if(database==null)return; // Failed startup: do not rewrite partial plugin data.
         if (serverStatistics != null) serverStatistics.stop();
+        if(onlineWatches!=null)onlineWatches.stop();
+        if(memoryGuard!=null)memoryGuard.stop();
         if (accountLinks != null) accountLinks.stop();
         if (moderationControl != null) moderationControl.stop();
         if (xrayBait != null) xrayBait.shutdown();
@@ -754,6 +760,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (rootCommand.equals("connection")) return connectionDiagnostics.command(sender, args);
         if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length > 0 && args[0].equalsIgnoreCase("connection"))
             return connectionDiagnostics.command(sender, Arrays.copyOfRange(args, 1, args.length));
+        if(rootCommand.equals("joinnotify"))return onlineWatches==null||onlineWatches.command(sender,args);
         if (rootCommand.equals("link") || rootCommand.equals("unlink")) return accountLinks == null || accountLinks.command(sender, rootCommand.equals("unlink") ? new String[]{"unlink"} : args);
         if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length>0) {
             if (args[0].equalsIgnoreCase("links")) {
@@ -7023,6 +7030,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     private void ask(Player admin, UUID target, String action, String message, String value) {
         if(appApi!=null && appApi.menus.prompt(admin,message,"",input->completePending(admin,new PendingInput(target,action,value),input)))return;
+        long inputRevision=adminAccess.revision(admin.getUniqueId());
+        if(NativeTextDialogs.prompt(this,admin,playerUiText(admin,message),"",()->adminSessionUsable(admin)&&inputRevision==adminAccess.revision(admin.getUniqueId()),input->completePending(admin,new PendingInput(target,action,value),input)))return;
         pendingInputs.put(admin.getUniqueId(), new PendingInput(target, action, value));
         admin.closeInventory();
         admin.sendMessage(prefix() + message);

@@ -190,6 +190,7 @@ final class DiscordBotManager {
             mapOf("type",1,"name","status","description","Zustellung und Bestätigung eines Spielers anzeigen","options",List.of(mapOf("type",3,"name","minecraft","description","Spielername oder UUID (auch offline)","required",true,"autocomplete",true),mapOf("type",4,"name","page","description","Seite","required",false,"min_value",1,"max_value",1000))),
             mapOf("type",1,"name","delete","description","Eine noch unbestätigte Nachricht löschen","options",List.of(mapOf("type",3,"name","id","description","Nachrichten-ID","required",true))))));
         commands.add(tickets.command());
+        commands.add(onlineCommand());
         DiscordCommandSchema.validate(commands);
         return commands;
     }
@@ -1504,6 +1505,7 @@ final class DiscordBotManager {
         lastInteractionAt = System.currentTimeMillis();
         int interactionType = intValue(interaction.get("type"), 0);
         Map<String, Object> data = interaction.get("data") instanceof Map ? (Map<String, Object>) interaction.get("data") : Collections.emptyMap();
+        if(onlineInteraction(interaction,data,interactionType))return;
         if(tickets.interaction(interaction,data,interactionType))return;
         if(featureInteraction(interaction,data,interactionType))return;
         if (interactionType == 3) { handleComponent(interaction, data); return; }
@@ -2418,6 +2420,42 @@ final class DiscordBotManager {
         String hint=switch(status){case 401->" Check the configured bot token.";case 403->" Check bot channel permissions and role hierarchy.";case 429->" Discord rate limit; retry later.";default->"";};
         if(responseBody!=null&&responseBody.contains("50007"))hint=" Direct messages are disabled or blocked; use the verification button or Discord /link.";
         lastError=detail+hint;diagnostics.failure(method+" "+DiscordDiagnostics.route(path),detail+hint);
+    }
+
+    private Map<String,Object> onlineCommand(){return mapOf("name","notify","description","Notify me when a Minecraft player joins","type",1,"options",List.of(
+        mapOf("type",1,"name","add","description","Subscribe to a player (requires /link)","options",List.of(mapOf("type",3,"name","player","description","Minecraft name or UUID","required",true,"autocomplete",true),mapOf("type",3,"name","mode","description","Once or permanent (consent requested)","required",false,"choices",List.of(mapOf("name","Once","value","once"),mapOf("name","Permanent","value","permanent"))))),
+        mapOf("type",1,"name","list","description","List your active notifications"),
+        mapOf("type",1,"name","remove","description","Remove one notification","options",List.of(mapOf("type",3,"name","id","description","Notification ID from /notify list","required",true)))));}
+    @SuppressWarnings("unchecked") private boolean onlineInteraction(Map<String,Object> event,Map<String,Object> data,int type){
+        if(!"notify".equals(string(data.get("name"))))return false;
+        String id=string(event.get("id")),token=string(event.get("token")),channel=string(event.get("channel_id"));
+        Map<String,Object> member=event.get("member") instanceof Map<?,?> m?(Map<String,Object>)m:Map.of();Map<String,Object> user=member.get("user") instanceof Map<?,?> u?(Map<String,Object>)u:Map.of();String owner=string(user.get("id"));
+        String configured=plugin.getConfig().getString("online-notifications.channel-id","").trim();
+        if(!guildId().equals(string(event.get("guild_id")))||owner.isBlank()||configured.isBlank()||!configured.equals(channel)){
+            if(type==4)respondAutocomplete(id,token,List.of());else respondReply(id,token,DiscordAdminController.Reply.error("Use the configured notification channel. / Bitte den eingerichteten Benachrichtigungskanal nutzen."),true);return true;}
+        var link=plugin.accountLinks.store.byDiscord(owner);
+        if(link==null||plugin.onlineWatches==null){if(type==4)respondAutocomplete(id,token,List.of());else respondReply(id,token,DiscordAdminController.Reply.error("Verify your own account with /link in Minecraft first. / Bitte zuerst das eigene Konto mit /link in Minecraft verifizieren."),true);return true;}
+        if(type==4){String q=java.util.Optional.ofNullable(findFocused(data.get("options"))).map(f->f.value.toLowerCase(Locale.ROOT)).orElse("");plugin.runAdminTask(()->respondAutocomplete(id,token,plugin.expansionProfiles().stream().filter(p->p.displayName().toLowerCase(Locale.ROOT).contains(q)).limit(25).map(p->new DiscordAdminController.Choice(p.displayName(),p.uniqueId().toString())).toList()));return true;}
+        if(type!=2)return true;if(!acceptCooldown(owner)){respondReply(id,token,DiscordAdminController.Reply.error("Please wait a moment. / Bitte kurz warten."),true);return true;}
+        deferInteraction(id,token,false);String sub=subcommand(data.get("options"));boolean de=string(event.get("locale")).startsWith("de");
+        plugin.runAdminTask(()->{try{
+            if(sub.equals("add")){
+                UUID target=plugin.discordAdminResolvePlayer(optionText(data.get("options"),"player"));if(target==null)throw new IllegalArgumentException("Player not found. / Spieler nicht gefunden.");
+                String player=plugin.expansionProfiles().stream().filter(p->p.uniqueId().equals(target)).map(p->p.displayName()).findFirst().orElse(target.toString());String mode=optionText(data.get("options"),"mode");if(mode.isBlank())mode="once";String selected=mode;
+                plugin.onlineWatches.work(()->{try{var current=plugin.accountLinks.store.byDiscord(owner);if(current==null||!current.minecraft().equals(link.minecraft()))throw new IllegalArgumentException("Verification changed. / Verifizierung geändert.");var w=plugin.onlineWatches.store.add(owner,link.minecraft(),string(user.get("username")),target,player,channel,string(event.get("locale")),selected);
+                    String text=de?"Warte auf den nächsten Beitritt von "+player+". Du wirst hier gepingt.":"Waiting for "+player+" to join. You will be pinged here.";
+                    if(selected.equals("permanent"))text+=de?" Danach erhält der Spieler eine Anfrage; ohne Antwort wird sie nach 3 Tagen automatisch angenommen.":" The player then receives a permanent request; it auto-accepts after 3 days without a reply.";
+                    editOriginal(token,DiscordAdminController.Reply.ok(de?"Hinweis gespeichert":"Notification saved",text+"\nID: `"+w.id()+"`",""));}catch(Exception e){editOriginal(token,DiscordAdminController.Reply.error(e.getMessage()));}});
+            }else plugin.onlineWatches.work(()->{try{
+                if(sub.equals("remove")){var w=plugin.onlineWatches.store.get(optionText(data.get("options"),"id"));if(w==null||!w.discord().equals(owner))throw new IllegalArgumentException("Notification not found. / Hinweis nicht gefunden.");plugin.onlineWatches.store.remove(w.id());editOriginal(token,DiscordAdminController.Reply.ok("Notifications / Hinweise","Removed / Entfernt",""));}
+                else {StringBuilder out=new StringBuilder();for(var w:plugin.onlineWatches.store.all())if(w.discord().equals(owner))out.append("`"+w.id()+"` · "+ServerStatistics.label(w.player())+" · "+w.mode()+(w.accepted()?" ✓":w.asked()>0?" (pending / offen)":"")+"\n");editOriginal(token,DiscordAdminController.Reply.ok("Notifications / Hinweise",out.length()==0?"None / Keine":out.toString(),"Maximum 10 / Maximal 10"));}
+            }catch(Exception e){editOriginal(token,DiscordAdminController.Reply.error(e.getMessage()));}});
+        }catch(Exception e){editOriginal(token,DiscordAdminController.Reply.error(e.getMessage()));}});return true;
+    }
+    boolean sendOnlineNotice(String channel,String user,String content)throws Exception{
+        if(!ticketRunning())return false;HttpResponse<String> check=ticketHttp("GET","/channels/"+channel,null);Object raw=Json.parse(check.body());
+        if(check.statusCode()!=200||!(raw instanceof Map<?,?> m)||!guildId().equals(string(m.get("guild_id")))||!Set.of(0,5).contains(intValue(m.get("type"),-1)))return false;
+        return ticketHttp("POST","/channels/"+channel+"/messages",Json.stringify(mapOf("content",truncate(content,1900),"allowed_mentions",mapOf("parse",List.of(),"users",List.of(user))))).statusCode()/100==2;
     }
 
     // Package-private bridge for TicketDiscord; it reuses this bot's token, rate-limit handling and workers.

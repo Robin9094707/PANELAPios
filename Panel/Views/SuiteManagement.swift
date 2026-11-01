@@ -10,10 +10,10 @@ struct SuiteManagementView: View {
     var body: some View {
         List {
             Section("Server") {
-                Toggle("Wartungsmodus", isOn: Binding(get: { status["maintenance"].bool }, set: { value in Task { await model.prepare("management.apply", ["operation": .string("maintenance"), "value": .string(String(value))], summary: value ? "Wartungsmodus einschalten?" : "Wartungsmodus ausschalten?") } })).disabled(suite.scope != "full" || model.busy)
+                Toggle("Wartungsmodus", isOn: Binding(get: { status["maintenance"].bool }, set: { value in Task { await model.prepare("management.apply", ["operation": .string("maintenance"), "value": .string(String(value))], summary: value ? "Wartungsmodus einschalten?" : "Wartungsmodus ausschalten?") } })).disabled((suite.scope != "full" || !suite.can("action.management.apply")) || model.busy)
                 Text(status["reason"].string).font(.footnote).foregroundStyle(.secondary)
                 TextField("Discord-Link oder Einladungscode", text: $discord).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button("Discord-Link speichern") { Task { await model.prepare("management.apply", ["operation": .string("discord"), "value": .string(discord)], summary: "Discord-Einladung ändern?\n" + discord) } }.disabled(suite.scope != "full")
+                Button("Discord-Link speichern") { Task { await model.prepare("management.apply", ["operation": .string("discord"), "value": .string(discord)], summary: "Discord-Einladung ändern?\n" + discord) } }.disabled((suite.scope != "full" || !suite.can("action.management.apply")))
             }
             Section("Verwaltung") {
                 if suite.features.contains("restart-v1") { NavigationLink("Neustart planen & abbrechen") { SuiteRestartView(suite: suite) } }
@@ -48,8 +48,8 @@ struct SuiteAdminDirectory: View {
                 }
             }
             if rows.isEmpty && !refreshing { ContentUnavailableView("Keine weiteren Administratoren", systemImage: "person.2.badge.key.fill", description: Text("Füge einen gespeicherten Spieler hinzu und weise ihm eine Rolle zu.")) }
-            Section { Button("Spieler hinzufügen", systemImage: "person.badge.plus") { adding = true }.disabled(suite.scope != "full")
-                NavigationLink("Eigene Rollen verwalten") { SuiteRoleDirectory(suite: suite) }.disabled(suite.scope != "full")
+            Section { Button("Spieler hinzufügen", systemImage: "person.badge.plus") { adding = true }.disabled((suite.scope != "full" || !suite.can("action.management.apply")))
+                NavigationLink("Eigene Rollen verwalten") { SuiteRoleDirectory(suite: suite) }.disabled((suite.scope != "full" || !suite.can("action.management.apply")))
             }
         }.panelScreen().navigationTitle("Admin-Team").searchable(text: $search).task { await load() }.refreshable { await load() }.errorAlert($error)
             .sheet(isPresented: $adding, onDismiss: { Task { await load() } }) { NavigationStack { SuiteAdminAddView(suite: suite) } }
@@ -69,7 +69,7 @@ struct SuitePermissionView: View {
     init(suite: SuiteAPI, player: String, admin: Bool = false) { self.suite=suite; self.player=player; self.admin=admin; _model=StateObject(wrappedValue: SuiteSecurityModel(suite)) }
     var groups: [String] { Array(Set(filtered.map { $0["group"].string.isEmpty ? "Berechtigungen" : $0["group"].string })).sorted() }
     var filtered: [JSON] { data["items"].array.filter { search.isEmpty || ($0["name"].string + $0["description"].string + $0["id"].string).localizedCaseInsensitiveContains(search) } }
-    var locked: Bool { model.busy || suite.scope != "full" || data["protected"].bool }
+    var locked: Bool { model.busy || (suite.scope != "full" || !suite.can("action.management.apply")) || data["protected"].bool }
     var body: some View {
         List {
             if admin {
@@ -113,7 +113,7 @@ struct SuiteProbeView: View {
     init(suite: SuiteAPI, player: String) { self.suite=suite;self.player=player;_model=StateObject(wrappedValue: SuiteSecurityModel(suite)) }
     var body: some View {
         List {
-            Section { Button("Alle Client-Checks starten", systemImage:"shield.checkered") { Task { baseline=report["at"].double; await model.prepare("management.apply", ["operation":.string("probe"),"player":.string(player)], summary:"Alle aktivierten Signaturen für diesen Online-Spieler prüfen? Die konfigurierten Prüfregeln gelten.") } }.disabled(waiting || model.busy || suite.scope != "full"); if waiting || report["active"].bool { ProgressView("Prüfung läuft …") }; Text(report["status"].string).font(.caption).foregroundStyle(.secondary) }
+            Section { Button("Alle Client-Checks starten", systemImage:"shield.checkered") { Task { baseline=report["at"].double; await model.prepare("management.apply", ["operation":.string("probe"),"player":.string(player)], summary:"Alle aktivierten Signaturen für diesen Online-Spieler prüfen? Die konfigurierten Prüfregeln gelten.") } }.disabled(waiting || model.busy || (suite.scope != "full" || !suite.can("action.management.apply"))); if waiting || report["active"].bool { ProgressView("Prüfung läuft …") }; Text(report["status"].string).font(.caption).foregroundStyle(.secondary) }
             ForEach(report["items"].array,id:\.["id"].string) { row in HStack { Text(row["name"].string); Spacer(); Text(row["result"].string).font(.caption.bold()).foregroundStyle(row["result"].string == "DETECTED" ? .red : row["result"].string == "NOT_DETECTED" ? .green : .orange) } }
         }.panelScreen().navigationTitle("Client-Prüfung").errorAlert($model.error).task { await load() }.refreshable { await load() }
             .task(id:waiting) { guard waiting else{return}; for _ in 0..<900 { do { try await Task.sleep(for:.seconds(2)); await load(); if !report["active"].bool && report["at"].double > baseline { waiting=false;break } } catch { break } }; if !Task.isCancelled { waiting=false } }
@@ -130,7 +130,7 @@ struct SuiteAccessRulesView: View {
     init(suite:SuiteAPI,actions:[SuiteAction]) {self.suite=suite;self.actions=actions;_model=StateObject(wrappedValue:SuiteSecurityModel(suite))}
     var body:some View { List {
         Section("Bedrock") { ForEach(actions.filter{["moderation.devices","moderation.os"].contains($0.id)}) { action in NavigationLink(action.title) {SuiteActionView(suite:suite,action:action)} } }
-        Section("Java-Brand exakt sperren / freigeben") {TextField("Exakter Java-Brand",text:$brand).textInputAutocapitalization(.never);Toggle("Gesperrt",isOn:$blocked);Button("Regel prüfen") {Task{await model.prepare("management.apply",["operation":.string("brand"),"node":.string(brand),"value":.string(String(blocked))],summary:"Brand \(brand): \(blocked ? "sperren":"freigeben")? Ein Brand ist eine fälschbare Selbstangabe.")}}.disabled(brand.isEmpty || suite.scope != "full")}
+        Section("Java-Brand exakt sperren / freigeben") {TextField("Exakter Java-Brand",text:$brand).textInputAutocapitalization(.never);Toggle("Gesperrt",isOn:$blocked);Button("Regel prüfen") {Task{await model.prepare("management.apply",["operation":.string("brand"),"node":.string(brand),"value":.string(String(blocked))],summary:"Brand \(brand): \(blocked ? "sperren":"freigeben")? Ein Brand ist eine fälschbare Selbstangabe.")}}.disabled(brand.isEmpty || (suite.scope != "full" || !suite.can("action.management.apply")))}
     }.panelScreen().navigationTitle("Zugriffsregeln").errorAlert($model.error).sheet(isPresented:Binding(get:{model.plan != nil},set:{if !$0{model.plan=nil}})){SuiteSecurityConfirmation(model:model){}} }
 }
 struct SuiteShortcutEditor:View {

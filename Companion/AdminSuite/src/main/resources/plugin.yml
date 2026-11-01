@@ -1,6 +1,6 @@
 name: SimplexAdminSuite
 main: eu.simplexsmp.adminsuite.SimplexAdminSuite
-version: 9.5.0
+version: 9.6.0
 api-version: '26.2'
 author: RJ
 website: https://simplexsmp.eu
@@ -23,6 +23,9 @@ softdepend:
   - LuckPerms
   - SimplexTrimmer
 commands:
+  joinnotify:
+    description: Manage Discord join notifications about yourself
+    usage: /joinnotify [on|off]
   checkhacks:
     description: Java client translation/keybind probes; no CheckHacks plugin required.
     aliases: [sascheckhacks, clientcheck]

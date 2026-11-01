@@ -653,6 +653,7 @@ final class AdminUpdateMenu implements Listener {
                                   && rev == plugin.adminAccess.revision(p.getUniqueId()))
                                 applyInput(p, action, r.asInput(0));
                             })))) return;
+    if(NativeTextDialogs.prompt(plugin,p,title,previous,()->permitted(p)&&rev==plugin.adminAccess.revision(p.getUniqueId()),value->applyInput(p,action,value)))return;
     p.closeInventory();
     text.put(p.getUniqueId(), action);
     textRevision.put(p.getUniqueId(), rev);

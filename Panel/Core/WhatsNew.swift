@@ -18,6 +18,12 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "3.3.0", title: "Zugänge & Beitrittshinweise", summary: "Verifizierungen verwalten, einzelne App-Rechte vergeben und Server-RAM absichern.", items: [
+            WhatsNewItem(symbol: "person.badge.key.fill", title: "App-Benutzer", detail: "Benutzername und Passwort ergänzen die bestehenden Schlüssel. Rechte sind einzeln einstellbar; jeder berechtigte Nutzer verwaltet sein eigenes Bark-Gerät."),
+            WhatsNewItem(symbol: "link", title: "Discord-Verifizierungen", detail: "Vorhandene Chat-Verifizierungen anzeigen, ändern, löschen oder manuell anlegen."),
+            WhatsNewItem(symbol: "bell.badge", title: "Beitrittshinweise", detail: "Verifizierte Discord-Nutzer können bis zu zehn Spieler vormerken. Spieler verwalten Anfragen und deaktivieren Hinweise mit /joinnotify."),
+            WhatsNewItem(symbol: "memorychip", title: "RAM-Notfallneustart", detail: "Der begrenzte Server-Container wird getrennt vom Java-Heap angezeigt. Bei dauerhaft hoher Nutzung startet auf Wunsch ein übersetzter Countdown.")
+        ]),
         WhatsNewRelease(version: "3.2.0", title: "Simplex Panel 3.2", summary: "Bilder in Tickets, Benachrichtigungen je Dringlichkeit und deutlich schnellere Statistiken.", items: [
             WhatsNewItem(symbol: "photo.on.rectangle.angled", title: "Bilder & Dateien in Tickets", detail: "Anhänge aus Discord erscheinen mit Vorschau im Ticket. Du kannst selbst Bilder und Dateien senden – sie landen direkt im Discord-Ticket."),
             WhatsNewItem(symbol: "at", title: "Spieler erwähnen", detail: "Auf Wunsch erwähnt der Bot den Spieler im Discord-Ticket – nach deiner Bestätigung."),

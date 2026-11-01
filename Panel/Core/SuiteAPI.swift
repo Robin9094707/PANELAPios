@@ -46,8 +46,11 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
     let platforms = SuitePlatformCache()
     let demo: Bool
     private(set) var scope = "read"
+    private(set) var permissions: Set<String> = ["*"]
+    private(set) var limited = false
+    func can(_ permission: String) -> Bool { !limited || permissions.contains("*") || permissions.contains(permission) }
     private(set) var features: Set<String> = []
-    private let token: String
+    private var token: String
     private let session: URLSession
     init(_ connection: SuiteConnection, token: String? = nil, session: URLSession? = nil, demo: Bool = false) throws {
         self.demo = demo
@@ -107,10 +110,19 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         guard data.count <= limit else { throw PanelError(message: "Suite-Antwort zu groß.") }
         return data
     }
+    func login(username: String, password: String) async throws -> String {
+        let result = try await request("login", method: "POST", body: .object(["username": .string(username), "password": .string(password)]))
+        let value = result["token"].string
+        guard value.hasPrefix("sasu_"), value.count <= 160 else { throw PanelError(message: "Ungültige Login-Antwort.") }
+        token = value
+        return value
+    }
     func health() async throws -> JSON {
         let result = try await request("health")
         guard result["apiVersion"].int == 1, !result["serverId"].string.isEmpty else { throw PanelError(message: "Diese Adresse liefert keine kompatible Simplex-Admin-Suite-API.") }
         guard connection.serverIdentity.isEmpty || connection.serverIdentity == result["serverId"].string else { throw PanelError(message: "Die Serveridentität hat sich geändert. Kopplung prüfen und bewusst neu einrichten.") }
+        limited = result["limited"].bool
+        permissions = Set(result["permissions"].array.map(\.string))
         scope = result["scope"].string
         features = Set(result["features"].array.map(\.string))
         return result

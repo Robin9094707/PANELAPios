@@ -49,11 +49,11 @@ struct SuiteLiveChatView: View {
                 Section("Nachricht senden") {
                     TextField("Anzeigename", text: $name).textInputAutocapitalization(.never).autocorrectionDisabled()
                     TextField("Deine Nachricht", text: $message, axis: .vertical).lineLimit(2...5)
-                    Button("Senden", systemImage: "paperplane.fill") { Task { await send() } }.disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.isEmpty || suite.scope != "full")
+                    Button("Senden", systemImage: "paperplane.fill") { Task { await send() } }.disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.isEmpty || suite.scope != "full" || !suite.can("chat.send"))
                     if suite.scope != "full" { Text("Zum Senden wird ein full-App-Zugang benötigt.").font(.caption).foregroundStyle(.secondary) }
                 }.id("composer")
             }.panelScreen().navigationTitle("Serverchat").errorAlert($error)
-                .toolbar { Button("Chat leeren", systemImage: "trash") { confirmClear = true }.disabled(rows.isEmpty).accessibilityIdentifier("chatClear") }
+                .toolbar { Button("Chat leeren", systemImage: "trash") { confirmClear = true }.disabled(rows.isEmpty || !suite.can("chat.clear")).accessibilityIdentifier("chatClear") }
                 .confirmationDialog("Chatverlauf leeren?", isPresented: $confirmClear, titleVisibility: .visible) {
                     Button("Verlauf leeren", role: .destructive) { Task { await clear() } }
                 } message: { Text(serverHistory && suite.scope == "full" ? "Der gespeicherte Verlauf wird auf dem Server und in der App gelöscht. Neue Nachrichten erscheinen weiterhin." : "Der Verlauf wird auf diesem Gerät gelöscht. Neue Nachrichten erscheinen weiterhin.") }
@@ -146,8 +146,8 @@ struct SuiteRestartView: View {
     init(suite:SuiteAPI){self.suite=suite;_model=StateObject(wrappedValue:SuiteSecurityModel(suite))}
     var body: some View {
         List {
-            Section("Neustartstatus") { if status["active"].bool { Label("Neustart in \(status["remaining"].int) Sekunden",systemImage:"timer");Text(status["reasonDE"].string).font(.caption);Button("Neustart abbrechen",role:.destructive){prepare(cancel:true)}.disabled(suite.scope != "full" || model.busy) } else { Label("Kein Neustart geplant",systemImage:"checkmark.circle") } }
-            Section("Countdown & Ankündigung") { Stepper("\(seconds) Sekunden",value:$seconds,in:1...60);TextField("Grund auf Deutsch (optional)",text:$reasonDE,axis:.vertical);TextField("Reason in English (optional)",text:$reasonEN,axis:.vertical);Text("Jeder Spieler erhält Countdown, Titel und Sounds passend zu seiner Sprache. Ohne Übersetzung wird der vorhandene Grund verwendet.").font(.caption).foregroundStyle(.secondary);Button("Neustart planen",systemImage:"arrow.clockwise.circle.fill"){prepare(cancel:false)}.disabled(status["active"].bool || suite.scope != "full" || model.busy || reasonDE.count>200 || reasonEN.count>200) }
+            Section("Neustartstatus") { if status["active"].bool { Label("Neustart in \(status["remaining"].int) Sekunden",systemImage:"timer");Text(status["reasonDE"].string).font(.caption);Button("Neustart abbrechen",role:.destructive){prepare(cancel:true)}.disabled(suite.scope != "full" || !suite.can("action.restart.apply") || model.busy) } else { Label("Kein Neustart geplant",systemImage:"checkmark.circle") } }
+            Section("Countdown & Ankündigung") { Stepper("\(seconds) Sekunden",value:$seconds,in:1...60);TextField("Grund auf Deutsch (optional)",text:$reasonDE,axis:.vertical);TextField("Reason in English (optional)",text:$reasonEN,axis:.vertical);Text("Jeder Spieler erhält Countdown, Titel und Sounds passend zu seiner Sprache. Ohne Übersetzung wird der vorhandene Grund verwendet.").font(.caption).foregroundStyle(.secondary);Button("Neustart planen",systemImage:"arrow.clockwise.circle.fill"){prepare(cancel:false)}.disabled(status["active"].bool || suite.scope != "full" || !suite.can("action.restart.apply") || model.busy || reasonDE.count>200 || reasonEN.count>200) }
             Section { Text("Der Server verwendet den bestehenden Paper-Neustart. Das Hosting muss den Server danach wieder starten können.").font(.caption).foregroundStyle(.secondary) }
         }.panelScreen().navigationTitle("Serverneustart").errorAlert($model.error)
             .task { while !Task.isCancelled { await load();do {try await Task.sleep(for:.seconds(2))}catch{break} } }
