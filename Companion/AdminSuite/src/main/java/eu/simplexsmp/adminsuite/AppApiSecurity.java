@@ -61,7 +61,7 @@ final class AppApiSecurity {
         tickets.remove(id);return ticket.request();
     }
     synchronized boolean valid(Key key){return key!=null&&(key.id().startsWith("user:")?users.valid(key):keys.get(key.id())!=null&&keys.get(key.id()).equals(key));}
-    String notificationOwner(Key key){return key.id().startsWith("user:")?"user:"+key.label():key.id();}
+    String notificationOwner(Key key){return key.id().startsWith("user:")?"user:"+Base64.getUrlEncoder().withoutPadding().encodeToString(key.label().getBytes(StandardCharsets.UTF_8)):key.id();}
     boolean canNotifyOwner(String owner){return users.canNotify(owner)||keys().stream().anyMatch(k->k.id().equals(owner)&&k.scope().equals("full"));}
     static boolean permitted(Key key,String required){return key!=null&&(required.equals("read")||key.scope().equals("full")||required.equals("manage")&&key.scope().equals("manage"));}
     private String randomToken(){byte[] b=new byte[32];random.nextBytes(b);return Base64.getUrlEncoder().withoutPadding().encodeToString(b);}

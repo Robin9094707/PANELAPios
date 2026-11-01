@@ -1,4 +1,8 @@
-## Aktuelles Update: Panel 3.2.0 / Admin Suite 9.5.0
+## Aktuelles Update: Panel 3.3.0 / Admin Suite 9.6.0
+
+Verifizierte Discord-Beitrittshinweise, App-Benutzer mit einzelnen Rechten und eigenen Bark-Einstellungen, Verwaltung vorhandener Discord-Verifizierungen, Container-RAM-Notfallneustart und native Paper-Texteingaben. [Update 3.3.0](UPDATE-3.3.0.md) · [Suite 9.6.0](Companion/AdminSuite/UPDATE-9.6.0.md).
+
+## Panel 3.2.0 / Admin Suite 9.5.0
 
 Bilder und Dateien in Tickets, Erwähnen, Bark je Ticket-Priorität, Warnungen verwerfen, schnellere Statistiken und GitHub als Update-Quelle. [Update 3.2.0](UPDATE-3.2.0.md) · [Suite 9.5.0](Companion/AdminSuite/UPDATE-9.5.0.md).
 

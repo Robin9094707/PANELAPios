@@ -105,6 +105,16 @@ public final class AppApiIntegrationHarness {
             String action=json(SimplexAdminSuite.appMap("path","menu.action","values",SimplexAdminSuite.appMap("session","synthetic","revision","1","option","0")));
             check(call("/v1/prepare",read.token(),action).statusCode()==403,"read key cannot prepare mutations");
             check(call("/v1/view?path=server.suite&command=clientsecurity%20off",read.token(),null).statusCode()==405,"generic Suite command never uses read-only GET");
+            api.security.users.save("close_only","fixture-password-960",Set.of("ticket.close"),true);
+            var login=call("/v1/login",null,json(Map.of("username","close_only","password","fixture-password-960")));check(login.statusCode()==200,"password login via HTTPS");
+            String session=String.valueOf(object(DiscordBotManager.Json.parse(login.body())).get("token"));
+            check(call("/v1/health",session,null).statusCode()==200,"session can read health");
+            check(call("/v1/data/access",session,null).statusCode()==403,"limited user cannot enumerate app accounts");
+            check(call("/v1/data/settings",session,null).statusCode()==403,"limited user cannot read settings");
+            check(call("/v1/menu",session,null).statusCode()==403,"limited user cannot bypass via remote menu");
+            check(call("/v1/prepare",session,action).statusCode()==403,"limited user cannot prepare remote menu action");
+            check(call("/v1/tickets",session,json(Map.of("id","1","action","delete"))).statusCode()==403,"close permission does not grant delete");
+            api.security.users.save("close_only","",Set.of(),false);check(call("/v1/health",session,null).statusCode()==401,"disabled user session rejected immediately");
             var schema=call("/v1/schema",full.token(),null);check(schema.statusCode()==200&&schema.body().contains("player.punish")&&schema.body().contains("menu.action")&&schema.body().contains("security.ultraunban"),"native command schema covers core services");
             var menu=object(DiscordBotManager.Json.parse(call("/v1/menu",full.token(),null).body()));check(menu.get("title").equals("Admin-Zentrale"),"existing menu rendered through delegated actor");
             List<?> options=(List<?>)menu.get("options");check(options.size()>=8,"real original navigation callback list");

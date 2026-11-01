@@ -2430,7 +2430,7 @@ final class DiscordBotManager {
         if(!"notify".equals(string(data.get("name"))))return false;
         String id=string(event.get("id")),token=string(event.get("token")),channel=string(event.get("channel_id"));
         Map<String,Object> member=event.get("member") instanceof Map<?,?> m?(Map<String,Object>)m:Map.of();Map<String,Object> user=member.get("user") instanceof Map<?,?> u?(Map<String,Object>)u:Map.of();String owner=string(user.get("id"));
-        String configured=plugin.getConfig().getString("online-notifications.channel-id",relayChannelId()).trim();
+        String configured=plugin.getConfig().getString("online-notifications.channel-id","").trim();
         if(!guildId().equals(string(event.get("guild_id")))||owner.isBlank()||configured.isBlank()||!configured.equals(channel)){
             if(type==4)respondAutocomplete(id,token,List.of());else respondReply(id,token,DiscordAdminController.Reply.error("Use the configured notification channel. / Bitte den eingerichteten Benachrichtigungskanal nutzen."),true);return true;}
         var link=plugin.accountLinks.store.byDiscord(owner);

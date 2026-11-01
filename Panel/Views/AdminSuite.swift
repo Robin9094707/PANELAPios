@@ -204,7 +204,7 @@ struct SuiteActionView: View {
             .sheet(isPresented: Binding(get: { plan != nil }, set: { if !$0 && !busy { plan = nil } })) { if let plan { confirmation(plan) } }
             .sheet(isPresented: Binding(get: { choiceField != nil }, set: { if !$0 { choiceField = nil } })) { suggestionSheet }
     }
-    var canManage: Bool { !suite.demo && (suite.scope == "full" || (suite.scope == "manage" && action.data["scope"].string != "full" && !["settings.update", "moderation.config", "suite.command", "server.console", "server.suite", "server.reload", "server.trim"].contains(action.id))) }
+    var canManage: Bool { !suite.demo && suite.can("action." + action.id) && (suite.scope == "full" || (suite.scope == "manage" && action.data["scope"].string != "full" && !["settings.update", "moderation.config", "suite.command", "server.console", "server.suite", "server.reload", "server.trim"].contains(action.id))) }
     @ViewBuilder func input(_ field: JSON) -> some View {
         let id = field["name"].string
         if !field["choices"].array.isEmpty {
@@ -213,6 +213,7 @@ struct SuiteActionView: View {
                 ForEach(field["choices"].array, id: \.["value"].string) { Text($0["name"].string).tag($0["value"].string) }
             }.pickerStyle(.menu).labelsHidden()
             if let selected = field["choices"].array.first(where: { $0["value"].string == values[id]?.string }) { Text(selected["name"].string).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+        } else if id.lowercased().contains("password") { SecureField(field["description"].string, text: Binding(get: { values[id]?.string ?? "" }, set: { values[id] = .string($0) })).textInputAutocapitalization(.never).autocorrectionDisabled()
         } else if field["type"].int == 5 { Toggle(field["description"].string, isOn: Binding(get: { values[id]?.bool ?? false }, set: { values[id] = .bool($0) })).fixedSize(horizontal: false, vertical: true) }
         else { TextField(field["description"].string, text: Binding(get: { values[id]?.string ?? "" }, set: { values[id] = .string($0) }), axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(field["type"].int == 4 ? .numbersAndPunctuation : .default) }
     }

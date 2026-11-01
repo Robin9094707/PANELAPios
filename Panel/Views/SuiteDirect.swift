@@ -13,7 +13,7 @@ struct SuiteDirectLoginView: View {
     var body: some View {
         NavigationStack { Form {
             Section("Server") { TextField("https://Server-IP:Port", text: $endpoint).keyboardType(.URL); TextField("SHA-256-Fingerabdruck", text: $fingerprint, axis: .vertical).font(.caption.monospaced()) }
-            Section("App-Zugang") { TextField("Minecraft-Benutzername", text: $username); SecureField("Passwort", text: $password) }
+            Section("App-Zugang") { TextField("Minecraft-Benutzername", text: $username).disabled(existing != nil); SecureField("Passwort", text: $password) }
             Section { Text("Den Fingerabdruck erhältst du vom Hauptadmin mit /sas app fingerprint. Bei einem öffentlich gültigen HTTPS-Zertifikat kann er leer bleiben.").font(.footnote).foregroundStyle(.secondary); Button { Task { await login() } } label: { if busy { ProgressView("Anmelden …") } else { Label("Anmelden & speichern", systemImage: "lock.shield") } }.disabled(busy || endpoint.isEmpty || username.isEmpty || password.isEmpty) }
         }.textInputAutocapitalization(.never).autocorrectionDisabled().navigationTitle("Admin Suite anmelden").toolbar { Button("Schließen") { dismiss() }.disabled(busy) }.errorAlert($error).task { if let existing { endpoint = existing.endpoint; fingerprint = existing.fingerprint; username = existing.panel.replacingOccurrences(of: "suite-direct:", with: "") } } }.interactiveDismissDisabled(busy)
     }
@@ -47,6 +47,7 @@ struct SuiteDirectDashboard: View {
                 Section("Verwaltung") {
                     NavigationLink { SuiteUpgradeView(suite: suite) } label: { Label("Zugänge & Serverregeln", systemImage: "person.badge.key.fill") }
                     NavigationLink { SuiteTicketsView(suite: suite) } label: { Label("Tickets", systemImage: "ticket.fill") }.disabled(!suite.can("data.tickets"))
+                    NavigationLink { SuiteDirectEvents(suite: suite) } label: { Label("Serverereignisse", systemImage: "bell.badge") }.disabled(!suite.can("data.events"))
                     NavigationLink { SuiteLiveChatView(suite: suite) } label: { Label("Serverchat", systemImage: "bubble.left.and.bubble.right") }.disabled(!suite.can("data.chat"))
                     NavigationLink { SuiteBarkSettingsView(suite: suite) } label: { Label("Meine Bark-Hinweise", systemImage: "bell.badge") }.disabled(!suite.can("action.notifications.update"))
                     NavigationLink { SuiteActionsView(suite: suite, actions: actions.filter { !["menu.action", "settings.update"].contains($0.id) }, title: "Suite-Funktionen") } label: { Label("Alle Funktionen", systemImage: "square.grid.2x2") }
@@ -58,4 +59,24 @@ struct SuiteDirectDashboard: View {
             .confirmationDialog("Lokalen Zugang entfernen?", isPresented: $remove) { Button("Entfernen", role: .destructive) { SuiteConnections.shared.remove(connection); dismiss() } }
     }
     func load() async { do { let current = SuiteConnections.shared.values.first { $0.id == connection.id } ?? connection; let api = try SuiteAPI(current); health = try await api.health(); actions = try await api.request("schema")["actions"].array.map { SuiteAction(data: $0) }; suite = api; error = nil } catch { suite = nil; self.error = error.localizedDescription } }
+}
+
+struct SuiteDirectEvents: View {
+    let suite: SuiteAPI
+    @StateObject private var model: SuiteUpgradeModel
+    init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteUpgradeModel(suite)) }
+    var body: some View {
+        List(model.data["items"].array, id: \.["id"].string) { row in
+            VStack(alignment: .leading, spacing: 6) { Text(row["title"].string).font(.headline); Text(row["body"].string).font(.subheadline); if suite.can("action.events.ack") { NavigationLink("Alarm bestätigen") { SuiteActionView(suite: suite, action: .make("events.ack", "Alarm bestätigen"), preset: ["id": row["id"]]) } } }
+        }.panelScreen().navigationTitle("Serverereignisse").task { await model.load("events") }.refreshable { await model.load("events") }.errorAlert($model.error)
+    }
+}
+struct SuiteDirectInbox: View {
+    let connection: SuiteConnection
+    let tickets: Bool
+    @State private var suite: SuiteAPI?
+    @State private var error: String?
+    var body: some View {
+        Group { if let suite { if tickets { SuiteTicketsView(suite: suite) } else { SuiteDirectEvents(suite: suite) } } else { ProgressView("Verbinden …") } }.task { do { let api = try SuiteAPI(connection); _ = try await api.health(); suite = api } catch { self.error = error.localizedDescription } }.errorAlert($error)
+    }
 }

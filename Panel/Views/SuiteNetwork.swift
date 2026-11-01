@@ -62,7 +62,7 @@ struct SuiteVPNPlatformView: View {
                 NavigationStack { SuiteActionView(suite: suite, action: .make("settings.update", "Einstellung speichern"), preset: ["expected": change.setting["revision"], "key": change.setting["id"], "value": .string(change.value)]) }
             }
     }
-    var canEdit: Bool { suite.scope == "full" && !suite.demo }
+    var canEdit: Bool { suite.scope == "full" && !suite.demo && suite.can("action.settings.update") }
     func choose(_ key: String, value: String) { guard let setting = settings.first(where: { $0["id"].string == key }) else { error = "Einstellung fehlt. Bitte Admin Suite 9.1 installieren."; return }; selected = SuiteSettingChange(setting: setting, value: value) }
     func load() async { do { settings = try await suite.data("settings")["items"].array; platform = settings.first { $0["id"].string == "vpn-protection.target-platform" }?["value"].string ?? "both"; geo = settings.first { $0["id"].string == "client-control.geo.enabled" }?["value"].bool ?? false } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } } }
 }

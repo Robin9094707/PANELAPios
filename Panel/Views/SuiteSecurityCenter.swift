@@ -282,6 +282,7 @@ struct SuiteEventInboxView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         List {
+            ForEach(SuiteConnections.shared.values.filter { $0.panel.hasPrefix("suite-direct:") }) { record in NavigationLink(record.panel.replacingOccurrences(of: "suite-direct:", with: "") + " · " + record.endpoint) { SuiteDirectInbox(connection: record, tickets: tickets) } }
             if let panel = store.api {
                 ForEach(store.servers.filter { SuiteConnections.shared.get(panel, $0) != nil }) { server in
                     NavigationLink(server.name) { SuiteEventConnectedView(panel: panel, server: server, tickets: tickets) }

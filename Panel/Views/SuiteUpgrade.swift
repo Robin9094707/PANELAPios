@@ -131,6 +131,7 @@ struct SuiteMemoryGuardView: View {
     @State private var hold = "300"
     @State private var countdown = "60"
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteUpgradeModel(suite)) }
+    var thresholdBytes: Int64? { SuiteMemoryThreshold.bytes(threshold) }
     var body: some View {
         Form {
             Section("Server-Container") {
@@ -146,7 +147,7 @@ struct SuiteMemoryGuardView: View {
                 TextField("Durchgehend darüber (Sekunden)", text: $hold).keyboardType(.numberPad)
                 TextField("Countdown (5–60 Sekunden)", text: $countdown).keyboardType(.numberPad)
                 Text("Nach dem Countdown startet die vorhandene Neustartverwaltung. Der Hoster muss den Serverprozess wieder starten. Bei Messausfall beginnt die Haltedauer neu.").font(.footnote).foregroundStyle(.secondary)
-                Button("RAM-Schutz speichern") { Task { await model.prepare("memory.update", ["enabled": .string(String(enabled)), "thresholdBytes": .string(String(Int64((Double(threshold.replacingOccurrences(of: ",", with: ".")) ?? 0) * 1_000_000_000))), "holdSeconds": .string(hold), "countdownSeconds": .string(countdown)]) } }.disabled(model.busy || !suite.can("action.memory.update"))
+                Button("RAM-Schutz speichern") { Task { await model.prepare("memory.update", ["enabled": .string(String(enabled)), "thresholdBytes": .string(String(thresholdBytes ?? 0)), "holdSeconds": .string(hold), "countdownSeconds": .string(countdown)]) } }.disabled(model.busy || thresholdBytes == nil || !suite.can("action.memory.update"))
             }
             if !model.notice.isEmpty { Text(model.notice).foregroundStyle(.green) }
         }.panelScreen().navigationTitle("RAM-Notfallneustart").task { await model.load("memory"); enabled = model.data["enabled"].bool; threshold = String(model.data["thresholdBytes"].double / 1_000_000_000); hold = model.data["holdSeconds"].string; countdown = model.data["countdownSeconds"].string }.modifier(UpgradeFeedback(model: model, route: "memory"))
@@ -168,5 +169,12 @@ struct SuiteOnlineSettingsView: View {
             Section("So funktioniert es") { Text("/notify add player:<Name> mode:once oder permanent\n/notify list · /notify remove id:<ID>\n\nNur verifizierte Discord-Konten. Maximal 10 aktive Hinweise. Dauerhafte Anfragen starten beim ersten zugestellten Beitritt; ohne Antwort werden sie nach 3 Tagen automatisch angenommen. Spieler verwalten und sperren Hinweise mit /joinnotify. Antworten auf Discord folgen der Discord-Sprache; im Spiel gilt die Spielersprache.").font(.footnote) }
             if !model.notice.isEmpty { Text(model.notice).foregroundStyle(.green) }
         }.panelScreen().navigationTitle("Beitrittshinweise").task { await model.load("online-settings"); channel = model.data["channel"].string; if suite.can("data.discord-channels") { do { channels = try await suite.data("discord-channels")["items"].array } catch { model.error = error.localizedDescription } } }.modifier(UpgradeFeedback(model: model, route: "online-settings"))
+    }
+}
+
+enum SuiteMemoryThreshold {
+    static func bytes(_ text: String) -> Int64? {
+        guard let gb = Double(text.replacingOccurrences(of: ",", with: ".")), gb.isFinite, gb >= 0.1, gb <= 1_000_000 else { return nil }
+        return Int64((gb * 1_000_000_000).rounded())
     }
 }

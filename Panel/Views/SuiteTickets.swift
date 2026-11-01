@@ -189,7 +189,7 @@ struct SuiteTicketDetailView: View {
                                 }
                         }
                     }
-                    if canManage { composer } else { Section { Text("Zum Antworten wird ein manage- oder full-App-Zugang benötigt.").font(.footnote).foregroundStyle(.secondary) } }
+                    if canManage { composer } else { Section { Text("Antworten ist mit diesem Zugang nicht freigegeben.").font(.footnote).foregroundStyle(.secondary) } }
                 }
             }.panelScreen().errorAlert($error)
                 .toolbar { if suite.scope != "read" && ticket != .null { actionsMenu } }

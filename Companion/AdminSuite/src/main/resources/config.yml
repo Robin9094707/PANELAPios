@@ -1089,3 +1089,12 @@ app-api:
   # tls: erzeugt ein eigenes Zertifikat; SHA-256-Fingerabdruck in der App hinterlegen.
   # proxy: nur Loopback-Bindung erlaubt, davor eigenen HTTPS-Reverse-Proxy betreiben.
   transport: tls
+
+# Optional 9.6.0 additions. Existing settings and keys remain authoritative.
+online-notifications:
+  channel-id: ''
+memory-restart:
+  enabled: false
+  threshold-bytes: 18100000000
+  hold-seconds: 300
+  countdown-seconds: 60
