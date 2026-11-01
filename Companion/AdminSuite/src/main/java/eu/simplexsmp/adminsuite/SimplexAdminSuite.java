@@ -7030,7 +7030,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     private void ask(Player admin, UUID target, String action, String message, String value) {
         if(appApi!=null && appApi.menus.prompt(admin,message,"",input->completePending(admin,new PendingInput(target,action,value),input)))return;
-        pendingInputs.put(admin.getUniqueId(), new PendingInput(target, action, value));
+long inputRevision=adminAccess.revision(admin.getUniqueId());
+        if(NativeTextDialogs.prompt(this,admin,playerUiText(admin,message),"",()->adminSessionUsable(admin)&&inputRevision==adminAccess.revision(admin.getUniqueId()),input->completePending(admin,new PendingInput(target,action,value),input)))return;
+                pendingInputs.put(admin.getUniqueId(), new PendingInput(target, action, value));
         admin.closeInventory();
         admin.sendMessage(prefix() + message);
     }
