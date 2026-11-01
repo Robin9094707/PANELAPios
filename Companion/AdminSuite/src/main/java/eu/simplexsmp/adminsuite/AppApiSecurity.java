@@ -11,12 +11,14 @@ final class AppApiSecurity {
     record Issued(Key key,String token) {}
     record Ticket(String owner,String request,long expires) {}
     final Path directory;
+    final AppUsers users;
     private final Map<String,Key> keys = new LinkedHashMap<>();
     private final Map<String,Ticket> tickets = new HashMap<>();
     private final SecureRandom random = new SecureRandom();
     private final Properties state = new Properties();
     AppApiSecurity(Path directory) throws Exception {
         this.directory=directory;Files.createDirectories(directory);protect(directory);
+        users=new AppUsers(directory.resolve("users.properties"));
         Path file=directory.resolve("keys.properties");
         if(Files.exists(file))try(var input=Files.newInputStream(file)){state.load(input);}
         for(String name:state.stringPropertyNames())if(name.endsWith(".hash")){
@@ -38,6 +40,7 @@ final class AppApiSecurity {
     }
     synchronized Key authenticate(String token){
         if(token==null||token.length()>160)return null;
+        if(token.startsWith("sasu_"))return users.authenticate(token);
         String digest=hash(token);
         for(Key key:keys.values())if(MessageDigest.isEqual(key.hash().getBytes(StandardCharsets.US_ASCII),digest.getBytes(StandardCharsets.US_ASCII)))return key;
         return null;
@@ -54,9 +57,12 @@ final class AppApiSecurity {
     }
     synchronized String consume(Key key,String id,long now){
         Ticket ticket=tickets.get(id);
-        if(ticket==null||ticket.expires()<now||!ticket.owner().equals(key.id())||!keys.containsKey(key.id()))throw new IllegalArgumentException("Bestätigung abgelaufen, bereits verwendet oder nicht für diesen Schlüssel.");
+        if(ticket==null||ticket.expires()<now||!ticket.owner().equals(key.id())||!valid(key))throw new IllegalArgumentException("Bestätigung abgelaufen, bereits verwendet oder nicht für diesen Schlüssel.");
         tickets.remove(id);return ticket.request();
     }
+    synchronized boolean valid(Key key){return key!=null&&(key.id().startsWith("user:")?users.valid(key):keys.get(key.id())!=null&&keys.get(key.id()).equals(key));}
+    String notificationOwner(Key key){return key.id().startsWith("user:")?"user:"+key.label():key.id();}
+    boolean canNotifyOwner(String owner){return users.canNotify(owner)||keys().stream().anyMatch(k->k.id().equals(owner)&&k.scope().equals("full"));}
     static boolean permitted(Key key,String required){return key!=null&&(required.equals("read")||key.scope().equals("full")||required.equals("manage")&&key.scope().equals("manage"));}
     private String randomToken(){byte[] b=new byte[32];random.nextBytes(b);return Base64.getUrlEncoder().withoutPadding().encodeToString(b);}
     static String hash(String value){try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));}catch(Exception e){throw new IllegalStateException(e);}}

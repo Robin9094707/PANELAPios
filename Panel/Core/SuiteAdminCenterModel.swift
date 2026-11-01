@@ -116,15 +116,15 @@ enum SuiteAdminDashboard {
         busy = true; defer { busy = false }
         do {
             let value: JSON
-            if suite.features.contains("admin-dashboard-v1") { value = try await suite.data("admin-dashboard") }
+            if suite.features.contains("admin-dashboard-v1") && suite.can("data.admin-dashboard") { value = try await suite.data("admin-dashboard") }
             else { value = try await legacy(suite) }
             try Task.checkCancellation()
             dashboard = value; updated = Date(); error = nil
         } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }
     }
     private func legacy(_ suite: SuiteAPI) async throws -> JSON {
-        async let overview = suite.data("overview")
-        async let players = suite.data("players", query: ["filter": "online", "limit": "100"])
+        async let overview: JSON = suite.can("data.overview") ? suite.data("overview") : .null
+        async let players: JSON = suite.can("data.players") ? suite.data("players", query: ["filter": "online", "limit": "100"]) : .null
         let (summary, online) = try await (overview, players)
         // Optional modules: a missing module never hides the core dashboard.
         let restart = suite.features.contains("restart-v1") ? ((try? await suite.data("operations")) ?? .null) : .null

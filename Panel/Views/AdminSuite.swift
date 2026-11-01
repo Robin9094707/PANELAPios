@@ -38,8 +38,8 @@ import SwiftUI
     func refreshPlayers() async {
         guard let api else { return }
         do {
-            async let response = api.data("players", query: ["filter": "online", "limit": "4"])
-            async let status = api.data("overview")
+            async let response: JSON = api.can("data.players") ? api.data("players", query: ["filter": "online", "limit": "4"]) : .null
+            async let status: JSON = api.can("data.overview") ? api.data("overview") : .null
             let (result, summary) = try await (response, status)
             try Task.checkCancellation()
             overview = summary; players = result["items"].array; total = summary["profiles"] == .null ? result["total"].int : summary["profiles"].int; updated = Date(); error = nil
@@ -91,6 +91,7 @@ struct SuiteHubView: View {
                         NavigationLink { SuiteOperationsView(suite: api, actions: model.actions) } label: { Label("Server, Statistiken & Discord-Protokolle", systemImage: "chart.xyaxis.line") }
                     }
                 }
+                if api.features.contains("accounts-v1") { Section("Zugänge & Serverregeln") { NavigationLink("Benutzer, Verifizierungen & RAM-Schutz") { SuiteUpgradeView(suite: api) } } }
                 Section("Weitere Funktionen") {
                     NavigationLink { SuiteActionsView(suite: api, actions: model.actions.filter { !["menu.action", "settings.update"].contains($0.id) }, title: "Alle Funktionen") } label: { Label("Alle Funktionen durchsuchen", systemImage: "magnifyingglass") }
                 }
@@ -116,6 +117,9 @@ struct SuiteConnectionView: View {
     @State private var endpoint = ""
     @State private var fingerprint = ""
     @State private var token = ""
+    @State private var passwordLogin = false
+    @State private var username = ""
+    @State private var password = ""
     @State private var busy = false
     @State private var error: String?
     @State private var remove = false
@@ -124,9 +128,9 @@ struct SuiteConnectionView: View {
         NavigationStack {
             Form {
                 Section { Text(server.name).font(.headline); Text("Dieser Zugang gilt nur für diesen Server in diesem Panel-Account.").font(.footnote).foregroundStyle(.secondary) }
-                Section("HTTPS-Verbindung") { TextField("https://Server-IP:Port", text: $endpoint).keyboardType(.URL); SecureField("Admin-Suite-API-Schlüssel", text: $token); TextField("SHA-256-Fingerabdruck", text: $fingerprint, axis: .vertical).font(.footnote.monospaced()) }.textInputAutocapitalization(.never).autocorrectionDisabled()
+                Section("HTTPS-Verbindung") { TextField("https://Server-IP:Port", text: $endpoint).keyboardType(.URL); Picker("Anmelden mit", selection: $passwordLogin) { Text("Bestehendem Schlüssel").tag(false); Text("Benutzer & Passwort").tag(true) }; if passwordLogin { TextField("Minecraft-Benutzername", text: $username); SecureField("Passwort", text: $password) } else { SecureField("Admin-Suite-API-Schlüssel", text: $token) }; TextField("SHA-256-Fingerabdruck", text: $fingerprint, axis: .vertical).font(.footnote.monospaced()) }.textInputAutocapitalization(.never).autocorrectionDisabled()
                 Section { Text("Bei direkt erzeugtem Zertifikat den Fingerabdruck aus /sas app fingerprint eintragen. Bei öffentlich gültigem HTTPS-Zertifikat darf er leer bleiben. Ein geänderter Fingerabdruck wird niemals automatisch akzeptiert.").font(.footnote).foregroundStyle(.secondary) }
-                Section { Button { Task { await connect() } } label: { if busy { ProgressView("Prüfen …") } else { Label("Prüfen & sicher speichern", systemImage: "checkmark.shield") } }.disabled(busy || endpoint.isEmpty || token.isEmpty || panel.demo) }
+                Section { Button { Task { await connect() } } label: { if busy { ProgressView("Prüfen …") } else { Label("Prüfen & sicher speichern", systemImage: "checkmark.shield") } }.disabled(busy || endpoint.isEmpty || (passwordLogin ? username.isEmpty || password.isEmpty : token.isEmpty) || panel.demo) }
                 if existing != nil { Section { Button("Lokale Kopplung entfernen", role: .destructive) { remove = true }.disabled(busy) } }
             }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Suite verbinden").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() }.disabled(busy) } }.errorAlert($error)
                 .task { if let record = existing { endpoint = record.endpoint; fingerprint = record.fingerprint; token = (try? Vault.read(record.id)) ?? "" } }
@@ -137,10 +141,12 @@ struct SuiteConnectionView: View {
         busy = true; defer { busy = false }
         do {
             let url = try SuiteAPI.endpoint(endpoint); let pin = try SuiteAPI.pin(fingerprint)
-            guard token.hasPrefix("sas_"), token.count <= 160, !token.contains(where: \.isWhitespace) else { throw PanelError(message: "Gib den mit /sas app create erzeugten App-Schlüssel ein.") }
+            guard passwordLogin || ((token.hasPrefix("sas_") || token.hasPrefix("sasu_")) && token.count <= 160 && !token.contains(where: \.isWhitespace)) else { throw PanelError(message: "Gib den mit /sas app create erzeugten App-Schlüssel ein.") }
             var record = SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: url.absoluteString, fingerprint: pin, serverIdentity: "")
             if let existing { record.id = existing.id; record.useForModeration = existing.useForModeration }
-            let api = try SuiteAPI(record, token: token); let health = try await api.health(); record.serverIdentity = health["serverId"].string
+            let api = try SuiteAPI(record, token: passwordLogin ? "" : token)
+            if passwordLogin { token = try await api.login(username: username, password: password); password = "" }
+            let health = try await api.health(); record.serverIdentity = health["serverId"].string
             try SuiteConnections.shared.save(record, token: token); Feedback.success(); await saved(); dismiss()
         } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }
     }
@@ -156,7 +162,7 @@ struct SuiteActionsView: View {
             ForEach(Array(Set(filtered.map(\.group))).sorted(), id: \.self) { group in
                 Section(group.isEmpty ? "Weitere Funktionen" : group) {
                     ForEach(filtered.filter { $0.group == group }) { action in
-                        NavigationLink { SuiteActionView(suite: suite, action: action) } label: { Text(action.title).lineLimit(nil).fixedSize(horizontal: false, vertical: true) }
+                        NavigationLink { SuiteActionView(suite: suite, action: action) } label: { Text(action.title).lineLimit(nil).fixedSize(horizontal: false, vertical: true) }.disabled(!suite.can("action." + action.id) || action.data["allowed"] == .bool(false))
                     }
                 }
             }

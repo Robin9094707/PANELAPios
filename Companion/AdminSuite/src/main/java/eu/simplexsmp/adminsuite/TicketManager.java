@@ -167,6 +167,7 @@ final class TicketManager implements Listener {
         return true;
     }
     private void prompt(Player p,String de,String en,Consumer<String> action){
+        if(NativeTextDialogs.prompt(plugin,p,t(p,de,en),"",()->p.isOnline(),action))return;
         p.closeInventory();prompts.put(p.getUniqueId(),new Prompt(action,System.currentTimeMillis()+300_000L));
         p.sendMessage(t(p,"§b"+de+" §7(in den Chat schreiben · §fabbrechen§7 bricht ab)","§b"+en+" §7(type in chat · §fcancel§7 aborts)"));
     }

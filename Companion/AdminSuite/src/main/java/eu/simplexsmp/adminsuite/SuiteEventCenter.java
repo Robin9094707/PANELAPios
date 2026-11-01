@@ -114,7 +114,7 @@ final class SuiteEventCenter {
         for(String field:copy.stringPropertyNames())if(field.endsWith(".enabled")&&Boolean.parseBoolean(copy.getProperty(field))) {
             String prefix=field.substring(0,field.length()-"enabled".length());String owner=prefix.substring(0,prefix.length()-1);
             if(onlyOwner!=null&&!owner.equals(onlyOwner))continue;
-            if(plugin.appApi==null||plugin.appApi.security.keys().stream().noneMatch(k->k.id().equals(owner)&&k.scope().equals("full")))continue;
+            if(plugin.appApi==null||!plugin.appApi.security.canNotifyOwner(owner))continue;
             String type=String.valueOf(row.get("type"));String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
             // Tickets reach every Bark subscriber until the app stores an explicit rule for them.
             if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true)))continue;
