@@ -49,6 +49,7 @@ final class AppApiSecurity {
         Key removed=keys.remove(id);if(removed==null)throw new IllegalArgumentException("Schlüssel-ID nicht gefunden");
         try{save();}catch(Exception e){keys.put(id,removed);throw e;}
         tickets.values().removeIf(t->t.owner().equals(id));
+        try{users.forgetKey(id);}catch(Exception ignored){}
     }
     synchronized String prepare(Key key,String request,long now){
         tickets.values().removeIf(t->t.expires()<now);
@@ -60,6 +61,9 @@ final class AppApiSecurity {
         if(ticket==null||ticket.expires()<now||!ticket.owner().equals(key.id())||!valid(key))throw new IllegalArgumentException("Bestätigung abgelaufen, bereits verwendet oder nicht für diesen Schlüssel.");
         tickets.remove(id);return ticket.request();
     }
+    /** 9.8.0: a device temporarily locked by the main admin keeps its session but receives 423 until unlocked. */
+    synchronized boolean locked(Key key){return key.id().startsWith("user:")?users.locked(key.hash()):users.keyLocked(key.id());}
+    void touch(Key key,String ip,Map<String,String> device){if(key.id().startsWith("user:"))users.touch(key.hash(),ip,device);else users.touchKey(key.id(),ip,device);}
     synchronized boolean valid(Key key){return key!=null&&(key.id().startsWith("user:")?users.valid(key):keys.get(key.id())!=null&&keys.get(key.id()).equals(key));}
     String notificationOwner(Key key){return key.id().startsWith("user:")?"user:"+Base64.getUrlEncoder().withoutPadding().encodeToString(key.label().getBytes(StandardCharsets.UTF_8)):key.id();}
     boolean canNotifyOwner(String owner){return users.canNotify(owner)||keys().stream().anyMatch(k->k.id().equals(owner)&&k.scope().equals("full"));}

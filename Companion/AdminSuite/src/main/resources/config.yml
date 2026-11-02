@@ -1110,3 +1110,8 @@ emergency-restart:
   notify-crash: true # critical Bark notice after an unexpected stop (subscribers choose sleep/work override)
 # app-api.owner-name: 'Robin'           # your name for the main key in staff chat and admin log
 # app-api.public-address: 'host:39093'  # used for complete setup links from the console
+
+# Optional 9.8.0 additions. Existing keys, users and sessions stay valid; nothing has to be changed.
+# The web panel is served on the same HTTPS port as the app API (https://<Server-IP>:<app-api.port>/).
+# app-api.public-domain: 'admin.example.eu'   # own domain (optionally :port) for the web panel and passkeys
+# Emergency reset of the main admin (server console only): sas app owner-reset [username]

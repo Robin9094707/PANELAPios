@@ -11,14 +11,17 @@ struct SuiteDirectLoginView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var setup = false
+    @State private var pending: SuitePendingLogin?
     var body: some View {
         NavigationStack { Form {
             Section("Server") { TextField("https://Server-IP:Port", text: $endpoint).keyboardType(.URL); TextField("SHA-256-Fingerabdruck", text: $fingerprint, axis: .vertical).font(.caption.monospaced()) }
             if existing == nil { Section { Button { setup = true } label: { Label("Lieber per Setup-Link einrichten", systemImage: "link.badge.plus") } } footer: { Text("Mit einem einmaligen Link vom Hauptadmin musst du nichts eintippen.") } }
             Section("App-Zugang") { TextField("Minecraft-Benutzername", text: $username).disabled(existing != nil); SecureField("Passwort", text: $password) }
             Section { Text("Den Fingerabdruck erhältst du vom Hauptadmin mit /sas app fingerprint. Bei einem öffentlich gültigen HTTPS-Zertifikat kann er leer bleiben.").font(.footnote).foregroundStyle(.secondary); Button { Task { await login() } } label: { if busy { ProgressView("Anmelden …") } else { Label("Anmelden & speichern", systemImage: "lock.shield") } }.disabled(busy || endpoint.isEmpty || username.isEmpty || password.isEmpty) }
+            if SuitePasskeySignInButton.possible(endpoint: endpoint, fingerprint: fingerprint) { Section { SuitePasskeySignInButton(endpoint: endpoint, fingerprint: fingerprint) { code in await passkey(code) } } footer: { Text("Mit Face ID oder Touch ID über die Domain des Webpanels anmelden (Admin Suite 9.8).") } }
         }.textInputAutocapitalization(.never).autocorrectionDisabled().navigationTitle("Admin Suite anmelden").toolbar { Button("Schließen") { dismiss() }.disabled(busy) }.errorAlert($error).task { if let existing { endpoint = existing.endpoint; fingerprint = existing.fingerprint; username = existing.panel.replacingOccurrences(of: "suite-direct:", with: "") } }
-            .sheet(isPresented: $setup) { SuiteSetupRedeemView { dismiss() } } }.interactiveDismissDisabled(busy)
+            .sheet(isPresented: $setup) { SuiteSetupRedeemView { dismiss() } }
+            .sheet(item: $pending) { login in SuiteSecondStepView(api: login.api, challenge: login.challenge) { value in await complete(login.api, login.record, value) } } }.interactiveDismissDisabled(busy)
     }
     func login() async {
         busy = true; defer { busy = false }
@@ -28,10 +31,32 @@ struct SuiteDirectLoginView: View {
             var record = existing ?? SuiteConnection(panel: "suite-direct:" + name, server: UUID().uuidString, endpoint: url.absoluteString, fingerprint: pin, serverIdentity: "")
             record.endpoint = url.absoluteString; record.fingerprint = pin
             let api = try SuiteAPI(record, token: "")
-            let token = try await api.login(username: name, password: password)
-            let health = try await api.health(); record.serverIdentity = health["serverId"].string
-            try SuiteConnections.shared.save(record, token: token); password = ""; Feedback.success(); dismiss()
+            let token: String
+            do { token = try await api.login(username: name, password: password) }
+            catch let challenge as SuiteLoginChallenge { password = ""; pending = SuitePendingLogin(api: api, record: record, challenge: challenge); return }
+            try await finish(api, record, token); password = ""
         } catch { self.error = error.localizedDescription }
+    }
+    func finish(_ api: SuiteAPI, _ record: SuiteConnection, _ token: String) async throws {
+        var record = record
+        let health = try await api.health(); record.serverIdentity = health["serverId"].string
+        try SuiteConnections.shared.save(record, token: token); Feedback.success(); dismiss()
+    }
+    func complete(_ api: SuiteAPI, _ record: SuiteConnection, _ token: String) async {
+        do { try await finish(api, record, token) } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+    }
+    func passkey(_ code: String) async {
+        busy = true; defer { busy = false }
+        do {
+            let url = try SuiteAPI.endpoint(endpoint)
+            let probe = try SuiteAPI(SuiteConnection(panel: "suite-direct:passkey", server: UUID().uuidString, endpoint: url.absoluteString, fingerprint: "", serverIdentity: ""), token: "")
+            let token = try await probe.exchange(code: code)
+            let health = try await probe.health()
+            let name = probe.account["username"].string.isEmpty ? username.lowercased() : probe.account["username"].string
+            var record = existing ?? SuiteConnections.shared.values.first { $0.panel == "suite-direct:" + name && $0.endpoint == url.absoluteString } ?? SuiteConnection(panel: "suite-direct:" + name, server: UUID().uuidString, endpoint: url.absoluteString, fingerprint: "", serverIdentity: "")
+            record.endpoint = url.absoluteString; record.fingerprint = ""; record.serverIdentity = health["serverId"].string
+            try SuiteConnections.shared.save(record, token: token); Feedback.success(); dismiss()
+        } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
     }
 }
 struct SuiteDirectDashboard: View {

@@ -53,8 +53,8 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          # 4.0: focused, minimal unit tests for the new features keep the whole job around five minutes.
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
+          # 4.0/4.1: focused, minimal unit tests for the new features keep the whole job around five minutes.
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -128,7 +128,7 @@ jobs:
       - name: Build with verified real Paper dependencies
         working-directory: Companion/AdminSuite
         run: python3 tools/build-real.py
-      - name: Check HTTPS authentication, confirmations and existing data
+      - name: Check HTTPS authentication, accounts, 2FA, passkeys, web panel and existing data
         working-directory: Companion/AdminSuite
         run: python3 tools/test-830.py
         env:
@@ -138,14 +138,14 @@ jobs:
         run: |
           python3 tools/package-source.py
           cd target
-          sha256sum SimplexAdminSuite-9.7.0.jar SimplexAdminSuite-9.7.0-source.zip > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-9.8.0.jar SimplexAdminSuite-9.8.0-source.zip > AdminSuite-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-9.7.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-9.7.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-9.8.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-9.8.0-source.zip
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
 
@@ -191,9 +191,9 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 4.0.0 / Admin Suite 9.7.0: admin log per admin with locations and unread counts, Discord staff chat in the app (images, files, voice messages, sent in your name, pings), one-time setup links, sleep and working hours for Bark with a critical notice after emergency restarts, LuckPerms ranks above names for Java and Bedrock, compact start screens, new in-app widgets and a launch animation. Visual nicknames were removed; nicknames.yml is kept.
+          Simplex Panel 4.1.0 / Admin Suite 9.8.0: main admin account with username and password (optional migration from the main API key), two-factor authentication with recovery codes, passkeys on your own domain, device and session management (rename, sign out, temporarily lock) with device model and IP, a console-only emergency reset of the main admin, and a responsive web admin panel on the same HTTPS port as the app API.
 
-          Existing API keys, app users, TLS identity, Bark subscriptions, tickets and plugin data stay compatible. Update the JAR and the app; no reset is required. See UPDATE-4.0.0.md and Companion/AdminSuite/UPDATE-9.7.0.md. This release job only runs after a merge to main; pull requests produce JAR and IPA artifacts without publishing.
+          Existing API keys, app users, sessions, TLS identity, Bark subscriptions, tickets and plugin data stay compatible. Update the JAR and the app; no reset is required. See UPDATE-4.1.0.md and Companion/AdminSuite/UPDATE-9.8.0.md. This release job only runs after a merge to main; pull requests produce JAR and IPA artifacts without publishing.
 
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)

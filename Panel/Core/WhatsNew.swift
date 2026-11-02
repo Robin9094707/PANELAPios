@@ -18,6 +18,14 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "4.1.0", title: "Konten, 2FA & Webpanel", summary: "Benutzername statt Schlüssel, Zwei-Faktor-Schutz, Passkeys, Geräteverwaltung und das Admin-Panel im Browser.", items: [
+            WhatsNewItem(symbol: "crown.fill", title: "Hauptadmin-Konto", detail: "Wechsle unter Konto & Sicherheit vom Hauptschlüssel zu Benutzername und Passwort. Alle Daten bleiben erhalten; der alte Schlüssel funktioniert weiter, bis du ihn widerrufst."),
+            WhatsNewItem(symbol: "lock.shield.fill", title: "Zwei-Faktor-Schutz", detail: "6-stellige Codes aus Apple Passwörter oder jeder Authenticator-App, dazu Wiederherstellungscodes. Funktioniert sofort, auch ohne Domain."),
+            WhatsNewItem(symbol: "person.badge.key.fill", title: "Passkeys", detail: "Mit eigener Domain meldest du dich per Face ID an – in der App und im Browser."),
+            WhatsNewItem(symbol: "laptopcomputer.and.iphone", title: "Geräte & Sitzungen", detail: "Als Hauptadmin siehst du alle angemeldeten Geräte mit Modell und IP, kannst sie umbenennen, abmelden oder vorübergehend sperren."),
+            WhatsNewItem(symbol: "safari.fill", title: "Webpanel", detail: "Das Admin-Panel läuft jetzt auch im Browser – auf demselben Port, mit denselben Benutzern und Rechten, für Handy und PC."),
+            WhatsNewItem(symbol: "network", title: "Adresse & Domain", detail: "Die Verbindungsadresse lässt sich ohne neue Anmeldung auf deine Domain umstellen.")
+        ]),
         WhatsNewRelease(version: "4.0.0", title: "Simplex Panel 4", summary: "Admin-Log, Staff-Chat mit Discord, Setup-Links, Ruhezeiten und eine kompaktere, schönere Oberfläche.", items: [
             WhatsNewItem(symbol: "list.bullet.clipboard.fill", title: "Admin-Log je Admin", detail: "Jede Admin-Aktion mit Ort, Ziel und Zeit – Teleports, Vanish, Strafen und mehr. Ungelesene Einträge als Zahl, alles mit einem Tipp gelesen."),
             WhatsNewItem(symbol: "bubble.left.and.text.bubble.right.fill", title: "Staff-Chat", detail: "Dein Discord-Staffkanal in der App: Bilder, Dateien und Sprachnachrichten in beide Richtungen, gesendet in deinem Namen, Admins einzeln oder alle pingen."),
