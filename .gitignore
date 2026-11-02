@@ -14,3 +14,6 @@ Config/WidgetInfo.plist
 
 # Companion plugin build outputs and local dependencies.
 Companion/**/target/
+
+# Local copies of CI artifacts handed out in chat; never committed.
+downloads/
