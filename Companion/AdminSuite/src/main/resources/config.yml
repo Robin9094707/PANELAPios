@@ -224,6 +224,11 @@ nameplates:
   show-luckperms: true
   # 9.7.0: the player name takes the last colour of the LuckPerms prefix (Java + Geyser/Bedrock).
   color-names: true
+  # 9.9.0: where the LuckPerms rank appears. Each place can be switched separately.
+  rank-above-head: true
+  rank-in-player-list: true
+  # When a tab-list plugin (TAB, TabList, AnimatedTab) is installed the suite does not touch the player list at all.
+  yield-to-tab-plugin: true
 
 # Visual nicknames were removed in 9.7.0; nicknames.yml is kept untouched.
 nicknames:
@@ -1115,3 +1120,9 @@ emergency-restart:
 # The web panel is served on the same HTTPS port as the app API (https://<Server-IP>:<app-api.port>/).
 # app-api.public-domain: 'admin.example.eu'   # own domain (optionally :port) for the web panel and passkeys
 # Emergency reset of the main admin (server console only): sas app owner-reset [username]
+
+# Optional 9.9.0 additions. Existing users, sessions, tickets and settings stay valid; nothing has to be changed.
+# app-api.public-staff-name: 'Team'      # name players see on ticket replies from app accounts without an own public name
+# app-api.push-contact: 'mailto:you@example.eu'  # optional VAPID contact for browser push (default: https://<public-domain>)
+# Browser push needs the web panel on a domain with a valid HTTPS certificate (same as passkeys).
+# Recovery (server console only): sas app recovery | owner-reset [name] | user-reset <name> | owner-transfer <name> | unlock <name>

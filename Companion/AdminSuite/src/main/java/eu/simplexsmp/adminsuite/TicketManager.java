@@ -73,14 +73,30 @@ final class TicketManager implements Listener {
     static String barkType(String priority){return switch(priority){case "low"->"ticket-low";case "high"->"ticket-high";case "urgent"->"ticket-urgent";default->"ticket";};}
     static String barkLevel(String priority){return switch(priority){case "low"->"passive";case "high"->"timeSensitive";case "urgent"->"critical";default->"active";};}
     TicketStore.Message staffReply(long id,String author,String authorId,String source,String text,boolean fromDiscord){return staffReply(id,author,authorId,source,text,fromDiscord,List.of(),false);}
+    private static final java.util.regex.Pattern APP_IDENTITY=java.util.regex.Pattern.compile("^Simplex Panel/(.{1,80}) \\(app:(.{1,120})\\)$");
+    /**
+     * 9.9.0: name players (and Discord) see for a staff action. App accounts appear with their public name
+     * (Konto & Sicherheit → Öffentlicher Name) or the server default "Team" – never with the login name or key id.
+     */
+    String display(String actor){
+        if(actor==null||actor.isBlank())return plugin.getConfig().getString("app-api.public-staff-name","Team");
+        java.util.regex.Matcher app=APP_IDENTITY.matcher(actor.trim());
+        if(!app.matches())return actor;
+        String fallback=plugin.getConfig().getString("app-api.public-staff-name","Team");if(fallback.isBlank())fallback="Team";
+        String keyId=app.group(2);
+        if(keyId.startsWith("user:")&&plugin.appApi!=null){String user=keyId.split(":")[1];String shown=plugin.appApi.security.users.publicName(user);return shown.isBlank()?fallback:shown;}
+        String owner=plugin.getConfig().getString("app-api.owner-name","").trim();
+        return owner.isBlank()?fallback:owner;
+    }
     TicketStore.Message staffReply(long id,String author,String authorId,String source,String text,boolean fromDiscord,List<Map<String,Object>> attachments,boolean mention){
         TicketStore.Ticket before=store.get(id);boolean wasClosed=before!=null&&!before.active();
         if((text==null||text.isBlank())&&!attachments.isEmpty())text="📎 "+String.join(", ",attachments.stream().map(a->String.valueOf(a.get("name"))).toList());
-        TicketStore.Message m=store.reply(id,author,authorId,"staff",source,text);
+        String shown=display(author);if(source.equals("app"))authorId="app";
+        TicketStore.Message m=store.reply(id,shown,authorId,"staff",source,text);
         if(!attachments.isEmpty())m=store.attach(id,m.id(),attachments);
         TicketDiscord d=discord();
         // A staff reply reopens a closed ticket; unlock the thread/channel first (jobs run in order).
-        if(wasClosed&&d!=null)d.reopenedAsync(id,author,!fromDiscord);
+        if(wasClosed&&d!=null)d.reopenedAsync(id,shown,!fromDiscord);
         if(!fromDiscord&&d!=null)d.forwardAsync(id,m,mention);
         plugin.runAdminTask(()->plugin.suiteAudit(author,"Ticket beantwortet","#"+id+" ("+source+")"));
         return m;
@@ -93,23 +109,26 @@ final class TicketManager implements Listener {
         return m;
     }
     TicketStore.Ticket close(long id,String actor,boolean fromDiscord){
-        TicketStore.Ticket ticket=store.close(id,actor);
-        store.system(id,(ticket.language.equals("de")?"Ticket geschlossen von ":"Ticket closed by ")+actor,true);
-        TicketDiscord d=discord();if(!fromDiscord&&d!=null)d.closedAsync(id,actor);
+        String shown=display(actor);
+        TicketStore.Ticket ticket=store.close(id,shown);
+        store.system(id,(ticket.language.equals("de")?"Ticket geschlossen von ":"Ticket closed by ")+shown,true);
+        TicketDiscord d=discord();if(!fromDiscord&&d!=null)d.closedAsync(id,shown);
         plugin.runAdminTask(()->plugin.suiteAudit(actor,"Ticket geschlossen","#"+id));
         return ticket;
     }
     TicketStore.Ticket reopen(long id,String actor,boolean fromDiscord){
-        TicketStore.Ticket ticket=store.reopen(id);store.system(id,(ticket.language.equals("de")?"Ticket wieder geöffnet von ":"Ticket reopened by ")+actor,false);
-        TicketDiscord d=discord();if(!fromDiscord&&d!=null)d.reopenedAsync(id,actor);
+        String shown=display(actor);
+        TicketStore.Ticket ticket=store.reopen(id);store.system(id,(ticket.language.equals("de")?"Ticket wieder geöffnet von ":"Ticket reopened by ")+shown,false);
+        TicketDiscord d=discord();if(!fromDiscord&&d!=null)d.reopenedAsync(id,shown);
         plugin.runAdminTask(()->plugin.suiteAudit(actor,"Ticket wieder geöffnet","#"+id));
         return ticket;
     }
     TicketStore.Ticket claim(long id,String actor,boolean fromDiscord){
-        TicketStore.Ticket ticket=store.claim(id,actor);TicketDiscord d=discord();if(!fromDiscord&&d!=null)d.noticeAsync(id,"🙋 "+actor+" kümmert sich um dieses Ticket / is handling this ticket.");return ticket;
+        String shown=display(actor);
+        TicketStore.Ticket ticket=store.claim(id,shown);TicketDiscord d=discord();if(!fromDiscord&&d!=null)d.noticeAsync(id,"🙋 "+shown+" kümmert sich um dieses Ticket / is handling this ticket.");return ticket;
     }
     TicketStore.Ticket priority(long id,String priority,String actor,boolean fromDiscord){
-        TicketStore.Ticket ticket=store.priority(id,priority);TicketDiscord d=discord();if(!fromDiscord&&d!=null)d.noticeAsync(id,"⚑ Priorität / priority: "+priority(priority,true)+" · "+actor);return ticket;
+        TicketStore.Ticket ticket=store.priority(id,priority);TicketDiscord d=discord();if(!fromDiscord&&d!=null)d.noticeAsync(id,"⚑ Priorität / priority: "+priority(priority,true)+" · "+display(actor));return ticket;
     }
 
     // ---------------------------------------------------------------- delivery after continuous online time
@@ -352,7 +371,7 @@ final class TicketManager implements Listener {
                 if(!full)throw new IllegalArgumentException("Löschen benötigt full-Zugriff");
                 TicketStore.Ticket ticket=store.get(id);if(ticket==null)return SimplexAdminSuite.appMap("ok",true,"deleted",true,"title","Ticket gelöscht","description","#"+id+" war bereits entfernt.");
                 String channel=ticket.channel,mode=ticket.channelMode,owner=ticket.discordUser;store.delete(id);
-                TicketDiscord d=discord();if(d!=null&&!channel.isBlank())d.deletedAsync(id,channel,mode,owner,actor);
+                TicketDiscord d=discord();if(d!=null&&!channel.isBlank())d.deletedAsync(id,channel,mode,owner,display(actor));
                 plugin.suiteAudit(actor,"Ticket gelöscht","#"+id);
                 return SimplexAdminSuite.appMap("ok",true,"deleted",true,"title","Ticket gelöscht","description","#"+id+" wurde entfernt"+(channel.isBlank()?".":"; der Discord-Thread/-Kanal wird gelöscht bzw. geschlossen."));
             }

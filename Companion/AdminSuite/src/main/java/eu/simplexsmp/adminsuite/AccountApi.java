@@ -403,13 +403,16 @@ final class AccountApi {
         Map<String, Object> out = SimplexAdminSuite.appMap("kind", user ? "user" : "key", "username", name, "label", key.label(), "scope", key.scope(),
             "owner", user ? users.owner(name) : key.scope().equals("full") && users.ownerName().isEmpty(), "ownerExists", !users.ownerName().isEmpty(),
             "manager", manager(key), "domain", domain(), "rpId", rpId(), "webUrl", webUrl(), "passkeysAvailable", !rpId().isEmpty(),
-            "canMigrate", !user && key.scope().equals("full") && users.ownerName().isEmpty(), "browser", WebPanel.cookie(x) != null);
+            "canMigrate", !user && key.scope().equals("full") && users.ownerName().isEmpty(), "browser", WebPanel.cookie(x) != null,
+            "publicDefault", plugin.getConfig().getString("app-api.public-staff-name", "Team"), "canRename", user);
         if (user) {
             out.put("mfa", users.mfa(name)); out.put("recoveryLeft", users.recoveryLeft(name));
             out.put("passkeys", users.passkeys(name).stream().map(p -> { Map<String, Object> r = new LinkedHashMap<>(p); r.put("active", rpId().equals(p.get("rp"))); return (Object) r; }).toList());
             out.put("permissions", users.permissions(name).stream().filter(s -> !s.isBlank()).sorted().toList());
             out.put("session", key.hash().substring(0, 24));
+            out.put("publicName", users.publicName(name));
         } else {
+            out.put("publicName", plugin.getConfig().getString("app-api.owner-name", ""));
             out.put("mfa", false); out.put("passkeys", List.of()); out.put("permissions", List.of("*"));
         }
         return out;
@@ -466,6 +469,7 @@ final class AccountApi {
 
     private void audit(String user, String action, String detail) {
         if (!plugin.isEnabled()) return;
-        try { Bukkit.getScheduler().runTask(plugin, () -> plugin.suiteAudit("Simplex Panel/" + user, action, detail)); } catch (RuntimeException ignored) { }
+        // 9.9.0: full app identity so the admin log groups these entries under the account instead of a fake player.
+        try { Bukkit.getScheduler().runTask(plugin, () -> plugin.suiteAudit("Simplex Panel/" + user + " (app:user:" + user + ")", action, detail)); } catch (RuntimeException ignored) { }
     }
 }

@@ -295,7 +295,12 @@ struct SuiteNameplatesView: View {
             Section {
                 Label(data["luckperms"].bool ? "LuckPerms erkannt" : "LuckPerms nicht installiert", systemImage: data["luckperms"].bool ? "checkmark.seal.fill" : "xmark.seal").foregroundStyle(data["luckperms"].bool ? .green : .orange)
                 if data["geyser"].bool { Label("Geyser erkannt – Bedrock zeigt dieselben Ränge", systemImage: "gamecontroller.fill") }
-            } footer: { Text("Präfix, Name in Rangfarbe und Suffix erscheinen über dem Kopf und in der Tabliste. Unterstützt &-Codes, &#RRGGBB und einfache MiniMessage-Farben.") }
+                if !data["tabPlugin"].string.isEmpty { Label("Tablisten-Plugin erkannt: " + data["tabPlugin"].string, systemImage: "list.bullet.rectangle") }
+                if data["aboveHead"] != .null {
+                    LabeledContent("Rang über dem Kopf", value: data["aboveHead"].bool ? "An" : "Aus")
+                    LabeledContent("Rang in der Tabliste", value: !data["playerListManaged"].bool ? "Anderes Plugin" : data["inPlayerList"].bool ? "An" : "Aus")
+                }
+            } footer: { Text("Über dem Kopf, in der Tabliste und „Tabliste einem TAB-Plugin überlassen“ stellst du einzeln in den App-Einstellungen unter „Ränge & Namen“ ein. Unterstützt &-Codes, &#RRGGBB und einfache MiniMessage-Farben.") }
             Section("Online") {
                 if data["items"].array.isEmpty { Text(data == .null ? "Wird geladen …" : "Niemand online").foregroundStyle(.secondary) }
                 ForEach(data["items"].array, id: \.["id"].string) { row in

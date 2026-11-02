@@ -92,7 +92,7 @@
     }
     var hint = null;
     if (!S.webConfig || !S.webConfig.passkeys) hint = h("p", { class: "muted tiny center", style: { margin: "14px 0 0" }, text: "Passkeys stehen zur Verfügung, sobald der Hauptadmin eine Domain mit HTTPS einrichtet." });
-    shell(mode === "app" ? "In der App anmelden" : "Anmelden", mode === "app" ? "Nach der Anmeldung geht es automatisch zurück zur App." : (S.webConfig && S.webConfig.name) || "Admin Suite", h("div", {}, form, extra, hint));
+    shell(mode === "app" ? "In der App anmelden" : "Anmelden", mode === "app" ? "Nach der Anmeldung geht es automatisch zurück zur App." : (S.webConfig && S.webConfig.name) || "Admin Suite", h("div", {}, form, extra, hint, mode === "web" && S.installHint ? S.installHint() : null));
   }
 
   async function step(r, mode, state) {

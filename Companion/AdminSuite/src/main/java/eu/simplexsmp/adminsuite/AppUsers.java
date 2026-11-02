@@ -36,7 +36,7 @@ final class AppUsers {
     synchronized boolean mfa(String name){return !state.getProperty("u."+name+".totp","").isBlank();}
     synchronized boolean mustChange(String name){return Boolean.parseBoolean(state.getProperty("u."+name+".must-change","false"));}
     synchronized List<Map<String,Object>> list(){List<Map<String,Object>> rows=new ArrayList<>();for(String k:state.stringPropertyNames())if(k.startsWith("u.")&&k.endsWith(".hash")){String name=k.substring(2,k.length()-5);
-        rows.add(SimplexAdminSuite.appMap("username",name,"enabled",enabled(name),"permissions",permissions(name).stream().filter(s->!s.isBlank()).sorted().toList(),"setupExpires",setupExpiry(name),"sessions",sessions(name),"owner",owner(name),"mfa",mfa(name),"passkeys",passkeys(name).size(),"lastSeen",lastSeen(name),"mustChange",mustChange(name),"created",Long.parseLong(state.getProperty("u."+name+".created","0"))));}
+        rows.add(SimplexAdminSuite.appMap("username",name,"enabled",enabled(name),"permissions",permissions(name).stream().filter(s->!s.isBlank()).sorted().toList(),"setupExpires",setupExpiry(name),"sessions",sessions(name),"owner",owner(name),"mfa",mfa(name),"passkeys",passkeys(name).size(),"lastSeen",lastSeen(name),"mustChange",mustChange(name),"publicName",publicName(name),"created",Long.parseLong(state.getProperty("u."+name+".created","0"))));}
         rows.sort(Comparator.comparing((Map<String,Object> r)->!Boolean.TRUE.equals(r.get("owner"))).thenComparing(r->String.valueOf(r.get("username"))));return rows;}
     synchronized void save(String raw,String password,Set<String> permissions,boolean enabled)throws IOException{
         String name=username(raw),stem="u."+name+".";boolean fresh=!exists(name);
@@ -57,7 +57,7 @@ final class AppUsers {
     synchronized void logoutAll(String name)throws IOException{Properties next=copy();dropSessions(next,name,null);persist(next);}
     synchronized void delete(String raw)throws IOException{
         String name=username(raw);Properties next=copy();
-        for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("u."+name+".")||(k.startsWith("s.")||k.startsWith("t."))&&next.getProperty(k).startsWith(name+"|"))next.remove(k);
+        for(String k:new ArrayList<>(next.stringPropertyNames()))if(own(k,name)||(k.startsWith("s.")||k.startsWith("t."))&&next.getProperty(k).startsWith(name+"|"))next.remove(k);
         for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("m.")&&!next.containsKey("s."+k.substring(2)))next.remove(k);
         for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("p.")&&name.equals(String.valueOf(json(next.getProperty(k)).get("user"))))next.remove(k);
         persist(next);
@@ -145,6 +145,66 @@ final class AppUsers {
         dropSessions(next,name,null);persist(next);
         return new String[]{name,password,Boolean.toString(created)};
     }
+    // ---- 9.9.0: username change, public name, console recovery for any user ----
+
+    /**
+     * Renames an account. Password, 2FA, recovery codes, passkeys, permissions and every signed-in device move to the
+     * new name; tokens stay valid because sessions are stored by token hash. Pending setup links are cancelled.
+     */
+    synchronized void rename(String oldRaw,String newRaw)throws IOException{
+        String from=username(oldRaw),to=username(newRaw);
+        if(!exists(from))throw new IllegalArgumentException("Benutzer nicht gefunden");
+        if(from.equals(to))throw new IllegalArgumentException("Der neue Benutzername ist identisch.");
+        if(exists(to))throw new IllegalArgumentException("Benutzername ist bereits vergeben");
+        Properties next=new Properties();
+        for(String k:state.stringPropertyNames()){
+            String v=state.getProperty(k),key=k;
+            if(own(k,from))key="u."+to+"."+k.substring(("u."+from+".").length());
+            else if(k.startsWith("t.")&&v.startsWith(from+"|"))continue;
+            else if(k.startsWith("s.")&&v.startsWith(from+"|"))v=to+v.substring(from.length());
+            else if(k.startsWith("p.")){Map<String,Object> row=json(v);if(from.equals(row.get("user"))){row.put("user",to);v=DiscordBotManager.Json.stringify(row);}}
+            next.setProperty(key,v);
+        }
+        next.setProperty("u."+to+".renamed",Long.toString(System.currentTimeMillis()));
+        persist(next);
+    }
+    /** Name players see on ticket replies and in-game notices; empty = server default ("Team"). */
+    synchronized String publicName(String name){return state.getProperty("u."+name+".public-name","");}
+    synchronized void setPublicName(String name,String value)throws IOException{
+        if(!exists(name))throw new IllegalArgumentException("Benutzer nicht gefunden");
+        String v=value==null?"":value.trim();if(!v.isEmpty())AppChat.validateName(v);
+        Properties next=copy();if(v.isEmpty())next.remove("u."+name+".public-name");else next.setProperty("u."+name+".public-name",v);persist(next);
+    }
+    /** Console recovery for any user: one-time password (must be changed), 2FA/recovery/passkeys removed, devices signed out and unlocked. */
+    synchronized String resetUser(String raw)throws IOException{
+        String name=username(raw);if(!exists(name))throw new IllegalArgumentException("Benutzer nicht gefunden");
+        String password=AccountCrypto.password();Properties next=copy();String stem="u."+name+".";
+        setPassword(next,name,password);next.setProperty(stem+"enabled","true");next.setProperty(stem+"must-change","true");
+        for(String suffix:List.of("totp","totp-step","recovery"))next.remove(stem+suffix);
+        for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("p.")&&name.equals(String.valueOf(json(next.getProperty(k)).get("user"))))next.remove(k);
+        for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("t.")&&next.getProperty(k).startsWith(name+"|"))next.remove(k);
+        dropSessions(next,name,null);persist(next);return password;
+    }
+    /** Console only: makes another existing user the main admin (full rights); the previous main admin keeps a normal account with all rights. */
+    synchronized String transferOwner(String raw)throws IOException{
+        String name=username(raw);if(!exists(name))throw new IllegalArgumentException("Benutzer nicht gefunden");
+        String previous=ownerName();Properties next=copy();
+        if(!previous.isEmpty())next.setProperty("u."+previous+".owner","false");
+        next.setProperty("u."+name+".owner","true");next.setProperty("u."+name+".permissions","*");next.setProperty("u."+name+".enabled","true");
+        persist(next);return previous;
+    }
+    synchronized void setEnabled(String raw,boolean enabled)throws IOException{
+        String name=username(raw);if(!exists(name))throw new IllegalArgumentException("Benutzer nicht gefunden");
+        if(!enabled&&owner(name))throw new IllegalArgumentException("Der Hauptadmin kann nicht deaktiviert werden. Zuerst „sas app owner-transfer <Benutzer>“.");
+        Properties next=copy();next.setProperty("u."+name+".enabled",Boolean.toString(enabled));if(!enabled)dropSessions(next,name,null);persist(next);
+    }
+    /** Lifts temporary device locks of one user (every session). */
+    synchronized int unlockAll(String raw)throws IOException{
+        String name=username(raw);int n=0;Properties next=copy();
+        for(String k:state.stringPropertyNames())if(k.startsWith("s.")&&state.getProperty(k).startsWith(name+"|")){String digest=k.substring(2);Map<String,Object> m=meta(digest);if(Boolean.TRUE.equals(m.get("locked"))){m.put("locked",false);next.setProperty("m."+digest,DiscordBotManager.Json.stringify(m));n++;}}
+        persist(next);return n;
+    }
+
     /** Changes the own password; other sessions of this user are signed out, the current one stays. */
     synchronized void changePassword(String name,String current,String fresh,String keepDigest)throws IOException{
         if(verifyPassword(name,current)==null)throw new IllegalArgumentException("Aktuelles Passwort ist falsch");
@@ -244,6 +304,11 @@ final class AppUsers {
     }
     synchronized void forgetKey(String id)throws IOException{Properties next=copy();next.remove("m.k:"+id);seen.remove("k:"+id);persist(next);}
 
+    /**
+     * True when {@code key} is a property of exactly this account. Usernames may contain dots, so "u.alice.bob.hash"
+     * belongs to "alice.bob", never to "alice": account properties are single segments without a dot.
+     */
+    static boolean own(String key,String name){String stem="u."+name+".";return key.startsWith(stem)&&key.indexOf('.',stem.length())<0;}
     static String clean(String value,int max){String v=value==null?"":value.codePoints().filter(c->!Character.isISOControl(c)).collect(StringBuilder::new,StringBuilder::appendCodePoint,StringBuilder::append).toString().trim();return v.length()>max?v.substring(0,max):v;}
     @SuppressWarnings("unchecked") private static Map<String,Object> json(String raw){if(raw==null||raw.isBlank())return new LinkedHashMap<>();try{Object v=DiscordBotManager.Json.parse(raw);return v instanceof Map<?,?> m?new LinkedHashMap<>((Map<String,Object>)m):new LinkedHashMap<>();}catch(RuntimeException e){return new LinkedHashMap<>();}}
     private Properties copy(){Properties next=new Properties();next.putAll(state);return next;}

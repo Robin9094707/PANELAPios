@@ -58,8 +58,42 @@ final class SuiteEventCenter {
             if(levelHint!=null&&LEVELS.contains(levelHint))row.put("level",levelHint);
             events.put(id,row);while(events.size()>2000)events.remove(events.keySet().iterator().next());
         }
-        try { worker.execute(() -> {try {persist();push(row);}catch(Exception e){deliveryStatus="Versand oder Speicherung fehlgeschlagen";plugin.getLogger().warning("App-Ereignisse: Speicherung/Versand fehlgeschlagen ("+e.getClass().getSimpleName()+")");}}); }
+        try { worker.execute(() -> {try {persist();push(row);}catch(Exception e){deliveryStatus="Versand oder Speicherung fehlgeschlagen";plugin.getLogger().warning("App-Ereignisse: Speicherung/Versand fehlgeschlagen ("+e.getClass().getSimpleName()+")");}
+            webPush(row,null);}); }
         catch(RejectedExecutionException busy) {deliveryStatus="Ereigniswarteschlange ausgelastet";}
+    }
+    /**
+     * 9.9.0: notification without a ledger entry (admin-log). Only owners accepted by {@code owners} receive it,
+     * through Bark (when they selected the type) and browser push. Never repeated, never stored.
+     */
+    void direct(String type,String title,String body,java.util.function.Predicate<String> owners){
+        if(!TYPES.contains(type))throw new IllegalArgumentException("Unbekanntes Ereignis");
+        Map<String,Object> row=SimplexAdminSuite.appMap("id",String.format(Locale.ROOT,"%013d-direct-%s",System.currentTimeMillis(),UUID.randomUUID()),"time",System.currentTimeMillis(),"type",type,"player","","title",ClientBrands.evidence(title),"body",clip(body,600),"critical",false,"note","","direct",true);
+        try{worker.execute(()->{try{push(row,null,false,owners);}catch(Exception e){deliveryStatus="Versand fehlgeschlagen";}webPush(row,owners);});}catch(RejectedExecutionException busy){deliveryStatus="Ereigniswarteschlange ausgelastet";}
+    }
+    private void webPush(Map<String,Object> row,java.util.function.Predicate<String> owners){
+        WebPush push=plugin.appApi==null?null:plugin.appApi.webPush;if(push==null)return;
+        try{push.deliver(row,owners);}catch(RuntimeException e){plugin.getLogger().fine("Browser-Push: "+e.getClass().getSimpleName());}
+    }
+    /** Quiet hours of an owner (shared by Bark and browser push): the resulting level, or null when silenced. */
+    String quietLevel(String owner,String type,String level){
+        Properties copy=new Properties();synchronized(this){copy.putAll(subscriptions);}
+        return BarkPolicy.decide(copy,owner+".",type,level,java.time.Instant.now());
+    }
+    /** 9.9.0 username change: Bark settings, quiet hours, acknowledgements and pending alarms move to the new owner id. */
+    synchronized void renameOwner(String from,String to)throws IOException{
+        if(from.equals(to))return;
+        Properties next=new Properties();
+        for(String k:subscriptions.stringPropertyNames()){
+            String v=subscriptions.getProperty(k),key=k;
+            if(key.startsWith(from+"."))key=to+key.substring(from.length());
+            else if(key.startsWith("alarm."+from+"."))key="alarm."+to+key.substring(("alarm."+from).length());
+            else if(key.startsWith("ack."+from+"."))key="ack."+to+key.substring(("ack."+from).length());
+            if(key.startsWith("alarm.")&&key.endsWith(".owner")&&v.equals(from))v=to;
+            next.setProperty(key,v);
+        }
+        AtomicState.save(subscriptionsFile,next,"Private Bark subscriptions. Do not share.");AppApiSecurity.protect(subscriptionsFile);
+        subscriptions.clear();subscriptions.putAll(next);
     }
     private static String clip(String text,int length) {String s=text==null?"":text.replaceAll("[\\p{Cc}&&[^\\n\\t]]","");return s.substring(0,Math.min(length,s.length()));}
     private synchronized void persist() throws IOException {
@@ -125,12 +159,14 @@ final class SuiteEventCenter {
         return SimplexAdminSuite.appMap("ok",true,"title","Ruhezeiten gespeichert","description","Schlafenszeit, Arbeitszeit und Notfallneustart-Hinweis gelten ab sofort für deine Bark-Mitteilungen.");
     }
     synchronized Object acknowledge(String owner,String id)throws IOException {Properties next=new Properties();next.putAll(subscriptions);String stem="alarm."+owner+"."+id;for(String suffix:List.of(".row",".next",".owner"))next.remove(stem+suffix);if(events.containsKey(id))next.setProperty("ack."+owner+"."+id,Long.toString(System.currentTimeMillis()));AtomicState.save(subscriptionsFile,next,"Private Bark subscriptions and alarms");subscriptions.clear();subscriptions.putAll(next);return SimplexAdminSuite.appMap("ok",true,"title","Alarm bestätigt","description","Weitere Wiederholungen für diesen Alarm sind beendet.");}
-    private void push(Map<String,Object> row) throws Exception {push(row,null,false);}
-    private void push(Map<String,Object> row,String onlyOwner,boolean repeated) throws Exception {
+    private void push(Map<String,Object> row) throws Exception {push(row,null,false,null);}
+    private void push(Map<String,Object> row,String onlyOwner,boolean repeated) throws Exception {push(row,onlyOwner,repeated,null);}
+    private void push(Map<String,Object> row,String onlyOwner,boolean repeated,java.util.function.Predicate<String> owners) throws Exception {
         Properties copy=new Properties();synchronized(this){copy.putAll(subscriptions);}
         for(String field:copy.stringPropertyNames())if(field.endsWith(".enabled")&&Boolean.parseBoolean(copy.getProperty(field))) {
             String prefix=field.substring(0,field.length()-"enabled".length());String owner=prefix.substring(0,prefix.length()-1);
             if(onlyOwner!=null&&!owner.equals(onlyOwner))continue;
+            if(owners!=null&&!owners.test(owner))continue;
             if(plugin.appApi==null||!plugin.appApi.security.canNotifyOwner(owner))continue;
             String type=String.valueOf(row.get("type"));String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
             // Tickets reach every Bark subscriber until the app stores an explicit rule for them.
@@ -140,13 +176,13 @@ final class SuiteEventCenter {
             if(type.equals("emergency-restart")&&rule==null)level="critical";
             if(level.equals("off"))continue;
             level=BarkPolicy.decide(copy,prefix,type,level,java.time.Instant.now());if(level==null)continue;
-            String sound=rule==null?copy.getProperty(prefix+(critical?"criticalSound":"sound"),"minuet"):rule[2];int repeat=rule==null?0:Integer.parseInt(rule[3]);
+            String sound=rule==null?copy.getProperty(prefix+(critical?"criticalSound":"sound"),"minuet"):rule[2];int repeat=rule==null||Boolean.TRUE.equals(row.get("direct"))?0:Integer.parseInt(rule[3]);
 
             if(repeated){boolean retained;synchronized(this){retained=events.containsKey(String.valueOf(row.get("id")));}if(repeat==0||!retained){acknowledge(owner,String.valueOf(row.get("id")));continue;}}
             long now=System.currentTimeMillis();String rate=prefix+type;
             if(now-cooldown.getOrDefault(rate,0L)<(type.equals("first-join")||type.startsWith("ticket")?3000:30_000))continue;
             cooldown.put(rate,now);
-            Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",copy.getProperty(prefix+"key",""),"title",row.get("title"),"body",row.get("body"),"group","Simplex Admin Suite","level",level,"sound",sound,"isArchive",1,"url",type.startsWith("ticket")?"panel://suite-tickets":"panel://suite-events");
+            Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",copy.getProperty(prefix+"key",""),"title",row.get("title"),"body",row.get("body"),"group","Simplex Admin Suite","level",level,"sound",sound,"isArchive",1,"url",type.startsWith("ticket")?"panel://suite-tickets":type.equals("admin-log")?"panel://suite-admin-log":"panel://suite-events");
             String player=String.valueOf(row.getOrDefault("player",""));if(player.matches("[a-fA-F0-9-]{36}")){String avatar=plugin.discordRelay()==null?"":plugin.discordRelay().appAvatar(UUID.fromString(player));payload.put("icon",avatar.isBlank()?"https://mc-heads.net/avatar/"+player+"/128":avatar);}
             payload.put("id",String.valueOf(row.get("id")));
             String alarm="alarm."+owner+"."+row.get("id");

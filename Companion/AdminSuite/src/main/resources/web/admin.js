@@ -218,6 +218,7 @@
         e.stopPropagation && e.stopPropagation();
         var pop = h("div", { class: "menu-pop" },
           h("button", { type: "button", onClick: function () { pop.remove(); editor(u); } }, icon("edit"), "Bearbeiten & Rechte"),
+          S.account && S.account.owner && S.has("account-rename-v1") ? h("button", { type: "button", onClick: function () { pop.remove(); S.renameDialog(u.username, S.account.username === u.username); } }, icon("user"), "Benutzernamen ändern") : null,
           u.enabled && S.has("setup-links-v1") && !u.mfa ? h("button", { type: "button", onClick: function () { pop.remove(); setupLink(u).catch(function (x) { S.toast(x.message, "err"); }); } }, icon("link"), "Setup-Link für die App") : null,
           u.mfa ? h("button", { type: "button", onClick: async function () { pop.remove(); try { if (await S.runAction("accounts.update", { username: u.username, operation: "reset-mfa", enabled: "true", permissions: "", password: "" }, { title: "2FA von " + u.username + " zurücksetzen?" })) S.reload(); } catch (x) { S.toast(x.message, "err"); } } }, icon("shield"), "2FA zurücksetzen") : null,
           h("button", { type: "button", onClick: async function () { pop.remove(); try { if (await S.runAction("accounts.update", { username: u.username, operation: "logout-all", enabled: "true", permissions: "", password: "" }, { title: "Alle Geräte von " + u.username + " abmelden?" })) S.reload(); } catch (x) { S.toast(x.message, "err"); } } }, icon("logout"), "Alle Geräte abmelden"),
@@ -226,7 +227,7 @@
         setTimeout(function () { document.addEventListener("click", function off(ev) { if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener("click", off); } }); }, 0);
       } });
       return h("div", { class: "item" + (canEdit && (!u.owner || isOwner) ? " link" : ""), onClick: canEdit && (!u.owner || isOwner) ? function () { editor(u); } : null }, S.avatar(u.username),
-        h("div", { class: "meta" }, h("b", { text: u.username }), h("small", { text: (u.permissions.indexOf("*") >= 0 ? "Vollzugriff" : u.permissions.length + " Rechte") + " · " + u.sessions + " Geräte · zuletzt " + S.ago(u.lastSeen) }),
+        h("div", { class: "meta" }, h("b", { text: u.username }), h("small", { text: (u.permissions.indexOf("*") >= 0 ? "Vollzugriff" : u.permissions.length + " Rechte") + " · " + u.sessions + " Geräte · zuletzt " + S.ago(u.lastSeen) + (u.publicName ? " · öffentlich „" + u.publicName + "“" : "") }),
           h("div", { class: "row wrap", style: { gap: "6px", marginTop: "6px" } }, u.owner ? S.badge("Hauptadmin", "gold", "crown") : null, u.enabled ? null : S.badge("Deaktiviert", "danger"), u.mfa ? S.badge("2FA", "ok", "shieldCheck") : null,
             u.passkeys ? S.badge(u.passkeys + " Passkey" + (u.passkeys > 1 ? "s" : ""), "info", "fingerprint") : null, u.mustChange ? S.badge("Passwortwechsel offen", "warn") : null, u.setupExpires ? S.badge("Setup-Link offen", "accent", "link") : null)),
         h("div", { class: "side rel", onClick: function (e) { e.stopPropagation(); } }, menuBtn));
@@ -351,8 +352,8 @@
     else if (!S.passkey.here()) pkBody.appendChild(S.notice(h("span", {}, "Passkeys funktionieren nur über ", h("a", { href: a.webUrl + "#/security", text: a.webUrl }), " – nicht über die IP-Adresse."), "warn", "link"));
     else pkBody.appendChild(h("div", {}, S.btn("Passkey hinzufügen", { kind: "primary", icon: "fingerprint", onClick: addPasskey })));
     var pk = S.card("Passkeys", { icon: "fingerprint", sub: "Anmeldung mit Face ID, Touch ID, Windows Hello oder Sicherheitsschlüssel – ganz ohne Passwort." }, pkBody);
-    cards.push(h("div", { class: "grid two" }, h("div", { class: "stack" }, mfa, pk), pwd));
-    cards.push(S.card("Notfall", { icon: "alert" }, S.prose(a.owner ? "Alles verloren? In der **Serverkonsole** `sas app owner-reset` eingeben. Du bekommst deinen Benutzernamen und ein Einmal-Passwort angezeigt; 2FA und Passkeys werden dabei entfernt und du legst sofort ein neues Passwort fest." : "Zugang verloren? Der Hauptadmin kann deine Zwei-Faktor-Einrichtung zurücksetzen und dir ein neues Passwort geben.")));
+    cards.push(h("div", { class: "grid two" }, h("div", { class: "stack" }, mfa, pk), h("div", { class: "stack" }, S.nameCard ? S.nameCard(a) : null, pwd)));
+    cards.push(S.card("Notfall", { icon: "alert" }, S.prose(a.owner ? "Alles verloren? In der **Serverkonsole** `sas app owner-reset` eingeben. Du bekommst deinen Benutzernamen und ein Einmal-Passwort angezeigt; 2FA und Passkeys werden dabei entfernt und du legst sofort ein neues Passwort fest.\n\nWeitere Befehle (nur Konsole): `sas app recovery` zeigt alle Wiederherstellungsbefehle – z. B. `sas app user-reset <Name>`, `sas app owner-transfer <Name>`, `sas app rename <alt> <neu>` und `sas app unlock <Name>`." : "Zugang verloren? Der Hauptadmin kann deine Zwei-Faktor-Einrichtung zurücksetzen und dir ein neues Passwort geben – notfalls über die Serverkonsole mit `sas app user-reset <Name>`.")));
     S.title("Konto & Sicherheit", a.username || "");
     S.mount(h("div", { class: "stack" }, cards));
     if (query.get("add") === "passkey" && S.passkey.here() && a.passkeysAvailable) setTimeout(function () { addPasskey().catch(function (e) { S.toast(e.message, "err"); }); }, 300);

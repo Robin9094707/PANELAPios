@@ -1714,6 +1714,23 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         return true;
     }
 
+    /** 9.9.0: team members (UUID → name) for the Lands admin overview. Main thread. */
+    Map<UUID, String> panelStaffMembers() {
+        Map<UUID, String> out = new LinkedHashMap<>();
+        if (staffWorkspace != null) for (StaffMember member : staffWorkspace.members()) if (member.uuid != null) out.put(member.uuid, member.name == null ? member.uuid.toString().substring(0, 8) : member.name);
+        for (Player online : Bukkit.getOnlinePlayers()) if (online.isOp() || has(online, "simplexadminsuite.admin")) out.putIfAbsent(online.getUniqueId(), online.getName());
+        return out;
+    }
+
+    /** 9.9.0: lower-case names the suite treats as team (staff workspace, operators, online admins). Main thread only. */
+    Set<String> panelStaffNames() {
+        Set<String> out = new HashSet<>();
+        if (staffWorkspace != null) for (StaffMember member : staffWorkspace.members()) if (member.name != null && !member.name.isBlank()) out.add(member.name.toLowerCase(Locale.ROOT));
+        for (Player online : Bukkit.getOnlinePlayers()) if (online.isOp() || has(online, "simplexadminsuite.admin")) out.add(online.getName().toLowerCase(Locale.ROOT));
+        for (OfflinePlayer operator : Bukkit.getOperators()) if (operator.getName() != null) out.add(operator.getName().toLowerCase(Locale.ROOT));
+        return out;
+    }
+
     private boolean isStaffAccount(UUID uuid) {
         if (uuid == null) return false;
         Player online = Bukkit.getPlayer(uuid);
@@ -1823,7 +1840,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         }
         if (!has(sender, "simplexadminsuite.admin")) return Collections.emptyList();
         if (moderationControl != null) { List<String> suggestions = moderationControl.complete(sender, args); if (suggestions != null) return suggestions; }
-        if (args.length >= 1 && args[0].equalsIgnoreCase("app")) return args.length == 2 ? filter(Arrays.asList("status", "enable", "disable", "reload", "create", "user", "users", "setup", "keys", "revoke", "domain", "fingerprint", "owner-reset"), args[1]) : Collections.emptyList();
+        if (args.length >= 1 && args[0].equalsIgnoreCase("app")) return args.length == 2 ? filter(Arrays.asList("status", "enable", "disable", "reload", "create", "user", "users", "setup", "keys", "revoke", "domain", "fingerprint", "owner-reset", "user-reset", "owner-transfer", "unlock", "recovery", "rename", "user-enable", "user-disable", "user-logout", "public-name"), args[1]) : Collections.emptyList();
         if (args.length == 1) return filter(Arrays.asList("detectors", "detektoren", "securityhub", "checkwhitelist", "emergency", "restartplan", "geoinfo", "bluemap", "names", "clientcheck", "checkhacks", "checklang", "delivery", "shop", "branding", "connection", "links", "serverstats", "commands", "befehle", "moderationplus", "banmode", "restrict", "deviceblock", "osblock", "adminlog", "chatstyle", "modlog", "suiteconfig", "menü", "items", "checkban", "checkmute", "xraybait", "setdiscord", "adminupdate", "adminrights", "watch", "relay", "vpn", "power", "laginspector", "statusdesign", "fun", "qol", "aufgaben", "planer", "incidents", "health", "makros", "bulk", "timeline", "bedrock", "java", "online", "spieler", "welten", "trimmer", "warps", "regeln", "umfragen", "punkte", "chatfilter", "antispam", "updates", "check", "channels", "clientsecurity", "discordstatus", "status", "steuerung", "chat", "spy", "sicherheit", "stealth", "afk", "startnachrichten", "operations", "leitstelle", "alts", "altlink", "altignore", "altban", "ultraban", "ultraunban", "ultrareset", "slowmode", "commandlock", "commandspy", "duty", "watchlist", "announcement", "diagnostics", "deviceinfo", "devicediagnostics", "export", "wartung", "maintenance", "report", "reports", "staff", "staffmsg", "tp", "tplast", "bring", "freeze", "unfreeze", "heal", "feed", "gamemode", "vanish", "invsee", "homes", "homeadmin", "ban", "tempban", "unban", "mute", "tempmute", "unmute", "kick", "warn", "warnungen", "clearwarnings", "notes", "recht", "suche", "cleardata", "datenloeschen", "snapshot", "password", "app", "reload", "help"), args[0]);
         String sub = args[0].toLowerCase(Locale.ROOT);
         if (args.length == 2 && Set.of("adminrights","checkban","checkmute","xraybait").contains(sub)) return filter(database.names(), args[1]);
@@ -8316,7 +8333,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return "Dieser Befehl ist ausschließlich für Discord-Administratoren freigegeben.";
         if (raw.isBlank() || raw.length() > 1500 || raw.chars().anyMatch(c -> c < 32)) return "Ungültiger Konsolenbefehl.";
         // 9.8.0: the main-admin emergency reset must be typed into the real server console, never relayed.
-        if (raw.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").matches("([a-z0-9_-]+:)?(sas|simplexadmin) app owner-reset.*")) return "Der Notfall-Reset ist nur direkt in der Serverkonsole möglich.";
+        if (raw.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").matches("([a-z0-9_-]+:)?(sas|simplexadmin) app (owner-reset|user-reset|owner-transfer|unlock|recovery).*")) return "Wiederherstellungsbefehle sind nur direkt in der Serverkonsole möglich.";
         if (!full) {
             if (DiscordAdminController.hardDeniedConsoleCommand(raw)) return "Der Befehl wird von der festen Sicherheitsgrenze des Allowlist-Modus blockiert.";
             String normalized = String.join(" ", DiscordAdminController.tokenize(raw)).replaceFirst("^/+", "");

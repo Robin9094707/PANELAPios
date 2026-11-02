@@ -109,20 +109,36 @@ struct SuiteLiveChatView: View {
 
 struct SuiteChatRow: View {
     let row: JSON
+    /// 9.9: messages sent from the app/web panel appear on the right like in a messenger.
+    var mine: Bool { row["source"].string == "app" }
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            avatar
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(row["name"].string).font(.subheadline.bold())
-                    if row["source"].string == "app" { badge("App", .secondary) }
-                    if row["source"].string == "discord" { badge("Discord", .indigo) }
-                    Spacer()
-                    if let date = SuitePlayerPresentation.date(row["at"]) { Text(date, style: .time).font(.caption2).foregroundStyle(.secondary) }
-                }
-                Text(row["text"].string).textSelection(.enabled)
+        HStack(alignment: .bottom, spacing: 8) {
+            if mine { Spacer(minLength: 36) } else { avatar }
+            bubble
+            if mine { avatar } else { Spacer(minLength: 36) }
+        }
+        .listRowSeparator(.hidden)
+        .accessibilityElement(children: .combine)
+    }
+    private var bubble: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(row["name"].string).font(.footnote.bold()).foregroundStyle(Color.panelAccent)
+                sourceBadge
             }
-        }.accessibilityElement(children: .combine)
+            Text(row["text"].string).textSelection(.enabled)
+            if let date = SuitePlayerPresentation.date(row["at"]) { Text(date, style: .time).font(.caption2).foregroundStyle(.secondary) }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(mine ? Color.panelAccent.opacity(0.16) : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+    @ViewBuilder private var sourceBadge: some View {
+        switch row["source"].string {
+        case "app": badge("App", Color.panelAccent)
+        case "discord": badge("Discord", .indigo)
+        case "player": badge("Minecraft", .green)
+        default: EmptyView()
+        }
     }
     func badge(_ text: String, _ color: Color) -> some View { Text(text).font(.caption2.weight(.semibold)).padding(.horizontal, 5).padding(.vertical, 1).background(color.opacity(0.15), in: Capsule()).foregroundStyle(color) }
     @ViewBuilder var avatar: some View {

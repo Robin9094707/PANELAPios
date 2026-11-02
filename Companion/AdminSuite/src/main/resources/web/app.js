@@ -22,9 +22,15 @@
       { id: "statistics", label: "Statistiken", icon: "chart", perm: "data.statistics" },
       { id: "worlds", label: "Welten", icon: "globe", perm: "data.worlds" },
       { id: "plugins", label: "Plugins", icon: "puzzle", perm: "data.plugins" },
+      { id: "luckperms", label: "Ränge & Rechte", icon: "crown", perm: "data.luckperms", feature: "luckperms-v1" },
+      { id: "lands", label: "Lands", icon: "map", perm: "data.lands", feature: "lands-v1" },
       { id: "functions", label: "Alle Funktionen", icon: "grid", perm: null },
       { id: "menu", label: "Suite-Menüs", icon: "box", perm: "action.menu.action", full: true },
       { id: "settings", label: "Einstellungen", icon: "settings", perm: "data.app-settings", feature: "app-settings-v1" }
+    ] },
+    { group: "Persönlich", items: [
+      { id: "notifications", label: "Benachrichtigungen", icon: "bell", perm: null, feature: "web-push-v1" },
+      { id: "appearance", label: "Darstellung", icon: "sparkles", perm: null, feature: "web-prefs-v1" }
     ] },
     { group: "Zugänge", items: [
       { id: "users", label: "Benutzer & Rechte", icon: "key", perm: "data.access", full: true },
@@ -34,6 +40,9 @@
     ] }
   ];
   var TABS = ["dashboard", "players", "tickets", "staff-chat", "more"];
+  /** 9.9.0: the phone tab bar and hidden menu entries follow the account's appearance settings. */
+  function tabs() { var p = S.prefs && S.prefs.tabs; var list = (p && p.length ? p : TABS.slice(0, 4)).filter(function (id) { return navItem(id); }).slice(0, 4); return list.concat(["more"]); }
+  function hiddenItem(id) { return !!(S.prefs && (S.prefs.hidden || []).indexOf(id) >= 0) && ["dashboard", "appearance", "security"].indexOf(id) < 0; }
   var ALIASES = { player: "players", ticket: "tickets", function: "functions" };
   S.nav = NAV;
 
@@ -59,6 +68,7 @@
     return dark;
   }
   theme();
+  S.theme = theme;
   if (window.matchMedia) matchMedia("(prefers-color-scheme: light)").addEventListener("change", function () { theme(); });
 
   // ------------------------------------------------------------ Shell
@@ -72,9 +82,11 @@
     sidebar.appendChild(brand);
     NAV.forEach(function (group) {
       var nav = h("nav", { class: "nav nav-group" }, h("div", { class: "nav-title", text: group.group }));
+      if (group.items.every(function (item) { return hiddenItem(item.id) || item.owner && denied(item); })) return;
       group.items.forEach(function (item) {
         var reason = denied(item);
         if (item.owner && reason) return; // owner-only tools stay hidden for everybody else
+        if (hiddenItem(item.id)) return;
         var a = h("a", { href: "#/" + item.id, "data-id": item.id, class: reason ? "locked" : "", title: reason || item.label }, icon(item.icon), h("span", { text: item.label }));
         if (reason) a.appendChild(icon("lock", "lock"));
         else if (item.badge) a.appendChild(h("span", { class: "count hidden", "data-badge": item.badge }));
@@ -85,8 +97,16 @@
     var me = S.account || {};
     var themeBtn = S.btn("", { kind: "ghost", size: "sm icon", icon: document.documentElement.getAttribute("data-theme") === "dark" ? "sun" : "moon", title: "Hell/Dunkel umschalten", onClick: function () {
       var dark = theme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"); S.clear(themeBtn).appendChild(icon(dark ? "sun" : "moon"));
+      if (S.prefs) S.prefs.theme = dark ? "dark" : "light";
+      if (S.has("web-prefs-v1")) S.api("web/prefs", { body: { theme: dark ? "dark" : "light" }, quiet: true }).catch(function () {});
     } });
-    sidebar.appendChild(h("div", { class: "sidebar-foot" },
+    var collapse = S.btn("", { kind: "ghost", size: "sm icon", icon: "chevLeft", title: "Seitenleiste ein-/ausklappen", onClick: function () {
+      var next = document.documentElement.getAttribute("data-sidebar") === "collapsed" ? "expanded" : "collapsed";
+      document.documentElement.setAttribute("data-sidebar", next); if (S.prefs) S.prefs.sidebar = next;
+      if (S.has("web-prefs-v1")) S.api("web/prefs", { body: { sidebar: next }, quiet: true }).catch(function () {});
+    } });
+    collapse.classList.add("collapse-btn", "hide-mobile");
+    sidebar.appendChild(h("div", { class: "sidebar-foot" }, collapse,
       h("div", { class: "me" }, S.avatar(me.username || me.label, "sm"), h("div", { class: "who" }, h("b", { text: me.username || me.label || "" }), h("small", { text: me.owner ? "Hauptadmin" : S.health && S.health.permissions && S.health.permissions.indexOf("*") >= 0 ? "Vollzugriff" : "Teammitglied" })), themeBtn,
         S.btn("", { kind: "ghost", size: "sm icon", icon: "logout", title: "Abmelden", onClick: logout }))));
 
@@ -95,15 +115,17 @@
     topbar.firstChild.classList.add("menu-btn");
     var content = h("div", { class: "content", id: "content" });
     var tabbar = h("nav", { class: "tabbar", "aria-label": "Schnellnavigation" });
-    TABS.forEach(function (id) {
+    tabs().forEach(function (id) {
       if (id === "more") { tabbar.appendChild(h("a", { href: "#", onClick: function (e) { e.preventDefault(); openDrawer(); } }, icon("menu"), "Mehr")); return; }
       var item = navItem(id), reason = denied(item);
-      var a = h("a", { href: "#/" + id, "data-id": id, class: reason ? "locked" : "", title: reason || item.label }, icon(item.icon), item.label.replace("Staff-Chat", "Team"));
+      var a = h("a", { href: "#/" + id, "data-id": id, class: reason ? "locked" : "", title: reason || item.label }, icon(item.icon), h("span", { text: item.label.replace("Staff-Chat", "Team").replace("Benachrichtigungen", "Hinweise").replace("Ränge & Rechte", "Ränge") }));
       if (item.badge && !reason) a.appendChild(h("span", { class: "count hidden", "data-badge": item.badge }));
       tabbar.appendChild(a);
     });
-    root.appendChild(h("div", { class: "shell" }, sidebar, scrim, h("div", { class: "main" }, topbar, h("main", {}, content)), tabbar));
+    var banner = h("div", { id: "install-banner", class: "install-slot hidden" });
+    root.appendChild(h("div", { class: "shell" }, sidebar, scrim, h("div", { class: "main" }, topbar, banner, h("main", {}, content)), tabbar));
     S.content = content;
+    if (S.renderInstallBanner) S.renderInstallBanner();
   }
   function openDrawer() { var s = document.getElementById("sidebar"); if (s) { s.classList.add("open"); document.querySelector(".scrim").classList.add("open"); } }
   function closeDrawer() { var s = document.getElementById("sidebar"); if (s) { s.classList.remove("open"); document.querySelector(".scrim").classList.remove("open"); } }
@@ -115,6 +137,7 @@
   };
   function setBadge(name, value) {
     counts[name] = value;
+    if (S.appBadge) S.appBadge((counts.adminLog || 0) + (counts.tickets || 0));
     document.querySelectorAll('[data-badge="' + name + '"]').forEach(function (b) { b.textContent = value > 99 ? "99+" : String(value); b.classList.toggle("hidden", !value); });
   }
   S.setBadge = setBadge;
@@ -136,6 +159,7 @@
     timers.forEach(clearInterval); timers = [];
     if (S.onLeave) { try { S.onLeave(); } catch (e) { /* ignore */ } S.onLeave = null; }
     closeDrawer();
+    document.querySelectorAll(".modal-bg").forEach(function (m) { m.remove(); });
     var r = parse(), nav = ALIASES[r.id] || r.id;
     document.querySelectorAll(".nav a, .tabbar a").forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-id") === nav); });
     var page = S.pages[r.id];
@@ -150,6 +174,7 @@
     window.scrollTo(0, 0);
   }
   S.go = function (hash) { if (location.hash === hash) route(); else location.hash = hash; };
+  S.rebuildShell = function () { if (!S.health) return; buildShell(); route(); refreshBadges(); };
   S.reload = route;
   window.addEventListener("hashchange", function () { if (S.health) route(); });
 
@@ -174,8 +199,14 @@
     try { S.health = await S.api("health", { quiet: true }); }
     catch (e) { if (e.status === 423) return; S.health = null; S.auth.login("web"); return; }
     try { S.account = await S.api("account", { quiet: true }); } catch (e) { S.account = {}; }
+    if (S.loadPrefs) await S.loadPrefs();
     buildShell();
     if (r.id === "app-login" || r.id === "handoff") history.replaceState(null, "", "/#/dashboard");
+    // 9.9.0: personal start page when the panel opens without a specific address (also from the home screen).
+    var raw = location.hash.replace(/^#\/?/, "");
+    if ((!raw || raw === "dashboard") && S.prefs && S.prefs.start && S.prefs.start !== "dashboard" && navItem(S.prefs.start) && !denied(navItem(S.prefs.start)) && !S.started) history.replaceState(null, "", "/#/" + S.prefs.start);
+    S.started = true;
+    if (S.registerWorker) S.registerWorker().then(function () { if (S.resyncPush) S.resyncPush(); });
     await route();
     refreshBadges(); clearInterval(S.badgeTimer); S.badgeTimer = setInterval(function () { if (!document.hidden && S.health) refreshBadges(); }, 60000);
   };

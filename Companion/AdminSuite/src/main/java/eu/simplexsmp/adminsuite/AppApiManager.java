@@ -26,6 +26,9 @@ final class AppApiManager {
     final AppApiMenus menus;
     final AccountApi accounts;
     final WebPanel web;
+    /** 9.9.0: push, appearance, rename, public name, admin-log filters, LuckPerms and Lands. */
+    final PanelHub hub;
+    final WebPush webPush;
     private final Map<String,Map<String,Object>> actions=new LinkedHashMap<>();
     private final Map<String,long[]> rates=new HashMap<>();
     private final PlayerNbtAccess playerNbt;
@@ -37,6 +40,8 @@ final class AppApiManager {
     private final ExecutorService setup=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"SimplexAppSetup");t.setDaemon(true);return t;});
     AppApiManager(SimplexAdminSuite plugin)throws Exception{
         this.plugin=plugin;playerNbt=new PlayerNbtAccess(plugin);serverName=Bukkit.getServer().getName();security=new AppApiSecurity(plugin.getDataFolder().toPath().resolve("app-api"));controller=new DiscordAdminController(plugin,plugin.discordRelay());menus=new AppApiMenus(plugin,security);accounts=new AccountApi(this,plugin,security);web=new WebPanel(plugin.getDescription().getVersion());
+        hub=new PanelHub(this,plugin,security);
+        webPush=new WebPush(security.directory.resolve("web-push.properties"),this::pushContact,hub::allowed,(owner,type,level)->plugin.appEvents==null?level:plugin.appEvents.quietLevel(owner,type,level));
         for(Object command:controller.guildCommands())if(command instanceof Map<?,?> c&&"sasadmin".equals(c.get("name")))flatten("",c.get("options"));
         extra("restart.apply","Serverneustart planen oder abbrechen","Server",List.of(choice("operation","Aktion","schedule","cancel"),field("seconds","Sekunden (1–60)",4,false),field("reasonDE","Grund Deutsch",3,false),field("reasonEN","Grund Englisch",3,false)));
         extra("management.apply","Suite-Verwaltung ändern","Verwaltung",List.of(field("operation","Aktion",3,true),field("player","Spieler / Gruppe",3,false),field("node","Recht / Brand",3,false),field("value","Neuer Wert",3,false),field("reason","Grund",3,false),field("maxBanSeconds","Maximale Banndauer (Sekunden)",3,false),field("altBans","Alt-Account-Banns erlauben",3,false)));
@@ -67,6 +72,8 @@ final class AppApiManager {
         extra("tasks.update","Staff-Aufgabe bearbeiten","Team",List.of(choice("operation","Aktion","create","claim","done","priority","delete"),field("id","Aufgaben-ID",3,false),field("title","Titel",3,false),field("details","Details",3,false),choice("priority","Priorität","LOW","NORMAL","HIGH","URGENT"),field("dueAt","Fällig (ms, 0 = ohne)",3,false)));
         extra("app.settings","App-Einstellung speichern","Einstellungen",List.of(field("key","Einstellung",3,true),field("value","Neuer Wert",3,false)));
         extra("staffchat.update","Staff-Chat-Kanal festlegen","Discord",List.of(field("channel","Discord-Kanal-ID (leer = aus)",3,false)));
+        extra("luckperms.edit","LuckPerms-Gruppen, Rechte und Ränge ändern","Ränge & Rechte",List.of(field("operation","Aktion",3,true),field("group","Gruppe",3,false),field("player","Spieler",3,false),field("node","Recht",3,false),field("value","Wert",3,false),field("duration","Dauer (z. B. 7d)",3,false),field("track","Track",3,false),field("context","Kontext (server=… / world=…)",3,false),field("priority","Priorität für Präfix/Suffix",3,false)));
+        extra("lands.access","Lands-Adminzugriff vergeben oder entziehen","Ränge & Rechte",List.of(field("player","Spieler",3,true),choice("node","Zugriff","lands.bypass.*","lands.admin.*"),choice("operation","Aktion","grant","revoke")));
         extra("suite.command","Weitere Suite-Befehle","Werkzeuge",List.of(choice("root","Suite-Befehl","sas","delivery","shop","spcurrency","connection"),field("command","Argumente ohne /sas",3,true)));
     }
     @SuppressWarnings("unchecked") private void flatten(String prefix,Object options){
@@ -85,7 +92,7 @@ final class AppApiManager {
         if(!Double.isFinite(seconds)||seconds<1||seconds>60||seconds!=(int)seconds)throw new IllegalArgumentException("Countdown muss eine ganze Zahl von 1 bis 60 Sekunden sein");
         return (int)seconds;
     }
-    static String scope(String path){return Set.of("quiet.update","setup.create","app.settings","staffchat.update","accounts.update","links.update","memory.update","online.update","restart.apply","alts.ip","management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","crossplay.update","crossplay.auto","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
+    static String scope(String path){return Set.of("luckperms.edit","lands.access","quiet.update","setup.create","app.settings","staffchat.update","accounts.update","links.update","memory.update","online.update","restart.apply","alts.ip","management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","crossplay.update","crossplay.auto","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
     void reload(){
         stopListener();menus.clear();long rev=generation.get();
         if(!plugin.getConfig().getBoolean("app-api.enabled",false)){status="Ausgeschaltet";return;}
@@ -173,6 +180,7 @@ final class AppApiManager {
             security.touch(key,ip,cookie!=null?Map.of():AccountApi.appDevice(x));
             if(!rate("key:"+key.id(),180))throw new ApiError(429,"Schlüssel-Anfragelimit erreicht.");
             if(accounts.privateRoute(x,key,requestPath,requestMethod,ip,rev))return;
+            if(hub.route(x,key,requestPath,requestMethod,ip,rev))return;
             String path=x.getRequestURI().getPath(),method=x.getRequestMethod();Map<String,String> query=query(x.getRequestURI());Object result;
             authorizeRoute(key,path,method,query);
             if(method.equals("GET")&&path.equals("/v1/ticket-file")){
@@ -202,11 +210,13 @@ final class AppApiManager {
                         if(!query.containsKey("admin"))return plugin.adminLog.overview(viewer,self,views);int offset;try{offset=Math.max(0,Integer.parseInt(query.getOrDefault("offset","0")));}catch(NumberFormatException e){offset=0;}
                         return plugin.adminLog.entries(viewer,self,query.getOrDefault("admin",""),query.getOrDefault("q",""),query.getOrDefault("category",""),offset,views);});
                     case "/v1/data/staff-chat"->{if(plugin.staffChat==null)throw new ApiError(503,"Staff-Chat nicht geladen");long after;try{after=Long.parseLong(query.getOrDefault("after","0"));}catch(NumberFormatException e){after=0;}Map<String,Object> chat=object(plugin.staffChat.read(after));chat.put("you",onMain(rev,()->senderName(key)));yield chat;}
-                    case "/v1/data/nameplates"->onMain(rev,()->SimplexAdminSuite.appMap("items",plugin.appNameplates(),"luckperms",Bukkit.getPluginManager().getPlugin("LuckPerms")!=null,"geyser",Bukkit.getPluginManager().getPlugin("Geyser-Spigot")!=null));
+                    case "/v1/data/nameplates"->onMain(rev,()->SimplexAdminSuite.appMap("items",plugin.appNameplates(),"luckperms",Bukkit.getPluginManager().getPlugin("LuckPerms")!=null,"geyser",Bukkit.getPluginManager().getPlugin("Geyser-Spigot")!=null,
+                        "tabPlugin",VisualIdentityManager.tabPlugin(),"aboveHead",plugin.getConfig().getBoolean("nameplates.rank-above-head",true)&&plugin.getConfig().getBoolean("nameplates.manage-nametags",true),"inPlayerList",plugin.getConfig().getBoolean("nameplates.rank-in-player-list",true),
+                        "playerListManaged",plugin.getConfig().getBoolean("nameplates.manage-player-list",true)&&!(plugin.getConfig().getBoolean("nameplates.yield-to-tab-plugin",true)&&!VisualIdentityManager.tabPlugin().isEmpty())));
                     case "/v1/data/app-settings"->onMain(rev,()->AppSettings.data(plugin));
                     case "/v1/data/staff-tasks"->onMain(rev,()->plugin.appStaffTasks());
                     case "/v1/data/setup-info"->onMain(rev,()->SimplexAdminSuite.appMap("fingerprint",fingerprint,"publicAddress",plugin.getConfig().getString("app-api.public-address",""),"port",plugin.getConfig().getInt("app-api.port",39093),"name",serverName));
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1","admin-log-v1","staff-chat-v1","setup-links-v1","quiet-hours-v1","nameplates-v1","app-settings-v1","staff-tasks-v1","accounts-v2","sessions-v1","mfa-v1","passkeys-v1","web-panel-v1"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis(),
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1","admin-log-v1","staff-chat-v1","setup-links-v1","quiet-hours-v1","nameplates-v1","app-settings-v1","staff-tasks-v1","accounts-v2","sessions-v1","mfa-v1","passkeys-v1","web-panel-v1","admin-log-v2","web-push-v1","web-prefs-v1","account-rename-v1","public-name-v1","luckperms-v1","lands-v1","nameplates-v2"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis(),
                         "account",SimplexAdminSuite.appMap("kind",key.id().startsWith("user:")?"user":"key","username",key.id().startsWith("user:")?key.label():"","owner",key.id().startsWith("user:")&&security.users.owner(key.label()),"manager",accounts.manager(key),"mfa",key.id().startsWith("user:")&&security.users.mfa(key.label()),"canMigrate",!key.id().startsWith("user:")&&key.scope().equals("full")&&security.users.ownerName().isEmpty()),"web",SimplexAdminSuite.appMap("domain",accounts.domain(),"url",accounts.webUrl(),"passkeys",!accounts.rpId().isEmpty()));
                     case "/v1/data/access"->{if(!key.scope().equals("full"))throw new ApiError(403,"Benutzerverwaltung benötigt full-Zugriff");yield SimplexAdminSuite.appMap("items",security.users.list(),"catalog",permissionCatalog());}
                     case "/v1/data/links"->SimplexAdminSuite.appMap("items",plugin.accountLinks.store.all().stream().map(l->SimplexAdminSuite.appMap("player",l.minecraft().toString(),"name",l.name(),"discord",l.discord(),"linkedAt",l.linkedAt())).toList());
@@ -329,6 +339,8 @@ final class AppApiManager {
                     String summary;
                     if(req.path.equals("vpn.whitelist"))summary=onMain(rev,()->plugin.appVpnWhitelistPlan(req.text("player"),req.text("allowed")));
                     else if(Set.of("accounts.update","links.update","memory.update","online.update","quiet.update","setup.create","app.settings","staffchat.update","tasks.update").contains(req.path))summary="Änderung: "+actions.get(req.path).get("description")+". Bestehende Daten bleiben erhalten. Passwort und Sitzungen werden nie angezeigt.";
+                    else if(req.path.equals("luckperms.edit"))summary=LuckPermsAdmin.summary(req.values);
+                    else if(req.path.equals("lands.access"))summary=LuckPermsAdmin.summary(landsAccess(req.values));
                     else if(isCenterAction(req.path))summary="Aktion: "+actions.get(req.path).get("description")+". Änderungen werden beim Ausführen erneut geprüft.";
                     else if(req.path.equals("plugins.stage")){pluginFiles().prepare(values);summary="Plugin: "+req.text("name")+" · "+req.text("version")+". Update wird geprüft und für den nächsten Serverstart vorgemerkt.";}
                     else summary=onMain(rev,()->{if(req.path.equals("alts.ip"))return plugin.altIpPlan(req.values);if(req.path.equals("world.update"))return "Welt: "+req.text("world")+"\nEinstellung: "+req.text("field")+"\nNeuer Wert: "+req.text("value");if(req.path.equals("logs.retry"))return "Gespeicherte private Discord-Protokolle erneut versuchen. Keine Einträge werden gelöscht; die Prüfung privater Kanalrechte bleibt aktiv.";if(req.path.equals("settings.update")){checkSetting(req);return "**Einstellung:** "+req.text("key")+"\n**Neuer Wert:** "+(req.text("value").isEmpty()?"(leer)":req.text("value"))+"\nDer geladene Stand wird vor dem Speichern erneut geprüft.";}return controller.confirmationSummary(req);});
@@ -346,7 +358,7 @@ final class AppApiManager {
                         if(targetOwner&&(operation.equals("delete")||operation.equals("save")&&!Boolean.parseBoolean(req.text("enabled"))))throw new ApiError(409,"Der Hauptadmin-Zugang kann nicht gelöscht oder deaktiviert werden. Notfalls per Serverkonsole zurücksetzen: /sas app owner-reset");
                         String title,description;
                         switch(operation){
-                            case "delete"->{security.users.delete(username);title="App-Benutzer gelöscht";description="Alle Geräte, Passkeys und Sitzungen dieses Benutzers wurden entfernt.";}
+                            case "delete"->{security.users.delete(username);String gone=PanelHub.ownerKey(username);try{webPush.removeOwner(gone);hub.removeOwner(gone);}catch(java.io.IOException ignored){}title="App-Benutzer gelöscht";description="Alle Geräte, Passkeys und Sitzungen dieses Benutzers wurden entfernt.";}
                             case "reset-mfa"->{if(!security.users.exists(username))throw new IllegalArgumentException("Benutzer nicht gefunden");security.users.disableMfa(username);title="Zwei-Faktor-Schutz zurückgesetzt";description=username+" meldet sich wieder nur mit Passwort an und kann 2FA neu einrichten.";}
                             case "logout-all"->{security.users.logoutAll(username);title="Alle Geräte abgemeldet";description="Alle App- und Browser-Sitzungen von "+username+" wurden beendet.";}
                             default->{Set<String> rights=new HashSet<>(Arrays.stream(req.text("permissions").split(",")).map(String::trim).filter(v->!v.isBlank()).toList());Set<String> known=new HashSet<>(permissionCatalog().stream().map(r->String.valueOf(r.get("id"))).toList());if(!known.containsAll(rights))throw new IllegalArgumentException("Unbekanntes Zugriffsrecht");
@@ -366,6 +378,8 @@ final class AppApiManager {
                             String code=security.users.setupCode(username,minutes,System.currentTimeMillis());String endpoint=req.text("endpoint").isBlank()?plugin.getConfig().getString("app-api.public-address",""):req.text("endpoint");
                             String link=setupLink(endpoint,code,username);onMain(rev,()->{plugin.suiteAudit(actor(key).auditName(),"Setup-Link erstellt",username+" · "+minutes+" min");return null;});
                             result=SimplexAdminSuite.appMap("ok",true,"title","Setup-Link erstellt","description","Einmalig gültig für "+minutes+" Minuten. Nur an "+username+" weitergeben.","link",link,"code",code,"fingerprint",fingerprint,"expiresAt",System.currentTimeMillis()+minutes*60_000L,"username",username);}
+                    }else if(req.path.equals("luckperms.edit")){result=onMain(rev,()->hub.luckPerms.apply(req.values,actor(key).auditName()));
+                    }else if(req.path.equals("lands.access")){Map<String,Object> lp=landsAccess(req.values);result=onMain(rev,()->hub.luckPerms.apply(lp,actor(key).auditName()));
                     }else if(req.path.equals("tasks.update")){String who=onMain(rev,()->senderName(key));result=onMain(rev,()->plugin.appStaffTask(who,req.values));
                     }else if(req.path.equals("app.settings")){result=onMain(rev,()->AppSettings.apply(plugin,req.text("key"),req.text("value"),actor(key).auditName()));
                     }else if(req.path.equals("staffchat.update")){String channel=req.text("channel").trim();if(!channel.isEmpty()){DiscordBotManager bot=onMain(rev,()->plugin.discordRelay());if(bot==null)throw new ApiError(503,"Discord-Bot ist nicht geladen");bot.appValidateChannel(channel);}result=onMain(rev,()->{plugin.getConfig().set("staff-chat.channel-id",channel);plugin.saveConfig();plugin.suiteAudit(actor(key).auditName(),"Staff-Chat-Kanal",channel.isEmpty()?"aus":channel);return SimplexAdminSuite.appMap("ok",true,"title",channel.isEmpty()?"Staff-Chat-Sync aus":"Staff-Chat-Kanal gespeichert","description",channel.isEmpty()?"App und Minecraft teilen weiter den Staff-Chat.":"Nachrichten, Bilder, Dateien und Sprachnachrichten werden mit Discord synchronisiert.");});
@@ -414,7 +428,7 @@ final class AppApiManager {
         String enc=URLEncoder.encode(host,StandardCharsets.UTF_8);
         return "panel://setup?e="+enc+"&f="+fingerprint+"&c="+URLEncoder.encode(code,StandardCharsets.UTF_8)+"&u="+URLEncoder.encode(username,StandardCharsets.UTF_8)+"&n="+URLEncoder.encode(serverName,StandardCharsets.UTF_8);
     }
-    private void requirePermission(AppApiSecurity.Key key,String permission){if(!security.users.allows(key,permission))throw new ApiError(403,"Keine Berechtigung: "+permission);}
+    void requirePermission(AppApiSecurity.Key key,String permission){if(!security.users.allows(key,permission))throw new ApiError(403,"Keine Berechtigung: "+permission);}
     private void authorizeRoute(AppApiSecurity.Key key,String path,String method,Map<String,String> query){
         if(!key.id().startsWith("user:"))return;
         if(Set.of("/v1/health","/v1/schema","/v1/prepare","/v1/execute").contains(path))return;
@@ -440,12 +454,25 @@ final class AppApiManager {
     private List<Map<String,Object>> permissionCatalog(){
         List<Map<String,Object>> out=new ArrayList<>();out.add(SimplexAdminSuite.appMap("id","*","title","Vollzugriff (einschließlich Benutzerverwaltung)"));
         for(var row:actions.values())out.add(SimplexAdminSuite.appMap("id","action."+row.get("id"),"title",row.get("description")));
-        for(String id:List.of("access","links","memory","online-settings","chat","crossplay","tickets","ticket","ticket-settings","operations","admin-dashboard","management","discord-channels","litebans","alt-dashboard","alt-ips","events","vpn-whitelist","vpn-kicks","bans","reports","overview","statistics","statistics-rows","worlds","plugins","log-status","players","profile","alts","devices","ultrabans","snapshots","nbt-paths","settings","inventory","snapshot-content","admin-log","staff-chat","nameplates","app-settings","setup-info","staff-tasks"))out.add(SimplexAdminSuite.appMap("id","data."+id,"title","Lesen: "+id));
+        for(String id:List.of("access","links","memory","online-settings","chat","crossplay","tickets","ticket","ticket-settings","operations","admin-dashboard","management","discord-channels","litebans","alt-dashboard","alt-ips","events","vpn-whitelist","vpn-kicks","bans","reports","overview","statistics","statistics-rows","worlds","plugins","log-status","players","profile","alts","devices","ultrabans","snapshots","nbt-paths","settings","inventory","snapshot-content","admin-log","staff-chat","nameplates","app-settings","setup-info","staff-tasks","luckperms","lands"))out.add(SimplexAdminSuite.appMap("id","data."+id,"title","Lesen: "+id));
         for(String id:List.of("action.dashboard","action.help","action.settings.list","ticket.reply","ticket.claim","ticket.priority","ticket.close","ticket.reopen","ticket.delete","ticket.discard","ticket.settings","chat.send","chat.clear","staff-chat.send","player-nbt.write","database.inspect"))out.add(SimplexAdminSuite.appMap("id",id,"title",id));
         out.add(SimplexAdminSuite.appMap("id","devices.manage","title","Alle Geräte & Sitzungen sehen, umbenennen, sperren und abmelden"));
         return out;
     }
     private TicketManager tickets(){if(plugin.tickets==null)throw new ApiError(503,"Ticketsystem nicht geladen");return plugin.tickets;}
+    /** VAPID contact (RFC 8292): configured address, otherwise the panel domain. */
+    String pushContact(){
+        String configured=plugin.getConfig().getString("app-api.push-contact","").trim();
+        if(configured.startsWith("mailto:")||configured.startsWith("https://"))return configured;
+        String rp=accounts.rpId();return rp.isEmpty()?"mailto:admin@localhost":"https://"+rp;
+    }
+    /** lands.access → the matching LuckPerms user permission change. */
+    static Map<String,Object> landsAccess(Map<String,Object> values){
+        String node=String.valueOf(values.getOrDefault("node","lands.bypass.*")),operation=String.valueOf(values.getOrDefault("operation","grant"));
+        if(!LandsBridge.ADMIN_NODES.contains(node))throw new IllegalArgumentException("Lands-Zugriff: lands.bypass.* oder lands.admin.*");
+        if(!Set.of("grant","revoke").contains(operation))throw new IllegalArgumentException("Aktion: grant oder revoke");
+        return SimplexAdminSuite.appMap("operation",operation.equals("grant")?"user-permission-set":"user-permission-unset","player",String.valueOf(values.getOrDefault("player","")),"node",node,"value","true");
+    }
     private static boolean isCenterAction(String path){return Set.of("player.warnings","crossplay.update","crossplay.auto","restart.apply","management.apply","vpn.whitelist","bans.remove","reports.update","events.ack","events.delete","events.note","events.clear","notifications.update").contains(path);}
     private void validateDiscordChannel(DiscordAdminController.Request req,long rev)throws Exception {
         if(!req.path.equals("settings.update")||!req.text("key").startsWith("discord-bot.")||!req.text("key").endsWith("channel-id")||req.text("value").isBlank())return;
@@ -493,11 +520,12 @@ final class AppApiManager {
     }
     @SuppressWarnings("unchecked") static Map<String,Object> object(Object value){if(!(value instanceof Map<?,?>))throw new IllegalArgumentException("JSON-Objekt erforderlich");return (Map<String,Object>)value;}
     private static Map<String,Object> reply(DiscordAdminController.Reply r){return SimplexAdminSuite.appMap("ok",r.color!=0xED4245,"title",r.title,"description",r.description,"components",r.components);}
-    private static Map<String,String> query(URI uri){Map<String,String> m=new LinkedHashMap<>();if(uri.getRawQuery()!=null){if(uri.getRawQuery().length()>8192)throw new IllegalArgumentException("Suchanfrage zu lang");for(String pair:uri.getRawQuery().split("&")){String[] parts=pair.split("=",2);m.put(URLDecoder.decode(parts[0],StandardCharsets.UTF_8),parts.length>1?URLDecoder.decode(parts[1],StandardCharsets.UTF_8):"");}}return m;}
+    static Map<String,String> query(URI uri){Map<String,String> m=new LinkedHashMap<>();if(uri.getRawQuery()!=null){if(uri.getRawQuery().length()>8192)throw new IllegalArgumentException("Suchanfrage zu lang");for(String pair:uri.getRawQuery().split("&")){String[] parts=pair.split("=",2);m.put(URLDecoder.decode(parts[0],StandardCharsets.UTF_8),parts.length>1?URLDecoder.decode(parts[1],StandardCharsets.UTF_8):"");}}return m;}
     static void send(HttpExchange x,int code,Object value)throws Exception{byte[] body=DiscordBotManager.Json.stringify(value).getBytes(StandardCharsets.UTF_8);x.getResponseHeaders().set("Content-Type","application/json; charset=utf-8");x.getResponseHeaders().set("Cache-Control","no-store");x.getResponseHeaders().set("X-Content-Type-Options","nosniff");x.sendResponseHeaders(code,body.length);try(var out=x.getResponseBody()){out.write(body);}}
     static final class ApiError extends RuntimeException{final int code;ApiError(int code,String message){super(message);this.code=code;}}
     boolean command(CommandSender sender,String[] args){
         if(args.length>0&&args[0].equalsIgnoreCase("owner-reset")){ownerReset(sender,args);return true;}
+        if(args.length>0&&CONSOLE_ONLY.contains(args[0].toLowerCase(Locale.ROOT))){recovery(sender,args);return true;}
         if(remote(sender)||!plugin.adminAccess.master(sender)){sender.sendMessage("§cApp-API-Zugänge dürfen nur echte Server-Operatoren/Hauptadmins oder die Serverkonsole verwalten.");return true;}
         if(args.length==0&&sender instanceof Player p){menu(p);return true;}
         try{String action=args.length==0?"status":args[0].toLowerCase(Locale.ROOT);switch(action){
@@ -512,10 +540,14 @@ final class AppApiManager {
                 plugin.expansionAudit(sender.getName(),null,"Setup-Link erstellt",user+" · "+minutes+" min");}
             case "keys"->{for(var key:security.keys())sender.sendMessage(key.id()+" · "+key.label()+" · "+key.scope());}
             case "domain"->{String domain=AccountApi.validateDomain(args.length>1?args[1]:"");plugin.getConfig().set("app-api.public-domain",domain);plugin.saveConfig();sender.sendMessage(domain.isEmpty()?"§aDomain entfernt. Webpanel bleibt unter https://Server-IP:Port erreichbar; Passkeys sind ohne Domain aus.":"§aDomain gespeichert: https://"+domain+"/ · DNS und ein gültiges HTTPS-Zertifikat (z. B. Reverse-Proxy) einrichten, dann funktionieren Passkeys.");plugin.expansionAudit(sender.getName(),null,"Webpanel-Domain",domain.isEmpty()?"entfernt":domain);}
+            case "rename"->{if(args.length<3)throw new IllegalArgumentException("/sas app rename <alter Name> <neuer Name>");hub.rename(AppUsers.username(args[1]),AppUsers.username(args[2]),sender instanceof Player?sender.getName():"Serverkonsole");sender.sendMessage("§aBenutzername geändert: §f"+AppUsers.username(args[1])+" §7→ §f"+AppUsers.username(args[2])+"§a. Passwort, 2FA, Passkeys, Rechte und Geräte bleiben erhalten.");}
+            case "user-enable","user-disable"->{if(args.length<2)throw new IllegalArgumentException("/sas app "+action+" <Benutzer>");security.users.setEnabled(args[1],action.equals("user-enable"));sender.sendMessage("§aBenutzer "+AppUsers.username(args[1])+(action.equals("user-enable")?" aktiviert.":" deaktiviert und abgemeldet."));plugin.expansionAudit(sender.getName(),null,"App-Benutzer "+(action.equals("user-enable")?"aktiviert":"deaktiviert"),AppUsers.username(args[1]));}
+            case "user-logout"->{if(args.length<2)throw new IllegalArgumentException("/sas app user-logout <Benutzer>");security.users.logoutAll(AppUsers.username(args[1]));sender.sendMessage("§aAlle Geräte von "+AppUsers.username(args[1])+" abgemeldet.");plugin.expansionAudit(sender.getName(),null,"Alle Geräte abgemeldet",AppUsers.username(args[1]));}
+            case "public-name"->{if(args.length<2)throw new IllegalArgumentException("/sas app public-name <Benutzer> [Name, leer = Standard]");String value=args.length>2?String.join(" ",Arrays.copyOfRange(args,2,args.length)):"";security.users.setPublicName(AppUsers.username(args[1]),value);sender.sendMessage("§aÖffentlicher Name von "+AppUsers.username(args[1])+": §f"+(value.isBlank()?plugin.getConfig().getString("app-api.public-staff-name","Team")+" (Standard)":value));}
             case "users"->{for(var row:security.users.list())sender.sendMessage("§f"+row.get("username")+(Boolean.TRUE.equals(row.get("owner"))?" §6[Hauptadmin]":"")+" §7· "+(Boolean.TRUE.equals(row.get("enabled"))?"aktiv":"deaktiviert")+" · 2FA "+(Boolean.TRUE.equals(row.get("mfa"))?"an":"aus")+" · "+row.get("sessions")+" Geräte");}
             case "revoke"->{if(args.length<2)throw new IllegalArgumentException("/sas app revoke <Schlüssel-ID>");security.revoke(args[1]);sender.sendMessage("§aSchlüssel widerrufen.");plugin.expansionAudit(sender.getName(),null,"App-Schlüssel widerrufen",args[1]);}
             case "fingerprint"->sender.sendMessage("SHA-256: "+(fingerprint.isBlank()?"Noch kein aktives TLS-Zertifikat":fingerprint));
-            default->{sender.sendMessage("§bSimplex Panel API · "+status);sender.sendMessage("§7/sas app enable <Port> | disable | create <Name> [read|manage|full] | user <Name> <Passwort> [Rechte] | setup <Benutzer> [Minuten] | users | keys | revoke <ID> | domain [host] | fingerprint | reload");sender.sendMessage("§7Notfall (nur Serverkonsole): /sas app owner-reset [Benutzername]");sender.sendMessage("§7Webpanel: "+webAddress());if(!fingerprint.isBlank())sender.sendMessage("SHA-256: "+fingerprint);}
+            default->{sender.sendMessage("§bSimplex Panel API · "+status);sender.sendMessage("§7/sas app enable <Port> | disable | create <Name> [read|manage|full] | user <Name> <Passwort> [Rechte] | setup <Benutzer> [Minuten] | users | keys | revoke <ID> | domain [host] | fingerprint | reload");sender.sendMessage("§7Benutzer: rename <alt> <neu> | user-enable <Name> | user-disable <Name> | user-logout <Name> | public-name <Name> [Anzeigename]");sender.sendMessage("§7Notfall (nur Serverkonsole): owner-reset [Name] | user-reset <Name> | owner-transfer <Name> | unlock <Name> | recovery");sender.sendMessage("§7Webpanel: "+webAddress());if(!fingerprint.isBlank())sender.sendMessage("SHA-256: "+fingerprint);}
         }}catch(Exception e){sender.sendMessage("§cApp-API: "+e.getMessage());}return true;
     }
     /** Browser address of the panel: the configured domain, otherwise the public address or bind/port. */
@@ -542,6 +574,33 @@ final class AppApiManager {
             sender.sendMessage("§6══════════════════════════════════════════════════════");
             plugin.expansionAudit("Serverkonsole",null,"Notfall-Reset Hauptadmin",reset[0]);
         }catch(Exception e){sender.sendMessage("§cNotfall-Reset: "+e.getMessage());}
+    }
+    /** 9.9.0 recovery commands that only the real server console may run (never in-game, RCON relays, Discord or the app). */
+    static final Set<String> CONSOLE_ONLY=Set.of("user-reset","owner-transfer","unlock","recovery");
+    private void recovery(CommandSender sender,String[] args){
+        if(!(sender instanceof org.bukkit.command.ConsoleCommandSender)){sender.sendMessage("§cDieser Wiederherstellungsbefehl ist nur direkt in der Serverkonsole möglich.");return;}
+        String action=args[0].toLowerCase(Locale.ROOT);
+        try{switch(action){
+            case "user-reset"->{if(args.length<2)throw new IllegalArgumentException("/sas app user-reset <Benutzer>");String user=AppUsers.username(args[1]);String password=security.users.resetUser(user);
+                sender.sendMessage("§6════════ Simplex Panel · Zugang wiederherstellen ════════");sender.sendMessage("§7Benutzername:   §f"+user+(security.users.owner(user)?" §6[Hauptadmin]":""));sender.sendMessage("§7Einmal-Passwort: §f"+password);
+                sender.sendMessage("§7Beim nächsten Login muss ein neues Passwort gewählt werden. 2FA, Wiederherstellungscodes und Passkeys wurden entfernt, alle Geräte abgemeldet.");sender.sendMessage("§6══════════════════════════════════════════════════════");
+                plugin.expansionAudit("Serverkonsole",null,"App-Zugang wiederhergestellt",user);}
+            case "owner-transfer"->{if(args.length<2)throw new IllegalArgumentException("/sas app owner-transfer <Benutzer>");String user=AppUsers.username(args[1]);String previous=security.users.transferOwner(user);
+                sender.sendMessage("§a"+user+" ist jetzt Hauptadmin (Vollzugriff)."+(previous.isEmpty()||previous.equals(user)?"":" §7Bisher: "+previous+" – behält ein normales Konto mit seinen Rechten."));plugin.expansionAudit("Serverkonsole",null,"Hauptadmin übertragen",(previous.isEmpty()?"-":previous)+" → "+user);}
+            case "unlock"->{if(args.length<2)throw new IllegalArgumentException("/sas app unlock <Benutzer>");int n=security.users.unlockAll(args[1]);sender.sendMessage("§a"+n+" gesperrte Geräte von "+AppUsers.username(args[1])+" freigegeben.");}
+            default->{
+                sender.sendMessage("§6════════ Simplex Panel · Wiederherstellung (nur Konsole) ════════");
+                sender.sendMessage("§fsas app users §7– alle App-Benutzer, Hauptadmin, 2FA, Geräte");
+                sender.sendMessage("§fsas app owner-reset [Name] §7– Hauptadmin: Einmal-Passwort, 2FA/Passkeys entfernen");
+                sender.sendMessage("§fsas app user-reset <Name> §7– beliebiger Benutzer: Einmal-Passwort, 2FA/Passkeys entfernen");
+                sender.sendMessage("§fsas app owner-transfer <Name> §7– anderen Benutzer zum Hauptadmin machen");
+                sender.sendMessage("§fsas app rename <alt> <neu> §7– Benutzernamen ändern (alles bleibt erhalten)");
+                sender.sendMessage("§fsas app unlock <Name> §7– gesperrte Geräte freigeben");
+                sender.sendMessage("§fsas app user-enable|user-disable|user-logout <Name>");
+                sender.sendMessage("§fsas app user <Name> <Passwort> [Rechte] §7– Benutzer anlegen oder Passwort setzen");
+                sender.sendMessage("§7Webpanel: "+webAddress());
+            }
+        }}catch(Exception e){sender.sendMessage("§cWiederherstellung: "+e.getMessage());}
     }
     void menu(Player p){
         if(remote(p)||!plugin.adminAccess.master(p)){plugin.menuError(p,"§cNur Hauptadmins/Operatoren.");return;}

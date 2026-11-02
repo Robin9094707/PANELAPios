@@ -9,7 +9,10 @@ import java.util.*;
 final class AppSettings {
     record Setting(String key, String group, String title, String type, int min, int max, Object fallback, String help) { }
     static final List<Setting> ALL = List.of(
-        bool("nameplates.show-luckperms", "Ränge & Namen", "LuckPerms-Rang über dem Kopf und in der Tabliste", true, "Präfix und Suffix aus LuckPerms, auch für Bedrock über Geyser."),
+        bool("nameplates.show-luckperms", "Ränge & Namen", "LuckPerms-Ränge anzeigen", true, "Hauptschalter für Präfix und Suffix aus LuckPerms, auch für Bedrock über Geyser."),
+        bool("nameplates.rank-above-head", "Ränge & Namen", "Rang über dem Kopf (Namensschild)", true, "Nur das Namensschild über dem Spieler."),
+        bool("nameplates.rank-in-player-list", "Ränge & Namen", "Rang in der Tabliste", true, "Aus = die Tabliste zeigt nur den Namen (und [AFK])."),
+        bool("nameplates.yield-to-tab-plugin", "Ränge & Namen", "Tabliste einem TAB-Plugin überlassen", true, "Ist TAB/TabList installiert, ändert die Suite die Tabliste gar nicht – Ränge nur über dem Kopf."),
         bool("nameplates.color-names", "Ränge & Namen", "Spielername in Rangfarbe", true, "Der Name übernimmt die letzte Farbe des Präfixes."),
         bool("nameplates.manage-nametags", "Ränge & Namen", "Namensschilder über dem Kopf verwalten", true, "Aus = andere Plugins (z. B. TAB) übernehmen die Nametags."),
         bool("nameplates.manage-player-list", "Ränge & Namen", "Tabliste verwalten", true, ""),
@@ -36,6 +39,7 @@ final class AppSettings {
         integer("reports.cooldown-seconds", "Moderation", "Report-Abklingzeit (Sekunden)", 0, 3600, 120, ""),
         bool("staff-workspace.join-summary-enabled", "Team", "Team-Zusammenfassung beim Beitritt", true, ""),
         text("app-api.owner-name", "Team", "Dein Name als Hauptadmin (Staff-Chat & Admin-Log)", "", "Erscheint statt „Simplex Panel“ – z. B. Robin."),
+        text("app-api.public-staff-name", "Team", "Öffentlicher Teamname bei Ticketantworten", "Team", "Spieler sehen diesen Namen, wenn ein App-Konto ohne eigenen öffentlichen Namen antwortet. Login-Namen werden nie gezeigt."),
         bool("staff-chat.use-webhook", "Team", "Staff-Chat mit Absendername (Webhook)", true, "Benötigt „Webhooks verwalten“; sonst sauberes Embed im Namen des Absenders."),
         text("app-api.public-address", "App-Zugang", "Öffentliche API-Adresse für Setup-Links", "", "Host:Port, z. B. play.example.com:39093. Leer = Adresse der App verwenden."),
         bool("emergency-restart.notify-crash", "Server", "Hinweis nach unerwartetem Stopp", true, "Kritischer Bark-Hinweis, wenn der letzte Lauf abgestürzt ist."),
@@ -65,7 +69,7 @@ final class AppSettings {
             default -> {
                 if (value.length() > s.max() || value.codePoints().anyMatch(Character::isISOControl)) throw new IllegalArgumentException("Text zu lang oder ungültig");
                 if (key.equals("app-api.public-address") && !value.isEmpty() && !value.matches("(https://)?[A-Za-z0-9.-]{1,253}(:[0-9]{2,5})?/?")) throw new IllegalArgumentException("Format: host:port");
-                if (key.equals("app-api.owner-name") && !value.isEmpty()) AppChat.validateName(value);
+                if ((key.equals("app-api.owner-name") || key.equals("app-api.public-staff-name")) && !value.isEmpty()) AppChat.validateName(value);
                 stored = value;
             }
         }

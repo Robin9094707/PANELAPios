@@ -19,9 +19,14 @@ final class AdminActivityLog {
     static final int LIMIT = 5000;
     private static final long MAX_FILE = 6L * 1024 * 1024;
     private final SimplexAdminSuite plugin;
-    private final Path file, readFile;
+    private final Path file, readFile, filterFile;
     private final ArrayDeque<Map<String, Object>> rows = new ArrayDeque<>();
     private final Properties read = new Properties();
+    /** 9.9.0: per-viewer unread filter (which admins/actions raise the unread counter). */
+    private final Properties filters = new Properties();
+    static final List<String> MODES = List.of("staff", "all", "selected", "none");
+    private volatile Set<String> staffCache = Set.of();
+    private volatile long staffCachedAt;
     private final ExecutorService writer = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(512), r -> { Thread t = new Thread(r, "Simplex-Admin-Log"); t.setDaemon(true); return t; }, new ThreadPoolExecutor.DiscardOldestPolicy());
     private long sequence;
 
@@ -30,12 +35,14 @@ final class AdminActivityLog {
         Path folder = plugin.getDataFolder().toPath().resolve("admin-log");
         file = folder.resolve("activity.jsonl");
         readFile = folder.resolve("read.properties");
+        filterFile = folder.resolve("filters.properties");
         load();
     }
 
     private synchronized void load() {
         try {
             if (Files.exists(readFile)) try (Reader in = Files.newBufferedReader(readFile, StandardCharsets.UTF_8)) { read.load(in); }
+            if (Files.exists(filterFile)) try (Reader in = Files.newBufferedReader(filterFile, StandardCharsets.UTF_8)) { filters.load(in); }
             if (!Files.exists(file)) return;
             List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
             for (String line : lines.subList(Math.max(0, lines.size() - LIMIT), lines.size())) {
@@ -96,6 +103,7 @@ final class AdminActivityLog {
             Player victim = target == null ? null : Bukkit.getPlayer(target);
             if (victim != null) row.put("targetLocation", location(victim.getLocation()));
         }
+        row.put("staff", staff(who, Bukkit.isPrimaryThread() ? staffNames() : staffCache));
         synchronized (this) {
             row.put("id", ++sequence);
             rows.addLast(row);
@@ -103,6 +111,127 @@ final class AdminActivityLog {
         }
         String line = DiscordBotManager.Json.stringify(row);
         try { writer.execute(() -> append(line)); } catch (RejectedExecutionException stopped) { /* plugin disabling */ }
+        notifyViewers(row);
+    }
+
+    // ---------------------------------------------------------------- 9.9.0: team detection and unread filters
+
+    /**
+     * Names (lower case) the suite recognises as team: staff workspace members (OP, online permission, LuckPerms
+     * simplexadminsuite.admin), server operators, app users and the configured main-admin name. Cached for 60 s.
+     */
+    Set<String> staffNames() {
+        if (!Bukkit.isPrimaryThread() || System.currentTimeMillis() - staffCachedAt < 60_000L) return staffCache;
+        Set<String> out = new HashSet<>();
+        try { out.addAll(plugin.panelStaffNames()); } catch (RuntimeException ignored) { }
+        try { if (plugin.appApi != null) for (Map<String, Object> user : plugin.appApi.security.users.list()) out.add(String.valueOf(user.get("username")).toLowerCase(Locale.ROOT)); } catch (RuntimeException ignored) { }
+        String owner = ownerName(); if (!owner.isBlank()) out.add(owner.toLowerCase(Locale.ROOT));
+        staffCache = Set.copyOf(out); staffCachedAt = System.currentTimeMillis();
+        return staffCache;
+    }
+
+    /** App, console and Discord admin commands are always team actions; in-game actions only for recognised team members. */
+    static boolean staff(Identity who, Set<String> names) {
+        return switch (who.source()) { case "app", "console", "discord" -> true; case "system" -> false; default -> names.contains(who.key()); };
+    }
+    private static boolean staffRow(Map<String, Object> row, Set<String> names) {
+        String source = String.valueOf(row.get("source"));
+        if (Set.of("app", "console", "discord").contains(source)) return true;
+        if (source.equals("system")) return false;
+        return Boolean.TRUE.equals(row.get("staff")) || names.contains(String.valueOf(row.get("admin")));
+    }
+
+    record Filter(String mode, Set<String> admins, Set<String> categories, boolean views) {
+        Map<String, Object> json() { return SimplexAdminSuite.appMap("mode", mode, "admins", new ArrayList<>(new TreeSet<>(admins)), "categories", new ArrayList<>(new TreeSet<>(categories)), "views", views); }
+    }
+
+    /** Default for every viewer: only team actions count as unread (players' own actions stay visible but silent). */
+    synchronized Filter filter(String viewer) {
+        String mode = filters.getProperty(viewer + ".mode", "staff");
+        if (!MODES.contains(mode)) mode = "staff";
+        return new Filter(mode, split(filters.getProperty(viewer + ".admins", "")), split(filters.getProperty(viewer + ".categories", "")), Boolean.parseBoolean(filters.getProperty(viewer + ".views", "false")));
+    }
+    private static Set<String> split(String raw) { Set<String> out = new LinkedHashSet<>(); for (String v : raw.split(",")) if (!v.isBlank()) out.add(v.trim().toLowerCase(Locale.ROOT)); return out; }
+
+    /** Whether this row raises the unread counter (and push notifications) for the viewer. */
+    static boolean counts(Map<String, Object> row, String self, Filter f, Set<String> staff) {
+        String admin = String.valueOf(row.get("admin"));
+        if (admin.equals(self) || f.mode().equals("none")) return false;
+        if (!f.views() && "view".equals(row.get("category"))) return false;
+        if (!f.categories().isEmpty() && !f.categories().contains(String.valueOf(row.get("category")))) return false;
+        return switch (f.mode()) { case "all" -> true; case "selected" -> f.admins().contains(admin); default -> staffRow(row, staff); };
+    }
+
+    synchronized Object saveFilter(String viewer, Map<String, Object> input) throws IOException {
+        String mode = String.valueOf(input.getOrDefault("mode", "staff"));
+        if (!MODES.contains(mode)) throw new IllegalArgumentException("Modus: staff, all, selected oder none");
+        List<String> admins = list(input.get("admins")), categories = list(input.get("categories"));
+        if (admins.size() > 200 || categories.size() > 30) throw new IllegalArgumentException("Zu viele Einträge");
+        for (String a : admins) if (a.length() > 80 || a.contains(",")) throw new IllegalArgumentException("Admin ungültig");
+        for (String c : categories) if (!c.matches("[a-z-]{1,24}")) throw new IllegalArgumentException("Kategorie ungültig");
+        Properties next = new Properties(); next.putAll(filters);
+        next.setProperty(viewer + ".mode", mode);
+        next.setProperty(viewer + ".admins", String.join(",", admins.stream().map(v -> v.toLowerCase(Locale.ROOT)).toList()));
+        next.setProperty(viewer + ".categories", String.join(",", categories));
+        next.setProperty(viewer + ".views", Boolean.toString(Boolean.parseBoolean(String.valueOf(input.getOrDefault("views", "false")))));
+        AtomicState.save(filterFile, next, "Simplex admin log unread filters per app viewer (9.9.0)");
+        filters.clear(); filters.putAll(next);
+        return SimplexAdminSuite.appMap("ok", true, "title", "Filter gespeichert", "description", switch (mode) {
+            case "all" -> "Alle Aktionen erhöhen den Zähler.";
+            case "selected" -> admins.size() + " ausgewählte Admins erhöhen den Zähler.";
+            case "none" -> "Der Ungelesen-Zähler ist aus. Das Protokoll bleibt vollständig sichtbar.";
+            default -> "Nur Aktionen des Teams erhöhen den Zähler.";
+        }, "settings", filter(viewer).json());
+    }
+    private static List<String> list(Object value) {
+        if (value instanceof List<?> l) return l.stream().map(String::valueOf).map(String::trim).filter(v -> !v.isBlank()).distinct().toList();
+        String raw = value == null ? "" : String.valueOf(value);
+        return Arrays.stream(raw.split(",")).map(String::trim).filter(v -> !v.isBlank()).distinct().toList();
+    }
+
+    /** Own admin key for a notification owner ("user:<base64>" or an API key id). */
+    String selfOf(String viewer) {
+        if (viewer.startsWith("user:")) { try { return new String(Base64.getUrlDecoder().decode(viewer.substring(5)), StandardCharsets.UTF_8).toLowerCase(Locale.ROOT); } catch (IllegalArgumentException e) { return ""; } }
+        String owner = ownerName(); return owner.isBlank() ? "" : owner.toLowerCase(Locale.ROOT);
+    }
+
+    /** Bark and browser push for team actions, filtered per subscriber exactly like the unread counter. */
+    private void notifyViewers(Map<String, Object> row) {
+        if (plugin.appEvents == null || "view".equals(row.get("category"))) return;
+        Set<String> staff = staffCache;
+        String title = "🛡️ " + row.get("adminName") + ": " + row.get("action");
+        String body = (row.get("targetName") instanceof String t && !t.isBlank() ? "Ziel: " + t + "\n" : "") + String.valueOf(row.getOrDefault("detail", ""));
+        try { plugin.appEvents.direct("admin-log", title, body, owner -> counts(row, selfOf(owner), filter(owner), staff)); } catch (RuntimeException ignored) { }
+    }
+
+    /** 9.9.0 username change: entries, read markers and filters move to the new name; nothing else changes. */
+    synchronized void rename(String oldName, String newName, String oldViewer, String newViewer) throws IOException {
+        String from = oldName.toLowerCase(Locale.ROOT), to = newName.toLowerCase(Locale.ROOT);
+        boolean changed = false;
+        for (Map<String, Object> row : rows) if ("app".equals(row.get("source")) && from.equals(row.get("admin"))) { row.put("admin", to); row.put("adminName", newName); changed = true; }
+        Properties nextRead = new Properties();
+        for (String k : read.stringPropertyNames()) {
+            String key = k;
+            if (key.startsWith(oldViewer + ".")) key = newViewer + key.substring(oldViewer.length());
+            if (key.endsWith("." + from)) key = key.substring(0, key.length() - from.length()) + to;
+            nextRead.setProperty(key, read.getProperty(k));
+        }
+        Properties nextFilters = new Properties();
+        for (String k : filters.stringPropertyNames()) {
+            String v = filters.getProperty(k);
+            if (k.endsWith(".admins")) v = String.join(",", split(v).stream().map(a -> a.equals(from) ? to : a).toList());
+            nextFilters.setProperty(k.startsWith(oldViewer + ".") ? newViewer + k.substring(oldViewer.length()) : k, v);
+        }
+        AtomicState.save(readFile, nextRead, "Simplex admin log read markers per app viewer");
+        AtomicState.save(filterFile, nextFilters, "Simplex admin log unread filters per app viewer (9.9.0)");
+        read.clear(); read.putAll(nextRead); filters.clear(); filters.putAll(nextFilters);
+        if (changed) {
+            List<String> keep = new ArrayList<>(); for (Map<String, Object> row : rows) keep.add(DiscordBotManager.Json.stringify(row));
+            Files.createDirectories(file.getParent());
+            Path tmp = file.resolveSibling("activity.jsonl.tmp");
+            Files.write(tmp, keep, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        }
     }
 
     static boolean viewOnly(String action) {
@@ -147,14 +276,16 @@ final class AdminActivityLog {
     synchronized Object overview(String viewer, String self, boolean includeViews) {
         Map<String, Map<String, Object>> admins = new LinkedHashMap<>();
         List<Map<String, Object>> newestFirst = new ArrayList<>(rows); Collections.reverse(newestFirst);
+        Filter f = filter(viewer); Set<String> staff = staffNames();
         int unreadTotal = 0;
         for (Map<String, Object> row : newestFirst) {
             if (!actionable(row, includeViews)) continue;
             String admin = String.valueOf(row.get("admin"));
-            Map<String, Object> summary = admins.computeIfAbsent(admin, k -> SimplexAdminSuite.appMap("admin", k, "name", row.get("adminName"), "source", row.get("source"), "total", 0, "unread", 0, "last", row, "self", k.equals(self), "online", false, "sources", new TreeSet<String>()));
+            Map<String, Object> summary = admins.computeIfAbsent(admin, k -> SimplexAdminSuite.appMap("admin", k, "name", row.get("adminName"), "source", row.get("source"), "total", 0, "unread", 0, "last", row, "self", k.equals(self), "online", false, "sources", new TreeSet<String>(), "staff", staffRow(row, staff)));
             summary.put("total", ((Integer) summary.get("total")) + 1);
             @SuppressWarnings("unchecked") Set<String> sources = (Set<String>) summary.get("sources"); sources.add(String.valueOf(row.get("source")));
-            if (!admin.equals(self) && number(row.get("id")) > marker(viewer, admin)) { summary.put("unread", ((Integer) summary.get("unread")) + 1); unreadTotal++; }
+            if (staffRow(row, staff)) summary.put("staff", true);
+            if (counts(row, self, f, staff) && number(row.get("id")) > marker(viewer, admin)) { summary.put("unread", ((Integer) summary.get("unread")) + 1); unreadTotal++; }
         }
         for (Map<String, Object> summary : admins.values()) {
             String name = String.valueOf(summary.get("name"));
@@ -163,14 +294,17 @@ final class AdminActivityLog {
             if (online != null) summary.put("uuid", online.getUniqueId().toString());
             else if (summary.get("last") instanceof Map<?, ?> last && last.get("adminUuid") != null) summary.put("uuid", last.get("adminUuid"));
             summary.put("sources", new ArrayList<>((Set<?>) summary.get("sources")));
+            String key = String.valueOf(summary.get("admin"));
+            summary.put("counted", !key.equals(self) && switch (f.mode()) { case "all" -> true; case "selected" -> f.admins().contains(key); case "none" -> false; default -> Boolean.TRUE.equals(summary.get("staff")); });
         }
         List<Map<String, Object>> list = new ArrayList<>(admins.values());
         list.sort(Comparator.comparing((Map<String, Object> m) -> -((Integer) m.get("unread"))).thenComparing(m -> -number(((Map<?, ?>) m.get("last")).get("time"))));
-        return SimplexAdminSuite.appMap("admins", list, "unread", unreadTotal, "total", rows.size(), "limit", LIMIT);
+        return SimplexAdminSuite.appMap("admins", list, "unread", unreadTotal, "total", rows.size(), "limit", LIMIT, "settings", f.json(), "modes", MODES);
     }
 
     synchronized Object entries(String viewer, String self, String admin, String query, String category, int offset, boolean includeViews) {
         String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
+        Filter f = filter(viewer); Set<String> staff = staffNames();
         List<Map<String, Object>> out = new ArrayList<>();
         List<Map<String, Object>> newestFirst = new ArrayList<>(rows); Collections.reverse(newestFirst);
         for (Map<String, Object> row : newestFirst) {
@@ -180,7 +314,8 @@ final class AdminActivityLog {
             if (!q.isBlank() && !DiscordBotManager.Json.stringify(row).toLowerCase(Locale.ROOT).contains(q)) continue;
             Map<String, Object> copy = new LinkedHashMap<>(row);
             String owner = String.valueOf(row.get("admin"));
-            copy.put("unread", !owner.equals(self) && number(row.get("id")) > marker(viewer, owner));
+            copy.put("unread", counts(row, self, f, staff) && number(row.get("id")) > marker(viewer, owner));
+            copy.put("staff", staffRow(row, staff));
             out.add(copy);
         }
         int start = Math.min(Math.max(0, offset), out.size()), end = Math.min(start + 100, out.size());

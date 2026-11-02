@@ -59,7 +59,22 @@ final class TicketStore {
             loaded.sort(Comparator.comparingLong(t->t.id));
             for(Ticket t:loaded){tickets.put(t.id,t);sequence=Math.max(sequence,t.id);}
             refreshWaiting();
+            // 9.9.0: earlier app replies stored the internal app identity ("Simplex Panel/<login> (app:user:…)").
+            // It is rewritten once to the neutral team name so login names are never shown to players again.
+            for(Ticket t:loaded)if(scrub(t))persist(t);
         }
+    }
+    private static final java.util.regex.Pattern APP_ACTOR=java.util.regex.Pattern.compile("Simplex Panel/[^()\\n]{1,80} \\(app:[^)\\n]{1,120}\\)");
+    /** Replaces an internal app identity inside display text with {@code replacement}. */
+    static String scrubText(String text,String replacement){return text==null||!text.contains("Simplex Panel/")?text:APP_ACTOR.matcher(text).replaceAll(java.util.regex.Matcher.quoteReplacement(replacement));}
+    private static boolean scrub(Ticket t){
+        boolean changed=false;String team="Team";
+        String claimed=scrubText(t.claimedBy,team),closed=scrubText(t.closedBy,team);
+        if(!claimed.equals(t.claimedBy)){t.claimedBy=claimed;changed=true;}
+        if(!closed.equals(t.closedBy)){t.closedBy=closed;changed=true;}
+        for(int i=0;i<t.messages.size();i++){Message m=t.messages.get(i);String author=scrubText(m.author,team),text=m.role.equals("system")?scrubText(m.text,team):m.text;
+            if(!author.equals(m.author)||!text.equals(m.text)){t.messages.set(i,new Message(m.id,author,m.authorId,m.role,m.source,text,m.at,m.delivered,m.discarded,m.attachments));changed=true;}}
+        return changed;
     }
     String lastError(){return lastError;}
     void stop(){writer.shutdown();try{writer.awaitTermination(5,TimeUnit.SECONDS);}catch(InterruptedException e){Thread.currentThread().interrupt();}}
