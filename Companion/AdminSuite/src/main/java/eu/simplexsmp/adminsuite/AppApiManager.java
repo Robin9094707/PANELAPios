@@ -60,6 +60,10 @@ final class AppApiManager {
         extra("links.update","Minecraft-/Discord-Verifizierung verwalten","Discord",List.of(field("player","Minecraft-UUID",3,true),field("discord","Neue Discord-ID",3,false),field("expected","Bisherige Discord-ID (leer = neu)",3,false),choice("operation","Aktion","save","delete")));
         extra("memory.update","RAM-Notfallneustart einstellen","Server",List.of(choice("enabled","Aktiv","true","false"),field("thresholdBytes","Grenzwert in Bytes",3,true),field("holdSeconds","Dauer in Sekunden",3,true),field("countdownSeconds","Countdown in Sekunden",3,true)));
         extra("online.update","Discord-Beitrittshinweise einstellen","Discord",List.of(field("channel","Discord-Kanal-ID",3,true)));
+        extra("quiet.update","Ruhezeiten & Notfallneustart-Hinweis","Benachrichtigungen",List.of(choice("sleepMode","Schlafenszeit","off","all","critical","selected"),field("sleepStart","Schlafenszeit von",3,false),field("sleepEnd","Schlafenszeit bis",3,false),field("timezone","Zeitzone",3,false),field("quietKinds","Ausnahmen in der Schlafenszeit",3,false),choice("workEnabled","Arbeitszeit aktiv","true","false"),field("workStart","Arbeitszeit von",3,false),field("workEnd","Arbeitszeit bis",3,false),field("workDays","Arbeitstage 1–7",3,false),choice("emergencyEnabled","Hinweis nach Notfallneustart","true","false"),choice("emergencyOverride","Notfall darf durchdringen","none","work","sleep","both")));
+        extra("setup.create","Einmaligen Setup-Link erstellen","Zugänge",List.of(field("username","Benutzername",3,true),field("minutes","Gültigkeit in Minuten (5–10080)",3,false),field("endpoint","API-Adresse für den Link",3,false),choice("operation","Aktion","create","cancel")));
+        extra("app.settings","App-Einstellung speichern","Einstellungen",List.of(field("key","Einstellung",3,true),field("value","Neuer Wert",3,false)));
+        extra("staffchat.update","Staff-Chat-Kanal festlegen","Discord",List.of(field("channel","Discord-Kanal-ID (leer = aus)",3,false)));
         extra("suite.command","Weitere Suite-Befehle","Werkzeuge",List.of(choice("root","Suite-Befehl","sas","delivery","shop","spcurrency","connection"),field("command","Argumente ohne /sas",3,true)));
     }
     @SuppressWarnings("unchecked") private void flatten(String prefix,Object options){
@@ -78,7 +82,7 @@ final class AppApiManager {
         if(!Double.isFinite(seconds)||seconds<1||seconds>60||seconds!=(int)seconds)throw new IllegalArgumentException("Countdown muss eine ganze Zahl von 1 bis 60 Sekunden sein");
         return (int)seconds;
     }
-    static String scope(String path){return Set.of("accounts.update","links.update","memory.update","online.update","restart.apply","alts.ip","management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","crossplay.update","crossplay.auto","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
+    static String scope(String path){return Set.of("quiet.update","setup.create","app.settings","staffchat.update","accounts.update","links.update","memory.update","online.update","restart.apply","alts.ip","management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","crossplay.update","crossplay.auto","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
     void reload(){
         stopListener();menus.clear();long rev=generation.get();
         if(!plugin.getConfig().getBoolean("app-api.enabled",false)){status="Ausgeschaltet";return;}
@@ -132,6 +136,16 @@ final class AppApiManager {
                 String session=security.users.login(username,password,System.currentTimeMillis());if(session==null)throw new ApiError(401,"Benutzername oder Passwort ungültig");
                 send(x,200,SimplexAdminSuite.appMap("token",session,"expiresIn",2592000));return;
             }
+            if(x.getRequestMethod().equals("POST")&&x.getRequestURI().getPath().equals("/v1/setup")){
+                // One-time setup links (9.7.0): the code replaces username/password exactly once.
+                if(!rate("setup-ip:"+x.getRemoteAddress().getAddress().getHostAddress(),10))throw new ApiError(429,"Zu viele Versuche. Eine Minute warten.");
+                String ct=x.getRequestHeaders().getFirst("Content-Type");if(ct==null||!ct.startsWith("application/json"))throw new ApiError(415,"application/json erforderlich");
+                byte[] bytes=x.getRequestBody().readNBytes(1025);if(bytes.length>1024)throw new ApiError(413,"Anfrage zu groß");String text=new String(bytes,StandardCharsets.UTF_8);AppApiSecurity.checkJson(text);
+                String[] redeemed=security.users.redeem(String.valueOf(object(DiscordBotManager.Json.parse(text)).getOrDefault("code","")),System.currentTimeMillis());
+                if(redeemed==null)throw new ApiError(401,"Setup-Link ungültig, abgelaufen oder bereits verwendet. Bitte einen neuen Link anfordern.");
+                String who=redeemed[0];Bukkit.getScheduler().runTask(plugin,()->plugin.suiteAudit("Simplex Panel/"+who+" (app:user:"+who+")","Setup-Link eingelöst",who));
+                send(x,200,SimplexAdminSuite.appMap("token",redeemed[1],"username",who,"expiresIn",2592000,"serverId",security.serverId(),"name",serverName));return;
+            }
             String header=x.getRequestHeaders().getFirst("Authorization");AppApiSecurity.Key key=security.authenticate(header!=null&&header.startsWith("Bearer ")?header.substring(7):null);
             if(key==null)throw new ApiError(401,"API-Schlüssel ungültig oder widerrufen.");
             if(!rate("key:"+key.id(),180))throw new ApiError(429,"Schlüssel-Anfragelimit erreicht.");
@@ -149,9 +163,25 @@ final class AppApiManager {
                 x.getResponseHeaders().set("Content-Disposition","attachment; filename=\""+String.valueOf(meta.get("name")).replaceAll("[^A-Za-z0-9._-]","_")+"\"");
                 x.sendResponseHeaders(200,bytes.length);try(var out=x.getResponseBody()){out.write(bytes);}return;
             }
+            if(method.equals("GET")&&path.equals("/v1/staff-chat-file")){
+                if(plugin.staffChat==null)throw new ApiError(503,"Staff-Chat nicht geladen");String id=query.getOrDefault("id","");
+                Map<String,Object> meta=plugin.staffChat.attachment(id);if(meta==null)throw new ApiError(404,"Anhang nicht gefunden");
+                Path file=plugin.staffChat.attachmentFile(id);if(!Files.isRegularFile(file))throw new ApiError(404,"Anhangdatei fehlt");
+                byte[] bytes=Files.readAllBytes(file);String type=String.valueOf(meta.get("type"));
+                x.getResponseHeaders().set("Content-Type",type.startsWith("image/")||type.startsWith("audio/")?type:"application/octet-stream");x.getResponseHeaders().set("Cache-Control","private, max-age=86400");x.getResponseHeaders().set("X-Content-Type-Options","nosniff");
+                x.getResponseHeaders().set("Content-Disposition","attachment; filename=\""+String.valueOf(meta.get("name")).replaceAll("[^A-Za-z0-9._-]","_")+"\"");
+                x.sendResponseHeaders(200,bytes.length);try(var out=x.getResponseBody()){out.write(bytes);}return;
+            }
             if(method.equals("GET")){
                 result=switch(path){
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis());
+                    case "/v1/data/admin-log"->onMain(rev,()->{if(plugin.adminLog==null)throw new ApiError(503,"Admin-Log nicht geladen");String viewer=security.notificationOwner(key),self=plugin.adminLog.viewerAdmin(key);boolean views=Boolean.parseBoolean(query.getOrDefault("views","false"));
+                        if(!query.containsKey("admin"))return plugin.adminLog.overview(viewer,self,views);int offset;try{offset=Math.max(0,Integer.parseInt(query.getOrDefault("offset","0")));}catch(NumberFormatException e){offset=0;}
+                        return plugin.adminLog.entries(viewer,self,query.getOrDefault("admin",""),query.getOrDefault("q",""),query.getOrDefault("category",""),offset,views);});
+                    case "/v1/data/staff-chat"->{if(plugin.staffChat==null)throw new ApiError(503,"Staff-Chat nicht geladen");long after;try{after=Long.parseLong(query.getOrDefault("after","0"));}catch(NumberFormatException e){after=0;}yield plugin.staffChat.read(after);}
+                    case "/v1/data/nameplates"->onMain(rev,()->SimplexAdminSuite.appMap("items",plugin.appNameplates(),"luckperms",Bukkit.getPluginManager().getPlugin("LuckPerms")!=null,"geyser",Bukkit.getPluginManager().getPlugin("Geyser-Spigot")!=null));
+                    case "/v1/data/app-settings"->onMain(rev,()->AppSettings.data(plugin));
+                    case "/v1/data/setup-info"->onMain(rev,()->SimplexAdminSuite.appMap("fingerprint",fingerprint,"publicAddress",plugin.getConfig().getString("app-api.public-address",""),"port",plugin.getConfig().getInt("app-api.port",39093),"name",serverName));
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1","admin-log-v1","staff-chat-v1","setup-links-v1","quiet-hours-v1","nameplates-v1","app-settings-v1"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis());
                     case "/v1/data/access"->{if(!key.scope().equals("full"))throw new ApiError(403,"Benutzerverwaltung benötigt full-Zugriff");yield SimplexAdminSuite.appMap("items",security.users.list(),"catalog",permissionCatalog());}
                     case "/v1/data/links"->SimplexAdminSuite.appMap("items",plugin.accountLinks.store.all().stream().map(l->SimplexAdminSuite.appMap("player",l.minecraft().toString(),"name",l.name(),"discord",l.discord(),"linkedAt",l.linkedAt())).toList());
                     case "/v1/data/memory"->onMain(rev,()->plugin.memoryGuard.data());
@@ -188,6 +218,30 @@ final class AppApiManager {
                 if(!"application/json".equals(x.getRequestHeaders().getFirst("Content-Type")))throw new ApiError(415,"application/json erforderlich");
                 byte[] bytes=x.getRequestBody().readNBytes(4097);if(bytes.length>4096)throw new ApiError(413,"Nachricht zu groß");String text=new String(bytes,StandardCharsets.UTF_8);AppApiSecurity.checkJson(text);Map<String,Object> payload=object(DiscordBotManager.Json.parse(text));
                 result=onMain(rev,()->{if(!security.valid(key))throw new ApiError(401,"Schlüssel widerrufen");return plugin.appChat.send(plugin,actor(key).auditName(),String.valueOf(payload.getOrDefault("name","Server")),String.valueOf(payload.getOrDefault("message","")));});
+            }else if(method.equals("POST")&&path.equals("/v1/admin-log/read")){
+                if(plugin.adminLog==null)throw new ApiError(503,"Admin-Log nicht geladen");
+                if(!"application/json".equals(String.valueOf(x.getRequestHeaders().getFirst("Content-Type")).split(";")[0].trim()))throw new ApiError(415,"application/json erforderlich");
+                byte[] bytes=x.getRequestBody().readNBytes(1025);if(bytes.length>1024)throw new ApiError(413,"Anfrage zu groß");String text=new String(bytes,StandardCharsets.UTF_8);AppApiSecurity.checkJson(text);
+                String admin=String.valueOf(object(DiscordBotManager.Json.parse(text)).getOrDefault("admin",""));if(admin.length()>80)throw new IllegalArgumentException("Admin ungültig");
+                result=plugin.adminLog.markRead(security.notificationOwner(key),admin);
+            }else if(method.equals("POST")&&(path.equals("/v1/staff-chat")||path.equals("/v1/staff-chat/upload"))){
+                if(plugin.staffChat==null)throw new ApiError(503,"Staff-Chat nicht geladen");
+                if(!rate("staff-chat:"+key.id(),30))throw new ApiError(429,"Maximal 30 Staff-Nachrichten pro Minute");
+                String text;List<Map<String,Object>> files=new ArrayList<>();List<String> pings;
+                if(path.endsWith("/upload")){
+                    String type=String.valueOf(x.getRequestHeaders().getFirst("Content-Type")).split(";")[0].trim().toLowerCase(Locale.ROOT);
+                    byte[] bytes=x.getRequestBody().readNBytes(StaffChat.MAX_FILE+1);if(bytes.length>StaffChat.MAX_FILE)throw new ApiError(413,"Datei größer als 8 MiB");
+                    text=query.getOrDefault("text","");files.add(plugin.staffChat.store(query.getOrDefault("name","datei"),type,bytes));
+                    pings=Arrays.stream(query.getOrDefault("pings","").split(",")).map(String::trim).filter(v->!v.isBlank()).toList();
+                }else{
+                    if(!"application/json".equals(String.valueOf(x.getRequestHeaders().getFirst("Content-Type")).split(";")[0].trim()))throw new ApiError(415,"application/json erforderlich");
+                    byte[] bytes=x.getRequestBody().readNBytes(8193);if(bytes.length>8192)throw new ApiError(413,"Nachricht zu groß");String body=new String(bytes,StandardCharsets.UTF_8);AppApiSecurity.checkJson(body);Map<String,Object> payload=object(DiscordBotManager.Json.parse(body));
+                    text=String.valueOf(payload.getOrDefault("text",""));pings=payload.get("pings") instanceof List<?> l?l.stream().map(String::valueOf).toList():List.of();
+                }
+                if(pings.size()>60)throw new IllegalArgumentException("Zu viele Erwähnungen");
+                if(generation.get()!=rev||!security.valid(key))throw new ApiError(401,"API-Zugang wurde geändert");
+                String sender=onMain(rev,()->senderName(key));
+                result=plugin.staffChat.fromApp(sender,text,files,pings,actor(key).auditName());
             }else if(method.equals("POST")&&path.equals("/v1/chat/clear")){
                 if(!key.scope().equals("full"))throw new ApiError(403,"Chatverlauf leeren benötigt full-Zugriff");
                 if(!rate("chat-clear:"+key.id(),6))throw new ApiError(429,"Bitte kurz warten");
@@ -248,7 +302,7 @@ final class AppApiManager {
                     String encoded=DiscordBotManager.Json.stringify(SimplexAdminSuite.appMap("path",action,"values",values));
                     String summary;
                     if(req.path.equals("vpn.whitelist"))summary=onMain(rev,()->plugin.appVpnWhitelistPlan(req.text("player"),req.text("allowed")));
-                    else if(Set.of("accounts.update","links.update","memory.update","online.update").contains(req.path))summary="Änderung: "+actions.get(req.path).get("description")+". Bestehende Daten bleiben erhalten. Passwort und Sitzungen werden nie angezeigt.";
+                    else if(Set.of("accounts.update","links.update","memory.update","online.update","quiet.update","setup.create","app.settings","staffchat.update").contains(req.path))summary="Änderung: "+actions.get(req.path).get("description")+". Bestehende Daten bleiben erhalten. Passwort und Sitzungen werden nie angezeigt.";
                     else if(isCenterAction(req.path))summary="Aktion: "+actions.get(req.path).get("description")+". Änderungen werden beim Ausführen erneut geprüft.";
                     else if(req.path.equals("plugins.stage")){pluginFiles().prepare(values);summary="Plugin: "+req.text("name")+" · "+req.text("version")+". Update wird geprüft und für den nächsten Serverstart vorgemerkt.";}
                     else summary=onMain(rev,()->{if(req.path.equals("alts.ip"))return plugin.altIpPlan(req.values);if(req.path.equals("world.update"))return "Welt: "+req.text("world")+"\nEinstellung: "+req.text("field")+"\nNeuer Wert: "+req.text("value");if(req.path.equals("logs.retry"))return "Gespeicherte private Discord-Protokolle erneut versuchen. Keine Einträge werden gelöscht; die Prüfung privater Kanalrechte bleibt aktiv.";if(req.path.equals("settings.update")){checkSetting(req);return "**Einstellung:** "+req.text("key")+"\n**Neuer Wert:** "+(req.text("value").isEmpty()?"(leer)":req.text("value"))+"\nDer geladene Stand wird vor dem Speichern erneut geprüft.";}return controller.confirmationSummary(req);});
@@ -266,6 +320,16 @@ final class AppApiManager {
                         UUID uuid=UUID.fromString(req.text("player"));if(req.text("operation").equals("delete")){if(!plugin.accountLinks.store.unlink(uuid,req.text("expected")))throw new IllegalArgumentException("Verifizierung geändert. Neu laden.");}
                         else {plugin.discordRelay().validateLinkTarget(req.text("discord"));authorize(key,req);String name=onMain(rev,()->plugin.expansionProfiles().stream().filter(p->p.uniqueId().equals(uuid)).map(p->p.displayName()).findFirst().orElseThrow(()->new IllegalArgumentException("Spieler nicht gefunden")));var linked=plugin.accountLinks.store.replace(uuid,req.text("expected"),req.text("discord"),name);plugin.discordRelay().syncLinkedNickname(linked,name);}
                         onMain(rev,()->{plugin.suiteAudit(actor(key).auditName(),"Discord-Verifizierung geändert",uuid.toString());return null;});result=SimplexAdminSuite.appMap("ok",true,"title","Verifizierung gespeichert","description","Bestehende Discord-/Chat-Verknüpfungen werden direkt weiterverwendet.");
+                    }else if(req.path.equals("quiet.update")){if(plugin.appEvents==null)throw new ApiError(503,"Ereignismodul nicht verfügbar");result=plugin.appEvents.configureQuiet(security.notificationOwner(key),req.values);
+                    }else if(req.path.equals("setup.create")){
+                        String username=AppUsers.username(req.text("username"));
+                        if(req.text("operation").equals("cancel")){security.users.cancelSetup(username);result=SimplexAdminSuite.appMap("ok",true,"title","Setup-Link widerrufen","description","Ein noch nicht eingelöster Link für "+username+" ist ungültig.");}
+                        else{int minutes;try{minutes=req.text("minutes").isBlank()?60:Integer.parseInt(req.text("minutes"));}catch(NumberFormatException e){throw new IllegalArgumentException("Gültigkeit in Minuten angeben");}
+                            String code=security.users.setupCode(username,minutes,System.currentTimeMillis());String endpoint=req.text("endpoint").isBlank()?plugin.getConfig().getString("app-api.public-address",""):req.text("endpoint");
+                            String link=setupLink(endpoint,code,username);onMain(rev,()->{plugin.suiteAudit(actor(key).auditName(),"Setup-Link erstellt",username+" · "+minutes+" min");return null;});
+                            result=SimplexAdminSuite.appMap("ok",true,"title","Setup-Link erstellt","description","Einmalig gültig für "+minutes+" Minuten. Nur an "+username+" weitergeben.","link",link,"code",code,"fingerprint",fingerprint,"expiresAt",System.currentTimeMillis()+minutes*60_000L,"username",username);}
+                    }else if(req.path.equals("app.settings")){result=onMain(rev,()->AppSettings.apply(plugin,req.text("key"),req.text("value"),actor(key).auditName()));
+                    }else if(req.path.equals("staffchat.update")){String channel=req.text("channel").trim();if(!channel.isEmpty()){DiscordBotManager bot=onMain(rev,()->plugin.discordRelay());if(bot==null)throw new ApiError(503,"Discord-Bot ist nicht geladen");bot.appValidateChannel(channel);}result=onMain(rev,()->{plugin.getConfig().set("staff-chat.channel-id",channel);plugin.saveConfig();plugin.suiteAudit(actor(key).auditName(),"Staff-Chat-Kanal",channel.isEmpty()?"aus":channel);return SimplexAdminSuite.appMap("ok",true,"title",channel.isEmpty()?"Staff-Chat-Sync aus":"Staff-Chat-Kanal gespeichert","description",channel.isEmpty()?"App und Minecraft teilen weiter den Staff-Chat.":"Nachrichten, Bilder, Dateien und Sprachnachrichten werden mit Discord synchronisiert.");});
                     }else if(req.path.equals("memory.update")){result=onMain(rev,()->plugin.memoryGuard.configure(req.values));
                     }else if(req.path.equals("online.update")){plugin.discordRelay().appValidateChannel(req.text("channel"));result=onMain(rev,()->{plugin.getConfig().set("online-notifications.channel-id",req.text("channel"));plugin.saveConfig();return SimplexAdminSuite.appMap("ok",true,"title","Benachrichtigungskanal gespeichert");});
                     }else if(req.path.equals("ai.ask")){
@@ -297,6 +361,20 @@ final class AppApiManager {
             try{send(x,code,SimplexAdminSuite.appMap("message",message));}catch(Exception ignored){}
         }finally{x.close();}
     }
+    /** Staff-chat sender: the configured owner name for full keys, the exact Minecraft spelling for app users. */
+    private String senderName(AppApiSecurity.Key key){
+        String owner=plugin.getConfig().getString("app-api.owner-name","").trim();
+        if(!key.id().startsWith("user:"))return owner.isBlank()?key.label():owner;
+        for(var p:plugin.expansionProfiles())if(p.displayName().equalsIgnoreCase(key.label()))return p.displayName();
+        return key.label();
+    }
+    /** panel://setup link understood by Simplex Panel 4.0; the fingerprint pins the self-signed certificate. */
+    String setupLink(String endpoint,String code,String username){
+        String host=endpoint==null?"":endpoint.trim().replaceAll("/+$","");if(host.isBlank())return "";
+        if(!host.startsWith("https://"))host="https://"+host;
+        String enc=URLEncoder.encode(host,StandardCharsets.UTF_8);
+        return "panel://setup?e="+enc+"&f="+fingerprint+"&c="+URLEncoder.encode(code,StandardCharsets.UTF_8)+"&u="+URLEncoder.encode(username,StandardCharsets.UTF_8)+"&n="+URLEncoder.encode(serverName,StandardCharsets.UTF_8);
+    }
     private void requirePermission(AppApiSecurity.Key key,String permission){if(!security.users.allows(key,permission))throw new ApiError(403,"Keine Berechtigung: "+permission);}
     private void authorizeRoute(AppApiSecurity.Key key,String path,String method,Map<String,String> query){
         if(!key.id().startsWith("user:"))return;
@@ -314,14 +392,17 @@ final class AppApiManager {
         else if(path.equals("/v1/player-nbt"))permission=method.equals("POST")?"player-nbt.write":"data.nbt-paths";
         else if(path.equals("/v1/database/inspect"))permission="database.inspect";
         else if(path.startsWith("/v1/chat"))permission=path.endsWith("clear")?"chat.clear":"chat.send";
+        else if(path.equals("/v1/admin-log/read"))permission="data.admin-log";
+        else if(path.startsWith("/v1/staff-chat-file"))permission="data.staff-chat";
+        else if(path.startsWith("/v1/staff-chat"))permission="staff-chat.send";
         else throw new ApiError(403,"Endpunkt für diesen Benutzer nicht freigegeben");
         requirePermission(key,permission);
     }
     private List<Map<String,Object>> permissionCatalog(){
         List<Map<String,Object>> out=new ArrayList<>();out.add(SimplexAdminSuite.appMap("id","*","title","Vollzugriff (einschließlich Benutzerverwaltung)"));
         for(var row:actions.values())out.add(SimplexAdminSuite.appMap("id","action."+row.get("id"),"title",row.get("description")));
-        for(String id:List.of("access","links","memory","online-settings","chat","crossplay","tickets","ticket","ticket-settings","operations","admin-dashboard","management","discord-channels","litebans","alt-dashboard","alt-ips","events","vpn-whitelist","vpn-kicks","bans","reports","overview","statistics","statistics-rows","worlds","plugins","log-status","players","profile","alts","devices","ultrabans","snapshots","nbt-paths","settings","inventory","snapshot-content"))out.add(SimplexAdminSuite.appMap("id","data."+id,"title","Lesen: "+id));
-        for(String id:List.of("action.dashboard","action.help","action.settings.list","ticket.reply","ticket.claim","ticket.priority","ticket.close","ticket.reopen","ticket.delete","ticket.discard","ticket.settings","chat.send","chat.clear","player-nbt.write","database.inspect"))out.add(SimplexAdminSuite.appMap("id",id,"title",id));
+        for(String id:List.of("access","links","memory","online-settings","chat","crossplay","tickets","ticket","ticket-settings","operations","admin-dashboard","management","discord-channels","litebans","alt-dashboard","alt-ips","events","vpn-whitelist","vpn-kicks","bans","reports","overview","statistics","statistics-rows","worlds","plugins","log-status","players","profile","alts","devices","ultrabans","snapshots","nbt-paths","settings","inventory","snapshot-content","admin-log","staff-chat","nameplates","app-settings","setup-info"))out.add(SimplexAdminSuite.appMap("id","data."+id,"title","Lesen: "+id));
+        for(String id:List.of("action.dashboard","action.help","action.settings.list","ticket.reply","ticket.claim","ticket.priority","ticket.close","ticket.reopen","ticket.delete","ticket.discard","ticket.settings","chat.send","chat.clear","staff-chat.send","player-nbt.write","database.inspect"))out.add(SimplexAdminSuite.appMap("id",id,"title",id));
         return out;
     }
     private TicketManager tickets(){if(plugin.tickets==null)throw new ApiError(503,"Ticketsystem nicht geladen");return plugin.tickets;}
@@ -379,10 +460,14 @@ final class AppApiManager {
             case "reload"->{plugin.reloadConfig();reload();sender.sendMessage("§aApp-API wird neu geladen. Kein Serverneustart nötig.");}
             case "create"->{if(args.length<2)throw new IllegalArgumentException("/sas app create <Name-ohne-Leerzeichen> [read|manage|full]");var issued=security.issue(args[1],args.length>2?args[2]:"read");sender.sendMessage("§eEinmaliger API-Schlüssel für "+issued.key().label()+" ("+issued.key().scope()+"). Nicht teilen:");sender.sendMessage(issued.token());sender.sendMessage("§7Widerrufen: /sas app revoke "+issued.key().id());plugin.expansionAudit(sender.getName(),null,"App-Schlüssel erzeugt",issued.key().id()+" · "+issued.key().scope());}
             case "user"->{if(args.length<3)throw new IllegalArgumentException("/sas app user <Minecraft-Name> <Passwort (12+ Zeichen)> [Recht1,Recht2 oder *]");security.users.save(args[1],args[2],new HashSet<>(Arrays.asList((args.length>3?args[3]:"data.overview,data.players,data.profile").split(","))),true);sender.sendMessage("§aApp-Benutzer gespeichert. Passwort wird nur gehasht gespeichert; bestehende API-Schlüssel bleiben gültig.");}
+            case "setup"->{if(args.length<2)throw new IllegalArgumentException("/sas app setup <Benutzer> [Minuten, Standard 60]");int minutes=args.length>2?Integer.parseInt(args[2]):60;String user=AppUsers.username(args[1]);String code=security.users.setupCode(user,minutes,System.currentTimeMillis());String link=setupLink(plugin.getConfig().getString("app-api.public-address",""),code,user);
+                // Shown only to the executing operator/console, never broadcast.
+                sender.sendMessage("§aEinmaliger Setup-Link für "+user+" ("+minutes+" min). Nicht öffentlich teilen:");if(!link.isBlank())sender.sendMessage(link);else{sender.sendMessage("§7Code: §f"+code);sender.sendMessage("§7Fingerabdruck: §f"+fingerprint);sender.sendMessage("§7Tipp: app-api.public-address setzen, dann entsteht ein vollständiger Link.");}
+                plugin.expansionAudit(sender.getName(),null,"Setup-Link erstellt",user+" · "+minutes+" min");}
             case "keys"->{for(var key:security.keys())sender.sendMessage(key.id()+" · "+key.label()+" · "+key.scope());}
             case "revoke"->{if(args.length<2)throw new IllegalArgumentException("/sas app revoke <Schlüssel-ID>");security.revoke(args[1]);sender.sendMessage("§aSchlüssel widerrufen.");plugin.expansionAudit(sender.getName(),null,"App-Schlüssel widerrufen",args[1]);}
             case "fingerprint"->sender.sendMessage("SHA-256: "+(fingerprint.isBlank()?"Noch kein aktives TLS-Zertifikat":fingerprint));
-            default->{sender.sendMessage("§bSimplex Panel API · "+status);sender.sendMessage("§7/sas app enable <Port> | disable | create <Name> [read|manage|full] | keys | revoke <ID> | fingerprint | reload");if(!fingerprint.isBlank())sender.sendMessage("SHA-256: "+fingerprint);}
+            default->{sender.sendMessage("§bSimplex Panel API · "+status);sender.sendMessage("§7/sas app enable <Port> | disable | create <Name> [read|manage|full] | user <Name> <Passwort> [Rechte] | setup <Benutzer> [Minuten] | keys | revoke <ID> | fingerprint | reload");if(!fingerprint.isBlank())sender.sendMessage("SHA-256: "+fingerprint);}
         }}catch(Exception e){sender.sendMessage("§cApp-API: "+e.getMessage());}return true;
     }
     void menu(Player p){

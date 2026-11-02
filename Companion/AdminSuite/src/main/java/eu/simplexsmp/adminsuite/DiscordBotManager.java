@@ -1437,6 +1437,7 @@ final class DiscordBotManager {
         if (name.isBlank()) name = string(author.get("username"));
         String userId = string(author.get("id"));
         String channelId = string(message.get("channel_id"));
+        if (plugin.staffChat != null && plugin.staffChat.fromDiscord(message, userId, name, channelId)) return;
         if (tickets.message(message, member, author, channelId)) return;
         if(relayEnabled()&&relayChannelId().equals(channelId)&&plugin.getConfig().getBoolean("discord-bot.linking.required",true)&&plugin.accountLinks.store.byDiscord(userId)==null){receiveLinkedChat(message,userId,name);return;}
         DiscordAdminController.Request inline = inlineEnabled() ? DiscordAdminController.parseInline(content, inlinePrefix()) : null;

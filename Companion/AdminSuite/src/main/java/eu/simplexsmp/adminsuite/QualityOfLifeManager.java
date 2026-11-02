@@ -109,14 +109,12 @@ final class QualityOfLifeManager implements Listener {
     }
     void menu(Player p){
         if(!access(p,"simplexadminsuite.nickname"))return;List<AdminUpdateMenu.Button> b=new ArrayList<>();
-        b.add(AdminUpdateMenu.info(text(p,"Namensverwaltung","Name management"),text(p,"Nur sichtbare Namen; UUIDs und echte Kontonamen bleiben erhalten. Nicknames ändern die Spielerliste. Der Chat wird nicht verändert. Über Köpfen bleiben technisch echte Kontonamen.","Visual names only; UUIDs and account names stay unchanged. Nicknames change player-list names. Chat is left unchanged. Overhead tags retain the account name."),Material.NAME_TAG));
+        b.add(AdminUpdateMenu.info(text(p,"Namensverwaltung","Name management"),text(p,"Ränge aus LuckPerms (Präfix, Suffix, Farbe) über dem Kopf und in der Spielerliste – Java und Bedrock. Nicknames wurden in 9.7.0 entfernt. Der Chat wird nicht verändert. Über Köpfen bleiben technisch echte Kontonamen.","Visual names only; UUIDs and account names stay unchanged. Nicknames change player-list names. Chat is left unchanged. Overhead tags retain the account name."),Material.NAME_TAG));
         for(Player target:Bukkit.getOnlinePlayers())b.add(new AdminUpdateMenu.Button(target.getName(),names.diagnostic(target),Material.PLAYER_HEAD,()->nameMenu(p,target)));
         b.add(new AdminUpdateMenu.Button(text(p,"Zurück","Back"),"",Material.OAK_DOOR,()->plugin.unifiedMenu.open(p)));plugin.adminUpdate.show(p,text(p,"Spielernamen","Player names"),b,0);
     }
     private void nameMenu(Player p,Player target){if(!access(p,"simplexadminsuite.nickname"))return;List<AdminUpdateMenu.Button> b=new ArrayList<>();
         b.add(new AdminUpdateMenu.Button(text(p,"Vollständige Diagnose","Full diagnostics"),target.getName(),Material.NAME_TAG,()->{if(access(p,"simplexadminsuite.nickname"))plugin.adminUpdate.detail(p,text(p,"Namensdiagnose","Name diagnostics"),names.diagnostic(target),()->nameMenu(p,target));}));
-        b.add(new AdminUpdateMenu.Button(text(p,"Nickname setzen","Set nickname"),text(p,"Spielerliste ändern; Chat bleibt unverändert","Change player-list name; chat stays unchanged"),Material.WRITABLE_BOOK,()->plugin.adminUpdate.prompt(p,text(p,"Nickname","Nickname"),plugin.visualName(target),value->{if(access(p,"simplexadminsuite.nickname"))plugin.setVisualNickname(p,target.getUniqueId(),value);menu(p);} )));
-        b.add(new AdminUpdateMenu.Button(text(p,"Nickname zurücksetzen","Reset nickname"),"",Material.BARRIER,()->{if(access(p,"simplexadminsuite.nickname"))plugin.setVisualNickname(p,target.getUniqueId(),"reset");menu(p);}));
         b.add(new AdminUpdateMenu.Button(text(p,"Anzeige aktualisieren","Refresh names"),"",Material.CLOCK,()->{if(access(p,"simplexadminsuite.nickname"))names.apply(target);nameMenu(p,target);}));
         b.add(new AdminUpdateMenu.Button(text(p,"Zurück","Back"),"",Material.OAK_DOOR,()->menu(p)));plugin.adminUpdate.show(p,target.getName(),b,0);
     }

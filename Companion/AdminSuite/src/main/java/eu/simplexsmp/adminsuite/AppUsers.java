@@ -20,7 +20,7 @@ final class AppUsers {
     synchronized boolean exists(String name){return state.containsKey("u."+name+".hash");}
     synchronized Set<String> permissions(String name){return Set.copyOf(Arrays.asList(state.getProperty("u."+name+".permissions","").split(",")));}
     synchronized boolean enabled(String name){return exists(name)&&Boolean.parseBoolean(state.getProperty("u."+name+".enabled","true"));}
-    synchronized List<Map<String,Object>> list(){List<Map<String,Object>> rows=new ArrayList<>();for(String k:state.stringPropertyNames())if(k.startsWith("u.")&&k.endsWith(".hash")){String name=k.substring(2,k.length()-5);rows.add(SimplexAdminSuite.appMap("username",name,"enabled",enabled(name),"permissions",permissions(name).stream().filter(s->!s.isBlank()).sorted().toList()));}rows.sort(Comparator.comparing(r->String.valueOf(r.get("username"))));return rows;}
+    synchronized List<Map<String,Object>> list(){List<Map<String,Object>> rows=new ArrayList<>();for(String k:state.stringPropertyNames())if(k.startsWith("u.")&&k.endsWith(".hash")){String name=k.substring(2,k.length()-5);rows.add(SimplexAdminSuite.appMap("username",name,"enabled",enabled(name),"permissions",permissions(name).stream().filter(s->!s.isBlank()).sorted().toList(),"setupExpires",setupExpiry(name),"sessions",sessions(name)));}rows.sort(Comparator.comparing(r->String.valueOf(r.get("username"))));return rows;}
     synchronized void save(String raw,String password,Set<String> permissions,boolean enabled)throws IOException{
         String name=username(raw),stem="u."+name+".";boolean fresh=!exists(name);
         if((fresh||!password.isEmpty())&&(password.length()<12||password.length()>256))throw new IllegalArgumentException("Passwort: 12–256 Zeichen");
@@ -32,15 +32,37 @@ final class AppUsers {
         for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("s.")&&next.getProperty(k).startsWith(name+"|"))next.remove(k);
         persist(next);
     }
-    synchronized void delete(String raw)throws IOException{String name=username(raw);Properties next=new Properties();next.putAll(state);for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("u."+name+".")||k.startsWith("s.")&&next.getProperty(k).startsWith(name+"|"))next.remove(k);persist(next);}
+    synchronized void delete(String raw)throws IOException{String name=username(raw);Properties next=new Properties();next.putAll(state);for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("u."+name+".")||(k.startsWith("s.")||k.startsWith("t."))&&next.getProperty(k).startsWith(name+"|"))next.remove(k);persist(next);}
     synchronized String login(String raw,String password,long now)throws IOException{
         String parsed;try{parsed=username(raw);}catch(Exception e){parsed="invalid";}final String name=parsed;
         String salt=state.getProperty("u."+name+".salt",Base64.getEncoder().encodeToString(new byte[24]));String candidate=derive(password,salt);
         if(!enabled(name)||!MessageDigest.isEqual(candidate.getBytes(java.nio.charset.StandardCharsets.US_ASCII),state.getProperty("u."+name+".hash","").getBytes(java.nio.charset.StandardCharsets.US_ASCII)))return null;
         Properties next=new Properties();next.putAll(state);for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("s.")){String[] parts=next.getProperty(k).split("\\|");if(parts.length!=2||Long.parseLong(parts[1])<now)next.remove(k);}
+        return session(name,now,next);
+    }
+    private String session(String name,long now,Properties next)throws IOException{
         long count=next.stringPropertyNames().stream().filter(k->k.startsWith("s.")&&next.getProperty(k).startsWith(name+"|")).count();if(count>=12)throw new IllegalArgumentException("Zu viele Sitzungen. Passwort/Rechte neu speichern, um alte Sitzungen abzumelden.");
         String token="sasu_"+random();next.setProperty("s."+AppApiSecurity.hash(token),name+"|"+(now+30L*86_400_000));persist(next);return token;
     }
+    /** 9.7.0: one-time setup code for an existing, enabled user. A new code replaces the previous one of that user. */
+    synchronized String setupCode(String raw,int minutes,long now)throws IOException{
+        String name=username(raw);if(!enabled(name))throw new IllegalArgumentException("Benutzer existiert nicht oder ist deaktiviert");
+        if(minutes<5||minutes>10080)throw new IllegalArgumentException("Gültigkeit: 5 Minuten bis 7 Tage");
+        Properties next=new Properties();next.putAll(state);
+        for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("t.")){String[] parts=next.getProperty(k).split("\\|");if(parts.length!=2||parts[0].equals(name)||Long.parseLong(parts[1])<now)next.remove(k);}
+        String code="sass_"+random();next.setProperty("t."+AppApiSecurity.hash(code),name+"|"+(now+minutes*60_000L));persist(next);return code;
+    }
+    /** Redeems a setup code exactly once and returns {username, session}. Failed codes reveal nothing. */
+    synchronized String[] redeem(String code,long now)throws IOException{
+        if(code==null||!code.startsWith("sass_")||code.length()>160)return null;
+        String key="t."+AppApiSecurity.hash(code),row=state.getProperty(key);if(row==null)return null;
+        Properties next=new Properties();next.putAll(state);next.remove(key);
+        String[] parts=row.split("\\|");if(parts.length!=2||Long.parseLong(parts[1])<now||!enabled(parts[0])){persist(next);return null;}
+        return new String[]{parts[0],session(parts[0],now,next)};
+    }
+    synchronized long setupExpiry(String name){long best=0;for(String k:state.stringPropertyNames())if(k.startsWith("t.")){String[] parts=state.getProperty(k).split("\\|");if(parts.length==2&&parts[0].equals(name))best=Math.max(best,Long.parseLong(parts[1]));}return best>System.currentTimeMillis()?best:0;}
+    synchronized void cancelSetup(String raw)throws IOException{String name=username(raw);Properties next=new Properties();next.putAll(state);next.stringPropertyNames().stream().filter(k->k.startsWith("t.")&&next.getProperty(k).startsWith(name+"|")).toList().forEach(next::remove);persist(next);}
+    synchronized int sessions(String name){long now=System.currentTimeMillis();int n=0;for(String k:state.stringPropertyNames())if(k.startsWith("s.")){String[] parts=state.getProperty(k).split("\\|");if(parts.length==2&&parts[0].equals(name)&&Long.parseLong(parts[1])>=now)n++;}return n;}
     synchronized AppApiSecurity.Key authenticate(String token){if(token==null||!token.startsWith("sasu_")||token.length()>160)return null;String digest=AppApiSecurity.hash(token),row=state.getProperty("s."+digest);if(row==null)return null;String[] parts=row.split("\\|");if(parts.length!=2||!enabled(parts[0])||Long.parseLong(parts[1])<System.currentTimeMillis())return null;return new AppApiSecurity.Key("user:"+parts[0]+":"+digest.substring(0,16),parts[0],"full",digest,0);}
     synchronized boolean valid(AppApiSecurity.Key k){if(!k.id().startsWith("user:"))return false;String row=state.getProperty("s."+k.hash());return row!=null&&row.startsWith(k.label()+"|")&&enabled(k.label())&&Long.parseLong(row.split("\\|")[1])>=System.currentTimeMillis();}
     synchronized boolean allows(AppApiSecurity.Key key,String permission){return !key.id().startsWith("user:")||valid(key)&&(permissions(key.label()).contains("*")||permissions(key.label()).contains(permission));}

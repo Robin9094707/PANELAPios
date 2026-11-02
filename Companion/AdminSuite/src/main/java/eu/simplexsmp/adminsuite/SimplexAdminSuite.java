@@ -129,7 +129,7 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class SimplexAdminSuite extends JavaPlugin implements Listener, CommandExecutor, org.bukkit.command.TabCompleter {
-    private static final String VERSION = "9.6.0";
+    private static final String VERSION = "9.7.0";
     private static final int CURRENT_DATA_SCHEMA = 17;
     private static final int DEFAULT_MAX_CHAT_LINES = 100;
     private static final int DEFAULT_MAX_ACTION_LINES = 240;
@@ -304,6 +304,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     }
     AppApiManager appApi;
     SuiteEventCenter appEvents;
+    AdminActivityLog adminLog;
+    StaffChat staffChat;
     SuitePolicies suitePolicies;
     SurvivalGuard survivalGuard;
     public void onEnable() {
@@ -321,6 +323,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         bridge = new IntegrationBridge(this);
         punishments = new PunishmentService(this);
         audit = new AuditLogger(this);
+        adminLog = new AdminActivityLog(this);
         altDetection = new AdvancedAltDetection(this);
         try { securityHub = new ClientControlCenter(this); } catch(java.io.IOException e) { throw new IllegalStateException("Sicherheitszustand konnte nicht sicher geladen werden; Dateien bleiben erhalten", e); }
         reports = new ReportManager(this);
@@ -481,6 +484,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if (altDetection != null) altDetection.startGeyserLoginGate();
         }, 40L);
         try { appEvents = new SuiteEventCenter(this); appEvents.start(); } catch (Exception error) { getLogger().warning("App-Ereignisse nicht verfügbar; vorhandene Datei bleibt erhalten: "+error.getClass().getSimpleName()); }
+        EmergencyRestartNotice.started(this);
+        staffChat = new StaffChat(this);
+        Bukkit.getScheduler().runTaskLater(this, () -> { if (staffChat != null && staffWorkspace != null) staffChat.refreshMembers(staffWorkspace.members().stream().map(m -> m.uuid).toList()); }, 200L);
         try { suitePolicies=new SuitePolicies(this); if(altDetection.ipExclusions.needsRepair())altDetection.repairIps("Update 9.1.2",null); } catch(Exception e){throw new IllegalStateException("Suite-Richtlinien/IP-Reparatur konnten nicht geladen werden",e);}
         survivalGuard = new SurvivalGuard(this); survivalGuard.start();
         try { appApi = new AppApiManager(this); appApi.reload(); } catch (Exception error) { getLogger().warning("Optionale App-API bleibt aus: " + error.getClass().getSimpleName()); }
@@ -493,6 +499,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     public void onDisable() {
         if (appApi != null) appApi.stop();
+        if (adminLog != null) adminLog.stop();
+        EmergencyRestartNotice.stopped(this);
         appChat.stop();
         if (appEvents != null) appEvents.stop();
         if (detectors != null) detectors.stop();
@@ -814,7 +822,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return nativeScoreboard == null || nativeScoreboard.handleCommand(sender, rootCommand, args);
         if (rootCommand.equals("playerdata")) return playerData == null || playerData.handleCommand(sender, args);
         if (Set.of("checkhacks", "checklang", "chalerts", "chreload").contains(rootCommand)) return qualityOfLife.command(sender, rootCommand, args);
-        if (rootCommand.equals("nickname")) return nicknames == null || nicknames.handleCommand(sender, args);
+        if (rootCommand.equals("nickname")) { sender.sendMessage(prefix() + "Nicknames wurden mit Admin Suite 9.7.0 entfernt. Spieler erscheinen überall mit ihrem echten Namen und ihrem LuckPerms-Rang."); return true; }
         if (rootCommand.equals("simplexvpn")) return vpnProtection == null || vpnProtection.handleCommand(sender, label, args);
         if (rootCommand.equals("fart")) return funFeatures.handleFart(sender, args);
         if (rootCommand.equals("burp")) return funFeatures.handleBurp(sender, args);
@@ -877,7 +885,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (is(sub, "playerdata", "spielerdaten", "nbt", "recentplayers")) return playerData == null || playerData.handleCommand(sender, Arrays.copyOfRange(args, 1, args.length));
         if (securityHub != null && Set.of("securityhub", "checkwhitelist", "emergency", "restartplan", "geoinfo").contains(sub)) return securityHub.command(sender, sub, Arrays.copyOfRange(args, 1, args.length));
         if (Set.of("bluemap", "names", "clientcheck", "checkhacks", "checklang").contains(sub)) return qualityOfLife.command(sender, sub, Arrays.copyOfRange(args, 1, args.length));
-        if (is(sub, "nickname", "nick", "spitzname")) return nicknames == null || nicknames.handleCommand(sender, Arrays.copyOfRange(args, 1, args.length));
+        if (is(sub, "nickname", "nick", "spitzname")) { sender.sendMessage(prefix() + "Nicknames wurden mit Admin Suite 9.7.0 entfernt. Ränge kommen direkt aus LuckPerms."); return true; }
         if (is(sub, "activity", "aktivitaet", "aktivität", "afkintel")) {
             if (!(sender instanceof Player)) return onlyPlayer(sender);
             if (!has(sender, "simplexadminsuite.afk.admin")) return deny(sender, "simplexadminsuite.afk.admin");
@@ -7194,8 +7202,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         }
         return Map.copyOf(out);
     }
-    String visualName(Player player) { return nicknames == null ? (player == null ? "Unbekannt" : player.getName()) : nicknames.visualName(player); }
-    String visualName(UUID uuid, String realName) { return nicknames == null ? realName : nicknames.visualName(uuid, realName); }
+    // 9.7.0: visual nicknames were removed; every surface shows the real Minecraft name again (nicknames.yml is kept untouched).
+    String visualName(Player player) { return player == null ? "Unbekannt" : player.getName(); }
+    String visualName(UUID uuid, String realName) { return realName; }
     void refreshVisualIdentity(Player player) { if (afk != null) afk.refreshDisplay(player); }
     void nicknameAudit(String actor, UUID target, String action, String details) { if (audit != null) audit.log(actor, target, action, details); if(appEvents!=null) {String lower=(action+" "+actor).toLowerCase(Locale.ROOT);String kind=lower.contains("client")||lower.contains("probe")?"client-check":lower.contains("ban")||lower.contains("sperr")?"ban":lower.contains("spielerschutz")?"guard":"admin";appEvents.record(kind,target,action,actor+" · "+details,kind.equals("ban"));} }
     String discordAdminNickname(String actor, String playerQuery, String nickname) {
@@ -7463,6 +7472,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     String activityStatus(Player player) { return activityIntelligence == null ? "Analyse nicht geladen" : activityIntelligence.status(player); }
     long scoreboardMainDays() { return nativeScoreboard == null ? 0L : nativeScoreboard.mainDays(); }
     long scoreboardSecondDays() { return nativeScoreboard == null ? 0L : nativeScoreboard.secondDays(); }
+    void staffMirror(String author, String text) { if (staffWorkspace != null) staffWorkspace.mirror(author, text); }
+    List<Map<String,Object>> appNameplates() { return qualityOfLife == null ? List.of() : qualityOfLife.names.report(); }
     void suiteAudit(String actor, String action, String detail) { if (audit != null) audit.log(actor == null ? "System" : actor, null, action, detail); }
     String executeConfirmedAiAction(Player admin, String action, UUID targetUuid, String duration, long amount, String reason) {
         if (admin == null || targetUuid == null) return "KI-Aktion wurde wegen ungültiger Bestätigungsdaten abgebrochen.";
@@ -12616,6 +12627,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             File file = new File(folder, day.format(new Date()) + ".log");
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(file, true))) { writer.write(line); writer.newLine(); } catch (Exception e) { plugin.getLogger().warning("Audit-Log konnte nicht geschrieben werden: " + e.getMessage()); }
             if (plugin.moderationControl != null) plugin.moderationControl.auditEvent(admin, target, action, detail);
+            if (plugin.adminLog != null) try { plugin.adminLog.record(admin, target, action, detail); } catch (RuntimeException ignored) { }
             if(plugin.menuAudio!=null)plugin.menuAudio.hint(admin,action);
             if(plugin.menuFeedback!=null){
                 if(action.toLowerCase(Locale.ROOT).matches(".*(fehlgeschlagen|abgelehnt).*" )||(detail!=null&&stripFormatting(detail).toLowerCase(Locale.ROOT).startsWith("fehlgeschlagen:")))plugin.menuFeedback.failure(admin);
@@ -15585,6 +15597,17 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             String formatted = plugin.prefix() + plugin.color("&6[Staff] &e" + author + "&7: &f" + clean);
             for (Player player : Bukkit.getOnlinePlayers()) if (plugin.has(player, "simplexadminsuite.admin")) player.sendMessage(plugin.playerUiText(player, formatted));
             plugin.audit.log(author, null, "Staff-Nachricht", clean);
+            if (plugin.staffChat != null) plugin.staffChat.fromIngame(author, authorUuid, clean);
+        }
+
+        /** 9.7.0: Discord/app staff-chat messages appear in the in-game staff inbox without echoing back. */
+        private synchronized void mirror(String author, String text) {
+            String clean = plugin.sanitizeText(text, plugin.getConfig().getInt("staff-workspace.max-message-length", 300));
+            if (clean.isEmpty()) return;
+            messages.add(new StaffMessage(System.currentTimeMillis(), author, null, clean));
+            int max = Math.max(10, plugin.getConfig().getInt("staff-workspace.max-messages", 250));
+            while (messages.size() > max) messages.remove(0);
+            save();
         }
 
         private synchronized boolean delete(long createdAt, String admin) {
