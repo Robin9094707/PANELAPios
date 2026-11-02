@@ -242,6 +242,7 @@ struct SuiteAdminCenterView: View {
                 SuiteToolTile(title: "Einstellungen", symbol: "slider.horizontal.3", tint: .gray) { SuiteSettingsView(suite: suite) } .disabled(!suite.can("data.settings"))
                 SuiteToolTile(title: "Alle Funktionen", symbol: "magnifyingglass", tint: Color.panelAccent) { SuiteActionsView(suite: suite, actions: model.actions.filter { !["menu.action", "settings.update"].contains($0.id) }, title: "Alle Funktionen") }
                 if features.contains("accounts-v1") { SuiteToolTile(title: "Zugänge & Serverregeln", symbol: "person.badge.key.fill", tint: .indigo) { SuiteUpgradeView(suite: suite) } }
+                if features.contains("accounts-v2") { SuiteToolTile(title: "Konto & Sicherheit", symbol: "lock.shield.fill", tint: .green) { SuiteAccountView(suite: suite) } }
                 SuiteToolTile(title: "Kopplung", symbol: "key.horizontal.fill", tint: .secondary, identifier: "adminCenterHub") { SuiteHubView(panel: model.panel, server: model.server, model: model) }
             }
             SuitePinnedActionsView(suite: suite, actions: model.actions)

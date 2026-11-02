@@ -5,6 +5,14 @@ struct SuiteUpgradeView: View {
     let suite: SuiteAPI
     var body: some View {
         List {
+            if suite.features.contains("accounts-v2") {
+                Section {
+                    NavigationLink { SuiteAccountView(suite: suite) } label: { Label("Konto & Sicherheit", systemImage: "lock.shield.fill") }
+                    NavigationLink { SuiteSessionsView(suite: suite) } label: { Label(suite.account["manager"].bool ? "Geräte & Sitzungen" : "Meine Geräte", systemImage: "laptopcomputer.and.iphone") }
+                } header: { Text("Mein Zugang") } footer: {
+                    if suite.account["canMigrate"].bool { Text("Neu: Wechsle vom Hauptschlüssel zu Benutzername & Passwort – mit 2FA, Passkeys und Webpanel. Unter Konto & Sicherheit.") }
+                }
+            }
             Section("Zugriff") {
                 NavigationLink { SuiteUsersView(suite: suite) } label: { Label("App-Benutzer & Rechte", systemImage: "person.badge.key.fill") }.disabled(!suite.can("data.access"))
                 NavigationLink { SuiteLinksView(suite: suite) } label: { Label("Discord-Verifizierungen", systemImage: "link") }.disabled(!suite.can("data.links"))
@@ -68,6 +76,8 @@ struct SuiteUsersView: View {
                             HStack(spacing: 8) {
                                 if row["sessions"] != .null { Text(row["sessions"].int == 1 ? "1 Gerät angemeldet" : "\(row["sessions"].int) Geräte angemeldet") }
                                 if row["setupExpires"].double > 0 { Text("· Setup-Link offen") .foregroundStyle(Color.panelAccent) }
+                                if row["owner"].bool { Text("· Hauptadmin").foregroundStyle(.yellow) }
+                                if row["mfa"].bool { Text("· 2FA").foregroundStyle(.green) }
                             }.font(.caption).foregroundStyle(.secondary)
                         }
                     }.disabled(!suite.can("action.accounts.update"))
@@ -101,7 +111,13 @@ struct SuiteUserEditor: View {
                 }
             }
             if row != .null && row["enabled"].bool && suite.features.contains("setup-links-v1") { Section { NavigationLink { SuiteSetupLinkCreator(suite: suite, username: row["username"].string) } label: { Label("Setup-Link erstellen", systemImage: "link.badge.plus") } } footer: { Text("Einmalig gültig (Standard 1 Stunde). Der Empfänger muss nichts eintippen.") } }
-            Section { Button("Benutzer speichern") { prepare("save") }.disabled(name.isEmpty || model.busy || (row == .null && password.count < 12) || (!password.isEmpty && password.count < 12)); if row != .null { Button("Benutzer löschen", role: .destructive) { prepare("delete") }.disabled(model.busy) } }
+            Section { Button("Benutzer speichern") { prepare("save") }.disabled(name.isEmpty || model.busy || (row == .null && password.count < 12) || (!password.isEmpty && password.count < 12)); if row != .null && !row["owner"].bool { Button("Benutzer löschen", role: .destructive) { prepare("delete") }.disabled(model.busy) } }
+            if row != .null && suite.features.contains("accounts-v2") {
+                Section {
+                    if row["mfa"].bool { Button("Zwei-Faktor-Schutz zurücksetzen", systemImage: "lock.open") { prepare("reset-mfa") }.disabled(model.busy) }
+                    Button("Alle Geräte abmelden", systemImage: "rectangle.portrait.and.arrow.right") { prepare("logout-all") }.disabled(model.busy)
+                } header: { Text("Hilfe & Sicherheit") } footer: { Text(row["owner"].bool ? "Hauptadmin-Zugang: hat immer Vollzugriff und kann nicht gelöscht werden." : "Hilft, wenn jemand sein Handy verloren hat. Geräte siehst du unter Geräte & Sitzungen.") }
+            }
             if !model.notice.isEmpty { Text(model.notice).foregroundStyle(.green) }
         }.navigationTitle(row == .null ? "Neuer App-Benutzer" : name).toolbar { Button("Fertig") { Task { await saved(); dismiss() } }.disabled(model.busy) }.task { name = row["username"].string; enabled = row == .null || row["enabled"].bool; rights = Set(row["permissions"].array.map(\.string)) }.modifier(UpgradeFeedback(model: model, route: "access")) }.interactiveDismissDisabled(model.busy)
     }

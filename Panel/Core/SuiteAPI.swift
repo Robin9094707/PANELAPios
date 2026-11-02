@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import CryptoKit
+import UIKit
 
 struct SuiteConnection: Codable, Identifiable, Equatable {
     var id = UUID()
@@ -41,6 +42,38 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         completionHandler(.useCredential, URLCredential(trust: trust))
     }
 }
+/// Admin Suite 9.8: the server needs another sign-in step (new password after an emergency reset, or a second factor).
+struct SuiteLoginChallenge: Error, Identifiable, Equatable, LocalizedError {
+    enum Kind: Equatable { case newPassword, secondFactor }
+    let kind: Kind
+    let challenge: String
+    let username: String
+    let methods: [String]
+    let message: String
+    var id: String { challenge }
+    var errorDescription: String? { kind == .newPassword ? "Bitte ein neues Passwort festlegen." : "Bitte den Code aus deiner Authenticator-App eingeben." }
+    static func from(_ json: JSON) -> SuiteLoginChallenge? {
+        let challenge = json["challenge"].string
+        guard !challenge.isEmpty, challenge.count <= 200 else { return nil }
+        if json["passwordChange"].bool { return SuiteLoginChallenge(kind: .newPassword, challenge: challenge, username: json["username"].string, methods: [], message: json["message"].string) }
+        if json["mfa"].bool { return SuiteLoginChallenge(kind: .secondFactor, challenge: challenge, username: json["username"].string, methods: json["methods"].array.map(\.string), message: json["message"].string) }
+        return nil
+    }
+}
+
+/// Device details sent with every Suite request so the main admin can recognise devices (model, OS, app version).
+enum SuiteDevice {
+    @MainActor static var header: String {
+        var info = utsname(); uname(&info)
+        let machine = withUnsafeBytes(of: &info.machine) { raw in String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self) }
+        let model = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? machine
+        let os = UIDevice.current.systemName + " " + UIDevice.current.systemVersion
+        let app = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        return "model=" + encode(model) + ";os=" + encode(os) + ";app=" + encode(app)
+    }
+    nonisolated static func encode(_ value: String) -> String { value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "" }
+}
+
 @MainActor final class SuiteAPI {
     let connection: SuiteConnection
     let platforms = SuitePlatformCache()
@@ -50,6 +83,9 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
     private(set) var limited = false
     func can(_ permission: String) -> Bool { !limited || permissions.contains("*") || permissions.contains(permission) }
     private(set) var features: Set<String> = []
+    /// 9.8 account summary from /v1/health (kind user/key, owner, manager, mfa, canMigrate).
+    private(set) var account: JSON = .null
+    private(set) var web: JSON = .null
     private var token: String
     private let session: URLSession
     init(_ connection: SuiteConnection, token: String? = nil, session: URLSession? = nil, demo: Bool = false) throws {
@@ -92,7 +128,7 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         c.queryItems = query.isEmpty ? nil : query.sorted(by: { $0.key < $1.key }).map { URLQueryItem(name: $0.key, value: $0.value) }
         // "+" is literal in URLComponents but a space for the suite's form decoder.
         c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
-        var request = URLRequest(url: c.url!); request.httpMethod = method; request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization"); request.setValue("application/json", forHTTPHeaderField: "Accept")
+        var request = URLRequest(url: c.url!); request.httpMethod = method; request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization"); request.setValue("application/json", forHTTPHeaderField: "Accept"); request.setValue(SuiteDevice.header, forHTTPHeaderField: "X-Simplex-Device")
         if let body { request.httpBody = body; request.setValue(contentType ?? "application/octet-stream", forHTTPHeaderField: "Content-Type") }
         let data: Data
         let response: URLResponse
@@ -110,13 +146,36 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         guard data.count <= limit else { throw PanelError(message: "Suite-Antwort zu groß.") }
         return data
     }
+    /// Password sign-in. Throws `SuiteLoginChallenge` when a new password or a second factor is required (Admin Suite 9.8).
     func login(username: String, password: String) async throws -> String {
-        let result = try await request("login", method: "POST", body: .object(["username": .string(username), "password": .string(password)]))
+        try accept(try await request("login", method: "POST", body: .object(["username": .string(username), "password": .string(password)])))
+    }
+    func verify(challenge: String, code: String) async throws -> String {
+        try accept(try await request("login/verify", method: "POST", body: .object(["challenge": .string(challenge), "code": .string(code)])))
+    }
+    func verify(challenge: String, newPassword: String) async throws -> String {
+        try accept(try await request("login/verify", method: "POST", body: .object(["challenge": .string(challenge), "newPassword": .string(newPassword)])))
+    }
+    /// One-time code from the browser sign-in (passkeys) or the web panel.
+    func exchange(code: String) async throws -> String {
+        try accept(try await request("login/exchange", method: "POST", body: .object(["code": .string(code)])))
+    }
+    private func accept(_ result: JSON) throws -> String {
+        if let challenge = SuiteLoginChallenge.from(result) { throw challenge }
         let value = result["token"].string
         guard value.hasPrefix("sasu_"), value.count <= 160 else { throw PanelError(message: "Ungültige Login-Antwort.") }
         token = value
         return value
     }
+    /// Turns the classic main key into the main admin account and switches this connection to the new session.
+    func migrate(username: String, password: String, revokeKey: Bool) async throws -> JSON {
+        let result = try await request("account/migrate", method: "POST", body: .object(["username": .string(username), "password": .string(password), "revokeKey": .bool(revokeKey)]))
+        let value = result["token"].string
+        guard value.hasPrefix("sasu_"), value.count <= 160 else { throw PanelError(message: "Ungültige Antwort der Suite.") }
+        token = value
+        return result
+    }
+    func post(_ path: String, _ body: [String: JSON] = [:]) async throws -> JSON { try await request(path, method: "POST", body: .object(body)) }
     /// Redeems a one-time setup link (Admin Suite 9.7.0) and keeps the new session token.
     func redeem(code: String) async throws -> JSON {
         let result = try await request("setup", method: "POST", body: .object(["code": .string(code)]))
@@ -134,6 +193,8 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         permissions = Set(result["permissions"].array.map(\.string))
         scope = result["scope"].string
         features = Set(result["features"].array.map(\.string))
+        account = result["account"]
+        web = result["web"]
         return result
     }
     func view(_ path: String, values: [String: JSON] = [:]) async throws -> JSON { try await request("view", query: values.mapValues(\.string).merging(["path": path], uniquingKeysWith: { _, b in b })) }

@@ -1,0 +1,14 @@
+{
+  "name": "Simplex Panel",
+  "short_name": "Simplex",
+  "description": "Admin Suite – Webpanel",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#060a17",
+  "theme_color": "#060a17",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
