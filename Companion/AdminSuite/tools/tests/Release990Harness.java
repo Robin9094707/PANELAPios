@@ -37,6 +37,8 @@ public final class Release990Harness {
     static HttpClient client; static URI base; static String host;
 
     public static void main(String[] args) throws Exception {
+        // Must be set before the first HttpClient exists (WebPush creates one in push()); the fixture uses a self-signed IP certificate.
+        System.setProperty("jdk.internal.httpclient.disableHostnameVerification", "true");
         push();
         luckPerms();
         filters();
