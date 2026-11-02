@@ -215,6 +215,17 @@ public final class Release990Harness {
         check(previous.equals("alpha_admin") && users.owner("helper") && !users.owner("alpha_admin") && users.permissions("helper").contains("*"), "owner-transfer moves the main admin");
         users.setEnabled("alpha_admin", false); check(!users.enabled("alpha_admin") && users.authenticate(token) == null, "disabled user loses every session");
         users.setEnabled("alpha_admin", true); check(users.enabled("alpha_admin"), "user re-enabled");
+
+        // Usernames may contain dots: "alice" must never touch "alice.bob".
+        users.save("alice", "alice-password-990", Set.of("data.tickets"), true);
+        users.save("alice.bob", "alicebob-password-990", Set.of("data.players"), true);
+        String bobToken = users.createSession("alice.bob", System.currentTimeMillis(), AppUsers.APP_SESSION, Map.of("kind", "app"));
+        users.rename("alice", "carol");
+        check(users.exists("carol") && !users.exists("alice") && users.exists("alice.bob") && !users.exists("carol.bob"), "rename moves only the exact account");
+        check(users.verifyPassword("alice.bob", "alicebob-password-990") != null && users.permissions("alice.bob").contains("data.players") && users.authenticate(bobToken) != null, "similar-named account keeps password, rights and sessions");
+        users.delete("carol");
+        check(users.exists("alice.bob") && users.authenticate(bobToken) != null, "delete removes only the exact account");
+        check(AppUsers.own("u.alice.hash", "alice") && !AppUsers.own("u.alice.bob.hash", "alice") && AppUsers.own("u.alice.bob.hash", "alice.bob"), "exact account property match");
     }
 
     // ------------------------------------------------------------------ HTTPS listener

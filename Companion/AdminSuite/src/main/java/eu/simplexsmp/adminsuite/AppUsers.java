@@ -57,7 +57,7 @@ final class AppUsers {
     synchronized void logoutAll(String name)throws IOException{Properties next=copy();dropSessions(next,name,null);persist(next);}
     synchronized void delete(String raw)throws IOException{
         String name=username(raw);Properties next=copy();
-        for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("u."+name+".")||(k.startsWith("s.")||k.startsWith("t."))&&next.getProperty(k).startsWith(name+"|"))next.remove(k);
+        for(String k:new ArrayList<>(next.stringPropertyNames()))if(own(k,name)||(k.startsWith("s.")||k.startsWith("t."))&&next.getProperty(k).startsWith(name+"|"))next.remove(k);
         for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("m.")&&!next.containsKey("s."+k.substring(2)))next.remove(k);
         for(String k:new ArrayList<>(next.stringPropertyNames()))if(k.startsWith("p.")&&name.equals(String.valueOf(json(next.getProperty(k)).get("user"))))next.remove(k);
         persist(next);
@@ -159,7 +159,7 @@ final class AppUsers {
         Properties next=new Properties();
         for(String k:state.stringPropertyNames()){
             String v=state.getProperty(k),key=k;
-            if(k.startsWith("u."+from+"."))key="u."+to+"."+k.substring(("u."+from+".").length());
+            if(own(k,from))key="u."+to+"."+k.substring(("u."+from+".").length());
             else if(k.startsWith("t.")&&v.startsWith(from+"|"))continue;
             else if(k.startsWith("s.")&&v.startsWith(from+"|"))v=to+v.substring(from.length());
             else if(k.startsWith("p.")){Map<String,Object> row=json(v);if(from.equals(row.get("user"))){row.put("user",to);v=DiscordBotManager.Json.stringify(row);}}
@@ -304,6 +304,11 @@ final class AppUsers {
     }
     synchronized void forgetKey(String id)throws IOException{Properties next=copy();next.remove("m.k:"+id);seen.remove("k:"+id);persist(next);}
 
+    /**
+     * True when {@code key} is a property of exactly this account. Usernames may contain dots, so "u.alice.bob.hash"
+     * belongs to "alice.bob", never to "alice": account properties are single segments without a dot.
+     */
+    static boolean own(String key,String name){String stem="u."+name+".";return key.startsWith(stem)&&key.indexOf('.',stem.length())<0;}
     static String clean(String value,int max){String v=value==null?"":value.codePoints().filter(c->!Character.isISOControl(c)).collect(StringBuilder::new,StringBuilder::appendCodePoint,StringBuilder::append).toString().trim();return v.length()>max?v.substring(0,max):v;}
     @SuppressWarnings("unchecked") private static Map<String,Object> json(String raw){if(raw==null||raw.isBlank())return new LinkedHashMap<>();try{Object v=DiscordBotManager.Json.parse(raw);return v instanceof Map<?,?> m?new LinkedHashMap<>((Map<String,Object>)m):new LinkedHashMap<>();}catch(RuntimeException e){return new LinkedHashMap<>();}}
     private Properties copy(){Properties next=new Properties();next.putAll(state);return next;}
