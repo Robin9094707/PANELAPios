@@ -212,9 +212,7 @@ final class DiscordAdminController {
                                                 "unblock", "Global entsperren", "delete", "Datensatz löschen", "clear", "Alle löschen"),
                                         string("identifier", "Geräte-ID; leer = neuestes", false, true), integer("page", "Detailseite (ab 1)", false, 1, 100)),
                                 sub("message", "Private Teamnachricht senden",
-                                        playerOption("player", true), string("message", "Nachricht (Englisch)", true, false)),
-                                sub("nickname", "Server-Nickname ändern",
-                                        playerOption("player", true), string("nickname", "Nickname oder reset", true, false))
+                                        playerOption("player", true), string("message", "Nachricht (Englisch)", true, false))
                         )),
                         group("server", "Server und Discord steuern", List.of(
                                 sub("status", "Serverstatus und Spieler"),
@@ -385,7 +383,6 @@ final class DiscordAdminController {
         if (command.equals("points") && tokens.size() >= 3) return new Request("player.points", mapOf("player", tokens.get(2),
                 "operation", tokens.size() >= 4 ? tokens.get(3) : "status", "amount", tokens.size() >= 5 ? number(tokens.get(4), 0) : 0));
         if (command.equals("message") && tokens.size() >= 4) return new Request("player.message", mapOf("player", tokens.get(2), "message", join(tokens, 3)));
-        if ((command.equals("nickname") || command.equals("nick")) && tokens.size() >= 4) return new Request("player.nickname", mapOf("player", tokens.get(2), "nickname", join(tokens, 3)));
         if (command.equals("lag")) return new Request("server.lag", mapOf("action", tokens.size() >= 3 ? tokens.get(2) : "status"));
         if (command.equals("trim")) return new Request("server.trim", mapOf("action", tokens.size() >= 3 ? tokens.get(2) : "status"));
         if (command.equals("fun")) return new Request("server.fun", mapOf(

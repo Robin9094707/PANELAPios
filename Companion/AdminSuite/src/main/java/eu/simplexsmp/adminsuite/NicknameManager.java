@@ -68,6 +68,8 @@ final class NicknameManager implements Listener {
     }
 
     Result set(String actor, UUID target, String requested) {
+        // 9.7.0: removed. A safe packet-level rename is impossible without rewriting other plugins' view of the player.
+        if (true) return Result.error("Nicknames wurden mit Admin Suite 9.7.0 entfernt. Spieler erscheinen überall mit echtem Namen und LuckPerms-Rang; nicknames.yml bleibt unverändert erhalten.");
         if (target == null) return Result.error("Spielerprofil nicht gefunden.");
         String realName = plugin.discordAdminPlayerName(target);
         String raw = requested == null ? "" : requested.trim();

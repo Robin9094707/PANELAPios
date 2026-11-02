@@ -123,17 +123,20 @@ struct SuiteConnectionView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var remove = false
+    @State private var setup = false
     var existing: SuiteConnection? { SuiteConnections.shared.get(panel, server) }
     var body: some View {
         NavigationStack {
             Form {
                 Section { Text(server.name).font(.headline); Text("Dieser Zugang gilt nur für diesen Server in diesem Panel-Account.").font(.footnote).foregroundStyle(.secondary) }
+                Section { Button { setup = true } label: { Label("Mit Setup-Link koppeln", systemImage: "link.badge.plus") }.disabled(panel.demo).accessibilityIdentifier("suite-setup-link") } footer: { Text("Einmaliger Link vom Hauptadmin (Admin Suite 9.7.0): Adresse, Fingerabdruck und Anmeldung werden automatisch übernommen.") }
                 Section("HTTPS-Verbindung") { TextField("https://Server-IP:Port", text: $endpoint).keyboardType(.URL); Picker("Anmelden mit", selection: $passwordLogin) { Text("Bestehendem Schlüssel").tag(false); Text("Benutzer & Passwort").tag(true) }; if passwordLogin { TextField("Minecraft-Benutzername", text: $username); SecureField("Passwort", text: $password) } else { SecureField("Admin-Suite-API-Schlüssel", text: $token) }; TextField("SHA-256-Fingerabdruck", text: $fingerprint, axis: .vertical).font(.footnote.monospaced()) }.textInputAutocapitalization(.never).autocorrectionDisabled()
                 Section { Text("Bei direkt erzeugtem Zertifikat den Fingerabdruck aus /sas app fingerprint eintragen. Bei öffentlich gültigem HTTPS-Zertifikat darf er leer bleiben. Ein geänderter Fingerabdruck wird niemals automatisch akzeptiert.").font(.footnote).foregroundStyle(.secondary) }
                 Section { Button { Task { await connect() } } label: { if busy { ProgressView("Prüfen …") } else { Label("Prüfen & sicher speichern", systemImage: "checkmark.shield") } }.disabled(busy || endpoint.isEmpty || (passwordLogin ? username.isEmpty || password.isEmpty : token.isEmpty) || panel.demo) }
                 if existing != nil { Section { Button("Lokale Kopplung entfernen", role: .destructive) { remove = true }.disabled(busy) } }
             }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Suite verbinden").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() }.disabled(busy) } }.errorAlert($error)
                 .task { if let record = existing { endpoint = record.endpoint; fingerprint = record.fingerprint; token = (try? Vault.read(record.id)) ?? "" } }
+                .sheet(isPresented: $setup) { SuiteSetupRedeemView(panel: panel, server: server) { await saved() } }
                 .confirmationDialog("Kopplung auf diesem Gerät entfernen?", isPresented: $remove, titleVisibility: .visible) { Button("Entfernen", role: .destructive) { if let record = existing { SuiteConnections.shared.remove(record) }; Task { await saved(); dismiss() } } } message: { Text("Der Schlüssel bleibt serverseitig gültig, bis du ihn mit /sas app revoke widerrufst.") }
         }.interactiveDismissDisabled(busy)
     }

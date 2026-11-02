@@ -3,6 +3,13 @@ import SwiftUI
 struct DashboardEditor: View {
     let scope: DashboardScope
     let layoutKey: String
+    var api: PanelAPI? = nil
+    var server: Server? = nil
+    @EnvironmentObject private var workspace: WorkspaceStore
+    @AppStorage("widgets.chartStyle") private var chartStyle = "area"
+    @AppStorage("widgets.chartGrid") private var chartGrid = false
+    @AppStorage("widgets.compactMetrics") private var compactMetrics = false
+    @AppStorage("theme.compactServerCards") private var compactServerCards = true
     @ObservedObject private var layouts = DashboardLayouts.shared
     @Environment(\.dismiss) private var dismiss
     @State private var reset = false
@@ -14,6 +21,17 @@ struct DashboardEditor: View {
                 Section {
                     Text(scope == .home ? "Deine Startseite für dieses Panel. Die Serverliste bleibt immer erreichbar." : "Dein Workspace für diesen Server. Jede Änderung wird automatisch gespeichert.").font(.footnote).foregroundStyle(.secondary)
                 }
+                if scope == .server, let api, let server {
+                    Section {
+                        Toggle(isOn: Binding(get: { workspace.isMinecraft(api, server) }, set: { workspace.setMinecraft($0, api, server) })) { Label("Minecraft-Spielerübersicht", systemImage: "person.2.fill") }.accessibilityIdentifier("workspaceMinecraftToggle")
+                    } header: { Text("Funktionen") } footer: { Text("Spieler, TPS, Servericon und Plugin-Schnellzugriffe. Standardmäßig an.") }
+                }
+                Section {
+                    Picker("Diagrammstil", selection: $chartStyle) { Text("Fläche").tag("area"); Text("Linie").tag("line"); Text("Balken").tag("bars") }
+                    Toggle("Hilfslinien in Diagrammen", isOn: $chartGrid)
+                    Toggle("Kompakte Messwerte", isOn: $compactMetrics)
+                    if scope == .home { Toggle("Kompakte Serverkarten", isOn: $compactServerCards) }
+                } header: { Text("Widget-Einstellungen") } footer: { Text("Gilt für alle Startseiten und Server-Workspaces dieses Geräts.") }
                 if scope == .server {
                     Section("Anordnung") {
                         Toggle("Kartenraster auf breiten Bildschirmen", isOn: $grid)
@@ -82,12 +100,13 @@ struct ServerIconView: View {
     let server: Server
     var enabled = true
     var revision = 0
+    var size: CGFloat = 48
     @State private var icon: UIImage?
     var body: some View {
         Group {
-            if let icon { Image(uiImage: icon).resizable().interpolation(.none).scaledToFit().frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityLabel("Server-Icon") }
-            else { Image(systemName: "cube.transparent.fill").font(.title).foregroundStyle(Color.panelAccent).frame(width: 48, height: 48).accessibilityHidden(true) }
-        }.padding(4).background(.teal.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+            if let icon { Image(uiImage: icon).resizable().interpolation(.none).scaledToFit().frame(width: size, height: size).clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityLabel("Server-Icon") }
+            else { Image(systemName: "cube.transparent.fill").font(.title).foregroundStyle(Color.panelAccent).frame(width: size, height: size).accessibilityHidden(true) }
+        }.padding(size > 40 ? 4 : 3).background(.teal.opacity(0.10), in: RoundedRectangle(cornerRadius: size > 40 ? 16 : 11))
             .task(id: "\(api.map { String(describing: ObjectIdentifier($0)) } ?? "")|\(server.id)|\(enabled)|\(revision)") {
                 guard enabled, let api else { icon = nil; return }
                 let data = await api.serverIcons.load(api: api, server: server, force: revision > 0)

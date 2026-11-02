@@ -254,11 +254,13 @@ struct SuiteBarkSettingsView: View {
                     Text("Bestätigen in der Ereignisglocke beim jeweiligen Ereignis. Bark- oder iOS-Einstellungen können die Zustellung begrenzen.").font(.footnote).foregroundStyle(.secondary)
                 }.navigationTitle(event.1) } }
             }
-            Section("Ruhezeiten") {
+            if suite.features.contains("quiet-hours-v1") {
+                Section { NavigationLink { SuiteQuietHoursView(suite: suite) } label: { Label("Ruhezeiten & Notfallneustart", systemImage: "moon.zzz.fill") } } footer: { Text("Schlafenszeit, Arbeitszeit und der Hinweis nach einem Notfallneustart haben einen eigenen Bereich.") }
+            } else { Section("Ruhezeiten") {
                 Picker("Während der Ruhezeit",selection:$quietMode){Text("Keine Ruhezeit").tag("off");Text("Alles stumm").tag("all");Text("Nur kritische Hinweise").tag("critical");Text("Nur ausgewählte kritische Hinweise").tag("selected")}
                 TextField("Beginn HH:mm",text:$quietStart);TextField("Ende HH:mm",text:$quietEnd);TextField("IANA-Zeitzone",text:$timezone).textInputAutocapitalization(.never)
                 if quietMode=="selected" {ForEach(events,id:\.0){event in Toggle(event.1,isOn:Binding(get:{quietKinds.contains(event.0)},set:{if $0{quietKinds.insert(event.0)}else{quietKinds.remove(event.0)}}))}}
-            }
+            } }
             Section("Töne & Dringlichkeit") {
                 interruption("Normale Hinweise", selection: $level)
                 interruption("Kritische Ereignisse", selection: $critical)
@@ -266,11 +268,22 @@ struct SuiteBarkSettingsView: View {
                 TextField("Alarmklang", text: $criticalSound).textInputAutocapitalization(.never)
                 Text("Bark-Klangnamen, z. B. minuet, alarm oder bell. Eigene Bark-Klänge sind möglich. Stille Hinweise: „Nur Liste“. Kritische Töne benötigen die entsprechende Erlaubnis in Bark und iOS. Wiederholte gleichartige Meldungen werden begrenzt.").font(.footnote).foregroundStyle(.secondary)
             }
-            Section { Button("Einstellungen speichern", systemImage: "checkmark.shield") { Task { await model.prepare("notifications.update", ["key": .string(key), "enabled": .string(String(enabled)), "events": .string(selected.sorted().joined(separator: ",")), "level": .string(level), "critical": .string(critical), "sound": .string(sound), "criticalSound": .string(criticalSound),"rules":.string(encodedRules),"quietMode":.string(quietMode),"quietStart":.string(quietStart),"quietEnd":.string(quietEnd),"timezone":.string(timezone),"quietKinds":.string(quietKinds.sorted().joined(separator:","))], summary: enabled ? "Bark für \(selected.count) Ereignisarten aktivieren?\nNormale Hinweise: \(level)\nKritische Ereignisse: \(critical)" : "Bark-Benachrichtigungen deaktivieren?") } }.disabled(model.busy || suite.scope != "full" || !suite.can("action.notifications.update")); if !delivery.isEmpty { Text(delivery).font(.footnote).foregroundStyle(.secondary) } }
+            Section { Button("Einstellungen speichern", systemImage: "checkmark.shield") { Task { await save() } }.disabled(model.busy || suite.scope != "full" || !suite.can("action.notifications.update")); if !delivery.isEmpty { Text(delivery).font(.footnote).foregroundStyle(.secondary) } }
         }.panelScreen().navigationTitle("Benachrichtigungen").navigationBarTitleDisplayMode(.inline).errorAlert($model.error)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() } } }
             .task { do { let value = try await suite.request("notifications"); configured = value["configured"].bool; enabled = value["enabled"].bool; selected = Set(value["events"].string.split(separator: ",").map(String.init)); level = value["level"].string; critical = value["critical"].string; sound = value["sound"].string; criticalSound = value["criticalSound"].string; delivery = value["deliveryStatus"].string; quietMode=value["quietMode"].string.isEmpty ? "off":value["quietMode"].string;quietStart=value["quietStart"].string.isEmpty ? "22:00":value["quietStart"].string;quietEnd=value["quietEnd"].string.isEmpty ? "07:00":value["quietEnd"].string;timezone=value["timezone"].string.isEmpty ? "Europe/Berlin":value["timezone"].string;quietKinds=Set(value["quietKinds"].string.split(separator:",").map(String.init));for rule in value["rules"].string.split(separator:";"){let a=rule.split(separator:":",omittingEmptySubsequences:false).map(String.init);if a.count==4 {if a[1] != "off"{rules[a[0]]=a[1]};sounds[a[0]]=a[2];if a[1]=="off"{selected.remove(a[0])}else{selected.insert(a[0])};if a[3] != "0"{repeats.insert(a[0])}}}; if suite.features.contains("tickets-v1") { for kind in (Self.ticketEvents + (suite.features.contains("tickets-v2") ? Self.priorityTicketEvents : [])).map(\.0) where !value["rules"].string.contains(";" + kind + ":") && !value["rules"].string.hasPrefix(kind + ":") { selected.insert(kind) } } } catch { model.error = error.localizedDescription } }
             .sheet(isPresented: Binding(get: { model.plan != nil }, set: { if !$0 { model.plan = nil } })) { SuiteSecurityConfirmation(model: model) { key = ""; configured = true; dismiss() } }
+    }
+    func save() async {
+        var values: [String: JSON] = ["key": .string(key), "enabled": .string(String(enabled)), "events": .string(selected.sorted().joined(separator: ",")), "level": .string(level), "critical": .string(critical), "sound": .string(sound), "criticalSound": .string(criticalSound)]
+        values["rules"] = .string(encodedRules)
+        // Admin Suite 9.7.0 keeps quiet hours in their own screen; only older suites receive them here.
+        if !suite.features.contains("quiet-hours-v1") {
+            values["quietMode"] = .string(quietMode); values["quietStart"] = .string(quietStart); values["quietEnd"] = .string(quietEnd)
+            values["timezone"] = .string(timezone); values["quietKinds"] = .string(quietKinds.sorted().joined(separator: ","))
+        }
+        let summary = enabled ? "Bark für \(selected.count) Ereignisarten aktivieren?\nNormale Hinweise: \(level)\nKritische Ereignisse: \(critical)" : "Bark-Benachrichtigungen deaktivieren?"
+        await model.prepare("notifications.update", values, summary: summary)
     }
     func interruption(_ title: String, selection: Binding<String>) -> some View { Picker(title, selection: selection) { Text("Normal").tag("active"); Text("Nur Liste (still)").tag("passive"); Text("Zeitkritisch").tag("timeSensitive"); Text("Kritischer Alarm").tag("critical") } }
 }

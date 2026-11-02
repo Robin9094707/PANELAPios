@@ -21,8 +21,8 @@ final class VisualIdentityManager {
     void apply(Player target){
         if(target==null)return;
         UUID id=target.getUniqueId();
-        String prefix=plugin.getConfig().getBoolean("nameplates.show-luckperms",true)?plugin.expansionLuckPermsPrefix(target):"";
-        String suffix=plugin.getConfig().getBoolean("nameplates.show-luckperms",true)?plugin.expansionLuckPermsSuffix(target):"";
+        String prefix=plugin.getConfig().getBoolean("nameplates.show-luckperms",true)?normalize(plugin.expansionLuckPermsPrefix(target)):"";
+        String suffix=plugin.getConfig().getBoolean("nameplates.show-luckperms",true)?normalize(plugin.expansionLuckPermsSuffix(target)):"";
         String nick=plugin.getConfig().getBoolean("nicknames.show-in-player-list",true)?plugin.visualName(target):target.getName();
         String tag=plugin.expansionIsAfk(target)&&plugin.getConfig().getBoolean("afk.show-in-player-list",true)?plugin.getConfig().getString("afk.player-list-suffix"," &7[AFK]"):"";
         String name=plugin.color(spaced(prefix)+nick+spacedSuffix(suffix)+tag);
@@ -65,7 +65,38 @@ final class VisualIdentityManager {
         String pre=plugin.color((afk?"&7[AFK] &r":"")+spaced(prefix));String suf=plugin.color(spacedSuffix(suffix));
         if(!pre.equals(team.getPrefix()))team.setPrefix(pre);
         if(!suf.equals(team.getSuffix()))team.setSuffix(suf);
+        // 9.7.0: the name itself takes the rank colour (Java and Geyser/Bedrock read the team colour).
+        if(!original.foreign){org.bukkit.ChatColor colour=plugin.getConfig().getBoolean("nameplates.color-names",true)?lastColor(plugin.color(spaced(prefix))):null;if(colour==null)colour=org.bukkit.ChatColor.RESET;try{if(team.getColor()!=colour)team.setColor(colour);}catch(RuntimeException ignored){}}
         appliedTeams.computeIfAbsent(board,b->new HashMap<>()).put(id,List.of(pre,suf));
+    }
+    private static final java.util.regex.Pattern HEX=java.util.regex.Pattern.compile("(?:&#|\\{#|<#)([0-9a-fA-F]{6})(?:\\}|>)?");
+    private static final Map<String,String> TAGS=Map.ofEntries(Map.entry("black","0"),Map.entry("dark_blue","1"),Map.entry("dark_green","2"),Map.entry("dark_aqua","3"),Map.entry("dark_red","4"),Map.entry("dark_purple","5"),Map.entry("gold","6"),Map.entry("gray","7"),Map.entry("grey","7"),Map.entry("dark_gray","8"),Map.entry("dark_grey","8"),Map.entry("blue","9"),Map.entry("green","a"),Map.entry("aqua","b"),Map.entry("red","c"),Map.entry("light_purple","d"),Map.entry("yellow","e"),Map.entry("white","f"),Map.entry("bold","l"),Map.entry("b","l"),Map.entry("italic","o"),Map.entry("i","o"),Map.entry("underlined","n"),Map.entry("u","n"),Map.entry("strikethrough","m"),Map.entry("st","m"),Map.entry("obfuscated","k"),Map.entry("reset","r"));
+    /** LuckPerms prefixes in &-codes, §-codes, &#RRGGBB, {#RRGGBB}, <#RRGGBB> or simple MiniMessage colour tags → &-codes. */
+    static String normalize(String raw){
+        if(raw==null||raw.isBlank())return "";
+        String s=raw.replace('§','&');
+        java.util.regex.Matcher m=HEX.matcher(s);StringBuilder out=new StringBuilder();
+        while(m.find()){StringBuilder code=new StringBuilder("&x");for(char c:m.group(1).toLowerCase(Locale.ROOT).toCharArray())code.append('&').append(c);m.appendReplacement(out,java.util.regex.Matcher.quoteReplacement(code.toString()));}
+        m.appendTail(out);s=out.toString();
+        java.util.regex.Matcher tag=java.util.regex.Pattern.compile("<(/?)([a-z_]+)>").matcher(s);out=new StringBuilder();
+        while(tag.find()){String code=TAGS.get(tag.group(2));tag.appendReplacement(out,java.util.regex.Matcher.quoteReplacement(code==null?tag.group():tag.group(1).isEmpty()?"&"+code:"&r"));}
+        tag.appendTail(out);return out.toString();
+    }
+    /** Last colour of an already translated (§) string; hex colours map to the nearest named colour. */
+    static org.bukkit.ChatColor lastColor(String text){
+        if(text==null)return null;org.bukkit.ChatColor found=null;
+        for(int i=0;i<text.length()-1;i++){if(text.charAt(i)!='§')continue;char c=Character.toLowerCase(text.charAt(i+1));
+            if(c=='x'&&i+13<text.length()){StringBuilder hex=new StringBuilder();for(int j=0;j<6;j++)hex.append(text.charAt(i+3+j*2));try{net.kyori.adventure.text.format.NamedTextColor near=net.kyori.adventure.text.format.NamedTextColor.nearestTo(net.kyori.adventure.text.format.TextColor.color(Integer.parseInt(hex.toString(),16)));found=org.bukkit.ChatColor.valueOf(near.toString().toUpperCase(Locale.ROOT));}catch(RuntimeException ignored){}i+=13;continue;}
+            org.bukkit.ChatColor code=org.bukkit.ChatColor.getByChar(c);if(code!=null&&code.isColor())found=code;else if(code==org.bukkit.ChatColor.RESET)found=null;}
+        return found;
+    }
+    /** App diagnostics (9.7.0): what each online player shows above the head and in the list. */
+    List<Map<String,Object>> report(){
+        List<Map<String,Object>> out=new ArrayList<>();
+        for(Player p:Bukkit.getOnlinePlayers()){String prefix=normalize(plugin.expansionLuckPermsPrefix(p)),suffix=normalize(plugin.expansionLuckPermsSuffix(p));org.bukkit.ChatColor c=lastColor(plugin.color(prefix));
+            Team team=p.getScoreboard().getEntryTeam(p.getName());
+            out.add(SimplexAdminSuite.appMap("id",p.getUniqueId().toString(),"name",p.getName(),"prefix",SimplexAdminSuite.stripFormatting(plugin.color(prefix)),"suffix",SimplexAdminSuite.stripFormatting(plugin.color(suffix)),"rawPrefix",prefix,"rawSuffix",suffix,"color",c==null?"":c.name().toLowerCase(Locale.ROOT),"team",team==null?"":team.getName(),"managed",team!=null&&team.getName().startsWith("sasafk"),"status",diagnostics.getOrDefault(p.getUniqueId(),"OK"),"bedrock",plugin.isBedrockClient(p)));}
+        out.sort(Comparator.comparing(m->String.valueOf(m.get("name")),String.CASE_INSENSITIVE_ORDER));return out;
     }
     static String spaced(String s){return s==null||s.isBlank()?"":s+(Character.isWhitespace(s.charAt(s.length()-1))?"":" ");}
     static String spacedSuffix(String s){return s==null||s.isBlank()?"":(Character.isWhitespace(s.charAt(0))?"":" ")+s;}

@@ -1,4 +1,8 @@
-## Aktuelles Update: Panel 3.3.0 / Admin Suite 9.6.0
+## Aktuelles Update: Panel 4.0.0 / Admin Suite 9.7.0
+
+Admin-Log je Admin mit Orten und Ungelesen-Zählern, Discord-Staff-Chat in der App (Bilder, Dateien, Sprachnachrichten, in deinem Namen), einmalige Setup-Links, Schlafens-/Arbeitszeiten für Bark mit kritischem Hinweis nach Notfallneustarts, LuckPerms-Ränge über dem Namen (Java & Bedrock), kompaktere Oberfläche, neue Widgets und Startanimation. [Update 4.0.0](UPDATE-4.0.0.md) · [Suite 9.7.0](Companion/AdminSuite/UPDATE-9.7.0.md).
+
+## Vorheriges Update: Panel 3.3.0 / Admin Suite 9.6.0
 
 Verifizierte Discord-Beitrittshinweise, App-Benutzer mit einzelnen Rechten und eigenen Bark-Einstellungen, Verwaltung vorhandener Discord-Verifizierungen, Container-RAM-Notfallneustart und native Paper-Texteingaben. [Update 3.3.0](UPDATE-3.3.0.md) · [Suite 9.6.0](Companion/AdminSuite/UPDATE-9.6.0.md).
 

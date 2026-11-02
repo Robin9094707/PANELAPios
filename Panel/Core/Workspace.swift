@@ -43,9 +43,9 @@ struct CommandShortcut: Identifiable, Codable {
         else { folders.append(FolderPin(panel: api.base.absoluteString, serverID: server.id, serverName: server.name, path: path)) }; save()
     }
     func isMinecraft(_ api: PanelAPI, _ server: Server) -> Bool {
+        // 4.0: on by default for every server; switch it off per server in „Workspace anpassen“.
         if let value = minecraft[key(api, server)] { return value }
-        let value = (server.name + " " + server.data["invocation"].string + " " + server.data["docker_image"].string).lowercased()
-        return api.demo || ["minecraft", "paper", "java", "smp", "vanilla", "purpur", "spigot"].contains { value.contains($0) }
+        return true
     }
     func setMinecraft(_ value: Bool, _ api: PanelAPI, _ server: Server) { minecraft[key(api, server)] = value; save() }
     func addShortcut(_ value: CommandShortcut, _ api: PanelAPI, _ server: Server) { shortcuts[key(api, server), default: []].append(value); save() }

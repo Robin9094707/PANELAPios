@@ -10,12 +10,15 @@ struct SuiteDirectLoginView: View {
     @State private var password = ""
     @State private var busy = false
     @State private var error: String?
+    @State private var setup = false
     var body: some View {
         NavigationStack { Form {
             Section("Server") { TextField("https://Server-IP:Port", text: $endpoint).keyboardType(.URL); TextField("SHA-256-Fingerabdruck", text: $fingerprint, axis: .vertical).font(.caption.monospaced()) }
+            if existing == nil { Section { Button { setup = true } label: { Label("Lieber per Setup-Link einrichten", systemImage: "link.badge.plus") } } footer: { Text("Mit einem einmaligen Link vom Hauptadmin musst du nichts eintippen.") } }
             Section("App-Zugang") { TextField("Minecraft-Benutzername", text: $username).disabled(existing != nil); SecureField("Passwort", text: $password) }
             Section { Text("Den Fingerabdruck erhältst du vom Hauptadmin mit /sas app fingerprint. Bei einem öffentlich gültigen HTTPS-Zertifikat kann er leer bleiben.").font(.footnote).foregroundStyle(.secondary); Button { Task { await login() } } label: { if busy { ProgressView("Anmelden …") } else { Label("Anmelden & speichern", systemImage: "lock.shield") } }.disabled(busy || endpoint.isEmpty || username.isEmpty || password.isEmpty) }
-        }.textInputAutocapitalization(.never).autocorrectionDisabled().navigationTitle("Admin Suite anmelden").toolbar { Button("Schließen") { dismiss() }.disabled(busy) }.errorAlert($error).task { if let existing { endpoint = existing.endpoint; fingerprint = existing.fingerprint; username = existing.panel.replacingOccurrences(of: "suite-direct:", with: "") } } }.interactiveDismissDisabled(busy)
+        }.textInputAutocapitalization(.never).autocorrectionDisabled().navigationTitle("Admin Suite anmelden").toolbar { Button("Schließen") { dismiss() }.disabled(busy) }.errorAlert($error).task { if let existing { endpoint = existing.endpoint; fingerprint = existing.fingerprint; username = existing.panel.replacingOccurrences(of: "suite-direct:", with: "") } }
+            .sheet(isPresented: $setup) { SuiteSetupRedeemView { dismiss() } } }.interactiveDismissDisabled(busy)
     }
     func login() async {
         busy = true; defer { busy = false }
@@ -50,6 +53,9 @@ struct SuiteDirectDashboard: View {
                     NavigationLink { SuiteDirectEvents(suite: suite) } label: { Label("Serverereignisse", systemImage: "bell.badge") }.disabled(!suite.can("data.events"))
                     NavigationLink { SuiteLiveChatView(suite: suite) } label: { Label("Serverchat", systemImage: "bubble.left.and.bubble.right") }.disabled(!suite.can("data.chat"))
                     NavigationLink { SuiteBarkSettingsView(suite: suite) } label: { Label("Meine Bark-Hinweise", systemImage: "bell.badge") }.disabled(!suite.can("action.notifications.update"))
+                    if suite.features.contains("admin-log-v1") { NavigationLink { SuiteAdminLogView(suite: suite) } label: { Label("Admin-Log", systemImage: "list.bullet.clipboard.fill") }.disabled(!suite.can("data.admin-log")) }
+                    if suite.features.contains("staff-chat-v1") { NavigationLink { SuiteStaffChatView(suite: suite) } label: { Label("Staff-Chat", systemImage: "bubble.left.and.text.bubble.right.fill") }.disabled(!suite.can("data.staff-chat")) }
+                    if suite.features.contains("quiet-hours-v1") { NavigationLink { SuiteQuietHoursView(suite: suite) } label: { Label("Ruhezeiten", systemImage: "moon.zzz.fill") }.disabled(!suite.can("action.notifications.update")) }
                     NavigationLink { SuiteActionsView(suite: suite, actions: actions.filter { !["menu.action", "settings.update"].contains($0.id) }, title: "Suite-Funktionen") } label: { Label("Alle Funktionen", systemImage: "square.grid.2x2") }
                 }
             }

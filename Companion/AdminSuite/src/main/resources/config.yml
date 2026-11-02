@@ -222,7 +222,10 @@ nameplates:
   # Simplex Points are intentionally never rendered above player names.
   show-points: false
   show-luckperms: true
+  # 9.7.0: the player name takes the last colour of the LuckPerms prefix (Java + Geyser/Bedrock).
+  color-names: true
 
+# Visual nicknames were removed in 9.7.0; nicknames.yml is kept untouched.
 nicknames:
   max-length: 24
   allow-colors: true
@@ -1098,3 +1101,12 @@ memory-restart:
   threshold-bytes: 18100000000
   hold-seconds: 300
   countdown-seconds: 60
+
+# Optional 9.7.0 additions. Existing settings, keys, users and data remain authoritative.
+staff-chat:
+  channel-id: '' # private Discord staff channel; synchronised with the app and /staffmsg
+  use-webhook: true # post with the sender's name (needs "Manage Webhooks"), otherwise a clean embed
+emergency-restart:
+  notify-crash: true # critical Bark notice after an unexpected stop (subscribers choose sleep/work override)
+# app-api.owner-name: 'Robin'           # your name for the main key in staff chat and admin log
+# app-api.public-address: 'host:39093'  # used for complete setup links from the console

@@ -9,6 +9,13 @@ struct SuiteUpgradeView: View {
                 NavigationLink { SuiteUsersView(suite: suite) } label: { Label("App-Benutzer & Rechte", systemImage: "person.badge.key.fill") }.disabled(!suite.can("data.access"))
                 NavigationLink { SuiteLinksView(suite: suite) } label: { Label("Discord-Verifizierungen", systemImage: "link") }.disabled(!suite.can("data.links"))
                 if suite.can("action.notifications.update") { NavigationLink { SuiteBarkSettingsView(suite: suite) } label: { Label("Meine Bark-Benachrichtigungen", systemImage: "bell.badge") } }
+                if suite.can("action.notifications.update") && suite.features.contains("quiet-hours-v1") { NavigationLink { SuiteQuietHoursView(suite: suite) } label: { Label("Ruhezeiten & Notfallneustart", systemImage: "moon.zzz.fill") } }
+            }
+            if suite.features.contains("app-settings-v1") || suite.features.contains("staff-chat-v1") {
+                Section("Team & Einstellungen") {
+                    if suite.features.contains("staff-chat-v1") { NavigationLink { SuiteStaffChatSettingsView(suite: suite) } label: { Label("Staff-Chat & Discord-Kanal", systemImage: "bubble.left.and.text.bubble.right") }.disabled(suite.scope != "full") }
+                    if suite.features.contains("app-settings-v1") { NavigationLink { SuiteAppSettingsView(suite: suite) } label: { Label("Weitere Suite-Einstellungen", systemImage: "switch.2") }.disabled(!suite.can("data.app-settings")) }
+                }
             }
             Section("Serverregeln") {
                 NavigationLink { SuiteMemoryGuardView(suite: suite) } label: { Label("RAM-Notfallneustart", systemImage: "memorychip") }.disabled(!suite.can("data.memory"))
@@ -52,8 +59,20 @@ struct SuiteUsersView: View {
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteUpgradeModel(suite)) }
     var body: some View {
         List {
-            Section { Text("Passwörter: mindestens 12 Zeichen. Änderungen an Passwort oder Rechten melden alle Sitzungen dieses Benutzers ab. Alte API-Schlüssel bleiben bestehen.").font(.footnote).foregroundStyle(.secondary) }
-            ForEach(model.data["items"].array, id: \.["username"].string) { row in Button { selected = row } label: { Label(row["username"].string, systemImage: row["enabled"].bool ? "person.crop.circle.badge.checkmark" : "person.crop.circle.badge.xmark") }.disabled(!suite.can("action.accounts.update")) }
+            Section { Text("Passwörter: mindestens 12 Zeichen. Änderungen an Passwort oder Rechten melden alle Sitzungen dieses Benutzers ab. Alte API-Schlüssel bleiben bestehen." + (suite.features.contains("setup-links-v1") ? " Tippe auf einen Benutzer, um einen einmaligen Setup-Link zu erstellen." : "")).font(.footnote).foregroundStyle(.secondary) }
+            ForEach(model.data["items"].array, id: \.["username"].string) { row in
+                HStack {
+                    Button { selected = row } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label(row["username"].string, systemImage: row["enabled"].bool ? "person.crop.circle.badge.checkmark" : "person.crop.circle.badge.xmark")
+                            HStack(spacing: 8) {
+                                if row["sessions"] != .null { Text(row["sessions"].int == 1 ? "1 Gerät angemeldet" : "\(row["sessions"].int) Geräte angemeldet") }
+                                if row["setupExpires"].double > 0 { Text("· Setup-Link offen") .foregroundStyle(Color.panelAccent) }
+                            }.font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.disabled(!suite.can("action.accounts.update"))
+                }
+            }
             if !model.notice.isEmpty { Text(model.notice).foregroundStyle(.green) }
         }.panelScreen().navigationTitle("App-Benutzer").toolbar { Button("Neu", systemImage: "plus") { adding = true }.disabled(!suite.can("action.accounts.update")) }.task { await model.load("access") }.refreshable { await model.load("access") }.errorAlert($model.error)
             .sheet(isPresented: Binding(get: { adding || selected != nil }, set: { if !$0 { adding = false; selected = nil } })) { SuiteUserEditor(suite: suite, row: selected ?? .null, catalog: model.data["catalog"].array) { await model.load("access") } }
@@ -81,6 +100,7 @@ struct SuiteUserEditor: View {
                     Toggle(isOn: Binding(get: { rights.contains(item["id"].string) }, set: { if $0 { rights.insert(item["id"].string) } else { rights.remove(item["id"].string) } })) { VStack(alignment: .leading) { Text(item["title"].string); Text(item["id"].string).font(.caption.monospaced()).foregroundStyle(.secondary) } }
                 }
             }
+            if row != .null && row["enabled"].bool && suite.features.contains("setup-links-v1") { Section { NavigationLink { SuiteSetupLinkCreator(suite: suite, username: row["username"].string) } label: { Label("Setup-Link erstellen", systemImage: "link.badge.plus") } } footer: { Text("Einmalig gültig (Standard 1 Stunde). Der Empfänger muss nichts eintippen.") } }
             Section { Button("Benutzer speichern") { prepare("save") }.disabled(name.isEmpty || model.busy || (row == .null && password.count < 12) || (!password.isEmpty && password.count < 12)); if row != .null { Button("Benutzer löschen", role: .destructive) { prepare("delete") }.disabled(model.busy) } }
             if !model.notice.isEmpty { Text(model.notice).foregroundStyle(.green) }
         }.navigationTitle(row == .null ? "Neuer App-Benutzer" : name).toolbar { Button("Fertig") { Task { await saved(); dismiss() } }.disabled(model.busy) }.task { name = row["username"].string; enabled = row == .null || row["enabled"].bool; rights = Set(row["permissions"].array.map(\.string)) }.modifier(UpgradeFeedback(model: model, route: "access")) }.interactiveDismissDisabled(model.busy)

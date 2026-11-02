@@ -51,6 +51,7 @@ struct SuiteAdminCenterView: View {
     @ObservedObject private var bookmarks = SuitePlayerBookmarks.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var restartSheet = false
+    @State private var adminLogUnread = 0
     var body: some View {
         Group {
             if let suite = model.api { content(suite) }
@@ -81,15 +82,19 @@ struct SuiteAdminCenterView: View {
         }.panelScreen().refreshable { await model.load(force: true); await center.load(suite) }.scrollBounceBehavior(.always)
             .task(id: "\(scenePhase)-\(ObjectIdentifier(suite))") {
                 guard scenePhase == .active else { return }
-                await center.load(suite)
+                await center.load(suite); await loadAdminLog(suite)
                 while !Task.isCancelled {
                     do { try await Task.sleep(for: .seconds(center.dashboard["restart"]["active"].bool ? 3 : 20)) } catch { return }
-                    await center.load(suite)
+                    await center.load(suite); await loadAdminLog(suite)
                 }
             }
             .sheet(isPresented: $restartSheet) { NavigationStack { SuiteRestartView(suite: suite).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { restartSheet = false } } } } }
     }
     var dashboard: JSON { center.dashboard }
+    func loadAdminLog(_ suite: SuiteAPI) async {
+        guard suite.features.contains("admin-log-v1"), suite.can("data.admin-log") else { return }
+        if let value = try? await suite.data("admin-log") { adminLogUnread = value["unread"].int }
+    }
     func header(_ suite: SuiteAPI) -> some View {
         HStack(alignment: .center, spacing: 14) {
             ZStack { RoundedRectangle(cornerRadius: 16).fill(LinearGradient(colors: [Color.panelAccent, Color.panelSecondary], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 54, height: 54); Image(systemName: "shield.lefthalf.filled").font(.title2.bold()).foregroundStyle(.white) }.accessibilityHidden(true)
@@ -211,6 +216,11 @@ struct SuiteAdminCenterView: View {
         return VStack(alignment: .leading, spacing: 12) {
             Label("Werkzeuge", systemImage: "square.grid.2x2.fill").font(.headline)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
+                if features.contains("admin-log-v1") { SuiteToolTile(title: "Admin-Log", symbol: "list.bullet.clipboard.fill", tint: .red, badge: adminLogUnread, identifier: "adminCenterAdminLog") { SuiteAdminLogView(suite: suite, panel: model.panel, server: model.server) }.disabled(!suite.can("data.admin-log")) }
+                if features.contains("staff-chat-v1") { SuiteToolTile(title: "Staff-Chat", symbol: "bubble.left.and.text.bubble.right.fill", tint: .teal, identifier: "adminCenterStaffChat") { SuiteStaffChatView(suite: suite) }.disabled(!suite.can("data.staff-chat")) }
+                if features.contains("staff-tasks-v1") { SuiteToolTile(title: "Staff-Aufgaben", symbol: "checklist", tint: .orange) { SuiteStaffTasksView(suite: suite) }.disabled(!suite.can("data.staff-tasks")) }
+                if features.contains("quiet-hours-v1") && suite.can("action.notifications.update") { SuiteToolTile(title: "Ruhezeiten", symbol: "moon.zzz.fill", tint: .indigo) { SuiteQuietHoursView(suite: suite) } }
+                if features.contains("app-settings-v1") && suite.scope == "full" { SuiteToolTile(title: "App-Einstellungen", symbol: "switch.2", tint: .gray) { SuiteAppSettingsView(suite: suite) }.disabled(!suite.can("data.app-settings")) }
                 SuiteToolTile(title: "Spieler", symbol: "person.2.fill", tint: Color.panelAccent) { SuitePlayersView(suite: suite, panel: model.panel, server: model.server, actions: model.actions) } .disabled(!suite.can("data.players"))
                 if features.contains("tickets-v1") { SuiteToolTile(title: "Tickets", symbol: "ticket.fill", tint: .mint, badge: dashboard["tickets"]["open"].int, identifier: "adminCenterTickets") { SuiteTicketsView(suite: suite, panel: model.panel, server: model.server) }.disabled(!suite.can("data.tickets")) }
                 if features.contains("public-chat-v1") { SuiteToolTile(title: "Serverchat", symbol: "bubble.left.and.text.bubble.right.fill", tint: .blue) { SuiteLiveChatView(suite: suite) } }

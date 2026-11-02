@@ -3,12 +3,16 @@ import Combine
 
 enum DashboardScope: String, Codable { case home, server }
 enum DashboardCard: String, Codable, CaseIterable, Identifiable {
-    case welcome, folders, servers, fleet, favorites, account, transfers
-    case identity, players, resources, cpuHistory, network, health, memoryHistory, shortcuts, minecraftTools, storageTools
+    case welcome, folders, servers, fleet, favorites, account, transfers, suitePulse, quickMenu
+    case identity, players, resources, cpuHistory, network, health, memoryHistory, shortcuts, minecraftTools, storageTools, combinedHistory, quickActions
     var id: String { rawValue }
     var title: String {
         switch self {
         case .transfers: return "Übertragungen"
+        case .suitePulse: return "Admin Suite live"
+        case .quickMenu: return "Schnellmenü"
+        case .combinedHistory: return "CPU & RAM kombiniert"
+        case .quickActions: return "Schnellaktionen"
         case .minecraftTools: return "Minecraft-Werkzeuge"
         case .storageTools: return "Dateien, Backups & Datenbanken"
         case .welcome: return "Begrüßung"
@@ -30,6 +34,10 @@ enum DashboardCard: String, Codable, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .transfers: return "arrow.up.arrow.down.circle"
+        case .suitePulse: return "waveform.path.ecg.rectangle"
+        case .quickMenu: return "square.grid.3x3.fill"
+        case .combinedHistory: return "chart.xyaxis.line"
+        case .quickActions: return "bolt.circle"
         case .minecraftTools: return "globe.europe.africa"
         case .storageTools: return "externaldrive"
         case .welcome: return "hand.wave"
@@ -49,10 +57,10 @@ enum DashboardCard: String, Codable, CaseIterable, Identifiable {
         }
     }
     static func available(_ scope: DashboardScope) -> [Self] {
-        scope == .home ? [.welcome, .folders, .servers, .fleet, .favorites, .account, .transfers] : [.identity, .players, .resources, .cpuHistory, .network, .health, .memoryHistory, .shortcuts, .minecraftTools, .storageTools]
+        scope == .home ? [.welcome, .quickMenu, .suitePulse, .folders, .servers, .fleet, .favorites, .account, .transfers] : [.identity, .quickActions, .players, .resources, .combinedHistory, .cpuHistory, .network, .health, .memoryHistory, .shortcuts, .minecraftTools, .storageTools]
     }
     static func defaults(_ scope: DashboardScope) -> [Self] {
-        scope == .home ? [.welcome, .folders, .servers] : [.identity, .players, .resources, .cpuHistory, .network]
+        scope == .home ? [.welcome, .quickMenu, .suitePulse, .folders, .servers] : [.identity, .players, .resources, .combinedHistory, .cpuHistory, .network]
     }
     static func normalize(_ raw: [String], scope: DashboardScope) -> [Self] {
         let allowed = available(scope)

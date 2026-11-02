@@ -117,6 +117,15 @@ final class SuiteTransport: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         token = value
         return value
     }
+    /// Redeems a one-time setup link (Admin Suite 9.7.0) and keeps the new session token.
+    func redeem(code: String) async throws -> JSON {
+        let result = try await request("setup", method: "POST", body: .object(["code": .string(code)]))
+        let value = result["token"].string
+        guard value.hasPrefix("sasu_"), value.count <= 160 else { throw PanelError(message: "Ungültige Antwort auf den Setup-Link.") }
+        token = value
+        return result
+    }
+    var sessionToken: String { token }
     func health() async throws -> JSON {
         let result = try await request("health")
         guard result["apiVersion"].int == 1, !result["serverId"].string.isEmpty else { throw PanelError(message: "Diese Adresse liefert keine kompatible Simplex-Admin-Suite-API.") }

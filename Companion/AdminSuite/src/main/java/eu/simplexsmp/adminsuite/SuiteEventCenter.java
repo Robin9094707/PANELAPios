@@ -12,7 +12,7 @@ import org.bukkit.entity.Player;
 
 /** Bounded independent event ledger. Existing punishment/report/profile formats are untouched. */
 final class SuiteEventCenter {
-    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent","ticket-low","ticket-high");
+    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent","ticket-low","ticket-high","emergency-restart","admin-log","staff-chat");
     static final Set<String> LEVELS = Set.of("active","passive","timeSensitive","critical");
     private final SimplexAdminSuite plugin;
     private final Path eventsFile, subscriptionsFile;
@@ -85,7 +85,7 @@ final class SuiteEventCenter {
     }
     synchronized Object subscription(String owner) {
         String prefix=owner+".";
-        return SimplexAdminSuite.appMap("enabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"enabled","false")),"configured",!subscriptions.getProperty(prefix+"key","").isBlank(),"events",subscriptions.getProperty(prefix+"events","ban-evasion,vpn-kick,overload,client-brand"),"level",subscriptions.getProperty(prefix+"level","active"),"critical",subscriptions.getProperty(prefix+"critical","critical"),"sound",subscriptions.getProperty(prefix+"sound","minuet"),"criticalSound",subscriptions.getProperty(prefix+"criticalSound","alarm"),"rules",subscriptions.getProperty(prefix+"rules",""),"quietMode",subscriptions.getProperty(prefix+"quietMode","off"),"quietStart",subscriptions.getProperty(prefix+"quietStart","22:00"),"quietEnd",subscriptions.getProperty(prefix+"quietEnd","07:00"),"timezone",subscriptions.getProperty(prefix+"timezone","Europe/Berlin"),"quietKinds",subscriptions.getProperty(prefix+"quietKinds",""),"deliveryStatus",deliveryStatus);
+        return SimplexAdminSuite.appMap("enabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"enabled","false")),"configured",!subscriptions.getProperty(prefix+"key","").isBlank(),"events",subscriptions.getProperty(prefix+"events","ban-evasion,vpn-kick,overload,client-brand"),"level",subscriptions.getProperty(prefix+"level","active"),"critical",subscriptions.getProperty(prefix+"critical","critical"),"sound",subscriptions.getProperty(prefix+"sound","minuet"),"criticalSound",subscriptions.getProperty(prefix+"criticalSound","alarm"),"rules",subscriptions.getProperty(prefix+"rules",""),"quietMode",subscriptions.getProperty(prefix+"quietMode","off"),"quietStart",subscriptions.getProperty(prefix+"quietStart","22:00"),"quietEnd",subscriptions.getProperty(prefix+"quietEnd","07:00"),"timezone",subscriptions.getProperty(prefix+"timezone","Europe/Berlin"),"quietKinds",subscriptions.getProperty(prefix+"quietKinds",""),"workEnabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"workEnabled","false")),"workStart",subscriptions.getProperty(prefix+"workStart","08:00"),"workEnd",subscriptions.getProperty(prefix+"workEnd","17:00"),"workDays",subscriptions.getProperty(prefix+"workDays","1,2,3,4,5"),"emergencyEnabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"emergencyEnabled","true")),"emergencyOverride",subscriptions.getProperty(prefix+"emergencyOverride","both"),"sleepActive",BarkPolicy.quiet(subscriptions,prefix,java.time.Instant.now()),"workActive",BarkPolicy.working(subscriptions,prefix,java.time.Instant.now()),"deliveryStatus",deliveryStatus);
     }
     synchronized Object configure(String owner,Map<String,Object> values) throws IOException {
         String prefix=owner+".";Properties next=new Properties();next.putAll(subscriptions);
@@ -107,6 +107,23 @@ final class SuiteEventCenter {
         subscriptions.clear();subscriptions.putAll(next);
         return SimplexAdminSuite.appMap("ok",true,"title","Benachrichtigungen gespeichert","description","Ereignisse werden vom Minecraft-Plugin an Bark gesendet, auch wenn die Panel-App geschlossen ist.");
     }
+    /** 9.7.0 quiet hours: sleep window (existing quiet* keys), working hours and emergency-restart override. Other Bark settings stay untouched. */
+    synchronized Object configureQuiet(String owner,Map<String,Object> values) throws IOException {
+        String prefix=owner+".";Properties next=new Properties();next.putAll(subscriptions);
+        String mode=String.valueOf(values.getOrDefault("sleepMode","off"));if(!Set.of("off","all","critical","selected").contains(mode))throw new IllegalArgumentException("Schlafenszeit-Modus ungültig");
+        java.time.LocalTime.parse(String.valueOf(values.getOrDefault("sleepStart","22:00")));java.time.LocalTime.parse(String.valueOf(values.getOrDefault("sleepEnd","07:00")));
+        java.time.LocalTime.parse(String.valueOf(values.getOrDefault("workStart","08:00")));java.time.LocalTime.parse(String.valueOf(values.getOrDefault("workEnd","17:00")));
+        java.time.ZoneId.of(String.valueOf(values.getOrDefault("timezone","Europe/Berlin")));BarkPolicy.days(String.valueOf(values.getOrDefault("workDays","1,2,3,4,5")));
+        String override=String.valueOf(values.getOrDefault("emergencyOverride","both"));if(!Set.of("none","work","sleep","both").contains(override))throw new IllegalArgumentException("Notfall-Ausnahme ungültig");
+        for(String kind:String.valueOf(values.getOrDefault("quietKinds","")).split(","))if(!kind.isBlank()&&!TYPES.contains(kind))throw new IllegalArgumentException("Unbekanntes Ereignis: "+kind);
+        next.setProperty(prefix+"quietMode",mode);next.setProperty(prefix+"quietStart",String.valueOf(values.getOrDefault("sleepStart","22:00")));next.setProperty(prefix+"quietEnd",String.valueOf(values.getOrDefault("sleepEnd","07:00")));
+        next.setProperty(prefix+"timezone",String.valueOf(values.getOrDefault("timezone","Europe/Berlin")));next.setProperty(prefix+"quietKinds",String.valueOf(values.getOrDefault("quietKinds","")));
+        next.setProperty(prefix+"workEnabled",Boolean.toString(Boolean.parseBoolean(String.valueOf(values.getOrDefault("workEnabled","false")))));next.setProperty(prefix+"workStart",String.valueOf(values.getOrDefault("workStart","08:00")));next.setProperty(prefix+"workEnd",String.valueOf(values.getOrDefault("workEnd","17:00")));next.setProperty(prefix+"workDays",String.join(",",BarkPolicy.days(String.valueOf(values.getOrDefault("workDays","1,2,3,4,5"))).stream().map(String::valueOf).toList()));
+        next.setProperty(prefix+"emergencyEnabled",Boolean.toString(Boolean.parseBoolean(String.valueOf(values.getOrDefault("emergencyEnabled","true")))));next.setProperty(prefix+"emergencyOverride",override);
+        AtomicState.save(subscriptionsFile,next,"Private Bark subscriptions. Do not share.");AppApiSecurity.protect(subscriptionsFile);
+        subscriptions.clear();subscriptions.putAll(next);
+        return SimplexAdminSuite.appMap("ok",true,"title","Ruhezeiten gespeichert","description","Schlafenszeit, Arbeitszeit und Notfallneustart-Hinweis gelten ab sofort für deine Bark-Mitteilungen.");
+    }
     synchronized Object acknowledge(String owner,String id)throws IOException {Properties next=new Properties();next.putAll(subscriptions);String stem="alarm."+owner+"."+id;for(String suffix:List.of(".row",".next",".owner"))next.remove(stem+suffix);if(events.containsKey(id))next.setProperty("ack."+owner+"."+id,Long.toString(System.currentTimeMillis()));AtomicState.save(subscriptionsFile,next,"Private Bark subscriptions and alarms");subscriptions.clear();subscriptions.putAll(next);return SimplexAdminSuite.appMap("ok",true,"title","Alarm bestätigt","description","Weitere Wiederholungen für diesen Alarm sind beendet.");}
     private void push(Map<String,Object> row) throws Exception {push(row,null,false);}
     private void push(Map<String,Object> row,String onlyOwner,boolean repeated) throws Exception {
@@ -117,10 +134,12 @@ final class SuiteEventCenter {
             if(plugin.appApi==null||!plugin.appApi.security.canNotifyOwner(owner))continue;
             String type=String.valueOf(row.get("type"));String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
             // Tickets reach every Bark subscriber until the app stores an explicit rule for them.
-            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true)))continue;
+            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true))&&!type.equals("emergency-restart"))continue;
             boolean critical=Boolean.TRUE.equals(row.get("critical"));String hint=row.get("level") instanceof String h&&LEVELS.contains(h)?h:null;
             String level=rule!=null?rule[1]:hint!=null?hint:copy.getProperty(prefix+(critical?"critical":"level"),"active");
-            if(level.equals("off")||!BarkPolicy.allowed(copy,prefix,type,level,java.time.Instant.now()))continue;
+            if(type.equals("emergency-restart")&&rule==null)level="critical";
+            if(level.equals("off"))continue;
+            level=BarkPolicy.decide(copy,prefix,type,level,java.time.Instant.now());if(level==null)continue;
             String sound=rule==null?copy.getProperty(prefix+(critical?"criticalSound":"sound"),"minuet"):rule[2];int repeat=rule==null?0:Integer.parseInt(rule[3]);
 
             if(repeated){boolean retained;synchronized(this){retained=events.containsKey(String.valueOf(row.get("id")));}if(repeat==0||!retained){acknowledge(owner,String.valueOf(row.get("id")));continue;}}

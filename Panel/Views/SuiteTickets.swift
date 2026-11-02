@@ -167,39 +167,50 @@ struct SuiteTicketDetailView: View {
             else { content }
         }.navigationTitle("Ticket #" + id).navigationBarTitleDisplayMode(.inline)
     }
+    /// 4.0: chat-style layout. The history opens anchored at the newest message, the composer stays pinned
+    /// above the keyboard and long tickets render lazily, so even very long conversations stay smooth.
+    @State private var showDetails = false
+    @State private var atBottom = true
     var content: some View {
         ScrollViewReader { proxy in
-            List {
-                if ticket == .null { ProgressView("Ticket wird geladen …") }
-                else {
-                    header
-                    if !waiting.isEmpty && canManage && attachmentsSupported {
-                        Section {
-                            Label(waiting.count == 1 ? "1 Antwort wartet auf den Spieler" : "\(waiting.count) Antworten warten auf den Spieler", systemImage: "clock.badge").font(.subheadline)
-                            Button("Zustellung im Spiel verwerfen", systemImage: "xmark.bin", role: .destructive) { confirmDiscard = true }.disabled(!suite.can("ticket.discard"))
-                        } footer: { Text("Verworfene Antworten bleiben im Verlauf und auf Discord, werden dem Spieler im Spiel aber nicht mehr zugestellt.") }
-                    }
-                    Section("Verlauf") {
-                        ForEach(Array(ticket["items"].array.enumerated()), id: \.offset) { _, message in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    if ticket == .null { ProgressView("Ticket wird geladen …").frame(maxWidth: .infinity).padding(.top, 40) }
+                    else {
+                        header
+                        if !waiting.isEmpty && canManage && attachmentsSupported {
+                            HStack(spacing: 10) {
+                                Label(waiting.count == 1 ? "1 Antwort wartet auf den Spieler" : "\(waiting.count) Antworten warten auf den Spieler", systemImage: "clock.badge").font(.subheadline)
+                                Spacer()
+                                Button("Verwerfen", systemImage: "xmark.bin", role: .destructive) { confirmDiscard = true }.font(.caption).buttonStyle(.bordered).disabled(!suite.can("ticket.discard"))
+                            }.padding(12).background(.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        let items = ticket["items"].array
+                        if items.count > 1 { Text("\(items.count) Nachrichten").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity) }
+                        ForEach(Array(items.enumerated()), id: \.offset) { _, message in
                             SuiteTicketBubble(message: message, ownerOnline: ticket["ownerOnline"].bool, suite: suite, ticket: id, preview: $preview)
-                                .listRowSeparator(.hidden).id("m-" + message["id"].string)
+                                .id("m-" + message["id"].string)
                                 .contextMenu {
                                     Button("Text kopieren", systemImage: "doc.on.doc") { Clipboard.copy(message["text"].string) }
                                     if canManage && attachmentsSupported && message["role"].string == "staff" && !message["delivered"].bool { Button("Zustellung verwerfen", systemImage: "xmark.bin", role: .destructive) { Task { await perform(["action": .string("discard"), "message": .string(message["id"].string)]) } } }
                                 }
                         }
+                        Color.clear.frame(height: 1).id("ticket-bottom").onAppear { atBottom = true }.onDisappear { atBottom = false }
                     }
-                    if canManage { composer } else { Section { Text("Antworten ist mit diesem Zugang nicht freigegeben.").font(.footnote).foregroundStyle(.secondary) } }
+                }.padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: 900).frame(maxWidth: .infinity)
+            }.defaultScrollAnchor(.bottom).scrollDismissesKeyboard(.interactively).panelScreen().errorAlert($error)
+                .safeAreaInset(edge: .bottom, spacing: 0) { if ticket != .null { if canManage { composer } else { Text("Antworten ist mit diesem Zugang nicht freigegeben.").font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(12).background(.bar) } } }
+                .overlay(alignment: .bottomTrailing) {
+                    if !atBottom && ticket != .null { Button { withAnimation(.snappy) { proxy.scrollTo("ticket-bottom", anchor: .bottom) } } label: { Image(systemName: "arrow.down").font(.headline).padding(12) }.buttonStyle(.glass).clipShape(Circle()).padding(.trailing, 16).padding(.bottom, canManage ? 96 : 56).accessibilityLabel("Zur neuesten Nachricht") }
                 }
-            }.panelScreen().errorAlert($error)
                 .toolbar { if suite.scope != "read" && ticket != .null { actionsMenu } }
                 .refreshable { await load() }
                 .task(id: scenePhase) {
                     guard scenePhase == .active else { return }
-                    await load(); if let last = ticket["items"].array.last { proxy.scrollTo("m-" + last["id"].string, anchor: .bottom) }
+                    await load(); proxy.scrollTo("ticket-bottom", anchor: .bottom)
                     while !Task.isCancelled && !deleted { do { try await Task.sleep(for: .seconds(5)) } catch { return }; await load() }
                 }
-                .onChange(of: ticket["items"].array.count) { old, new in if new > old, let last = ticket["items"].array.last { withAnimation { proxy.scrollTo("m-" + last["id"].string, anchor: .bottom) } } }
+                .onChange(of: ticket["items"].array.count) { old, new in if new > old && (atBottom || old == 0) { withAnimation(.snappy) { proxy.scrollTo("ticket-bottom", anchor: .bottom) } } }
                 .onChange(of: photos) { _, items in Task { await addPhotos(items) } }
                 .sheet(item: $preview) { SuiteTicketImageViewer(suite: suite, ticket: id, preview: $0) }
                 .sheet(isPresented: $importing) { FileImportPicker(multiple: true, retainSelection: true) { result in importing = false; if case .success(let urls) = result { addFiles(urls) } else if case .failure(let failure) = result { error = failure.localizedDescription } }.ignoresSafeArea() }
@@ -210,25 +221,28 @@ struct SuiteTicketDetailView: View {
         }
     }
     var composer: some View {
-        Section {
-            TextField(active ? "Antwort an " + ticket["ownerName"].string : "Antwort öffnet das Ticket wieder", text: $reply, axis: .vertical).lineLimit(2...8).accessibilityIdentifier("ticketReply")
+        VStack(alignment: .leading, spacing: 8) {
             if !drafts.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) { ForEach(drafts) { draft in SuiteTicketDraftChip(draft: draft) { drafts.removeAll { $0.id == draft.id } } } }
                 }
             }
-            if attachmentsSupported {
-                HStack(spacing: 10) {
-                    PhotosPicker(selection: $photos, maxSelectionCount: 4, matching: .images) { Label("Bilder", systemImage: "photo.on.rectangle") }.buttonStyle(.glass)
-                    Button("Datei", systemImage: "paperclip") { importing = true }.buttonStyle(.glass)
-                    Spacer()
+            if let notice { Label(notice, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            HStack(alignment: .bottom, spacing: 8) {
+                if attachmentsSupported {
+                    Menu {
+                        Button("Datei anhängen", systemImage: "paperclip") { importing = true }
+                        if canMention { Toggle(isOn: $mention) { Label("\(ticket["ownerName"].string) auf Discord erwähnen", systemImage: "at") } }
+                    } label: { Image(systemName: "plus.circle.fill").font(.title2).foregroundStyle(Color.panelAccent) }.accessibilityLabel("Anhänge und Optionen")
+                    PhotosPicker(selection: $photos, maxSelectionCount: 4, matching: .images) { Image(systemName: "photo").font(.title3).foregroundStyle(Color.panelAccent) }.accessibilityLabel("Bilder anhängen")
                 }
-                if canMention { Toggle(isOn: $mention) { Label("\(ticket["ownerName"].string) auf Discord erwähnen", systemImage: "at") } }
+                TextField(active ? "Antwort an " + ticket["ownerName"].string : "Antwort öffnet das Ticket wieder", text: $reply, axis: .vertical).lineLimit(1...6)
+                    .padding(.horizontal, 12).padding(.vertical, 8).background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 18)).accessibilityIdentifier("ticketReply")
+                Button { Task { await send(confirmed: false) } } label: { if busy { ProgressView().frame(width: 34, height: 34) } else { Image(systemName: "arrow.up.circle.fill").font(.system(size: 32)).foregroundStyle(Color.panelAccent) } }
+                    .disabled(busy || (reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && drafts.isEmpty)).accessibilityLabel(drafts.isEmpty ? "Antwort senden" : "Senden mit \(drafts.count) Anhängen")
             }
-            Button { Task { await send(confirmed: false) } } label: { Label(busy ? "Senden …" : (drafts.isEmpty ? "Antwort senden" : "Senden (\(drafts.count) Anhang\(drafts.count == 1 ? "" : "e"))"), systemImage: "paperplane.fill") }
-                .buttonStyle(.glassProminent).disabled(busy || (reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && drafts.isEmpty))
-            if let notice { Label(notice, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary) }
-        } header: { Text("Antworten") } footer: { Text(deliveryHint + " **Fett**, *kursiv* und Zeilenumbrüche werden übernommen.") }
+            Text(deliveryHint + (mention ? " · Discord-Erwähnung aktiv" : "")).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+        }.padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 8).background(.bar)
     }
     var deliveryHint: String {
         if ticket["owner"].string.isEmpty { return "Die Antwort erscheint im Discord-Ticket des Spielers." }
@@ -236,30 +250,35 @@ struct SuiteTicketDetailView: View {
         return ticket["ownerOnline"].bool ? "Spieler ist online · Zustellung im Spiel nach \(delay) s ununterbrochener Online-Zeit" + (ticket["linked"].bool ? " und sofort auf Discord." : ".") : "Spieler ist offline · Die Antwort wartet und erscheint nach dem nächsten Beitritt (\(delay) s Online-Zeit)" + (ticket["linked"].bool ? ", auf Discord sofort." : ".")
     }
     var header: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
-                SuiteTicketOwnerAvatar(ticket: ticket, size: 52)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(ticket["subject"].string).font(.headline)
+                SuiteTicketOwnerAvatar(ticket: ticket, size: 44)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(ticket["subject"].string).font(.headline).lineLimit(showDetails ? nil : 2)
                     HStack(spacing: 6) {
                         Text(ticket["ownerName"].string).font(.subheadline)
                         if ticket["ownerOnline"].bool { SuiteTicketChip(text: "Online", symbol: "circle.fill", color: .green) }
-                        if ticket["linked"].bool { SuiteTicketChip(text: "Discord verknüpft", symbol: "link", color: .indigo) }
+                        if ticket["linked"].bool { SuiteTicketChip(text: "Discord", symbol: "link", color: .indigo) }
                     }
                     HStack(spacing: 6) {
                         SuiteTicketChip(text: SuiteTicketText.priority(ticket["priority"].string), symbol: "flag.fill", color: SuiteTicketText.priorityColor(ticket["priority"].string))
                         SuiteTicketChip(text: SuiteTicketText.status(ticket["status"].string), symbol: SuiteTicketText.statusSymbol(ticket["status"].string), color: active ? Color.panelAccent : .secondary)
                     }
                 }
+                Spacer(minLength: 0)
+                Button { withAnimation(.snappy) { showDetails.toggle() } } label: { Image(systemName: showDetails ? "chevron.up.circle.fill" : "info.circle").font(.title3) }.buttonStyle(.plain).foregroundStyle(Color.panelAccent).accessibilityLabel(showDetails ? "Details ausblenden" : "Details anzeigen")
             }
-            LabeledContent("Thema") { Label(SuiteTicketText.category(ticket["category"].string), systemImage: SuiteTicketText.categorySymbol(ticket["category"].string)) }
-            LabeledContent("Erstellt über", value: SuiteTicketText.source(ticket["source"].string))
-            if let date = SuitePlayerPresentation.date(ticket["created"]) { LabeledContent("Erstellt") { Text(date, format: .dateTime.day().month().hour().minute()) } }
-            if !ticket["claimedBy"].string.isEmpty { LabeledContent("Übernommen von", value: ticket["claimedBy"].string) }
-            if !ticket["closedBy"].string.isEmpty { LabeledContent("Geschlossen von", value: ticket["closedBy"].string) }
-            if !ticket["channel"].string.isEmpty, !ticket["guild"].string.isEmpty, let url = URL(string: "https://discord.com/channels/" + ticket["guild"].string + "/" + ticket["channel"].string) { Link(destination: url) { Label("Im Discord öffnen", systemImage: "arrow.up.right.square") } }
-            if let panel, let server, UUID(uuidString: ticket["owner"].string) != nil { NavigationLink { SuitePlayerView(suite: suite, panel: panel, server: server, player: ticket["owner"].string, actions: []) } label: { Label("Spielerprofil öffnen", systemImage: "person.crop.circle") } }
-        }
+            if showDetails {
+                Divider()
+                LabeledContent("Thema") { Label(SuiteTicketText.category(ticket["category"].string), systemImage: SuiteTicketText.categorySymbol(ticket["category"].string)) }
+                LabeledContent("Erstellt über", value: SuiteTicketText.source(ticket["source"].string))
+                if let date = SuitePlayerPresentation.date(ticket["created"]) { LabeledContent("Erstellt") { Text(date, format: .dateTime.day().month().hour().minute()) } }
+                if !ticket["claimedBy"].string.isEmpty { LabeledContent("Übernommen von", value: ticket["claimedBy"].string) }
+                if !ticket["closedBy"].string.isEmpty { LabeledContent("Geschlossen von", value: ticket["closedBy"].string) }
+                if !ticket["channel"].string.isEmpty, !ticket["guild"].string.isEmpty, let url = URL(string: "https://discord.com/channels/" + ticket["guild"].string + "/" + ticket["channel"].string) { Link(destination: url) { Label("Im Discord öffnen", systemImage: "arrow.up.right.square") } }
+                if let panel, let server, UUID(uuidString: ticket["owner"].string) != nil { NavigationLink { SuitePlayerView(suite: suite, panel: panel, server: server, player: ticket["owner"].string, actions: []) } label: { Label("Spielerprofil öffnen", systemImage: "person.crop.circle") } }
+            }
+        }.font(.subheadline).card()
     }
     var actionsMenu: some View {
         Menu {
@@ -494,6 +513,9 @@ struct SuiteTicketBubble: View {
     var ticket = ""
     @Binding var preview: SuiteTicketPreview?
     var role: String { message["role"].string }
+    @State private var expanded = false
+    /// Messages longer than this are collapsed so very long tickets stay readable.
+    var long: Bool { message["text"].string.count > 900 }
     /// Inline Markdown (bold, italic, links) with preserved line breaks; falls back to plain text.
     var formatted: AttributedString { (try? AttributedString(markdown: message["text"].string, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(message["text"].string) }
     var body: some View {
@@ -508,7 +530,10 @@ struct SuiteTicketBubble: View {
                         Text(role == "staff" ? "Team · " + SuiteTicketText.source(message["source"].string) : SuiteTicketText.source(message["source"].string)).font(.caption2).foregroundStyle(.secondary)
                     }
                     if !(message["attachments"].array.isEmpty == false && message["text"].string.hasPrefix("📎 ")) {
-                        Text(formatted).textSelection(.enabled).padding(10).background(role == "staff" ? Color.panelAccent.opacity(0.18) : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(long && !expanded ? AttributedString(String(message["text"].string.prefix(700)) + " …") : formatted).textSelection(.enabled)
+                            if long { Button(expanded ? "Weniger anzeigen" : "Ganze Nachricht anzeigen") { withAnimation(.snappy) { expanded.toggle() } }.font(.caption.weight(.semibold)) }
+                        }.padding(10).background(role == "staff" ? Color.panelAccent.opacity(0.18) : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
                     }
                     if let suite, !message["attachments"].array.isEmpty { SuiteTicketAttachments(suite: suite, ticket: ticket, items: message["attachments"].array, preview: $preview) }
                     HStack(spacing: 4) {
