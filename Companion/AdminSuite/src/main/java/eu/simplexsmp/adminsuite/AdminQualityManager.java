@@ -990,6 +990,41 @@ final class AdminQualityManager implements Listener {
         return true;
     }
 
+    /** 9.7.0 app view of the persistent staff tasks (same store as the Java/Bedrock menus). */
+    synchronized Object appTasks() {
+        List<Map<String, Object>> rows = new ArrayList<>(); long now = System.currentTimeMillis();
+        for (StaffTask t : tasksSnapshot()) rows.add(SimplexAdminSuite.appMap("id", t.id, "title", t.title, "details", t.details, "priority", t.priority.name(), "status", t.status.name(), "createdBy", t.createdBy, "createdAt", t.createdAt, "dueAt", t.dueAt, "assigned", t.assignedName, "completedBy", t.completedBy, "completedAt", t.completedAt, "overdue", t.overdue(now)));
+        return SimplexAdminSuite.appMap("items", rows, "open", openTaskCount(), "overdue", overdueTaskCount());
+    }
+    /** App mutation by name; the app API already enforced the user's right for this action. */
+    synchronized Object appTask(String actor, String operation, long id, String title, String details, String priority, long dueAt) {
+        String who = actor == null || actor.isBlank() ? "App" : actor;
+        switch (operation) {
+            case "create" -> {
+                String clean = clean(title, 80); if (clean.isBlank()) throw new IllegalArgumentException("Titel fehlt");
+                Priority p; try { p = Priority.valueOf(priority.isBlank() ? "NORMAL" : priority); } catch (IllegalArgumentException e) { throw new IllegalArgumentException("Priorität: LOW, NORMAL, HIGH oder URGENT"); }
+                StaffTask task = new StaffTask(nextTaskId++, clean, clean(details, 300), p, TaskStatus.OPEN, who, System.currentTimeMillis(), Math.max(0, dueAt), null, "", "", 0L);
+                tasks.put(task.id, task); trimTasks(); saveTasks(); record(who, "TASK", "Aufgabe erstellt", "#" + task.id + " " + task.title, true);
+            }
+            case "claim", "done", "delete", "priority" -> {
+                StaffTask task = tasks.get(id); if (task == null) throw new IllegalArgumentException("Aufgabe nicht mehr vorhanden. Bitte neu laden.");
+                if (operation.equals("delete")) { tasks.remove(id); record(who, "TASK", "Aufgabe gelöscht", "#" + id + " " + task.title, true); }
+                else if (operation.equals("priority")) { task.priority = nextPriority(task.priority); record(who, "TASK", "Priorität geändert", "#" + id + " = " + task.priority, true); }
+                else if (operation.equals("claim")) {
+                    if (task.status == TaskStatus.DONE) throw new IllegalArgumentException("Erledigte Aufgaben können nicht übernommen werden");
+                    if (who.equalsIgnoreCase(task.assignedName)) { task.assignedUuid = null; task.assignedName = ""; task.status = TaskStatus.OPEN; }
+                    else { Player online = Bukkit.getPlayerExact(who); task.assignedUuid = online == null ? null : online.getUniqueId(); task.assignedName = who; task.status = TaskStatus.CLAIMED; }
+                    record(who, "TASK", task.status == TaskStatus.CLAIMED ? "Aufgabe übernommen" : "Zuweisung gelöst", "#" + id, true);
+                } else if (task.status == TaskStatus.DONE) { task.status = task.assignedName.isBlank() ? TaskStatus.OPEN : TaskStatus.CLAIMED; task.completedAt = 0L; task.completedBy = ""; record(who, "TASK", "Aufgabe wieder geöffnet", "#" + id, true); }
+                else { task.status = TaskStatus.DONE; task.completedAt = System.currentTimeMillis(); task.completedBy = who; record(who, "TASK", "Aufgabe abgeschlossen", "#" + id + " " + task.title, true); }
+                saveTasks();
+            }
+            default -> throw new IllegalArgumentException("Unbekannte Aufgabenaktion");
+        }
+        plugin.qolAudit(who, "Staff-Aufgabe (App)", operation + " #" + id);
+        return SimplexAdminSuite.appMap("ok", true, "title", "Aufgabe gespeichert", "description", "Die Staff-Aufgaben sind in Minecraft, Bedrock und der App aktuell.");
+    }
+
     synchronized ScheduledJob createJob(Player admin, JobAction action, long delayMillis, String payload) {
         if (!requireOperator(admin, "simplexadminsuite.qol.scheduler")) return null;
         if (action == null) return null;

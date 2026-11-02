@@ -14,6 +14,9 @@ struct HomeView: View {
     @State private var search = ""
     @State private var editLayout = false
     @State private var iconRevision = 0
+    @State private var quickHub = false
+    @State private var redeemSetup = false
+    @ObservedObject private var setupInbox = SuiteSetupInbox.shared
     @ObservedObject private var layouts = DashboardLayouts.shared
     var layoutKey: String { "home:" + (store.api?.base.absoluteString ?? "none") + "|" + (store.demo ? "demo" : store.selected?.uuidString ?? "none") }
     var filtered: [Server] { store.servers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.node.localizedCaseInsensitiveContains(search) }.sorted { a, b in
@@ -43,15 +46,20 @@ struct HomeView: View {
                             ForEach(store.profiles) { p in Button { store.select(p.id) } label: { Label(p.name, systemImage: store.selected == p.id && !store.demo ? "checkmark.circle.fill" : "server.rack") } }
                             Button("Panel hinzufügen", systemImage: "plus") { add = true }
                             Button("Mit Admin-Suite-Benutzer anmelden", systemImage: "person.badge.key") { directSuite = true }
+                            Button("Setup-Link einlösen", systemImage: "link.badge.plus") { redeemSetup = true }
                             if store.demo { Button("Demo verlassen") { store.exitDemo() } }
                         } label: { Label(store.demo ? "Demo" : store.active?.name ?? "Panels", systemImage: "square.stack") }
                     }
+                    ToolbarItem(placement: .topBarTrailing) { Button("Admin-Zentrale", systemImage: "shield.lefthalf.filled") { quickHub = true }.accessibilityIdentifier("openQuickHub") }
                     ToolbarItem(placement: .topBarTrailing) { Button("Startseite anpassen", systemImage: "rectangle.3.group") { editLayout = true }.disabled(store.api == nil).accessibilityIdentifier("editHomeLayout") }
                     ToolbarItem(placement: .topBarTrailing) { Button("Übertragungen", systemImage: "arrow.up.arrow.down.circle") { transfers = true } }
                     ToolbarItem(placement: .topBarTrailing) { Button("Einstellungen", systemImage: "slider.horizontal.3") { settings = true } }
                 }
                 .navigationDestination(for: Server.self) { server in if let api = store.api { ServerView(api: api, server: server).id("\(store.selected?.uuidString ?? "demo")-\(server.id)") } }
-                .sheet(isPresented: $editLayout) { DashboardEditor(scope: .home, layoutKey: layoutKey) }
+                .sheet(isPresented: $editLayout) { DashboardEditor(scope: .home, layoutKey: layoutKey).environmentObject(workspace) }
+                .sheet(isPresented: $quickHub) { SuiteQuickHubView().environmentObject(store) }
+                .sheet(isPresented: $redeemSetup) { SuiteSetupRedeemView().environmentObject(store) }
+                .sheet(item: $setupInbox.link) { link in SuiteSetupRedeemView(initial: link).environmentObject(store) }
                 .sheet(isPresented: $add) { AddPanelView() }
                 .sheet(isPresented: $directSuite) { SuiteDirectLoginView() }
                 .sheet(isPresented: $settings) { SettingsView() }
@@ -59,7 +67,7 @@ struct HomeView: View {
                 .sheet(isPresented: $widgets) { NavigationStack { WidgetSettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { widgets = false } } } } }
                 .sheet(isPresented: $suiteEvents) { NavigationStack { SuiteEventInboxView() } }
                 .sheet(isPresented: $suiteTickets) { NavigationStack { SuiteEventInboxView(tickets: true) } }
-                .onOpenURL { url in if url.host == "suite-events" { suiteEvents = true }; if url.host == "suite-tickets" { suiteTickets = true }; if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
+                .onOpenURL { url in if url.host == "setup" { _ = setupInbox.open(url); return }; if url.host == "suite-events" { suiteEvents = true }; if url.host == "suite-tickets" { suiteTickets = true }; if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
                 .task(id: store.api.map { ObjectIdentifier($0) }) { await store.refresh(); await store.pollPresence() }
         }
     }
@@ -87,17 +95,17 @@ struct HomeView: View {
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], spacing: 16) {
                             ForEach(filtered) { server in
-                                VStack(spacing: 12) {
+                                VStack(spacing: 8) {
                                 NavigationLink(value: server) { ServerCard(server: server, api: store.api, iconEnabled: store.api.map { workspace.isMinecraft($0, server) && !$0.demo && !isBedrockOnly(server) } ?? false, iconRevision: iconRevision, presence: store.presence[server.id], favorite: store.api.map { workspace.favorites.contains(workspace.key($0, server)) } ?? false) }.buttonStyle(.plain).accessibilityIdentifier("server-\(server.id)").contextMenu {
                                     if let api = store.api { Button(workspace.favorites.contains(workspace.key(api, server)) ? "Server lösen" : "Server anpinnen", systemImage: "star") { workspace.toggleServer(api, server) } }
+                                    Button("Server-ID kopieren", systemImage: "number") { Clipboard.copy(server.id) }
                                 }
                                 if let api = store.api, suiteConnections.get(api, server) != nil || store.demo && ProcessInfo.processInfo.arguments.contains("--demo-suite") {
-                                    SuiteHomeStatus(panel: api, server: server)
-                                    HStack {
-                                        NavigationLink { SuitePlayerBrowser(panel: api, server: server, filter: .online) } label: { Label("Online-Spieler", systemImage: "person.2.fill") }.accessibilityIdentifier("workspace-online-" + server.id)
-                                        Spacer()
-                                        NavigationLink { SuitePlayerBrowser(panel: api, server: server) } label: { Label("Spieler suchen", systemImage: "magnifyingglass") }
-                                    }.font(.subheadline).padding(.horizontal, 12)
+                                    HStack(alignment: .center, spacing: 10) {
+                                        SuiteHomeStatus(panel: api, server: server)
+                                        NavigationLink { SuitePlayerBrowser(panel: api, server: server, filter: .online) } label: { Image(systemName: "person.2.fill") }.buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel("Online-Spieler").accessibilityIdentifier("workspace-online-" + server.id)
+                                        NavigationLink { SuitePlayerBrowser(panel: api, server: server) } label: { Image(systemName: "magnifyingglass") }.buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel("Spieler suchen")
+                                    }.font(.subheadline).padding(.horizontal, 6)
                                 }
                                 }
                             }
@@ -109,6 +117,8 @@ struct HomeView: View {
         case .transfers:
             TransferDashboardCard { transfers = true }
         case .welcome: hero
+        case .suitePulse: SuitePulseCard { quickHub = true }
+        case .quickMenu: quickMenu
         case .folders: pinnedFolders(api)
         case .servers: serverList
         case .fleet:
@@ -141,6 +151,23 @@ struct HomeView: View {
             }.frame(maxWidth: .infinity, alignment: .leading).card()
         default: EmptyView()
         }
+    }
+    /// 4.0 app menu on the start page: the most used places one tap away.
+    var quickMenu: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 10)], spacing: 10) {
+            quickTile("Admin", "shield.lefthalf.filled", Color.panelAccent) { quickHub = true }
+            quickTile("Übertragungen", "arrow.up.arrow.down.circle.fill", .blue) { transfers = true }
+            quickTile("Widgets", "square.grid.2x2.fill", .orange) { widgets = true }
+            quickTile("Setup-Link", "link.badge.plus", .indigo) { redeemSetup = true }
+            quickTile("Anpassen", "rectangle.3.group.fill", Color.panelSecondary) { editLayout = true }
+            quickTile("Einstellungen", "gearshape.fill", .gray) { settings = true }
+        }.accessibilityIdentifier("homeQuickMenu")
+    }
+    func quickTile(_ title: String, _ symbol: String, _ tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) { Image(systemName: symbol).font(.title3).foregroundStyle(tint); Text(title).font(.caption.weight(.semibold)).foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.8) }
+                .frame(maxWidth: .infinity, minHeight: 64).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(tint.opacity(0.18)) }
+        }.buttonStyle(.plain)
     }
     func fleetCount(_ title: String, count: Int, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) { Text(count, format: .number).font(.title.bold()).foregroundStyle(color); Text(title).font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
@@ -177,20 +204,36 @@ struct ServerCard: View {
     var iconRevision = 0
     var presence: ServerPresence? = nil
     var favorite = false
+    @AppStorage("theme.compactServerCards") private var compact = true
+    var subtitle: String { server.data["description"].string.isEmpty ? server.node : server.data["description"].string }
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                ServerIconView(api: api, server: server, enabled: iconEnabled, revision: iconRevision)
-                Spacer()
+        if compact {
+            // 4.0: one row – icon, name, location and state. The server ID moved into the context menu details.
+            HStack(spacing: 12) {
+                ServerIconView(api: api, server: server, enabled: iconEnabled, revision: iconRevision, size: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) { Text(server.name).font(.headline).foregroundStyle(.primary).lineLimit(1); if favorite { Image(systemName: "star.fill").font(.caption).foregroundStyle(.orange) } }
+                    Label(subtitle, systemImage: "location").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 6)
                 StatePill(state: presence?.state ?? "unknown")
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack { Text(server.name).font(.title2.bold()).foregroundStyle(.primary); if favorite { Image(systemName: "star.fill").font(.subheadline).foregroundStyle(.orange) } }
-                Text(server.data["description"].string.isEmpty ? server.node : server.data["description"].string).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-            }
-            Divider()
-            HStack { Label(server.node, systemImage: "location"); Spacer(); Text(server.id).font(.system(.caption, design: .monospaced)) }.font(.caption).foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity, alignment: .leading).card()
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }.frame(maxWidth: .infinity, alignment: .leading).card()
+        } else {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    ServerIconView(api: api, server: server, enabled: iconEnabled, revision: iconRevision)
+                    Spacer()
+                    StatePill(state: presence?.state ?? "unknown")
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack { Text(server.name).font(.title2.bold()).foregroundStyle(.primary); if favorite { Image(systemName: "star.fill").font(.subheadline).foregroundStyle(.orange) } }
+                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Divider()
+                HStack { Label(server.node, systemImage: "location"); Spacer(); Text(server.id).font(.system(.caption, design: .monospaced)) }.font(.caption).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading).card()
+        }
     }
 }
 struct AddPanelView: View {
@@ -243,6 +286,7 @@ struct SettingsView: View {
     @AppStorage("haptics") private var haptics = true
     @AppStorage("suite.playerHeads") private var playerHeads = true
     @State private var remove: PanelProfile?
+    @State private var redeemSetup = false
     var body: some View {
         NavigationStack {
             Form {
@@ -250,6 +294,7 @@ struct SettingsView: View {
                 Section("Editor & Bedienung") { Toggle("Syntaxfarben im Texteditor", isOn: $syntaxColors); Toggle("Haptisches Feedback", isOn: $haptics) }
                 Section("Widgets & Übertragungen") { NavigationLink("Server-Widgets einrichten") { WidgetSettingsView() }; TransferLink() }
                 Section("Sicherheit") { Toggle("App mit Face ID / Gerätecode sperren", isOn: $store.biometricLock) }
+                Section { Button { redeemSetup = true } label: { Label("Setup-Link einlösen", systemImage: "link.badge.plus") } } header: { Text("Admin-Suite-Zugang") } footer: { Text("Einen einmaligen Link vom Hauptadmin einfügen – Adresse, Zertifikat und Anmeldung werden automatisch übernommen.") }
                 Section { Toggle("Spielerköpfe anzeigen", isOn: $playerHeads) } header: { Text("Admin Suite") } footer: { Text("Lädt öffentliche Avatare von Java-Spielern über mc-heads.net. Bedrock-Spieler zeigen weiterhin ihr Plattformsymbol.") }
                 Section("Gespeicherte Panels") {
                     ForEach(store.profiles) { p in HStack { VStack(alignment: .leading) { Text(p.name); Text(p.provider.title + " · " + p.url).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Entfernen", systemImage: "trash", role: .destructive) { remove = p }.labelStyle(.iconOnly) } }
@@ -262,6 +307,7 @@ struct SettingsView: View {
                     Text("Unabhängiger Client für Pterodactyl und CubeCoders AMP. Funktionen und Limits richten sich nach deinem Hoster und deinen Panel-Berechtigungen.").font(.footnote).foregroundStyle(.secondary)
                 }
             }.panelScreen().navigationTitle("Einstellungen").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
+                .sheet(isPresented: $redeemSetup) { SuiteSetupRedeemView().environmentObject(store) }
                 .confirmationDialog("Gespeicherten Zugang entfernen?", isPresented: Binding(get: { remove != nil }, set: { if !$0 { remove = nil } }), titleVisibility: .visible) {
                     Button("Zugang entfernen", role: .destructive) { if let p = remove { store.remove(p) }; remove = nil }
                 } message: { Text("Der lokale API-Schlüssel wird gelöscht. Dein Server bleibt bestehen.") }

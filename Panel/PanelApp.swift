@@ -11,6 +11,8 @@ import SwiftUI
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage(WhatsNew.lastSeenKey) private var whatsNewSeen = ""
     @State private var whatsNew: WhatsNewRelease?
+    @AppStorage("theme.launchAnimation") private var launchAnimation = true
+    @State private var launching = !ProcessInfo.processInfo.arguments.contains("--demo")
     var body: some Scene {
         WindowGroup {
             Group {
@@ -24,6 +26,8 @@ import SwiftUI
                 .sheet(item: $whatsNew, onDismiss: { whatsNewSeen = WhatsNew.current }) { WhatsNewView(release: $0).presentationDetents([.large]) }
                 .task(id: store.locked) { presentWhatsNewIfNeeded() }
                 .privacySensitive()
+                .onOpenURL { url in _ = SuiteSetupInbox.shared.open(url) }
+                .overlay { if launching && launchAnimation { LaunchAnimationView(visible: $launching).transition(.opacity).zIndex(10) } }
                 .overlay { if scenePhase == .background { PanelBackground().overlay { Image(systemName: "server.rack").font(.system(size: 60)).foregroundStyle(.teal) } } }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     if phase == .background { transfers.persist(force: true); ServerActivityManager.shared.suspend(); store.lock() }

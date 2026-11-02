@@ -82,7 +82,7 @@ struct ServerView: View {
             .onChange(of: live.players) { _, _ in publishStatus() }
             .onChange(of: suite.updated) { _, _ in publishStatus() }
             .onChange(of: live.state) { _, state in store.presence[server.id] = ServerPresence(state: state) }
-            .sheet(isPresented: $editLayout) { DashboardEditor(scope: .server, layoutKey: layoutKey) }
+            .sheet(isPresented: $editLayout) { DashboardEditor(scope: .server, layoutKey: layoutKey, api: api, server: server).environmentObject(workspace) }
             .sheet(isPresented: $historySheet) { ConsoleHistorySheet(historyKey: historyKey) { command = $0; historyCursor = CommandHistoryCursor(); tab = 1 } }
             .sheet(item: $operation) { OperationSheet(api: api, operation: $0) }
             .sheet(isPresented: $commandLibrary) { CommandLibrary(api: api, server: server) { command = $0 } }
@@ -133,6 +133,8 @@ struct ServerView: View {
                 else { NavigationLink("Backups") { AMPBackupsView(api: api, server: server) } }
             }.frame(maxWidth: .infinity, alignment: .leading).card()
         case .identity: identityCard
+        case .combinedHistory: combinedCard
+        case .quickActions: quickActionsCard
         case .players: playersSection
         case .resources: resourceCards
         case .cpuHistory: cpuCard
@@ -152,14 +154,28 @@ struct ServerView: View {
         default: EmptyView()
         }
     }
+    /// 4.0: one compact row – icon, name, address and live state. The Minecraft player overview is on by
+    /// default and lives in „Workspace anpassen“ instead of a switch on the start card.
     var identityCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-                HStack { ServerIconView(api: api, server: server, enabled: workspace.isMinecraft(api, server) && !server.data["invocation"].string.lowercased().contains("bedrock_server") && !server.data["container"]["image"].string.lowercased().contains("bedrock"), revision: iconRevision); VStack(alignment: .leading, spacing: 8) { Text(server.name).font(.largeTitle.bold()); Text(server.address).font(.system(.subheadline, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled) }; Spacer(); if workspace.isMinecraft(api, server) { Button("Plugins & Schnellzugriffe", systemImage: "puzzlepiece.extension.fill") { pluginHub = true }.labelStyle(.iconOnly).buttonStyle(.bordered).buttonBorderShape(.circle).tint(Color.panelAccent).controlSize(.small).accessibilityIdentifier("pluginHub") }; StatePill(state: live.state) }
-                HStack(spacing: 7) { Circle().fill(live.connected ? Color.green : Color.orange).frame(width: 6, height: 6); Text(live.connection); Spacer(); if let updated = live.lastUpdate { Text(updated, style: .time).monospacedDigit() } }.font(.caption).foregroundStyle(.secondary)
-                if let issue = live.issue, !live.connected { Label(issue, systemImage: "wifi.exclamationmark").font(.footnote).foregroundStyle(.orange).card() }
-                AccessSummary(access: api.access, api: api, server: server.id)
-                Toggle("Minecraft-Spielerübersicht", isOn: Binding(get: { workspace.isMinecraft(api, server) }, set: { workspace.setMinecraft($0, api, server) })).font(.subheadline)
-        }
+        let minecraft = workspace.isMinecraft(api, server)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                ServerIconView(api: api, server: server, enabled: minecraft && !server.data["invocation"].string.lowercased().contains("bedrock_server") && !server.data["container"]["image"].string.lowercased().contains("bedrock"), revision: iconRevision, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(server.name).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.75)
+                    HStack(spacing: 5) {
+                        Circle().fill(live.connected ? Color.green : Color.orange).frame(width: 6, height: 6).accessibilityHidden(true)
+                        Text(server.address).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(1)
+                        if let updated = live.lastUpdate { Text("· " + updated.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.tertiary).monospacedDigit() }
+                    }.accessibilityElement(children: .combine).accessibilityLabel(live.connection + ", " + server.address)
+                }
+                Spacer(minLength: 4)
+                if minecraft { Button("Plugins & Schnellzugriffe", systemImage: "puzzlepiece.extension.fill") { pluginHub = true }.labelStyle(.iconOnly).font(.subheadline).buttonStyle(.bordered).buttonBorderShape(.circle).tint(Color.panelAccent).controlSize(.small).accessibilityIdentifier("pluginHub") }
+                StatePill(state: live.state)
+            }
+            if let issue = live.issue, !live.connected { Label(issue, systemImage: "wifi.exclamationmark").font(.caption).foregroundStyle(.orange) }
+            AccessSummary(access: api.access, api: api, server: server.id)
+        }.frame(maxWidth: .infinity, alignment: .leading).card()
     }
     @ViewBuilder var playersSection: some View {
                 if suite.configured { SuiteDashboardCard(model: suite, live: live) }
@@ -183,12 +199,7 @@ struct ServerView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack { Text("CPU-Verlauf").font(.headline); Spacer(); Text("Live · letzte 120 Werte").font(.caption).foregroundStyle(.secondary) }
                     if live.history.isEmpty { ContentUnavailableView("Warte auf Messwerte", systemImage: "waveform.path.ecg").frame(height: 150) }
-                    else {
-                        Chart(live.history) { point in
-                            AreaMark(x: .value("Zeit", point.date), y: .value("CPU", point.cpu)).foregroundStyle(LinearGradient(colors: [.teal.opacity(0.25), .teal.opacity(0.01)], startPoint: .top, endPoint: .bottom)).interpolationMethod(.catmullRom)
-                            LineMark(x: .value("Zeit", point.date), y: .value("CPU", point.cpu)).foregroundStyle(Color.panelAccent).interpolationMethod(.catmullRom)
-                        }.chartYScale(domain: 0...max(100, (live.history.map(\.cpu).max() ?? 100) * 1.1)).chartXAxis(.hidden).frame(height: 150).accessibilityLabel("CPU-Verlauf")
-                    }
+                    else { PanelHistoryChart(points: live.history, label: "CPU-Verlauf", maximum: max(100, (live.history.map(\.cpu).max() ?? 100) * 1.1)) { $0.cpu }.frame(height: 150) }
                 }.card()
     }
     var networkCard: some View {
@@ -215,15 +226,36 @@ struct ServerView: View {
             if let issue = live.issue { Label(issue, systemImage: "wifi.exclamationmark").font(.caption).foregroundStyle(.orange) }
         }.frame(maxWidth: .infinity, alignment: .leading).card()
     }
+    var combinedCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PanelWidgetHeader(title: "CPU & RAM", symbol: "chart.xyaxis.line", value: live.lastUpdate == nil ? "–" : String(format: "%.0f %%", live.cpu))
+            if live.history.count < 2 { ContentUnavailableView("Warte auf Messwerte", systemImage: "chart.xyaxis.line").frame(height: 140) }
+            else { PanelCombinedChart(points: live.history, cpuLimit: server.data["limits"]["cpu"].double, memoryLimit: server.data["limits"]["memory"].double * 1_048_576).frame(height: 160) }
+            Text("Beide Werte in Prozent ihres Limits. Ohne CPU-Limit entspricht 100 % einem Kern.").font(.caption2).foregroundStyle(.secondary)
+        }.card()
+    }
+    var quickActionsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Schnellaktionen", systemImage: "bolt.circle.fill").font(.headline)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+                quickButton("Starten", "play.fill", .green) { power("start", title: "Server starten") }.disabled(!PowerPolicy.allows("start", state: live.state))
+                quickButton("Neustart", "arrow.clockwise", .orange) { power("restart", title: "Server neustarten", destructive: true) }.disabled(!PowerPolicy.allows("restart", state: live.state))
+                quickButton("Stoppen", "stop.fill", .red) { power("stop", title: "Server stoppen", destructive: true) }.disabled(!PowerPolicy.allows("stop", state: live.state))
+                quickButton("Konsole", "terminal.fill", Color.panelAccent) { tab = 1 }
+                quickButton("Dateien", "folder.fill", .blue) { tab = 2 }
+                if suite.configured { quickButton("Admin", "shield.lefthalf.filled", Color.panelSecondary) { tab = 5 } }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading).card()
+    }
+    func quickButton(_ title: String, _ symbol: String, _ tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) { VStack(spacing: 6) { Image(systemName: symbol).font(.title3); Text(title).font(.caption.weight(.semibold)) }.frame(maxWidth: .infinity, minHeight: 58).foregroundStyle(tint).background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 14)) }.buttonStyle(.plain)
+    }
     var memoryCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Text("RAM-Verlauf").font(.headline); Spacer(); Text("Live · letzte 120 Werte").font(.caption).foregroundStyle(.secondary) }
             if live.history.isEmpty { ContentUnavailableView("Warte auf Messwerte", systemImage: "memorychip").frame(height: 150) }
             else {
-                Chart(live.history) { point in
-                    AreaMark(x: .value("Zeit", point.date), y: .value("RAM · GiB", point.memory / 1_073_741_824)).foregroundStyle(.teal.opacity(0.16))
-                    LineMark(x: .value("Zeit", point.date), y: .value("RAM · GiB", point.memory / 1_073_741_824)).foregroundStyle(Color.panelAccent)
-                }.chartYScale(domain: .automatic(includesZero: true)).chartXAxis(.hidden).frame(height: 150).accessibilityLabel("RAM-Verlauf in GiB")
+                PanelHistoryChart(points: live.history, label: "RAM-Verlauf in GiB", tint: Color.panelSecondary) { $0.memory / 1_073_741_824 }.frame(height: 150)
             }
         }.card()
     }
@@ -328,8 +360,9 @@ struct MetricCard: View {
     let fraction: Double?
     let tint: Color
     var metricColor: Color { fraction == nil ? tint : ResourceLoad.level(fraction).color }
+    @AppStorage("widgets.compactMetrics") private var compact = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: compact ? 7 : 14) {
             Label(title, systemImage: symbol).font(.caption.weight(.semibold)).foregroundStyle(metricColor)
             Text(value).font(.system(.title2, design: .rounded, weight: .bold)).monospacedDigit().minimumScaleFactor(0.65).lineLimit(1).contentTransition(.numericText())
             Text(limit).font(.caption).foregroundStyle(.secondary).lineLimit(1)

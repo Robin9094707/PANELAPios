@@ -18,6 +18,14 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "4.0.0", title: "Simplex Panel 4", summary: "Admin-Log, Staff-Chat mit Discord, Setup-Links, Ruhezeiten und eine kompaktere, schönere Oberfläche.", items: [
+            WhatsNewItem(symbol: "list.bullet.clipboard.fill", title: "Admin-Log je Admin", detail: "Jede Admin-Aktion mit Ort, Ziel und Zeit – Teleports, Vanish, Strafen und mehr. Ungelesene Einträge als Zahl, alles mit einem Tipp gelesen."),
+            WhatsNewItem(symbol: "bubble.left.and.text.bubble.right.fill", title: "Staff-Chat", detail: "Dein Discord-Staffkanal in der App: Bilder, Dateien und Sprachnachrichten in beide Richtungen, gesendet in deinem Namen, Admins einzeln oder alle pingen."),
+            WhatsNewItem(symbol: "link.badge.plus", title: "Setup-Links", detail: "Einmalige Links (Standard 1 Stunde) richten den Admin-Zugang auf einem anderen iPhone ohne Eingaben ein."),
+            WhatsNewItem(symbol: "moon.zzz.fill", title: "Ruhezeiten", detail: "Schlafenszeit und Arbeitszeit für Bark. Nach einem Notfallneustart kommt ein kritischer Hinweis – du entscheidest, ob er durchdringen darf."),
+            WhatsNewItem(symbol: "rectangle.3.group.fill", title: "Neue Widgets & Design", detail: "Kompaktere Kopfzeilen, Schnellmenü, Admin-Suite-Live-Karte, schönere Diagramme, Schnellaktionen und eine Startanimation."),
+            WhatsNewItem(symbol: "crown.fill", title: "Ränge über dem Namen", detail: "LuckPerms-Präfix, Suffix und Rangfarbe über dem Kopf und in der Tabliste – für Java und Bedrock.")
+        ]),
         WhatsNewRelease(version: "3.3.0", title: "Zugänge & Beitrittshinweise", summary: "Verifizierungen verwalten, einzelne App-Rechte vergeben und Server-RAM absichern.", items: [
             WhatsNewItem(symbol: "person.badge.key.fill", title: "App-Benutzer", detail: "Benutzername und Passwort ergänzen die bestehenden Schlüssel. Rechte sind einzeln einstellbar; jeder berechtigte Nutzer verwaltet sein eigenes Bark-Gerät."),
             WhatsNewItem(symbol: "link", title: "Discord-Verifizierungen", detail: "Vorhandene Chat-Verifizierungen anzeigen, ändern, löschen oder manuell anlegen."),

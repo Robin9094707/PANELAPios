@@ -37,6 +37,10 @@ struct AppearanceSettingsView: View {
     @AppStorage("theme.cardRadius") private var radius = 24.0
     @AppStorage("theme.cardTint") private var cardTint = 0.0
     @AppStorage("theme.backgroundStrength") private var backgroundStrength = 1.0
+    @AppStorage("theme.launchAnimation") private var launchAnimation = true
+    @AppStorage("theme.compactServerCards") private var compactServerCards = true
+    @AppStorage("widgets.compactMetrics") private var compactMetrics = false
+    @AppStorage("widgets.chartStyle") private var chartStyle = "area"
     @State private var icon = UIApplication.shared.alternateIconName ?? "AppIcon"
     @State private var error: String?
     @State private var changing = false
@@ -44,13 +48,19 @@ struct AppearanceSettingsView: View {
     var body: some View {
         Form {
             Section("Farbwelten") {
-                ForEach(["Simplex", "Ozean", "Sonnenuntergang", "Wald", "Amethyst"], id: \.self) { name in
+                ForEach(["Simplex", "Ozean", "Sonnenuntergang", "Wald", "Amethyst", "Mitternacht", "Kirschblüte", "Graphit"], id: \.self) { name in
                     Button(name) {
-                        let palettes = ["Simplex": ["008F83", "7046BA"], "Ozean": ["0067C5", "00838F"], "Sonnenuntergang": ["BE3C16", "A62E70"], "Wald": ["327345", "867016"], "Amethyst": ["7B3CC6", "B12862"]]
+                        let palettes = ["Simplex": ["008F83", "7046BA"], "Ozean": ["0067C5", "00838F"], "Sonnenuntergang": ["BE3C16", "A62E70"], "Wald": ["327345", "867016"], "Amethyst": ["7B3CC6", "B12862"], "Mitternacht": ["4F46E5", "0E7490"], "Kirschblüte": ["BE185D", "B45309"], "Graphit": ["475569", "0F766E"]]
                         if let colors = palettes[name] { primary = colors[0]; secondary = colors[1] }
                     }.foregroundStyle(Color.panelAccent)
                 }
             }
+            Section {
+                Toggle("Startanimation", isOn: $launchAnimation)
+                Toggle("Kompakte Serverkarten", isOn: $compactServerCards)
+                Toggle("Kompakte Messwerte", isOn: $compactMetrics)
+                Picker("Diagrammstil", selection: $chartStyle) { Text("Fläche").tag("area"); Text("Linie").tag("line"); Text("Balken").tag("bars") }
+            } header: { Text("Simplex Panel 4") } footer: { Text("Kompakt zeigt dieselben Infos mit weniger Platz. Die Startanimation entfällt automatisch bei „Bewegung reduzieren“.") }
             Section("Karten & Hintergrund") {
                 Toggle("Kompakte Karten", isOn: $compact)
                 LabeledContent("Eckenradius", value: String(Int(radius)))
