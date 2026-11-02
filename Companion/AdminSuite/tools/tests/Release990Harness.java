@@ -242,7 +242,7 @@ public final class Release990Harness {
             Server server = proxy(Server.class, (p, m, a) -> switch (m.getName()) { case "getName", "getVersion", "getBukkitVersion", "getMinecraftVersion" -> "API Fixture"; case "getWorlds" -> List.of(); case "getPluginManager" -> plugins; case "getScheduler" -> scheduler; case "getConsoleSender" -> console; case "getLogger" -> java.util.logging.Logger.getLogger("Harness990"); case "isPrimaryThread" -> true; case "getOnlinePlayers" -> List.of(); case "getOperators" -> Set.of(); default -> empty(m.getReturnType()); });
             serverField.set(null, server);
             SimplexAdminSuite plugin = Moderation790Harness.plugin(dir); Moderation790Harness.set(plugin, JavaPlugin.class, "isEnabled", true);
-            Moderation790Harness.set(plugin, SimplexAdminSuite.class, "adminActor", new ThreadLocal<String>()); Moderation790Harness.set(plugin, SimplexAdminSuite.class, "pendingInputs", new ConcurrentHashMap<>());
+            Moderation790Harness.set(plugin, SimplexAdminSuite.class, "adminActor", new ThreadLocal<String>()); Moderation790Harness.set(plugin, SimplexAdminSuite.class, "pendingInputs", new ConcurrentHashMap<>()); Moderation790Harness.set(plugin, SimplexAdminSuite.class, "pendingActions", new ConcurrentHashMap<>());
             Moderation790Harness.set(plugin, SimplexAdminSuite.class, "auditedConfig", new HashMap<String, String>()); plugin.moderationControl = new ModerationControl(plugin);
             plugin.adminAccess = new AdminAccessManager(plugin); plugin.adminUpdate = new AdminUpdateMenu(plugin);
             plugin.adminLog = new AdminActivityLog(plugin);

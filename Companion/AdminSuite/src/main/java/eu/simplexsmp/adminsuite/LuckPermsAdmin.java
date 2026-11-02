@@ -148,6 +148,8 @@ final class LuckPermsAdmin {
         String op = text(values, "operation"), group = text(values, "group").toLowerCase(Locale.ROOT), player = text(values, "player"), node = text(values, "node"),
             value = text(values, "value"), duration = text(values, "duration"), track = text(values, "track").toLowerCase(Locale.ROOT), context = text(values, "context");
         String ctx = context.isEmpty() ? "" : " " + check(context, CONTEXT, "Kontext: server=… oder world=…");
+        // Prefixes and suffixes keep their spaces ("&c[Admin] " separates rank and name).
+        String affix = values.get("value") == null ? "" : String.valueOf(values.get("value"));
         return switch (op) {
             case "group-create" -> "lp creategroup " + check(group, GROUP, "Gruppenname: a–z, 0–9, _ oder -");
             case "group-delete" -> { check(group, GROUP, "Gruppe ungültig"); if (group.equals("default")) throw new IllegalArgumentException("Die Gruppe default kann nicht gelöscht werden."); yield "lp deletegroup " + group; }
@@ -158,8 +160,8 @@ final class LuckPermsAdmin {
             case "group-parent-remove" -> "lp group " + check(group, GROUP, "Gruppe ungültig") + " parent remove " + check(value.toLowerCase(Locale.ROOT), GROUP, "Elterngruppe ungültig") + ctx;
             case "group-weight" -> "lp group " + check(group, GROUP, "Gruppe ungültig") + " setweight " + check(value, "[0-9]{1,6}", "Gewicht: 0–999999");
             case "group-displayname" -> "lp group " + check(group, GROUP, "Gruppe ungültig") + " setdisplayname " + check(value, "[\\p{L}\\p{N} _.\\-]{1,32}", "Anzeigename: 1–32 Zeichen");
-            case "group-prefix" -> { check(group, GROUP, "Gruppe ungültig"); yield value.isEmpty() ? "lp group " + group + " meta removeprefix " + priority(values) : "lp group " + group + " meta setprefix " + priority(values) + " \"" + affix(value) + "\""; }
-            case "group-suffix" -> { check(group, GROUP, "Gruppe ungültig"); yield value.isEmpty() ? "lp group " + group + " meta removesuffix " + priority(values) : "lp group " + group + " meta setsuffix " + priority(values) + " \"" + affix(value) + "\""; }
+            case "group-prefix" -> { check(group, GROUP, "Gruppe ungültig"); yield affix.isBlank() ? "lp group " + group + " meta removeprefix " + priority(values) : "lp group " + group + " meta setprefix " + priority(values) + " \"" + affix(affix) + "\""; }
+            case "group-suffix" -> { check(group, GROUP, "Gruppe ungültig"); yield affix.isBlank() ? "lp group " + group + " meta removesuffix " + priority(values) : "lp group " + group + " meta setsuffix " + priority(values) + " \"" + affix(affix) + "\""; }
             case "user-parent-add" -> "lp user " + check(player, PLAYER, "Spieler ungültig") + " parent add " + check(group, GROUP, "Gruppe ungültig") + ctx;
             case "user-parent-temp" -> "lp user " + check(player, PLAYER, "Spieler ungültig") + " parent addtemp " + check(group, GROUP, "Gruppe ungültig") + " " + check(duration, DURATION, "Dauer z. B. 7d") + ctx;
             case "user-parent-remove" -> "lp user " + check(player, PLAYER, "Spieler ungültig") + " parent remove " + check(group, GROUP, "Gruppe ungültig") + ctx;
