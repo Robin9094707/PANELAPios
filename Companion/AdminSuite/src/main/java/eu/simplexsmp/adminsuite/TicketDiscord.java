@@ -209,7 +209,7 @@ final class TicketDiscord {
         TicketStore.Ticket t=manager().store.get(id);if(t==null||!ready())return;
         String channel=t.channel.isBlank()?createChannel(t):t.channel;if(channel.isBlank())return;
         boolean staff=m.role().equals("staff");
-        String label=staff?("🛡️ "+m.author()+" · Team"+(m.source().equals("app")?" (App)":" (Minecraft)")):("💬 "+m.author()+" · "+(m.source().equals("discord")?"Discord":"Minecraft"));
+        String label=staff?("🛡️ "+m.author()+(m.author().equalsIgnoreCase("Team")?"":" · Team")+(m.source().equals("app")?" (App)":" (Minecraft)")):("💬 "+m.author()+" · "+(m.source().equals("discord")?"Discord":"Minecraft"));
         Map<String,Object> embed=mapOf("author",mapOf("name",TicketStore.clip(label,250)),"description",body(m.text(),3900),"color",staff?0x5865F2:0x8B5CF6,"timestamp",java.time.Instant.ofEpochMilli(m.at()).toString());
         if(!staff&&t.owner!=null)((Map<String,Object>)embed.get("author")).put("icon_url","https://mc-heads.net/avatar/"+t.owner+"/64");
         if(staff&&t.owner!=null&&!m.delivered())embed.put("footer",mapOf("text","Zustellung in Minecraft nach "+manager().deliveryDelay()+" s Online-Zeit"));

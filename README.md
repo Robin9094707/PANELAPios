@@ -1,8 +1,12 @@
-## Aktuelles Update: Panel 4.1.0 / Admin Suite 9.8.0
+## Aktuelles Update: Panel 4.2.0 / Admin Suite 9.9.0
+
+Einstellbarer Ungelesen-Zähler im Admin-Log (nur Team, ausgewählte Admins, alle oder aus – gilt auch für Push), Benutzername ändern ohne Datenverlust, öffentlicher Teamname bei Ticketantworten (Login-Namen werden Spielern nie mehr gezeigt), Wiederherstellung aller App-Admins über die Serverkonsole ([Recovery-PDF](docs/Simplex-Admin-Recovery.pdf)), LuckPerms-Verwaltung und Lands-Integration in App und Webpanel, Rang über dem Kopf und in der Tabliste getrennt einstellbar (TAB-Plugins behalten die Tabliste), Webpanel als Home-Bildschirm-App für iPhone/iPad und Android mit Browser-Push und persönlicher Darstellung. [Update 4.2.0](UPDATE-4.2.0.md) · [Suite 9.9.0](Companion/AdminSuite/UPDATE-9.9.0.md).
+
+## Vorheriges Update: Panel 4.1.0 / Admin Suite 9.8.0
 
 Hauptadmin-Konto mit Benutzername und Passwort (Migration vom Hauptschlüssel), Zwei-Faktor-Schutz mit Wiederherstellungscodes, Passkeys mit eigener Domain, Geräte & Sitzungen (umbenennen, abmelden, vorübergehend sperren), Notfall-Reset nur über die Serverkonsole und ein responsives Webpanel im Browser auf demselben Port wie die App-API. [Update 4.1.0](UPDATE-4.1.0.md) · [Suite 9.8.0](Companion/AdminSuite/UPDATE-9.8.0.md).
 
-## Vorheriges Update: Panel 4.0.0 / Admin Suite 9.7.0
+## Panel 4.0.0 / Admin Suite 9.7.0
 
 Admin-Log je Admin mit Orten und Ungelesen-Zählern, Discord-Staff-Chat in der App (Bilder, Dateien, Sprachnachrichten, in deinem Namen), einmalige Setup-Links, Schlafens-/Arbeitszeiten für Bark mit kritischem Hinweis nach Notfallneustarts, LuckPerms-Ränge über dem Namen (Java & Bedrock), kompaktere Oberfläche, neue Widgets und Startanimation. [Update 4.0.0](UPDATE-4.0.0.md) · [Suite 9.7.0](Companion/AdminSuite/UPDATE-9.7.0.md).
 

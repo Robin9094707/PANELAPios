@@ -54,7 +54,15 @@ struct SuiteAdminLogView: View {
     @State private var error: String?
     @State private var busy = false
     @AppStorage("adminLog.includeViews") private var includeViews = false
+    @State private var filter = false
     var admins: [JSON] { data["admins"].array }
+    /// 9.9: which actions raise the unread counter for this account.
+    var filterCaption: String {
+        let mode = data["settings"]["mode"].string
+        guard !mode.isEmpty else { return "" }
+        for item in SuiteAdminLogFilterView.modes where item.0 == mode { return "Zähler: " + item.1 }
+        return ""
+    }
     var body: some View {
         List {
             Section {
@@ -63,6 +71,7 @@ struct SuiteAdminLogView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(data["unread"].int == 0 ? "Alles gelesen" : "\(data["unread"].int) neue Admin-Aktionen").font(.headline)
                         Text("\(admins.count) Admins · \(data["total"].int) Einträge gespeichert").font(.caption).foregroundStyle(.secondary)
+                        if !filterCaption.isEmpty { Text(filterCaption).font(.caption2.weight(.semibold)).foregroundStyle(Color.panelAccent) }
                     }
                     Spacer()
                     if busy { ProgressView() }
@@ -80,6 +89,8 @@ struct SuiteAdminLogView: View {
             }
             Section { NavigationLink { SuiteAdminLogDetailView(suite: suite, admin: "", title: "Gesamtes Protokoll", panel: panel, server: server) { await load() } } label: { Label("Gesamtes Protokoll durchsuchen", systemImage: "magnifyingglass") } }
         }.panelScreen().navigationTitle("Admin-Log").errorAlert($error)
+            .toolbar { if suite.features.contains("admin-log-v2") && data != .null { Button("Filter", systemImage: "line.3.horizontal.decrease.circle") { filter = true }.accessibilityIdentifier("adminLogFilter") } }
+            .sheet(isPresented: $filter) { SuiteAdminLogFilterView(suite: suite, overview: data) { await load() } }
             .task(id: includeViews) { await load() }.refreshable { await load() }
     }
     func adminRow(_ row: JSON) -> some View {
@@ -89,6 +100,7 @@ struct SuiteAdminLogView: View {
                 HStack(spacing: 6) {
                     Text(row["name"].string).font(.subheadline.weight(.semibold))
                     if row["self"].bool { Text("Du").font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 2).background(Color.panelAccent.opacity(0.15), in: Capsule()) }
+                    if row["staff"] == .bool(false) { Text("Spieler").font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 2).background(Color.secondary.opacity(0.15), in: Capsule()).foregroundStyle(.secondary) }
                     ForEach(row["sources"].array.map(\.string), id: \.self) { source in Text(SuiteAdminLogText.source(source)).font(.caption2).foregroundStyle(.secondary) }
                 }
                 let last = row["last"]

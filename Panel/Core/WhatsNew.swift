@@ -18,6 +18,14 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "4.2.0", title: "Ränge, Lands & ruhiger Admin-Log", summary: "Selbst einstellen, was als ungelesen zählt, Benutzername ändern, LuckPerms und Lands verwalten – und Tickets ohne deinen Login-Namen.", items: [
+            WhatsNewItem(symbol: "line.3.horizontal.decrease.circle", title: "Admin-Log-Filter", detail: "Nur Team, ausgewählte Admins, alle oder gar keine Zahlen – Aktionen normaler Spieler bleiben sichtbar, aber still. Push folgt demselben Filter."),
+            WhatsNewItem(symbol: "person.text.rectangle", title: "Name & Anzeige", detail: "Benutzernamen ändern, ohne neu anmelden zu müssen. Spieler sehen bei Ticketantworten nur deinen öffentlichen Namen oder „Team“."),
+            WhatsNewItem(symbol: "crown.fill", title: "Ränge & Rechte", detail: "LuckPerms-Gruppen, Präfixe, Gewichte, Rechte, Vererbung und Spielergruppen direkt in der App – jede Änderung mit Bestätigung."),
+            WhatsNewItem(symbol: "map.fill", title: "Lands", detail: "Alle Länder auf einen Blick und welche Admins überall Zugriff haben – Bypass und Lands-Admin per Schalter."),
+            WhatsNewItem(symbol: "list.bullet.rectangle", title: "Ränge getrennt einstellbar", detail: "Rang über dem Kopf und in der Tabliste einzeln; ist ein TAB-Plugin installiert, bleibt die Tabliste unangetastet."),
+            WhatsNewItem(symbol: "bubble.left.and.text.bubble.right.fill", title: "Schönerer Serverchat", detail: "Sprechblasen mit Herkunft (Minecraft, Discord, App) – auch im Webpanel, das jetzt Push-Benachrichtigungen und Home-Bildschirm-Installation kann.")
+        ]),
         WhatsNewRelease(version: "4.1.0", title: "Konten, 2FA & Webpanel", summary: "Benutzername statt Schlüssel, Zwei-Faktor-Schutz, Passkeys, Geräteverwaltung und das Admin-Panel im Browser.", items: [
             WhatsNewItem(symbol: "crown.fill", title: "Hauptadmin-Konto", detail: "Wechsle unter Konto & Sicherheit vom Hauptschlüssel zu Benutzername und Passwort. Alle Daten bleiben erhalten; der alte Schlüssel funktioniert weiter, bis du ihn widerrufst."),
             WhatsNewItem(symbol: "lock.shield.fill", title: "Zwei-Faktor-Schutz", detail: "6-stellige Codes aus Apple Passwörter oder jeder Authenticator-App, dazu Wiederherstellungscodes. Funktioniert sofort, auch ohne Domain."),

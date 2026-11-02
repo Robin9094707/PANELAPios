@@ -53,8 +53,8 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          # 4.0/4.1: focused, minimal unit tests for the new features keep the whole job around five minutes.
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
+          # 4.0–4.2: focused, minimal unit tests for the new features keep the whole job around five minutes.
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -128,7 +128,7 @@ jobs:
       - name: Build with verified real Paper dependencies
         working-directory: Companion/AdminSuite
         run: python3 tools/build-real.py
-      - name: Check HTTPS authentication, accounts, 2FA, passkeys, web panel and existing data
+      - name: Check HTTPS authentication, accounts, push, admin-log filters, recovery, LuckPerms/Lands, web panel and existing data
         working-directory: Companion/AdminSuite
         run: python3 tools/test-830.py
         env:
@@ -137,15 +137,17 @@ jobs:
         working-directory: Companion/AdminSuite
         run: |
           python3 tools/package-source.py
+          cp ../../docs/Simplex-Admin-Recovery.pdf target/
           cd target
-          sha256sum SimplexAdminSuite-9.8.0.jar SimplexAdminSuite-9.8.0-source.zip > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-9.9.0.jar SimplexAdminSuite-9.9.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-9.8.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-9.8.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-9.9.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-9.9.0-source.zip
+            Companion/AdminSuite/target/Simplex-Admin-Recovery.pdf
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
 
@@ -191,12 +193,12 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 4.1.0 / Admin Suite 9.8.0: main admin account with username and password (optional migration from the main API key), two-factor authentication with recovery codes, passkeys on your own domain, device and session management (rename, sign out, temporarily lock) with device model and IP, a console-only emergency reset of the main admin, and a responsive web admin panel on the same HTTPS port as the app API.
+          Simplex Panel 4.2.0 / Admin Suite 9.9.0: configurable admin-log unread counter (team only, selected admins, all or off) shared by app, web panel and push; username change for the main admin and every app user with all sessions, 2FA, passkeys and settings kept; public staff name on ticket replies (login names are never shown to players again, old tickets are cleaned); console-only recovery commands (sas app recovery, user-reset, owner-transfer, unlock, rename); LuckPerms management (groups, prefixes, weights, permissions, inheritance, player groups, tracks) and Lands integration (all lands, admin bypass per switch); rank above the head and in the tab list configurable separately and automatic hand-over of the tab list to TAB plugins; web panel as installable home-screen app for iPhone/iPad and Android with browser push notifications, per-account appearance stored on the server and a refined chat.
 
-          Existing API keys, app users, sessions, TLS identity, Bark subscriptions, tickets and plugin data stay compatible. Update the JAR and the app; no reset is required. See UPDATE-4.1.0.md and Companion/AdminSuite/UPDATE-9.8.0.md. This release job only runs after a merge to main; pull requests produce JAR and IPA artifacts without publishing.
+          Existing API keys, app users, sessions, TLS identity, Bark subscriptions, tickets, admin log and plugin data stay compatible. Replace the JAR and update the app; no reset is required. See UPDATE-4.2.0.md, Companion/AdminSuite/UPDATE-9.9.0.md and docs/Simplex-Admin-Recovery.pdf. This release job only runs after a merge to main; pull requests produce JAR and IPA artifacts without publishing.
 
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)
-          gh release create "$tag" build/companion/*.jar build/companion/*-source.zip build/companion/AdminSuite-SHA256SUMS.txt "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest
+          gh release create "$tag" build/companion/*.jar build/companion/*-source.zip build/companion/Simplex-Admin-Recovery.pdf build/companion/AdminSuite-SHA256SUMS.txt "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest
 
 

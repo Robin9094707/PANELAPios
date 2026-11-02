@@ -1,14 +1,29 @@
 {
+  "id": "/",
   "name": "Simplex Panel",
   "short_name": "Simplex",
-  "description": "Admin Suite – Webpanel",
-  "start_url": "/",
+  "description": "Admin Suite – Webpanel für Spieler, Tickets, Team und Server",
+  "lang": "de",
+  "dir": "ltr",
+  "start_url": "/?source=pwa#/dashboard",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
   "background_color": "#060a17",
   "theme_color": "#060a17",
+  "categories": ["utilities", "productivity"],
+  "prefer_related_applications": false,
   "icons": [
-    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
-    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+    { "src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ],
+  "shortcuts": [
+    { "name": "Tickets", "short_name": "Tickets", "url": "/#/tickets", "icons": [{ "src": "/assets/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Staff-Chat", "short_name": "Team", "url": "/#/staff-chat", "icons": [{ "src": "/assets/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Admin-Log", "short_name": "Admin-Log", "url": "/#/admin-log", "icons": [{ "src": "/assets/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Spieler", "short_name": "Spieler", "url": "/#/players", "icons": [{ "src": "/assets/icon-192.png", "sizes": "192x192" }] }
   ]
 }

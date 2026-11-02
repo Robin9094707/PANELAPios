@@ -145,6 +145,9 @@ struct SuiteAccountView: View {
         List {
             Section { identity }
             if account["canMigrate"].bool { migrationSection }
+            if suite.features.contains("account-rename-v1") || suite.features.contains("public-name-v1") {
+                Section { NavigationLink { SuiteAccountNameView(suite: suite) } label: { Label(isUser ? "Benutzername & öffentlicher Name" : "Öffentlicher Name", systemImage: "person.text.rectangle") } } footer: { Text("Spieler sehen bei Ticketantworten nur den öffentlichen Namen – nie deinen Login.") }
+            }
             if isUser { securitySection }
             Section("Geräte") {
                 NavigationLink { SuiteSessionsView(suite: suite) } label: { Label(account["manager"].bool ? "Alle Geräte & Sitzungen" : "Meine Geräte", systemImage: "laptopcomputer.and.iphone") }

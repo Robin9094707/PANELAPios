@@ -18,14 +18,14 @@ final class WebPanel {
         "html", "text/html; charset=utf-8", "css", "text/css; charset=utf-8", "js", "text/javascript; charset=utf-8",
         "svg", "image/svg+xml", "png", "image/png", "webmanifest", "application/manifest+json; charset=utf-8", "json", "application/json; charset=utf-8");
     private static final String CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
-        + "connect-src 'self'; font-src 'self'; manifest-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+        + "connect-src 'self'; font-src 'self'; manifest-src 'self'; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
     private final Map<String, byte[]> cache = new ConcurrentHashMap<>();
     private final String version;
 
     WebPanel(String version) { this.version = version; }
 
     boolean serves(String path) {
-        return path.equals("/") || path.equals("/index.html") || path.equals("/manifest.webmanifest") || path.equals("/favicon.ico")
+        return path.equals("/") || path.equals("/index.html") || path.equals("/manifest.webmanifest") || path.equals("/favicon.ico") || path.equals("/sw.js")
             || path.equals("/apple-touch-icon.png") || path.matches("/assets/[a-z0-9-]{1,40}\\.(css|js|svg|png)");
     }
 
@@ -35,6 +35,7 @@ final class WebPanel {
             case "/favicon.ico" -> "icon.svg";
             case "/apple-touch-icon.png" -> "icon-180.png";
             case "/manifest.webmanifest" -> "manifest.webmanifest";
+            case "/sw.js" -> "sw.js";
             default -> path.substring("/assets/".length());
         };
         byte[] body = load(name);
@@ -44,7 +45,10 @@ final class WebPanel {
         h.set("Content-Type", TYPES.getOrDefault(extension, "application/octet-stream"));
         securityHeaders(x);
         // index.html references assets with ?v=<suite version>, so assets may be cached; the shell never is.
-        h.set("Cache-Control", name.equals("index.html") || name.endsWith(".webmanifest") ? "no-cache" : "public, max-age=604800, immutable");
+        // 9.9.0: the service worker must be revalidated on every start so updates of the JAR reach installed home-screen apps.
+        boolean shell = name.equals("index.html") || name.endsWith(".webmanifest") || name.equals("sw.js");
+        h.set("Cache-Control", shell ? "no-cache" : name.endsWith(".png") && !path.contains("?") ? "public, max-age=86400" : "public, max-age=604800, immutable");
+        if (name.equals("sw.js")) h.set("Service-Worker-Allowed", "/");
         String etag = "\"" + AppApiSecurity.hash(version + "|" + name).substring(0, 20) + "\"";
         h.set("ETag", etag);
         if (etag.equals(x.getRequestHeaders().getFirst("If-None-Match"))) { x.sendResponseHeaders(304, -1); return; }
@@ -59,7 +63,7 @@ final class WebPanel {
         try (InputStream in = WebPanel.class.getResourceAsStream("/web/" + name)) {
             if (in == null) return null;
             byte[] data = in.readAllBytes();
-            if (name.equals("index.html")) data = new String(data, StandardCharsets.UTF_8).replace("{{VERSION}}", version).getBytes(StandardCharsets.UTF_8);
+            if (name.equals("index.html") || name.equals("sw.js")) data = new String(data, StandardCharsets.UTF_8).replace("{{VERSION}}", version).getBytes(StandardCharsets.UTF_8);
             cache.put(name, data);
             return data;
         }

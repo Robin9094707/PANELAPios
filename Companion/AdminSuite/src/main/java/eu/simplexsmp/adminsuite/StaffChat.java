@@ -63,6 +63,11 @@ final class StaffChat {
         rows.addLast(row);
         while (rows.size() > LIMIT) { Map<String, Object> removed = rows.removeFirst(); deleteFiles(removed); }
         persist();
+        // 9.9.0: Bark/browser push for subscribers who selected "staff-chat"; the sender is never notified about own messages.
+        if (plugin.appEvents != null && plugin.adminLog != null) {
+            String who = String.valueOf(row.get("author")), lower = who.toLowerCase(Locale.ROOT), body = String.valueOf(row.get("text"));
+            try { plugin.appEvents.direct("staff-chat", "💬 Staff-Chat · " + who, body.isBlank() ? "📎 Anhang" : body, owner -> !lower.equals(plugin.adminLog.selfOf(owner))); } catch (RuntimeException ignored) { }
+        }
         return row;
     }
 

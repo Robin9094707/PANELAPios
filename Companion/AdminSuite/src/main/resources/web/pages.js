@@ -299,16 +299,30 @@
   };
 
   // ============================================================ Staff chat & server chat
+  var SOURCES = { app: ["App", "accent"], discord: ["Discord", "info"], player: ["Minecraft", "ok"], minecraft: ["Minecraft", "ok"], ingame: ["Minecraft", "ok"], console: ["Konsole", "warn"], web: ["Web", "accent"] };
+  function dayLabel(ms) {
+    var d = new Date(Number(ms)), today = new Date(), y = new Date(); y.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return "Heute"; if (d.toDateString() === y.toDateString()) return "Gestern";
+    return d.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "long" });
+  }
+  function clock(ms) { return new Date(Number(ms)).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }); }
   function chatPage(opts) {
     return async function (param, query, alive) {
-      var cursor = 0, me = "", msgs = h("div", { class: "msgs" }), seen = {};
-      var text = h("textarea", { class: "input", rows: 1, placeholder: opts.canSend() ? "Nachricht an " + opts.title + " …" : "Keine Berechtigung zum Senden", disabled: !opts.canSend() });
+      var cursor = 0, me = "", msgs = h("div", { class: "msgs", role: "log", "aria-live": "polite" }), seen = {}, last = null;
+      var text = h("textarea", { class: "input", rows: 1, placeholder: opts.canSend() ? "Nachricht an " + opts.title + " …" : "Keine Berechtigung zum Senden", disabled: !opts.canSend(), "aria-label": "Nachricht" });
+      function grow() { text.style.height = "auto"; text.style.height = Math.min(160, text.scrollHeight + 2) + "px"; }
+      text.addEventListener("input", grow);
       function append(m) {
         if (seen[m.id]) return; seen[m.id] = true;
-        var mine = opts.mine(m, me);
-        var bubble = h("div", { class: "bubble" }, h("div", { class: "by" }, h("span", { text: m.author || m.name || "?" }), m.source ? h("small", { class: "muted", text: m.source }) : null, h("time", { text: S.date(m.at || m.time) })), m.text || m.message ? h("p", { text: m.text || m.message }) : null);
+        var at = Number(m.at || m.time) || Date.now(), author = m.author || m.name || "?", mine = opts.mine(m, me), src = SOURCES[String(m.source || "").toLowerCase()];
+        if (!last || new Date(last.at).toDateString() !== new Date(at).toDateString()) { msgs.appendChild(h("div", { class: "day", text: dayLabel(at) })); last = null; }
+        var grouped = last && last.author === author && last.source === m.source && at - last.at < 5 * 60e3;
+        var bubble = h("div", { class: "bubble" },
+          grouped ? null : h("div", { class: "by" }, h("span", { class: "name", text: author }), src ? h("span", { class: "src " + src[1], text: src[0] }) : null),
+          m.text || m.message ? h("p", { text: m.text || m.message }) : null, h("time", { class: "stamp", text: clock(at), title: S.date(at) }));
         if ((m.attachments || []).length && opts.file) bubble.appendChild(h("div", { class: "attachments" }, m.attachments.map(function (a) { return attachmentView(a, function () { return S.blobUrl(opts.file, { id: a.id }); }); })));
-        msgs.appendChild(h("div", { class: "msg" + (mine ? " mine" : "") }, S.avatar(m.author || m.name, "sm"), bubble));
+        msgs.appendChild(h("div", { class: "msg" + (mine ? " mine" : "") + (grouped ? " grouped" : "") }, grouped ? h("div", { class: "avatar-gap" }) : S.avatar(author, "sm"), bubble));
+        last = { author: author, source: m.source, at: at };
       }
       async function poll() {
         var r = await S.api(opts.data, { query: { after: cursor } }); if (!alive()) return;
@@ -320,8 +334,12 @@
         if (stick) msgs.scrollTop = msgs.scrollHeight;
         if (opts.status) opts.status(r);
       }
-      var send = S.btn("", { kind: "primary", icon: "send", title: "Senden", disabled: !opts.canSend(), onClick: async function () { if (!text.value.trim()) return; await opts.send(text.value); text.value = ""; await poll(); msgs.scrollTop = msgs.scrollHeight; } });
-      text.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send.click(); } });
+      var send = S.btn("", { kind: "primary", icon: "send", title: "Senden", disabled: !opts.canSend(), onClick: async function () { if (!text.value.trim()) return; await opts.send(text.value); text.value = ""; grow(); await poll(); msgs.scrollTop = msgs.scrollHeight; } });
+      text.addEventListener("keydown", function (e) {
+        if (e.key !== "Enter" || e.isComposing) return;
+        var enterSends = !(S.prefs && S.prefs.chatEnter === "newline");
+        if (enterSends ? !e.shiftKey : (e.metaKey || e.ctrlKey)) { e.preventDefault(); send.click(); }
+      });
       var tools = [];
       if (opts.upload && opts.canSend()) {
         var picker = filePicker(async function (file) {
@@ -333,7 +351,7 @@
       var statusLine = h("div", { class: "row wrap", style: { gap: "8px" } });
       opts.status = opts.statusRender ? function (r) { S.clear(statusLine); S.add(statusLine, opts.statusRender(r)); } : null;
       S.title(opts.title, "", [statusLine, opts.headerActions ? opts.headerActions() : null]);
-      S.mount(S.card(null, { cls: "pad-0" }, h("div", { class: "chat" }, msgs, h("div", { class: "composer" }, tools, text, send))));
+      S.mount(S.card(null, { cls: "pad-0 chat-card" }, h("div", { class: "chat" }, msgs, h("div", { class: "composer" }, opts.composerExtra ? opts.composerExtra() : null, tools, text, send))));
       await poll(); msgs.scrollTop = msgs.scrollHeight;
       S.every(opts.interval || 4000, function () { poll().catch(function () {}); });
     };
@@ -343,10 +361,18 @@
     send: function (text) { return S.api("staff-chat", { body: { text: text, pings: [] } }); },
     emptyText: "Nachrichten aus dem Spiel (/staffmsg), Discord und der App erscheinen hier.",
     statusRender: function (r) { return [r.discord ? S.badge("Discord verbunden", "ok", "link") : S.badge("Nur App & Spiel", "", "info"), r.lastError ? S.badge("Discord-Fehler", "danger", "alert") : null]; } });
+  // Public server chat: the sender name is public in Minecraft – never the login name. Default: public name or "Server".
+  function chatSender() { var stored = null; try { stored = sessionStorage.getItem("simplex-chat-name"); } catch (e) { stored = null; } return stored || (S.account && S.account.publicName) || "Server"; }
   P.chat = chatPage({ title: "Serverchat", data: "data/chat", interval: 3000,
     canSend: function () { return S.can("chat.send") && S.full(); }, mine: function (m) { return m.source === "app"; },
-    send: function (text) { return S.api("chat", { body: { name: (S.account && S.account.username) || "Server", message: text } }); },
+    send: function (text) { return S.api("chat", { body: { name: chatSender(), message: text } }); },
     emptyText: "Der öffentliche Minecraft-Chat erscheint hier live.",
+    composerExtra: function () {
+      if (!(S.can("chat.send") && S.full())) return null;
+      var chip = h("button", { type: "button", class: "sender-chip", title: "Absendername im Spiel ändern" }, icon("user"), h("span", { text: chatSender() }));
+      chip.addEventListener("click", async function () { var v = await S.prompt("Absender im Serverchat", "Name, den Spieler sehen (1–32 Zeichen)", chatSender(), "Übernehmen"); if (v === null) return; v = v.trim() || "Server"; try { sessionStorage.setItem("simplex-chat-name", v); } catch (e) { /* ignore */ } chip.lastChild.textContent = v; });
+      return chip;
+    },
     headerActions: function () {
       return S.can("chat.clear") && S.full() ? S.btn("", { kind: "ghost", size: "sm icon", icon: "trash", title: "Verlauf leeren", onClick: async function () { if (await S.confirm("Chatverlauf leeren?", "Nur die gespeicherte App-Ansicht wird geleert.", "Leeren", true)) { await S.api("chat/clear", { body: {} }); S.reload(); } } }) : null;
     } });
@@ -357,11 +383,14 @@
     if (!admin) {
       var o = await S.api("data/admin-log"); if (!alive()) return;
       S.setBadge("adminLog", o.unread || 0);
-      S.title("Admin-Log", o.unread ? o.unread + " ungelesen" : "", S.btn("Alle gelesen", { size: "sm", icon: "check", disabled: !o.unread, onClick: async function () { await S.api("admin-log/read", { body: { admin: "" } }); S.reload(); } }));
+      var mode = o.settings ? o.settings.mode : "";
+      S.title("Admin-Log", o.unread ? o.unread + " ungelesen" : (S.adminLogModeText ? S.adminLogModeText(mode) : ""), [
+        o.settings && S.adminLogSettings ? S.btn("Filter", { size: "sm", icon: "filter", title: "Was zählt als ungelesen?", onClick: function () { S.adminLogSettings(o); } }) : null,
+        S.btn("Alle gelesen", { size: "sm", icon: "check", disabled: !o.unread, onClick: async function () { await S.api("admin-log/read", { body: { admin: "" } }); S.reload(); } })]);
       S.mount(S.card(null, { cls: "pad-0" }, h("div", { class: "list" }, (o.admins || []).length ? o.admins.map(function (a) {
         var last = a.last || {};
         return h("div", { class: "item link", onClick: function () { S.go("#/admin-log/" + encodeURIComponent(a.admin)); } }, S.avatar(a.name),
-          h("div", { class: "meta" }, h("b", { text: a.name + (a.self ? " (du)" : "") }), h("small", { text: (last.action || "") + (last.detail ? " · " + last.detail : "") }), h("small", { text: S.ago(last.time) + " · " + a.total + " Einträge · " + (a.sources || []).join(", ") })),
+          h("div", { class: "meta" }, h("b", {}, a.name + (a.self ? " (du)" : ""), a.staff === false ? h("span", { class: "tag", text: "Spieler" }) : a.staff ? h("span", { class: "tag accent", text: "Team" }) : null), h("small", { text: (last.action || "") + (last.detail ? " · " + last.detail : "") }), h("small", { text: S.ago(last.time) + " · " + a.total + " Einträge · " + (a.sources || []).join(", ") + (a.counted === false && !a.self ? " · zählt nicht" : "") })),
           h("div", { class: "side" }, a.online ? h("span", { class: "dot on", title: "online" }) : null, a.unread ? S.badge(String(a.unread), "accent") : null, icon("chevRight", "chev")));
       }) : S.empty("list", "Noch keine Admin-Aktivität"))));
       return;

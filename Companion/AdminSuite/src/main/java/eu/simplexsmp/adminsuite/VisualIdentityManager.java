@@ -25,9 +25,12 @@ final class VisualIdentityManager {
         String suffix=plugin.getConfig().getBoolean("nameplates.show-luckperms",true)?normalize(plugin.expansionLuckPermsSuffix(target)):"";
         String nick=plugin.getConfig().getBoolean("nicknames.show-in-player-list",true)?plugin.visualName(target):target.getName();
         String tag=plugin.expansionIsAfk(target)&&plugin.getConfig().getBoolean("afk.show-in-player-list",true)?plugin.getConfig().getString("afk.player-list-suffix"," &7[AFK]"):"";
-        String name=plugin.color(spaced(prefix)+nick+spacedSuffix(suffix)+tag);
+        // 9.9.0: rank placement is configured separately for the player list and above the head.
+        boolean inList=plugin.getConfig().getBoolean("nameplates.rank-in-player-list",true),aboveHead=plugin.getConfig().getBoolean("nameplates.rank-above-head",true);
+        String name=plugin.color(spaced(inList?prefix:"")+nick+spacedSuffix(inList?suffix:"")+tag);
+        if(!aboveHead){prefix="";suffix="";}
         try{
-            if(plugin.getConfig().getBoolean("nameplates.manage-player-list",true)){
+            if(managesPlayerList()){
                 originals.putIfAbsent(id,target.getPlayerListName());
                 String previous=expected.get(id);
                 if(previous!=null&&!previous.equals(target.getPlayerListName())){externalListOwners.add(id);expected.remove(id);originals.remove(id);diagnostics.put(id,"External player-list owner observed; Suite yields until reconnect.");}
@@ -39,6 +42,13 @@ final class VisualIdentityManager {
         }catch(RuntimeException e){conflict(target,"error",e.getClass().getSimpleName()+": "+e.getMessage());}
     }
 
+    /** Tab-list plugins the suite leaves the player list to when nameplates.yield-to-tab-plugin is on (default). */
+    static final List<String> TAB_PLUGINS=List.of("TAB","TabList","AnimatedTab","TAB-Bridge");
+    static String tabPlugin(){for(String name:TAB_PLUGINS){org.bukkit.plugin.Plugin p=Bukkit.getPluginManager().getPlugin(name);if(p!=null&&p.isEnabled())return p.getName();}return "";}
+    boolean managesPlayerList(){
+        if(!plugin.getConfig().getBoolean("nameplates.manage-player-list",true))return false;
+        return !(plugin.getConfig().getBoolean("nameplates.yield-to-tab-plugin",true)&&!tabPlugin().isEmpty());
+    }
     private void applyTeam(Player target,Scoreboard board,String prefix,String suffix){
         UUID id=target.getUniqueId();String entry=target.getName();
         Map<UUID,OriginalTeam> managed=boards.computeIfAbsent(board,b->new HashMap<>());
