@@ -97,30 +97,52 @@ struct SuiteStaffChatView: View {
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteStaffChatModel(suite)) }
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    if model.info != .null && !model.info["discord"].bool {
-                        Label("Kein Discord-Kanal festgelegt. App und Minecraft teilen den Staff-Chat; in den Einstellungen oben rechts verbindest du Discord.", systemImage: "info.circle").font(.caption).foregroundStyle(.secondary).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
-                    }
-                    if !model.info["lastError"].string.isEmpty { Label(model.info["lastError"].string, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
-                    if model.items.isEmpty && model.info != .null { ContentUnavailableView("Noch keine Nachrichten", systemImage: "bubble.left.and.text.bubble.right", description: Text("Schreib dem Team – Discord, Minecraft und die App sehen es sofort.")).padding(.top, 40) }
-                    ForEach(model.items, id: \.["id"].string) { row in SuiteStaffBubble(suite: suite, row: row, mine: row["source"].string == "app" && row["author"].string.caseInsensitiveCompare(model.you) == .orderedSame).id("s-" + row["id"].string) }
-                    Color.clear.frame(height: 1).id("staff-bottom").onAppear { atBottom = true }.onDisappear { atBottom = false }
-                }.padding(.horizontal, 14).padding(.vertical, 10).frame(maxWidth: 900).frame(maxWidth: .infinity)
-            }.defaultScrollAnchor(.bottom).scrollDismissesKeyboard(.interactively).panelScreen()
+            ScrollView { messages }
+                .defaultScrollAnchor(.bottom).scrollDismissesKeyboard(.interactively).panelScreen()
                 .safeAreaInset(edge: .bottom, spacing: 0) { composer }
-                .onChange(of: model.items.count) { old, new in if new > old && (atBottom || old == 0) { withAnimation(.snappy) { proxy.scrollTo("staff-bottom", anchor: .bottom) } } }
-                .task(id: scenePhase) {
-                    guard scenePhase == .active else { return }
-                    await model.load(reset: true); proxy.scrollTo("staff-bottom", anchor: .bottom)
-                    while !Task.isCancelled { do { try await Task.sleep(for: .seconds(4)) } catch { return }; await model.load() }
-                }
+                .onChange(of: model.items.count) { old, new in follow(proxy, old: old, new: new) }
+                .task(id: scenePhase) { await poll(proxy) }
         }
         .navigationTitle("Staff-Chat").navigationBarTitleDisplayMode(.inline).errorAlert($model.error)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Staff-Chat einstellen", systemImage: "gearshape") { settings = true }.disabled(suite.scope != "full") } }
         .sheet(isPresented: $settings, onDismiss: { Task { await model.load(reset: true) } }) { NavigationStack { SuiteStaffChatSettingsView(suite: suite) } }
-        .sheet(isPresented: $importing) { FileImportPicker(multiple: false, retainSelection: true) { result in importing = false; if case .success(let urls) = result, let url = urls.first { Task { await sendFile(url) } } }.ignoresSafeArea() }
+        .sheet(isPresented: $importing) { filePicker }
         .onChange(of: photos) { _, items in Task { await sendPhotos(items) } }
+    }
+    var filePicker: some View {
+        FileImportPicker(multiple: false, retainSelection: true) { result in
+            importing = false
+            if case .success(let urls) = result, let url = urls.first { Task { await sendFile(url) } }
+        }.ignoresSafeArea()
+    }
+    @ViewBuilder var notices: some View {
+        if model.info != .null && !model.info["discord"].bool {
+            Label("Kein Discord-Kanal festgelegt. App und Minecraft teilen den Staff-Chat; in den Einstellungen oben rechts verbindest du Discord.", systemImage: "info.circle")
+                .font(.caption).foregroundStyle(.secondary).padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        }
+        if !model.info["lastError"].string.isEmpty { Label(model.info["lastError"].string, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+        if model.items.isEmpty && model.info != .null {
+            ContentUnavailableView("Noch keine Nachrichten", systemImage: "bubble.left.and.text.bubble.right", description: Text("Schreib dem Team – Discord, Minecraft und die App sehen es sofort.")).padding(.top, 40)
+        }
+    }
+    var messages: some View {
+        LazyVStack(spacing: 10) {
+            notices
+            ForEach(model.items, id: \.["id"].string) { row in bubble(row) }
+            Color.clear.frame(height: 1).id("staff-bottom").onAppear { atBottom = true }.onDisappear { atBottom = false }
+        }.padding(.horizontal, 14).padding(.vertical, 10).frame(maxWidth: 900).frame(maxWidth: .infinity)
+    }
+    func isMine(_ row: JSON) -> Bool { row["source"].string == "app" && row["author"].string.caseInsensitiveCompare(model.you) == .orderedSame }
+    func bubble(_ row: JSON) -> some View { SuiteStaffBubble(suite: suite, row: row, mine: isMine(row)).id("s-" + row["id"].string) }
+    func follow(_ proxy: ScrollViewProxy, old: Int, new: Int) {
+        guard new > old && (atBottom || old == 0) else { return }
+        withAnimation(.snappy) { proxy.scrollTo("staff-bottom", anchor: .bottom) }
+    }
+    func poll(_ proxy: ScrollViewProxy) async {
+        guard scenePhase == .active else { return }
+        await model.load(reset: true); proxy.scrollTo("staff-bottom", anchor: .bottom)
+        while !Task.isCancelled { do { try await Task.sleep(for: .seconds(4)) } catch { return }; await model.load() }
     }
     var pingTitle: String {
         if pings.contains("all") { return "@alle" }
