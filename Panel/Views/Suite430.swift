@@ -410,6 +410,12 @@ struct SuiteAccessLockPlayerView: View {
         .panelScreen().navigationTitle(who).navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }
         .suiteConfirm(runner) { picked = []; await load() }
     }
+    var inheritOn: Bool { user["inherit"] == .null || user["inherit"].bool }
+    private func setInherit(_ on: Bool) {
+        let values: [String: JSON] = ["operation": .string("inherit"), "player": .string(user["uuid"].string), "node": .string(""), "value": .string(String(on))]
+        let title = on ? "Alt-Vererbung einschalten?" : "Alt-Vererbung ausschalten?"
+        Task { await runner.ask("management.apply", values, title: title) }
+    }
     var activeCount: Int { user["locks"].array.count + user["blockedRights"].int }
     private var headerSection: some View {
         Section {
@@ -417,7 +423,7 @@ struct SuiteAccessLockPlayerView: View {
             LabeledContent("Aktive Sperren", value: String(activeCount))
             if suite.features.contains("luckperms-v1") { NavigationLink { SuiteLuckPermsPlayerView(suite: suite, player: user["uuid"].string.isEmpty ? player : user["uuid"].string) } label: { Label("Rang & LuckPerms-Rechte", systemImage: "crown.fill") }.disabled(!suite.can("data.luckperms")) }
             if user["profile"].bool && suite.scope == "full" && suite.can("action.management.apply") {
-                Toggle("Sperren auf Alt-Accounts übertragen", isOn: Binding(get: { user["inherit"] == .null || user["inherit"].bool }, set: { on in Task { await runner.ask("management.apply", ["operation": .string("inherit"), "player": .string(user["uuid"].string), "node": .string(""), "value": .string(String(on))], title: on ? "Alt-Vererbung einschalten?" : "Alt-Vererbung ausschalten?") } }))
+                Toggle("Sperren auf Alt-Accounts übertragen", isOn: Binding(get: { inheritOn }, set: { setInherit($0) }))
             }
             if activeCount > 0 { Button("Alle Sperren aufheben", systemImage: "lock.open.fill", role: .destructive) { ask(["operation": .string("clear")], "Alle Sperren von " + who + " aufheben – Bereiche und Einzelrechte?") }.disabled(!canEdit) }
         } header: { Text(who) } footer: { Text("Alle Rechte dieses Spielers an einem Ort: Bereiche mit Land-Option und alle weiteren Einzelrechte – jeweils mit Dauer.") }
@@ -498,13 +504,13 @@ struct SuiteAccessLockPlayerView: View {
                 if !rank["prefix"].string.isEmpty || !rank["suffix"].string.isEmpty { SuiteMinecraftPreview(prefix: rank["prefix"].string, name: who, suffix: rank["suffix"].string) }
                 ForEach(rank["groups"].array, id: \.["key"].string) { group in
                     SuiteRankGroupRow(group: group, primary: rank["primary"].string)
-                        .swipeActions { Button("Entfernen", role: .destructive) { askRank(["operation": .string("user-parent-remove"), "group": group["group"]], who + " aus „" + group["group"].string + "“ entfernen?") }.disabled(!canEditRank) }
+                        .swipeActions { Button("Entfernen", role: .destructive) { ungroup(group) }.disabled(!canEditRank) }
                 }
                 Menu {
                     ForEach(availableGroups, id: \.["name"].string) { group in
                         Menu(group["name"].string) {
                             ForEach(["", "1d", "7d", "30d"], id: \.self) { time in
-                                Button(SuiteAccessLockText.duration(time)) { askRank(["operation": .string(time.isEmpty ? "user-parent-add" : "user-parent-temp"), "group": group["name"], "duration": .string(time)], who + " zu „" + group["name"].string + "“ hinzufügen?") }
+                                Button(SuiteAccessLockText.duration(time)) { grant(group, time) }
                             }
                         }
                     }
@@ -519,18 +525,23 @@ struct SuiteAccessLockPlayerView: View {
                 if user["alts"].array.isEmpty { Text("Keine bestätigten Alt-Accounts.").foregroundStyle(.secondary) }
                 ForEach(user["alts"].array, id: \.["uuid"].string) { alt in
                     NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: alt["uuid"].string) } label: {
-                        HStack {
-                            Label(alt["name"].string, systemImage: alt["online"].bool ? "person.fill.checkmark" : "person")
-                            Spacer()
-                            Text(heirIds.contains(alt["uuid"].string) ? "erbt Sperren" : alt["inherit"].bool ? "erbt bei Sperren" : "Vererbung aus").font(.caption).foregroundStyle(heirIds.contains(alt["uuid"].string) ? Color.orange : Color.secondary)
-                        }
+                        SuiteAltRow(alt: alt, inherits: heirIds.contains(alt["uuid"].string))
                     }
                 }
                 ForEach(user["inheritedLocks"].array, id: \.["flag"].string) { lock in
-                    Label(lock["title"].string + " · geerbt von " + lock["fromName"].string + " · " + lock["remaining"].string, systemImage: "arrow.triangle.branch").font(.caption).foregroundStyle(.purple)
+                    Label(SuiteAltRow.inheritedLine(lock), systemImage: "arrow.triangle.branch").font(.caption).foregroundStyle(.purple)
                 }
             } header: { Text("Alt-Accounts") } footer: { Text("Sperren gelten automatisch für alle bestätigten Alt-Accounts – auch für künftig erkannte –, solange die Alt-Vererbung oben eingeschaltet ist. Aufheben beim Hauptkonto hebt sie überall auf.") }
         }
+    }
+    private func grant(_ group: JSON, _ time: String) {
+        let operation = time.isEmpty ? "user-parent-add" : "user-parent-temp"
+        let name = group["name"].string
+        askRank(["operation": .string(operation), "group": .string(name), "duration": .string(time)], who + " zu „" + name + "“ hinzufügen?")
+    }
+    private func ungroup(_ group: JSON) {
+        let name = group["group"].string
+        askRank(["operation": .string("user-parent-remove"), "group": .string(name)], who + " aus „" + name + "“ entfernen?")
     }
     var availableGroups: [JSON] {
         let current = Set(rank["groups"].array.map { $0["group"].string })
@@ -540,16 +551,38 @@ struct SuiteAccessLockPlayerView: View {
     private func inherited(_ flag: String) -> JSON { user["inheritedLocks"].array.first { $0["flag"].string == flag } ?? .null }
 }
 
+struct SuiteAltRow: View {
+    let alt: JSON
+    let inherits: Bool
+    var status: String { inherits ? "erbt Sperren" : alt["inherit"].bool ? "erbt bei Sperren" : "Vererbung aus" }
+    var body: some View {
+        HStack {
+            Label(alt["name"].string, systemImage: alt["online"].bool ? "person.fill.checkmark" : "person")
+            Spacer()
+            Text(status).font(.caption).foregroundStyle(inherits ? Color.orange : Color.secondary)
+        }
+    }
+    static func inheritedLine(_ lock: JSON) -> String {
+        let title = lock["title"].string, from = lock["fromName"].string, rest = lock["remaining"].string
+        return title + " · geerbt von " + from + " · " + rest
+    }
+}
+
 struct SuiteRankGroupRow: View {
     let group: JSON
     let primary: String
+    var until: String {
+        let expiry = group["expiry"].double
+        guard expiry > 0 else { return "dauerhaft" }
+        return "bis " + Date(timeIntervalSince1970: expiry / 1000).formatted(date: .abbreviated, time: .shortened)
+    }
     var body: some View {
         HStack {
             Image(systemName: "crown.fill").foregroundStyle(.yellow)
             Text(group["group"].string).bold(group["group"].string == primary)
             if group["group"].string == primary { Text("primär").font(.caption2).foregroundStyle(.secondary) }
             Spacer()
-            Text(group["expiry"].double > 0 ? "bis " + Date(timeIntervalSince1970: group["expiry"].double / 1000).formatted(date: .abbreviated, time: .shortened) : "dauerhaft").font(.caption).foregroundStyle(.secondary)
+            Text(until).font(.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -562,24 +595,40 @@ struct SuiteAccessLockFlagRow: View {
     @Binding var picked: Bool
     let canEdit: Bool
     let remove: () -> Void
+    var stateText: String { active != .null ? "gesperrt" : inherited != .null ? "geerbt" : legacy.isEmpty ? "erlaubt" : "alte Sperre" }
+    var stateColor: Color {
+        if active != .null { return .red }
+        if inherited != .null { return .purple }
+        return legacy.isEmpty ? .green : .orange
+    }
+    var activeText: String {
+        let reason = active["reason"].string
+        return active["scopeTitle"].string + " · " + active["remaining"].string + (reason.isEmpty ? "" : " · " + reason)
+    }
+    var inheritedText: String { "Geerbt von " + inherited["fromName"].string + " · " + inherited["scopeTitle"].string + " · " + inherited["remaining"].string }
+    var legacyText: String {
+        let names: [String] = legacy.map { row in row["name"].string + " (" + row["remaining"].string + ")" }
+        return "Alte Einzelsperre: " + names.joined(separator: ", ") + " – wird mit aufgehoben"
+    }
     var body: some View {
-        Toggle(isOn: $picked) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: SuiteAccessLockText.symbol(flag["id"].string)).foregroundStyle(active == .null ? Color.panelAccent : .red).frame(width: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(flag["title"].string).font(.subheadline.weight(.semibold))
-                        Text(active != .null ? "gesperrt" : legacy.isEmpty ? "erlaubt" : "alte Sperre").font(.caption2.bold()).foregroundStyle(active != .null ? Color.red : legacy.isEmpty ? Color.green : Color.orange)
-                    }
-                    if active != .null { Text(active["scopeTitle"].string + " · " + active["remaining"].string + (active["reason"].string.isEmpty ? "" : " · " + active["reason"].string)).font(.caption).foregroundStyle(.red) }
-                    if active == .null && inherited != .null { Text("Geerbt von " + inherited["fromName"].string + " · " + inherited["scopeTitle"].string + " · " + inherited["remaining"].string).font(.caption).foregroundStyle(.purple) }
-                    if !legacy.isEmpty { Text("Alte Einzelsperre: " + legacy.map { $0["name"].string + " (" + $0["remaining"].string + ")" }.joined(separator: ", ") + " – wird mit aufgehoben").font(.caption).foregroundStyle(.orange) }
-                    Text(flag["explain"].string).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
-                }
-            }
-        }
+        Toggle(isOn: $picked) { label }
         .disabled(!canEdit)
         .swipeActions { if active != .null || !legacy.isEmpty { Button("Aufheben", role: .destructive, action: remove).disabled(!canEdit) } }
+    }
+    private var label: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: SuiteAccessLockText.symbol(flag["id"].string)).foregroundStyle(stateColor).frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(flag["title"].string).font(.subheadline.weight(.semibold))
+                    Text(stateText).font(.caption2.bold()).foregroundStyle(stateColor)
+                }
+                if active != .null { Text(activeText).font(.caption).foregroundStyle(.red) }
+                if active == .null && inherited != .null { Text(inheritedText).font(.caption).foregroundStyle(.purple) }
+                if !legacy.isEmpty { Text(legacyText).font(.caption).foregroundStyle(.orange) }
+                Text(flag["explain"].string).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
+            }
+        }
     }
 }
 
@@ -600,12 +649,13 @@ struct SuiteClassicRightRow: View {
     let canEdit: Bool
     let block: (String) -> Void
     let allow: () -> Void
+    var stateLine: String { right["blocked"].bool ? "Gesperrt · " + right["remaining"].string : "Erlaubt" }
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: right["blocked"].bool ? "lock.fill" : "checkmark.circle.fill").foregroundStyle(right["blocked"].bool ? Color.red : Color.green).frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(right["name"].string).font(.subheadline)
-                Text(right["blocked"].bool ? "Gesperrt · " + right["remaining"].string : "Erlaubt").font(.caption).foregroundStyle(right["blocked"].bool ? Color.red : Color.secondary)
+                Text(stateLine).font(.caption).foregroundStyle(right["blocked"].bool ? Color.red : Color.secondary)
             }
             Spacer(minLength: 6)
             if right["blocked"].bool {
