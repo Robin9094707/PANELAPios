@@ -17,17 +17,36 @@ import SwiftUI
         do { let next = try await suite.prepare(path, values: values); self.title = title; plan = next }
         catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
     }
-    /// Executes the prepared change; true when the server accepted it.
-    func confirm() async -> Bool {
-        let ticket = plan["ticket"].string
+    /// Executes a prepared change; true when the server accepted it.
+    /// 4.4.0: the ticket is passed in by the alert button. Before, it was read inside a Task – after SwiftUI had
+    /// already dismissed the alert and cleared the plan – so every confirmation was sent without its ticket
+    /// ("Bestätigung abgelaufen, bereits verwendet oder nicht für diesen Schlüssel").
+    func confirm(_ ticket: String) async -> Bool {
         plan = .null
+        guard !ticket.isEmpty else { error = "Die Bestätigung ist abgelaufen. Bitte noch einmal versuchen."; return false }
         busy = true; defer { busy = false }
         do {
             let reply = try await suite.execute(ticket)
             if reply["ok"] == .bool(false) { error = reply["description"].string.isEmpty ? reply["title"].string : reply["description"].string; return false }
             notice = reply["title"].string
             Feedback.success()
-            try? await Task.sleep(for: .milliseconds(900))
+            // LuckPerms applies console commands a moment later; the reload right after should already see it.
+            try? await Task.sleep(for: .milliseconds(700))
+            return true
+        } catch {
+            if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription }
+            return false
+        }
+    }
+    /// 4.4.0 live switches: prepares and executes in one go (the switch itself is the confirmation).
+    func apply(_ path: String, _ values: [String: JSON]) async -> Bool {
+        busy = true; defer { busy = false }
+        do {
+            let next = try await suite.prepare(path, values: values)
+            let reply = try await suite.execute(next["ticket"].string)
+            if reply["ok"] == .bool(false) { error = reply["description"].string.isEmpty ? reply["title"].string : reply["description"].string; return false }
+            notice = reply["title"].string
+            Feedback.success()
             return true
         } catch {
             if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription }
@@ -45,7 +64,10 @@ private struct SuiteConfirmModifier: ViewModifier {
         content
             .alert(runner.title, isPresented: Binding(get: { runner.asking }, set: { if !$0 { runner.plan = .null } })) {
                 Button("Abbrechen", role: .cancel) { runner.plan = .null }
-                Button("Ausführen") { Task { if await runner.confirm() { await done() } } }
+                Button("Ausführen") {
+                    let ticket = runner.plan["ticket"].string
+                    Task { if await runner.confirm(ticket) { await done() } }
+                }
             } message: { Text(SuiteConfirmRunner.plain(runner.plan["summary"].string)) }
             .errorAlert($runner.error)
     }
@@ -227,6 +249,11 @@ struct SuiteLuckPermsView: View {
                 groupSection
                 teamSection
                 trackSection
+                if !data["templates"].array.isEmpty {
+                    SuiteLuckPermsTemplateSection(templates: data["templates"].array, enabled: canEdit && !runner.busy) { template, name in
+                        Task { await runner.ask("luckperms.edit", ["operation": .string("group-template"), "template": template["id"], "group": .string(name)], title: "Vorlage „" + template["title"].string + "“ anwenden?") }
+                    }
+                }
             }
         }
         .panelScreen().navigationTitle("Ränge & Rechte").task { await load() }.refreshable { await load() }
@@ -298,24 +325,6 @@ struct SuiteLuckPermsGroupRow: View {
     }
 }
 
-/// Shared form for a new permission (optional duration and context).
-struct SuitePermissionForm: View {
-    let disabled: Bool
-    let submit: (String, Bool, String, String) -> Void
-    @State private var node = ""
-    @State private var deny = false
-    @State private var duration = ""
-    @State private var context = ""
-    var body: some View {
-        TextField("Recht, z. B. essentials.fly", text: $node).textInputAutocapitalization(.never).autocorrectionDisabled()
-        TextField("Dauer (leer = dauerhaft, z. B. 7d)", text: $duration).textInputAutocapitalization(.never).autocorrectionDisabled()
-        TextField("Kontext (optional, world=farmwelt)", text: $context).textInputAutocapitalization(.never).autocorrectionDisabled()
-        Toggle("Verweigern (false)", isOn: $deny)
-        Button("Recht setzen", systemImage: "plus") { submit(node.trimmingCharacters(in: .whitespaces), deny, duration.trimmingCharacters(in: .whitespaces), context.trimmingCharacters(in: .whitespaces)); node = ""; duration = ""; context = ""; deny = false }
-            .disabled(disabled || node.trimmingCharacters(in: .whitespaces).isEmpty)
-    }
-}
-
 struct SuiteNodeRow: View {
     let node: JSON
     var body: some View {
@@ -347,6 +356,7 @@ struct SuiteLuckPermsGroupView: View {
     @State private var value = ""
     @State private var affix: String?
     @State private var known: [JSON] = []
+    @State private var pending: [String: Bool] = [:]
     init(suite: SuiteAPI, name: String) { self.suite = suite; self.name = name; _runner = StateObject(wrappedValue: SuiteConfirmRunner(suite)) }
     var canEdit: Bool { suite.scope == "full" && suite.can("action.luckperms.edit") }
     var permissions: [JSON] { group["nodes"].array.filter { $0["key"].string.range(of: "^(group|prefix|suffix|weight|displayname|meta)\\.", options: .regularExpression) == nil } }
@@ -398,10 +408,23 @@ struct SuiteLuckPermsGroupView: View {
     private var nodeSection: some View {
         Section {
             ForEach(permissions, id: \.["key"].string) { node in
-                SuiteNodeRow(node: node).swipeActions { Button("Entfernen", role: .destructive) { ask(["operation": .string("group-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht „" + node["key"].string + "“ entfernen?") }.disabled(!canEdit) }
+                SuiteNodeToggleRow(node: node, value: nodeBinding(node), enabled: canEdit && !runner.busy)
+                    .swipeActions { Button("Entfernen", role: .destructive) { ask(["operation": .string("group-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht „" + node["key"].string + "“ entfernen?") }.disabled(!canEdit) }
                     .contextMenu { Button("Entfernen", systemImage: "trash", role: .destructive) { ask(["operation": .string("group-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht „" + node["key"].string + "“ entfernen?") }.disabled(!canEdit) }
             }
-        } header: { Text("Rechte (\(permissions.count))") } footer: { Text("Nach links wischen oder lange drücken zum Entfernen.") }
+        } header: { Text("Rechte (\(permissions.count))") } footer: { Text("Schalter an = erlaubt (true), aus = verweigert (false) – wird sofort in LuckPerms gespeichert. Nach links wischen zum Entfernen.") }
+    }
+    private func nodeBinding(_ node: JSON) -> Binding<Bool> {
+        let key = node["key"].string + "|" + node["context"].string
+        return Binding(get: { pending[key] ?? (node["value"] != .bool(false)) }, set: { on in
+            pending[key] = on
+            Task {
+                _ = await runner.apply("luckperms.edit", ["operation": .string("group-permission-set"), "group": .string(name), "node": node["key"], "value": .string(String(on)), "context": .string(SuiteNodeRow.context(node))])
+                try? await Task.sleep(for: .milliseconds(600))
+                await load()
+                pending[key] = nil
+            }
+        })
     }
     @ViewBuilder private var memberSection: some View {
         if !group["members"].array.isEmpty {
@@ -441,6 +464,7 @@ struct SuiteLuckPermsPlayerView: View {
     @State private var duration = ""
     @State private var affix: String?
     @State private var known: [JSON] = []
+    @State private var pending: [String: Bool] = [:]
     init(suite: SuiteAPI, player: String) { self.suite = suite; self.player = player; _runner = StateObject(wrappedValue: SuiteConfirmRunner(suite)) }
     var canEdit: Bool { suite.scope == "full" && suite.can("action.luckperms.edit") }
     var who: String { user["name"].string.isEmpty ? player : user["name"].string }
@@ -457,6 +481,7 @@ struct SuiteLuckPermsPlayerView: View {
                     Button(own("suffix") ? "Eigenes Suffix ändern" : "Eigenes Suffix setzen", systemImage: "textformat.abc") { affix = "suffix" }.disabled(!canEdit)
                 }
                 if suite.features.contains("access-locks-v1") { NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: user["uuid"].string.isEmpty ? player : user["uuid"].string) } label: { Label("Rechte & Sperren", systemImage: "lock.shield.fill") }.disabled(!suite.can("data.access-locks")) }
+                if suite.features.contains("command-rights-v1") { NavigationLink { SuiteCommandPlayerView(suite: suite, player: user["uuid"].string.isEmpty ? player : user["uuid"].string) } label: { Label("Befehle erlauben & sperren", systemImage: "terminal.fill") }.disabled(!suite.can("data.commands")) }
             } header: { Text(who) } footer: { Text("Ein eigenes Präfix überschreibt das Gruppenpräfix nur für diesen Spieler; leer speichern = wieder das Gruppenpräfix.") }
             groupSection
             addGroupSection
@@ -465,7 +490,7 @@ struct SuiteLuckPermsPlayerView: View {
             Section("Eigene Rechte") {
                 if user["nodes"].array.isEmpty { Text("Keine – alles kommt aus den Gruppen.").foregroundStyle(.secondary) }
                 ForEach(user["nodes"].array, id: \.["key"].string) { node in
-                    SuiteNodeRow(node: node).swipeActions { Button("Entfernen", role: .destructive) { ask(["operation": .string("user-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht entfernen?") }.disabled(!canEdit) }
+                    ownNodeRow(node)
                 }
             }
         }
@@ -477,6 +502,28 @@ struct SuiteLuckPermsPlayerView: View {
             }
         }
         .suiteConfirm(runner) { await load() }
+    }
+    @ViewBuilder private func ownNodeRow(_ node: JSON) -> some View {
+        let meta = node["key"].string.range(of: "^(prefix|suffix|meta|weight|displayname)\\.", options: .regularExpression) != nil
+        if meta {
+            SuiteNodeRow(node: node)
+        } else {
+            SuiteNodeToggleRow(node: node, value: ownBinding(node), enabled: canEdit && !runner.busy)
+                .swipeActions { Button("Entfernen", role: .destructive) { ask(["operation": .string("user-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht entfernen?") }.disabled(!canEdit) }
+        }
+    }
+    private func ownBinding(_ node: JSON) -> Binding<Bool> {
+        let key = node["key"].string + "|" + node["context"].string
+        let id = user["uuid"].string.isEmpty ? player : user["uuid"].string
+        return Binding(get: { pending[key] ?? (node["value"] != .bool(false)) }, set: { on in
+            pending[key] = on
+            Task {
+                _ = await runner.apply("luckperms.edit", ["operation": .string("user-permission-set"), "player": .string(id), "node": node["key"], "value": .string(String(on)), "context": .string(SuiteNodeRow.context(node))])
+                try? await Task.sleep(for: .milliseconds(600))
+                await load()
+                pending[key] = nil
+            }
+        })
     }
     private var groupSection: some View {
         Section("Gruppen") {

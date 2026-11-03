@@ -49,7 +49,46 @@ final class LuckPermsAdmin {
             tracks.add(SimplexAdminSuite.appMap("name", call(track, "getName"), "groups", new ArrayList<>((List<?>) call(track, "getGroups"))));
         tracks.sort(Comparator.comparing(t -> String.valueOf(t.get("name"))));
         Object platform = optional(api, "getPluginMetadata");
-        return SimplexAdminSuite.appMap("installed", true, "version", platform == null ? "" : String.valueOf(optional(platform, "getVersion")), "groups", groups, "tracks", tracks);
+        return SimplexAdminSuite.appMap("installed", true, "version", platform == null ? "" : String.valueOf(optional(platform, "getVersion")), "groups", groups, "tracks", tracks, "templates", templates());
+    }
+
+    // ---------------------------------------------------------------- 10.1.0 group templates
+
+    record Template(String id, String title, String explain, int weight, String prefix, List<String> permissions) { }
+    static final Map<String, Template> TEMPLATES = new LinkedHashMap<>();
+    static {
+        template("spieler", "Spieler", "Grundrechte: Home, Spawn, TPA, Nachrichten, Bezahlen.", 1, "&7",
+            "essentials.home", "essentials.sethome", "essentials.delhome", "essentials.spawn", "essentials.tpa", "essentials.tpaccept", "essentials.tpdeny", "essentials.msg", "essentials.r", "essentials.pay", "essentials.balance", "essentials.list", "lands.lands");
+        template("vip", "VIP", "Wie Spieler, dazu Hut, Werkbank, Spitzname und Chatfarben.", 20, "&6&l✦ VIP &r",
+            "essentials.hat", "essentials.workbench", "essentials.nick", "essentials.chat.color", "essentials.enderchest", "essentials.sethome.multiple");
+        template("builder", "Builder", "Bauen mit WorldEdit und Kreativmodus.", 30, "&a[Builder] &r",
+            "worldedit.*", "minecraft.command.gamemode", "essentials.gamemode", "essentials.fly", "essentials.speed");
+        template("supporter", "Supporter", "Tickets, Verlauf ansehen, Kick und Mute.", 50, "&8[&bSupport&8] &r",
+            "minecraft.command.kick", "litebans.history", "litebans.mute", "litebans.kick", "litebans.warn", "essentials.mute", "essentials.kick", "simplexadminsuite.tickets");
+        template("moderator", "Moderator", "Wie Supporter, dazu Banns, Vanish, Inventare und Rechte-Sperren.", 70, "&9[Mod] &r",
+            "minecraft.command.kick", "minecraft.command.ban", "litebans.ban", "litebans.tempban", "litebans.mute", "litebans.tempmute", "litebans.kick", "litebans.warn", "litebans.history",
+            "essentials.vanish", "essentials.invsee", "essentials.tp", "simplexadminsuite.accesslocks", "simplexadminsuite.tickets");
+        template("admin", "Admin", "Verwaltung: Suite-Admin, Spielmodus, Teleport, Items, WorldEdit und Essentials.", 90, "&c&l[Admin] &r",
+            "simplexadminsuite.admin", "minecraft.command.gamemode", "minecraft.command.tp", "minecraft.command.give", "essentials.*", "worldedit.*", "litebans.*");
+    }
+    private static void template(String id, String title, String explain, int weight, String prefix, String... permissions) { TEMPLATES.put(id, new Template(id, title, explain, weight, prefix, List.of(permissions))); }
+    static List<Map<String, Object>> templates() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Template t : TEMPLATES.values()) out.add(SimplexAdminSuite.appMap("id", t.id(), "title", t.title(), "explain", t.explain(), "weight", t.weight(), "prefix", t.prefix(), "permissions", t.permissions()));
+        return out;
+    }
+
+    /** Preloads a LuckPerms user (offline players from storage) off the main thread; null without LuckPerms. */
+    static Object loadUserQuietly(UUID uuid) {
+        try {
+            Plugin lp = Bukkit.getPluginManager().getPlugin("LuckPerms");
+            if (lp == null) return null;
+            Object api = Class.forName("net.luckperms.api.LuckPermsProvider", true, lp.getClass().getClassLoader()).getMethod("get").invoke(null);
+            Object manager = call(api, "getUserManager");
+            Object user = call(manager, "getUser", uuid);
+            if (user == null) user = ((Future<?>) call(manager, "loadUser", uuid)).get(5, TimeUnit.SECONDS);
+            return user;
+        } catch (Throwable unavailable) { return null; }
     }
 
     private Map<String, Object> groupSummary(Object group) throws Exception {
@@ -143,6 +182,21 @@ final class LuckPermsAdmin {
 
     // ---------------------------------------------------------------- changes (main thread)
 
+    /** 10.1.0: all commands of an operation – a template expands to several, everything else is one. */
+    static List<String> commands(Map<String, Object> values) {
+        if (!text(values, "operation").equals("group-template")) return List.of(command(values));
+        Template t = TEMPLATES.get(text(values, "template"));
+        if (t == null) throw new IllegalArgumentException("Unbekannte Vorlage (" + String.join(", ", TEMPLATES.keySet()) + ")");
+        String group = check(text(values, "group").isEmpty() ? t.id() : text(values, "group").toLowerCase(Locale.ROOT), GROUP, "Gruppenname: a–z, 0–9, _ oder -");
+        List<String> out = new ArrayList<>();
+        out.add("lp creategroup " + group);
+        out.add("lp group " + group + " setweight " + t.weight());
+        out.add("lp group " + group + " meta setprefix " + t.weight() + " \"" + affix(t.prefix()) + "\"");
+        if (!group.equals("default")) out.add("lp group " + group + " parent add default");
+        for (String node : t.permissions()) out.add("lp group " + group + " permission set " + check(node, NODE, "Recht ungültig") + " true");
+        return out;
+    }
+
     /** Builds the exact LuckPerms command for an operation, or throws on any invalid argument. */
     static String command(Map<String, Object> values) {
         String op = text(values, "operation"), group = text(values, "group").toLowerCase(Locale.ROOT), player = text(values, "player"), node = text(values, "node"),
@@ -216,16 +270,21 @@ final class LuckPermsAdmin {
 
     /** Human-readable confirmation text shown before the change is executed. */
     static String summary(Map<String, Object> values) {
-        String cmd = command(values);
-        return "**LuckPerms-Änderung**\n`/" + cmd + "`\nLuckPerms speichert und synchronisiert die Änderung selbst. Rechte wirken sofort für online Spieler.";
+        List<String> cmds = commands(values);
+        if (cmds.size() == 1) return "**LuckPerms-Änderung**\n`/" + cmds.get(0) + "`\nLuckPerms speichert und synchronisiert die Änderung selbst. Rechte wirken sofort für online Spieler.";
+        Template t = TEMPLATES.get(text(values, "template"));
+        return "**LuckPerms-Vorlage „" + t.title() + "“**\n" + t.explain() + "\n" + cmds.size() + " Befehle: Gruppe anlegen, Gewicht " + t.weight() + ", Präfix, erbt default und "
+            + t.permissions().size() + " Rechte (" + String.join(", ", t.permissions()) + "). Bestehende Rechte der Gruppe bleiben erhalten.";
     }
 
     Map<String, Object> apply(Map<String, Object> values, String actor) {
         if (!installed()) throw new IllegalArgumentException("LuckPerms ist nicht installiert.");
-        String cmd = command(values);
-        boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
+        List<String> cmds = commands(values);
+        boolean ok = true;
+        for (String cmd : cmds) ok &= Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
+        String cmd = cmds.size() == 1 ? cmds.get(0) : cmds.get(0) + " … (" + cmds.size() + " Befehle)";
         plugin.suiteAudit(actor, "LuckPerms geändert", cmd);
-        return SimplexAdminSuite.appMap("ok", ok, "title", ok ? "An LuckPerms übergeben" : "LuckPerms hat den Befehl abgelehnt", "description", "/" + cmd + (ok ? "\nDie Ansicht aktualisiert sich in wenigen Sekunden." : ""), "command", cmd);
+        return SimplexAdminSuite.appMap("ok", ok, "title", ok ? (cmds.size() == 1 ? "An LuckPerms übergeben" : "Vorlage an LuckPerms übergeben") : "LuckPerms hat den Befehl abgelehnt", "description", "/" + cmd + (ok ? "\nDie Ansicht aktualisiert sich in wenigen Sekunden." : ""), "command", cmd);
     }
 
     private static String text(Map<String, Object> values, String key) { Object v = values.get(key); return v == null ? "" : String.valueOf(v).trim(); }

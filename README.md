@@ -1,4 +1,8 @@
-## Aktuelles Update: Panel 4.3.1 / Admin Suite 10.0.1
+## Aktuelles Update: Panel 4.4.0 / Admin Suite 10.1.0
+
+Live-Schalter (an = erlaubt, aus = gesperrt, sofort gespeichert), Fix für „Bestätigung abgelaufen“ bei Rängen und Sperren, **Befehle pro Spieler** (nach Art/Plugin/A–Z, mit Dauer, Grund und Alt-Vererbung, globale Sperren), Rang mit Präfix/Suffix und Gruppenvergabe im Spielerprofil, LuckPerms-Rechte als Schalter und Rang-Vorlagen – in App, Webpanel und Java-/Bedrock-Menü. [Update 4.4.0](UPDATE-4.4.0.md) · [Suite 10.1.0](Companion/AdminSuite/UPDATE-10.1.0.md).
+
+## Panel 4.3.1 / Admin Suite 10.0.1
 
 Rechte & Sperren an einem Ort: Spielerprofil → **Rechte & Sperren** vereint Bereiche mit Land-Option und alle weiteren Spielerrechte (Chat, PvP, Nether, Freeze …), jeweils mit Dauer; keine doppelte Verwaltung mehr, Alt-Account-Vererbung, Ränge direkt im Profil, Live-Spielersuche mit Teilnamen in allen Spielerfeldern, gleicher Einstieg im Java- und Bedrock-Menü. [Update 4.3.1](UPDATE-4.3.1.md) · [Suite 10.0.1](Companion/AdminSuite/UPDATE-10.0.1.md).
 

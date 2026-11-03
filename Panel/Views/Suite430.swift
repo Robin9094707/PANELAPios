@@ -287,26 +287,19 @@ struct SuiteAccessLocksView: View {
     let suite: SuiteAPI
     @State private var data: JSON = .null
     @State private var query = ""
-    @State private var matches: [JSON] = []
-    @State private var searching = false
     @State private var error: String?
+    var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
     var body: some View {
         List {
             Section {
-                TextField("Spieler suchen – Name eintippen", text: $query).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("rights-search")
-                if searching { ProgressView() }
-                ForEach(matches, id: \.["id"].string) { row in
-                    NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: row["id"].string) } label: { SuitePlayerMatchRow(row: row) }
-                }
-                if !query.trimmingCharacters(in: .whitespaces).isEmpty && !searching && matches.isEmpty {
-                    NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: query.trimmingCharacters(in: .whitespaces)) } label: { Label("„" + query.trimmingCharacters(in: .whitespaces) + "“ direkt öffnen", systemImage: "person.crop.circle.badge.questionmark") }
-                }
-            } header: { Text("Spieler auswählen") } footer: { Text("Beim Tippen erscheinen passende Spieler – online und offline, wie in der Spielerliste.") }
+                SuiteLivePlayerField(suite: suite, title: "Spieler suchen – Teil des Namens genügt", text: $query)
+                NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: trimmed) } label: { Label("Rechte & Sperren öffnen", systemImage: "person.crop.circle") }
+                    .disabled(trimmed.isEmpty).accessibilityIdentifier("rights-open")
+            } header: { Text("Spieler auswählen") } footer: { Text("Beim Tippen erscheinen passende Spieler – online und offline.") }
             lockedSection
             SuiteAccessLockHelp(data: data)
         }
         .panelScreen().navigationTitle("Rechte & Sperren").task { await load() }.refreshable { await load() }.errorAlert($error)
-        .task(id: query) { await search() }
     }
     @ViewBuilder private var lockedSection: some View {
         Section("Spieler mit Sperren") {
@@ -316,17 +309,6 @@ struct SuiteAccessLocksView: View {
                 NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: row["uuid"].string) } label: { SuiteAccessLockRow(row: row) }
             }
         }
-    }
-    private func search() async {
-        let text = query.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { matches = []; return }
-        do {
-            try await Task.sleep(for: .milliseconds(250))
-            searching = true; defer { searching = false }
-            let result = try await suite.data("players", query: ["q": text, "filter": "all", "limit": "8"])
-            try Task.checkCancellation()
-            matches = Array(result["items"].array.prefix(8))
-        } catch { if !RequestFailure.isCancellation(error) && !(error is CancellationError) { self.error = error.localizedDescription } }
     }
     func load() async { do { data = try await suite.data("access-locks") } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } } }
 }
@@ -384,9 +366,10 @@ struct SuiteAccessLockPlayerView: View {
     let player: String
     @StateObject private var runner: SuiteConfirmRunner
     @State private var data: JSON = .null
-    @State private var picked: Set<String> = []
+    /// Switch positions the user just changed, shown until the server confirms them (optimistic, no flicker).
+    @State private var pending: [String: Bool] = [:]
     @State private var scope = "default"
-    @State private var duration = "1d"
+    @State private var duration = ""
     @State private var presetDuration = "7d"
     @State private var reason = ""
     @State private var rank: JSON = .null
@@ -399,16 +382,16 @@ struct SuiteAccessLockPlayerView: View {
     var body: some View {
         List {
             headerSection
+            settingsSection
+            flagSection
+            rightsSections
             rankSection
             altSection
-            flagSection
-            settingsSection
-            rightsSections
             presetSection
             SuiteAccessLockHelp(data: data)
         }
         .panelScreen().navigationTitle(who).navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }
-        .suiteConfirm(runner) { picked = []; await load() }
+        .suiteConfirm(runner) { await load() }
     }
     var inheritOn: Bool { user["inherit"] == .null || user["inherit"].bool }
     private func setInherit(_ on: Bool) {
@@ -421,12 +404,24 @@ struct SuiteAccessLockPlayerView: View {
         Section {
             LabeledContent("Status", value: user["online"].bool ? "Online" : "Offline")
             LabeledContent("Aktive Sperren", value: String(activeCount))
-            if suite.features.contains("luckperms-v1") { NavigationLink { SuiteLuckPermsPlayerView(suite: suite, player: user["uuid"].string.isEmpty ? player : user["uuid"].string) } label: { Label("Rang & LuckPerms-Rechte", systemImage: "crown.fill") }.disabled(!suite.can("data.luckperms")) }
+            if suite.features.contains("command-rights-v1") { NavigationLink { SuiteCommandPlayerView(suite: suite, player: playerId) } label: { Label("Befehle erlauben & sperren", systemImage: "terminal.fill") }.disabled(!suite.can("data.commands")) }
             if user["profile"].bool && suite.scope == "full" && suite.can("action.management.apply") {
                 Toggle("Sperren auf Alt-Accounts übertragen", isOn: Binding(get: { inheritOn }, set: { setInherit($0) }))
             }
             if activeCount > 0 { Button("Alle Sperren aufheben", systemImage: "lock.open.fill", role: .destructive) { ask(["operation": .string("clear")], "Alle Sperren von " + who + " aufheben – Bereiche und Einzelrechte?") }.disabled(!canEdit) }
-        } header: { Text(who) } footer: { Text("Alle Rechte dieses Spielers an einem Ort: Bereiche mit Land-Option und alle weiteren Einzelrechte – jeweils mit Dauer.") }
+        } header: { Text(who) } footer: { Text("Alle Rechte dieses Spielers an einem Ort. Jeder Schalter zeigt den aktuellen Stand: an = erlaubt, aus = gesperrt. Änderungen gelten sofort.") }
+    }
+    var playerId: String { user["uuid"].string.isEmpty ? player : user["uuid"].string }
+    /// Optimistic switch value: what the user just chose, otherwise the server state.
+    func switchValue(_ key: String, _ server: Bool) -> Bool { pending[key] ?? server }
+    private func live(_ key: String, _ on: Bool, _ values: [String: JSON]) {
+        pending[key] = on
+        var payload = values; payload["player"] = .string(playerId)
+        Task {
+            _ = await runner.apply("locks.update", payload)
+            await load()
+            pending[key] = nil
+        }
     }
     /** Remaining classic rights grouped (chat, combat, worlds …); each can be blocked for a time or permanently. */
     @ViewBuilder private var rightsSections: some View {
@@ -436,10 +431,10 @@ struct SuiteAccessLockPlayerView: View {
         ForEach(SuiteRightsGrouping.groups(user["rights"].array), id: \.0) { group in
             Section(group.0) {
                 ForEach(group.1, id: \.["id"].string) { right in
-                    SuiteClassicRightRow(right: right, durations: durations, canEdit: canEdit, block: { time in
-                        ask(["operation": .string("right-block"), "right": right["id"], "duration": .string(time)], right["name"].string + " für " + who + " sperren?")
+                    SuiteClassicRightRow(right: right, durations: durations, canEdit: canEdit && !runner.busy, allowed: switchValue("right." + right["id"].string, !right["blocked"].bool), block: { time in
+                        live("right." + right["id"].string, false, ["operation": .string("right-block"), "right": right["id"], "duration": .string(time)])
                     }, allow: {
-                        ask(["operation": .string("right-allow"), "right": right["id"]], right["name"].string + " für " + who + " wieder erlauben?")
+                        live("right." + right["id"].string, true, ["operation": .string("right-allow"), "right": right["id"]])
                     })
                 }
             }
@@ -449,11 +444,21 @@ struct SuiteAccessLockPlayerView: View {
     private var flagSection: some View {
         Section {
             ForEach(data["flags"].array, id: \.["id"].string) { flag in
-                SuiteAccessLockFlagRow(flag: flag, active: active(flag["id"].string), legacy: user["legacy"][flag["id"].string].array, inherited: inherited(flag["id"].string), picked: Binding(get: { picked.contains(flag["id"].string) }, set: { if $0 { picked.insert(flag["id"].string) } else { picked.remove(flag["id"].string) } }), canEdit: canEdit) {
-                    ask(["operation": .string("remove"), "flags": flag["id"]], flag["title"].string + " für " + who + " wieder erlauben?")
-                }
+                flagRow(flag)
             }
-        } header: { Text("Bereiche mit Land-Option") } footer: { Text("Haken setzen, darunter Gültigkeit und Dauer wählen. Gesperrtes kann weder benutzt, abgebaut noch gesprengt werden – auch nicht in Ländern, in denen der Spieler vertraut ist. Wischen zum Aufheben.") }
+        } header: { Text("Bereiche mit Land-Option") } footer: { Text("Schalter aus = gesperrt mit der Gültigkeit und Dauer von oben. Gesperrtes kann weder benutzt, abgebaut noch gesprengt werden – auch nicht in Ländern, in denen der Spieler vertraut ist. Geerbte Sperren hebst du beim Hauptkonto auf.") }
+    }
+    private func flagRow(_ flag: JSON) -> some View {
+        let id = flag["id"].string
+        let own = active(id), legacy = user["legacy"][id].array, inh = inherited(id)
+        let server = own == .null && legacy.isEmpty && inh == .null
+        let binding = Binding<Bool>(get: { switchValue("flag." + id, server) }, set: { on in setFlag(id, on) })
+        let locked = !canEdit || runner.busy || (own == .null && legacy.isEmpty && inh != .null)
+        return SuiteAccessLockFlagRow(flag: flag, active: own, legacy: legacy, inherited: inh, allowed: binding, canEdit: !locked)
+    }
+    private func setFlag(_ id: String, _ on: Bool) {
+        if on { live("flag." + id, true, ["operation": .string("remove"), "flags": .string(id)]) }
+        else { live("flag." + id, false, ["operation": .string("set"), "flags": .string(id), "scope": .string(scope), "duration": .string(duration), "reason": .string(reason.trimmingCharacters(in: .whitespaces))]) }
     }
     private var settingsSection: some View {
         Section {
@@ -463,10 +468,7 @@ struct SuiteAccessLockPlayerView: View {
             }
             Picker("Dauer", selection: $duration) { ForEach(durations, id: \.self) { Text(SuiteAccessLockText.duration($0)).tag($0) } }
             TextField("Grund – sieht der Spieler (optional)", text: $reason)
-            Button("Ausgewählte sperren (\(picked.count))", systemImage: "lock.fill") {
-                ask(["operation": .string("set"), "flags": .string(picked.sorted().joined(separator: ",")), "scope": .string(scope), "duration": .string(duration), "reason": .string(reason.trimmingCharacters(in: .whitespaces))], "Rechte von " + who + " sperren?")
-            }.disabled(!canEdit || picked.isEmpty || runner.busy)
-        } header: { Text("Gültigkeit & Dauer") } footer: { Text(scope == "default" ? "Jeder Bereich nutzt seine empfohlene Einstellung, z. B. Truhen: eigenes Land & Wildnis erlaubt." : data["scopes"].array.first { $0["id"].string == scope }?["explain"].string ?? "") }
+        } header: { Text("Beim Ausschalten gilt") } footer: { Text(scope == "default" ? "Jeder Bereich nutzt seine empfohlene Einstellung, z. B. Truhen: eigenes Land & Wildnis erlaubt." : data["scopes"].array.first { $0["id"].string == scope }?["explain"].string ?? "") }
     }
     private var presetSection: some View {
         Section {
@@ -592,9 +594,8 @@ struct SuiteAccessLockFlagRow: View {
     let active: JSON
     var legacy: [JSON] = []
     var inherited: JSON = .null
-    @Binding var picked: Bool
+    @Binding var allowed: Bool
     let canEdit: Bool
-    let remove: () -> Void
     var stateText: String { active != .null ? "gesperrt" : inherited != .null ? "geerbt" : legacy.isEmpty ? "erlaubt" : "alte Sperre" }
     var stateColor: Color {
         if active != .null { return .red }
@@ -608,12 +609,13 @@ struct SuiteAccessLockFlagRow: View {
     var inheritedText: String { "Geerbt von " + inherited["fromName"].string + " · " + inherited["scopeTitle"].string + " · " + inherited["remaining"].string }
     var legacyText: String {
         let names: [String] = legacy.map { row in row["name"].string + " (" + row["remaining"].string + ")" }
-        return "Alte Einzelsperre: " + names.joined(separator: ", ") + " – wird mit aufgehoben"
+        return "Alte Einzelsperre: " + names.joined(separator: ", ") + " – Schalter an hebt sie auf"
     }
     var body: some View {
-        Toggle(isOn: $picked) { label }
-        .disabled(!canEdit)
-        .swipeActions { if active != .null || !legacy.isEmpty { Button("Aufheben", role: .destructive, action: remove).disabled(!canEdit) } }
+        Toggle(isOn: $allowed) { label }
+            .tint(.green)
+            .disabled(!canEdit)
+            .accessibilityValue(Text(allowed ? "erlaubt" : "gesperrt"))
     }
     private var label: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -626,6 +628,7 @@ struct SuiteAccessLockFlagRow: View {
                 if active != .null { Text(activeText).font(.caption).foregroundStyle(.red) }
                 if active == .null && inherited != .null { Text(inheritedText).font(.caption).foregroundStyle(.purple) }
                 if !legacy.isEmpty { Text(legacyText).font(.caption).foregroundStyle(.orange) }
+                if active == .null && legacy.isEmpty && inherited != .null { Text("Aufheben beim Hauptkonto oder Alt-Vererbung ausschalten").font(.caption2).foregroundStyle(.secondary) }
                 Text(flag["explain"].string).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
             }
         }
@@ -643,28 +646,28 @@ enum SuiteRightsGrouping {
     }
 }
 
+/// One classic right as a switch (on = allowed). Switching off asks for the duration first.
 struct SuiteClassicRightRow: View {
     let right: JSON
     let durations: [String]
     let canEdit: Bool
+    let allowed: Bool
     let block: (String) -> Void
     let allow: () -> Void
+    @State private var asking = false
     var stateLine: String { right["blocked"].bool ? "Gesperrt · " + right["remaining"].string : "Erlaubt" }
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: right["blocked"].bool ? "lock.fill" : "checkmark.circle.fill").foregroundStyle(right["blocked"].bool ? Color.red : Color.green).frame(width: 22)
+        Toggle(isOn: Binding(get: { allowed && !asking }, set: { on in if on { allow() } else { asking = true } })) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(right["name"].string).font(.subheadline)
                 Text(stateLine).font(.caption).foregroundStyle(right["blocked"].bool ? Color.red : Color.secondary)
             }
-            Spacer(minLength: 6)
-            if right["blocked"].bool {
-                Button("Erlauben", action: allow).buttonStyle(.bordered).controlSize(.small).disabled(!canEdit)
-            } else {
-                Menu {
-                    ForEach(durations, id: \.self) { time in Button(SuiteAccessLockText.duration(time)) { block(time) } }
-                } label: { Text("Sperren …").font(.footnote.weight(.semibold)) }.disabled(!canEdit)
-            }
+        }
+        .tint(.green)
+        .disabled(!canEdit)
+        .confirmationDialog(right["name"].string + " sperren – wie lange?", isPresented: $asking, titleVisibility: .visible) {
+            ForEach(durations, id: \.self) { time in Button(SuiteAccessLockText.duration(time)) { block(time) } }
+            Button("Abbrechen", role: .cancel) { }
         }
     }
 }

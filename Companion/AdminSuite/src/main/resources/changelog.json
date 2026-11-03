@@ -1,5 +1,44 @@
 [
   {
+    "version": "10.1.0",
+    "app": "4.4.0",
+    "date": "2026-11-03",
+    "title": "Live-Schalter, Befehle & LuckPerms",
+    "intro": "Jeder Schalter zeigt jetzt den echten Stand – an = erlaubt, aus = gesperrt – und speichert sofort. Dazu Befehlsrechte pro Spieler und eine vollständige LuckPerms-Verwaltung.",
+    "items": [
+      {
+        "icon": "shield",
+        "title": "Bestätigungen in der App repariert",
+        "text": "Änderungen an Rängen, LuckPerms-Rechten, Lands und Sperren schlugen in der App mit „Bestätigung abgelaufen“ fehl. Mit App 4.4.0 ist das behoben."
+      },
+      {
+        "icon": "lock",
+        "title": "Echte An/Aus-Schalter",
+        "text": "Bereiche, Einzelrechte und LuckPerms-Rechte zeigen live, was erlaubt ist. Ausschalten sperrt sofort mit der gewählten Gültigkeit und Dauer, Einschalten gibt frei – ohne Haken und Extra-Knopf."
+      },
+      {
+        "icon": "key",
+        "title": "Befehle pro Spieler",
+        "text": "Alle Befehle des Servers nach Art, Plugin oder A–Z: einzeln oder gruppenweise erlauben und sperren, mit Dauer und Grund. Fehlt dem Rang ein Recht, setzt „Erlauben“ es direkt in LuckPerms. Auch globale Sperren für alle Spieler."
+      },
+      {
+        "icon": "clock",
+        "title": "Alt-Accounts erben Befehlssperren",
+        "text": "Standardmäßig an und pro Sperre abschaltbar; eine eigene Freigabe des Alts hat Vorrang. Gesperrte Befehle verschwinden auch aus der Tab-Vervollständigung."
+      },
+      {
+        "icon": "crown",
+        "title": "Rang im Profil & Vorlagen",
+        "text": "Profil zeigt Präfix, Suffix und Gruppen; Gruppen direkt zuweisen. Vorlagen für Spieler, VIP, Builder, Supporter, Moderator und Admin legen Ränge in einem Schritt an."
+      },
+      {
+        "icon": "gavel",
+        "title": "Auch im Spielmenü",
+        "text": "Java-Inventar und Bedrock-Formulare: Rechte & Sperren → Befehle – nach Art sortiert, Suche, Klick schaltet um, Dauer wählbar."
+      }
+    ]
+  },
+  {
     "version": "10.0.1",
     "app": "4.3.1",
     "date": "2026-11-03",

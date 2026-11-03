@@ -1,6 +1,6 @@
 name: SimplexAdminSuite
 main: eu.simplexsmp.adminsuite.SimplexAdminSuite
-version: 10.0.1
+version: 10.1.0
 api-version: '26.2'
 author: RJ
 website: https://simplexsmp.eu
@@ -724,6 +724,9 @@ permissions:
     default: op
   simplexadminsuite.accesslocks:
     description: Rechte-Sperren für Spieler setzen und aufheben (Truhen, Shulker, Behälter, Türen, Aufheben …).
+    default: op
+  simplexadminsuite.commands.bypass:
+    description: Für alle gesperrte Befehle trotzdem nutzen (Sperren für einzelne Spieler gelten weiterhin).
     default: op
   simplexadminsuite.devices.models:
     description: Globale Bedrock-Gerätemodellsperren verwalten.

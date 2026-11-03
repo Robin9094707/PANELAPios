@@ -211,9 +211,11 @@ struct SuitePlayerView: View {
                     CopyButton(text: current["logoutLocation"]["world"].string + " " + ["x", "y", "z"].map { String(format: "%.1f", current["logoutLocation"][$0].double) }.joined(separator: " / "), title: "Ausloggposition kopieren")
                 }
             }
+            if suite.features.contains("luckperms-v1") && suite.can("data.luckperms") { SuitePlayerRankSection(suite: suite, player: player, name: name) }
             Section("Spielerverwaltung") {
                 if suite.features.contains("player-rights-v1") {
                     NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: player) } label: { Label("Rechte & Sperren", systemImage: "lock.shield.fill") }.disabled(!suite.can("data.access-locks")).accessibilityIdentifier("player-rights")
+                    if suite.features.contains("command-rights-v1") { NavigationLink { SuiteCommandPlayerView(suite: suite, player: player) } label: { Label("Befehle erlauben & sperren", systemImage: "terminal.fill") }.disabled(!suite.can("data.commands")).accessibilityIdentifier("player-commands") }
                 } else {
                     NavigationLink("Spielerrechte & Vererbung") { SuitePermissionView(suite:suite,player:player) }
                 }

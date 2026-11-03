@@ -995,6 +995,7 @@ final class AccessLocks implements Listener {
             playerMenu(p, id);
         }));
         items.add(button("Weitere Rechte", "Chat, Befehle, PvP, Nether, End, Elytra, Freeze, Teleport …\n" + (blocked > 0 ? "§c" + blocked + " gesperrt" : "§aAlle erlaubt") + "\n§7Sperren mit Dauer oder dauerhaft", Material.COMPARATOR, () -> rightsMenu(p, id, "")));
+        if (plugin.commandRights != null) items.add(button("Befehle", plugin.commandRights.describe(id) + "\n§7Jeden Befehl einzeln erlauben oder sperren – nach Art sortiert, mit Dauer und Alt-Vererbung", Material.COMMAND_BLOCK, () -> plugin.commandRights.menu(p, id)));
         items.add(button("Vorlage anwenden", "Klauer, Behälter komplett, Griefer oder alles sperren", Material.WRITABLE_BOOK, () -> presetMenu(p, id)));
         if (locked(id) || blocked > 0) items.add(button("§cAlle Sperren aufheben", "Bereiche und Einzelrechte von " + n + " sofort freigeben", Material.MILK_BUCKET, () -> run(p, id, SimplexAdminSuite.appMap("operation", "clear"))));
         items.add(button("Zurück", "Rechte & Sperren", Material.OAK_DOOR, () -> menu(p)));

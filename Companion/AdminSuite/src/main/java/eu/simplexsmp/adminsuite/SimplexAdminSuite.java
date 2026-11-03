@@ -268,6 +268,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     ModerationControl moderationControl;
     /** 10.0.0 fine-grained, optionally temporary access locks (chests, shulkers, doors, pickup …). */
     AccessLocks accessLocks;
+    CommandRights commandRights;
     UnifiedAdminMenu unifiedMenu;
     ModerationOverview moderationOverview;
     XrayBaitManager xrayBait;
@@ -400,6 +401,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         accessLocks = new AccessLocks(this);
         Bukkit.getPluginManager().registerEvents(accessLocks, this);
         Bukkit.getScheduler().runTaskTimer(this, accessLocks::tick, 100L, 100L);
+        commandRights = new CommandRights(this);
+        Bukkit.getPluginManager().registerEvents(commandRights, this);
+        Bukkit.getScheduler().runTaskTimer(this, commandRights::tick, 110L, 100L);
         register("rechtesperre");
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(new RelayEvents(this), this);

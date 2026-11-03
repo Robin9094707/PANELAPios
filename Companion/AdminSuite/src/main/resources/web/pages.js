@@ -138,6 +138,29 @@
     await load(true);
   };
 
+  function rankCard(p) {
+    var card = S.card("Rang", { icon: "key", sub: "LuckPerms – Präfix, Suffix und Gruppen" }, S.skeleton(1));
+    (async function () {
+      try {
+        var u = await S.api("data/luckperms", { query: { player: p.id }, quiet: true }), all = await S.api("data/luckperms", { quiet: true });
+        var can = S.can("action.luckperms.edit") && S.full(), have = {};
+        (u.groups || []).forEach(function (g) { have[g.group] = true; });
+        var sel = h("select", { class: "input" }, (all.groups || []).filter(function (g) { return !have[g.name]; }).map(function (g) { return h("option", { value: g.name, text: (g.displayName || g.name) + " (Gewicht " + g.weight + ")" }); }));
+        async function run(values, title) { var r = await S.runAction("luckperms.edit", Object.assign({ player: u.uuid }, values), { title: title }); if (r) setTimeout(S.reload, 900); }
+        var body = h("div", { class: "stack" },
+          h("div", { class: "mc-preview" }, S.mcText(u.prefix || ""), h("span", { class: "mc-name", text: p.name }), S.mcText(u.suffix || ""), h("span", { class: "muted", text: ": Hallo!" })),
+          S.kv([["Primäre Gruppe", u.primary], ["Präfix", u.prefix ? S.mcText(u.prefix) : "–"], ["Suffix", u.suffix ? S.mcText(u.suffix) : "–"]]),
+          h("div", { class: "row wrap" }, (u.groups || []).map(function (g) {
+            return h("span", { class: "chip" + (g.group === u.primary ? " on" : "") }, g.group + (g.expiry ? " · bis " + S.date(g.expiry) : ""),
+              h("button", { type: "button", title: "Entfernen", disabled: !can, onClick: function () { run({ operation: "user-parent-remove", group: g.group }, p.name + " aus „" + g.group + "“ entfernen?"); } }, icon("x")));
+          })),
+          sel.options.length ? h("div", { class: "row wrap" }, sel, S.btn("Zuweisen", { kind: "primary", size: "sm", icon: "plus", disabled: !can, onClick: function () { return run({ operation: "user-parent-add", group: sel.value }, p.name + " zu „" + sel.value + "“ hinzufügen?"); } }),
+            S.btn("Als einzige Gruppe", { size: "sm", icon: "check", disabled: !can, onClick: function () { return run({ operation: "user-parent-set", group: sel.value }, "Alle Gruppen von " + p.name + " durch „" + sel.value + "“ ersetzen?"); } })) : null);
+        card.replaceChild(body, card.lastChild);
+      } catch (e) { card.replaceChild(S.notice(e.message, "warn", "alert"), card.lastChild); }
+    })();
+    return card;
+  }
   P.player = async function (id, query, alive) {
     if (!S.can("data.profile")) { S.mount(S.lockedPage("Profil gesperrt", "data.profile")); return; }
     var p = await S.api("data/profile", { query: { player: id } }); if (!alive()) return;
@@ -154,8 +177,11 @@
     // 10.0.0: quick access to rank (LuckPerms) and access locks of this player.
     var quick = h("div", { class: "row wrap" },
       S.has("access-locks-v1") && S.can("data.access-locks") ? h("a", { class: "btn sm primary", href: "#/access-locks/" + p.id }, icon("lock"), "Rechte & Sperren") : null,
-      S.has("luckperms-v1") && S.can("data.luckperms") ? h("a", { class: "btn sm", href: "#/luckperms/player/" + p.id }, icon("key"), "Rang & LuckPerms") : null);
+      S.has("luckperms-v1") && S.can("data.luckperms") ? h("a", { class: "btn sm", href: "#/luckperms/player/" + p.id }, icon("key"), "Rang & LuckPerms") : null,
+      S.has("command-rights-v1") && S.can("data.commands") ? h("a", { class: "btn sm", href: "#/commands/" + p.id }, icon("terminal"), "Befehle") : null);
     if (quick.children.length) cards.push(quick);
+    // 10.1.0: rank with prefix/suffix preview and one-click group assignment right in the profile.
+    if (S.has("luckperms-v1") && S.can("data.luckperms")) cards.push(rankCard(p));
     var grid = h("div", { class: "grid two" }, info);
     if (p.live) {
       var l = p.live;
