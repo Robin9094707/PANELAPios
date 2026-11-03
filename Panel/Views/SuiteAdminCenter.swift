@@ -234,6 +234,7 @@ struct SuiteAdminCenterView: View {
                 SuiteToolTile(title: "Ultrabanns", symbol: "shield.slash.fill", tint: .red) { SuiteUltraView(suite: suite, actions: model.actions) } .disabled(!suite.can("data.ultrabans"))
                 if features.contains("luckperms-v1") { SuiteToolTile(title: "Ränge & Rechte", symbol: "crown.fill", tint: .yellow) { SuiteLuckPermsView(suite: suite) }.disabled(!suite.can("data.luckperms")) }
                 if features.contains("lands-v1") { SuiteToolTile(title: "Lands", symbol: "map.fill", tint: .green) { SuiteLandsView(suite: suite) }.disabled(!suite.can("data.lands")) }
+                if features.contains("access-locks-v1") { SuiteToolTile(title: "Rechte & Sperren", symbol: "lock.shield.fill", tint: .red) { SuiteAccessLocksView(suite: suite) }.disabled(!suite.can("data.access-locks")) }
                 if features.contains("admin-roles-v3") && suite.scope == "full" { SuiteToolTile(title: "Admin-Team", symbol: "person.badge.shield.checkmark.fill", tint: Color.panelSecondary) { SuiteAdminDirectory(suite: suite) }.disabled(!suite.can("data.management")) }
                 if features.contains("crossplay-v1") { SuiteToolTile(title: "Geyser & Floodgate", symbol: "gamecontroller.fill", tint: .green) { SuiteCrossplayView(suite: suite) }.disabled(!suite.can("data.crossplay")) }
                 if features.contains("restart-v1") { SuiteToolTile(title: "Neustart", symbol: "arrow.clockwise.circle.fill", tint: .orange) { SuiteRestartView(suite: suite) }.disabled(!suite.can("data.operations")) }

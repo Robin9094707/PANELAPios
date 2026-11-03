@@ -266,6 +266,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     AdminUpdateMenu adminUpdate;
     LegacyItemCleanup itemCleanup;
     ModerationControl moderationControl;
+    /** 10.0.0 fine-grained, optionally temporary access locks (chests, shulkers, doors, pickup …). */
+    AccessLocks accessLocks;
     UnifiedAdminMenu unifiedMenu;
     ModerationOverview moderationOverview;
     XrayBaitManager xrayBait;
@@ -395,6 +397,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         moderationControl = new ModerationControl(this);
         moderationControl.start();
         Bukkit.getPluginManager().registerEvents(moderationControl, this);
+        accessLocks = new AccessLocks(this);
+        Bukkit.getPluginManager().registerEvents(accessLocks, this);
+        Bukkit.getScheduler().runTaskTimer(this, accessLocks::tick, 100L, 100L);
+        register("rechtesperre");
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(new RelayEvents(this), this);
         Bukkit.getPluginManager().registerEvents(vpnProtection, this);
@@ -617,6 +623,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         reloadConfig();
         if (appApi != null) appApi.reload();
         if (playerCommands != null) playerCommands.reload();
+        if (accessLocks != null) accessLocks.reloadSettings();
         if (adminRuntime != null) adminRuntime.settingsChanged();
         database.loadAll();
         if(pointsEconomy!=null)for(PlayerProfile p:database.sortedProfiles())pointsEconomy.attach(p);
@@ -757,6 +764,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return true;
         }
         if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length > 0 && args[0].equalsIgnoreCase("app")) { if (appApi == null) { sender.sendMessage("App-API nicht geladen; Serverprotokoll prüfen."); return true; } return appApi.command(sender, Arrays.copyOfRange(args, 1, args.length)); }
+        if(rootCommand.equals("rechtesperre")) { if (accessLocks == null) sender.sendMessage(prefix() + "Rechte-Sperren nicht geladen."); else accessLocks.command(sender, args); return true; }
         if(rootCommand.equals("shop")) return shop.command(sender,args);
         if(rootCommand.equals("delivery")) return deliveries.command(sender,args);
         if(rootCommand.equals("spcurrency")) return pointsCommand(sender,args);
@@ -1798,6 +1806,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         String root = command.getName().toLowerCase(Locale.ROOT);
         if(root.equals("delivery"))return deliveries.complete(sender,args);
+        if(root.equals("rechtesperre"))return accessLocks==null||!has(sender,"simplexadminsuite.accesslocks")?List.of():accessLocks.tab(args);
         if(root.equals("shop"))return args.length==1?filter(has(sender,"simplexadminsuite.shop.admin")?List.of("admin"):List.of(),args[0]):List.of();
         if(root.equals("spcurrency"))return currencyComplete(sender,args);
         if((root.equals("sas")||root.equals("simplexadmin"))&&args.length>1){
@@ -3581,7 +3590,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         else if (slot == 13) { if (!require(admin, "simplexadminsuite.invsee")) return; bridge.invsee(admin, target.name); target.addAction("Inventar von " + admin.getName() + " geöffnet"); database.save(target); audit.log(admin.getName(), target.uuid, "InvSee", "Inventar über Menü geöffnet"); }
         else if (slot == 14) { if (!require(admin, "simplexadminsuite.vanish") || !require(admin, "simplexadminsuite.teleport")) return; bridge.toggleVanish(admin); teleportToOnline(admin, target); audit.log(admin.getName(), target.uuid, "Vanish + TP", "Vanish und Teleport ausgeführt"); }
         else if (slot == 15) openPunish(admin, target.uuid);
-        else if (slot == 16) openRights(admin, target.uuid);
+        else if (slot == 16) { if (accessLocks != null) accessLocks.playerMenu(admin, target.uuid); else openRights(admin, target.uuid); }
         else if (slot == 17) powerTools.openPlayerJava(admin, target.uuid);
         else if (slot == 19) openWarnings(admin, target.uuid);
         else if (slot == 20) openSnapshots(admin, target.uuid);
@@ -5280,7 +5289,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         inv.setItem(13, item(Material.CHEST, "&eInventar ansehen", "&7Optional über /invsee."));
         inv.setItem(14, item(Material.ENDER_EYE, "&5Vanish + Teleport", "&7Schaltet Vanish und teleportiert."));
         inv.setItem(15, item(Material.ANVIL, "&cStrafen", "&7Ban, Tempban, Mute, Kick", "&7mit Bestätigung."));
-        inv.setItem(16, item(Material.REDSTONE, "&eRechte-Sperren", "&7Alle Einzelrechte verwalten."));
+        inv.setItem(16, item(Material.REDSTONE, "&eRechte & Sperren", "&7Truhen, Türen, Chat, PvP, Nether …", "&7Alles an einem Ort – mit Land und Dauer."));
         inv.setItem(17, item(Material.NETHER_STAR, "&bSpielerkontrolle",
                 "&7Live-Werkzeuge, Moderationsprofile,",
                 "&7Inventar-Sicherheit und Alt-Rechte."));
@@ -7546,6 +7555,40 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         return file != null;
     }
     String[] powerRights() { return RIGHTS.clone(); }
+    /** 10.0.1 unified rights view: display name and ids of the classic per-player rights. */
+    static String rightName(String id) { return RIGHT_NAMES.getOrDefault(id, id); }
+    static List<String> rightIds() { return List.of(RIGHTS); }
+    /** right → {blocked 0/1, temporary-until or 0}; null when the player has no stored profile. Main thread. */
+    Map<String, long[]> rightStates(UUID id) {
+        if (database == null) return null;
+        PlayerProfile p = database.get(id); if (p == null) return null;
+        Map<String, long[]> out = new LinkedHashMap<>(); Map<String, Long> temp = p.temporaryBlockedRightsMap(); Set<String> permanent = p.blockedRightsSet(); long now = System.currentTimeMillis();
+        for (String r : RIGHTS) { long until = temp.getOrDefault(r, 0L); if (until <= now) until = 0L; out.put(r, new long[]{permanent.contains(r) || until > 0 ? 1 : 0, until}); }
+        return out;
+    }
+    /** Blocks (permanently or for {@code millis}) or allows one classic right; same storage, audit and alt-inheritance as the menus. */
+    void unifiedRight(UUID id, String right, boolean blocked, long millis, String durationText, String actor) {
+        if (!Arrays.asList(RIGHTS).contains(right)) throw new IllegalArgumentException("Unbekanntes Recht: " + right);
+        PlayerProfile p = database == null ? null : database.get(id);
+        if (p == null) throw new IllegalArgumentException("Für diesen Spieler gibt es noch kein Profil (er war noch nie online).");
+        // Temporary blocks follow the existing alt-rights policy sync (rightsChanged), never a permanent inheritance record.
+        if (blocked && millis > 0) setTemporaryRight(actor, p, right, durationText, System.currentTimeMillis() + millis);
+        else setRight(actor, p, right, blocked);
+    }
+    /** Players with at least one active classic right block (for the unified "who is restricted" list). */
+    List<UUID> blockedRightPlayers() {
+        if (database == null) return List.of();
+        List<UUID> out = new ArrayList<>(); long now = System.currentTimeMillis();
+        for (PlayerProfile p : database.sortedProfiles()) if (!p.blockedRightsSet().isEmpty() || p.temporaryBlockedRightsMap().values().stream().anyMatch(u -> u > now)) out.add(p.uuid);
+        return out;
+    }
+    /** Confirmed alt accounts of a player (without the player); empty when alt detection is not ready. */
+    Set<UUID> confirmedAlts(UUID id) {
+        try { Set<UUID> ids = new LinkedHashSet<>(controlLinked(id)); ids.remove(id); return ids; }
+        catch (RuntimeException notReady) { return Set.of(); }
+    }
+    boolean altInherit(UUID id) { return suitePolicies == null || suitePolicies.inherit(id); }
+    void openClassicRights(Player admin, UUID id) { openRights(admin, id); }
     void powerSaveProfile(PlayerProfile profile, String action) {
         if (profile == null) return;
         if (action != null && !action.isBlank()) profile.addAction(action);
@@ -8707,7 +8750,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             case "admin-role"->adminAccess.assign(actor,id,value);
             case "admin-limits"->adminAccess.limits(actor,id,Long.parseLong(value),Boolean.parseBoolean(String.valueOf(v.getOrDefault("altBans","false"))));
             case "admin-right"->{if(!Set.of("inherit","true","false").contains(value))throw new IllegalArgumentException("Boolean oder inherit erforderlich");adminAccess.changeAuthorized(actor,id,node,value.equals("inherit")?null:Boolean.valueOf(value),null);}
-            case "inherit"->suitePolicies.changeInheritance(id,Boolean.parseBoolean(value));
+            case "inherit"->{suitePolicies.changeInheritance(id,Boolean.parseBoolean(value));if(accessLocks!=null)accessLocks.refreshInheritance();}
             case "right"->{if(!Arrays.asList(powerRights()).contains(node))throw new IllegalArgumentException("Unbekanntes Recht");setRight(actor,p,node,!Boolean.parseBoolean(value));}
             case "probe"->{Player online=Bukkit.getPlayer(id);if(online==null)throw new IllegalArgumentException("Prüfung benötigt Online-Spieler");qualityOfLife.probes.appStart(online);}
             default->throw new IllegalArgumentException("Unbekannte Aktion");
@@ -11999,7 +12042,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             }
             if (plugin.has(admin, "simplexadminsuite.vanish") && plugin.has(admin, "simplexadminsuite.teleport")) form.button("§5Vanish + Teleport", response -> sync(() -> { plugin.bridge.toggleVanish(admin); plugin.teleportToOnline(admin, target); openPlayer(admin, target.uuid); }));
             if (java.util.stream.Stream.of("ban","tempban","unban","kick","mute","tempmute","unmute").anyMatch(action->plugin.has(admin,"simplexadminsuite.action."+action))) form.button("§cStrafen verwalten\n§7Ban, Mute, Kick", response -> sync(() -> openPunishments(admin, target.uuid)));
-            if (plugin.has(admin, "simplexadminsuite.rights")) form.button("§eRechte & Freeze\n§7Feingranulare Sperren", response -> sync(() -> openRights(admin, target.uuid)));
+            if (plugin.has(admin, "simplexadminsuite.rights") || plugin.has(admin, "simplexadminsuite.accesslocks")) form.button("§eRechte & Sperren\n§7Alles an einem Ort · mit Dauer", response -> sync(() -> { if (plugin.accessLocks != null) plugin.accessLocks.playerMenu(admin, target.uuid); else openRights(admin, target.uuid); }));
             if (plugin.has(admin, "simplexadminsuite.warns")) form.button("§6Warnungen\n§7Hinzufügen und anzeigen", response -> sync(() -> openWarnings(admin, target.uuid)));
             if (plugin.has(admin, "simplexadminsuite.snapshots")) form.button("§dInventar-Snapshots\n§7Erstellen, laden, löschen", response -> sync(() -> openSnapshots(admin, target.uuid, 0)));
             if (plugin.has(admin, "simplexadminsuite.history")) {

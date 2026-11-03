@@ -211,6 +211,21 @@ openai:
     # Used when an otherwise explicit temp-ban/temp-mute request contains no duration.
     default-duration: 1d
 
+# 10.0.0 Rechte-Sperren (/rechtesperre, App, Webpanel, Discord /rechtesperre). Gesperrtes kann weder benutzt, abgebaut
+# noch gesprengt werden – auch wenn der Spieler in einem Land vertraut ist. Daten: access-locks.properties.
+access-locks:
+  # Spieler bei jedem gesperrten Versuch zusätzlich im Chat informieren (Actionbar immer).
+  notify-chat: true
+  # Auch den Block unter gesperrten Türen/Druckplatten bzw. hinter Knöpfen/Hebeln schützen.
+  protect-supports: true
+  # Keine Trichter/Trichterloren unter gesperrten Behältern setzen (verhindert Leerziehen).
+  block-hoppers: true
+  pickup:
+    # Verzauberte Items und gefüllte Shulkerkisten zählen immer als wertvoll.
+    enchanted-items: true
+    # Materialien (mit * als Platzhalter), die als wertvoll gelten.
+    valuable-items: [DIAMOND*, "*DIAMOND_ORE", NETHERITE*, ANCIENT_DEBRIS, EMERALD*, "*EMERALD_ORE", GOLD_BLOCK, RAW_GOLD_BLOCK, "*SHULKER_BOX", ELYTRA, TOTEM_OF_UNDYING, ENCHANTED_GOLDEN_APPLE, GOLDEN_APPLE, NETHER_STAR, BEACON, TRIDENT, MACE, HEAVY_CORE, DRAGON_EGG, DRAGON_HEAD, "*_SMITHING_TEMPLATE", ENCHANTED_BOOK, EXPERIENCE_BOTTLE, CONDUIT, HEART_OF_THE_SEA, SPAWNER, TRIAL_KEY, OMINOUS_TRIAL_KEY]
+
 nameplates:
   manage-player-list: true
   # Chat display names and chat format are managed exclusively by the chat plugin.

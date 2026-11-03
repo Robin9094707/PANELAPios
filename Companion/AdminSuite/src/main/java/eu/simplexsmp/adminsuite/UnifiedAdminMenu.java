@@ -64,6 +64,7 @@ final class UnifiedAdminMenu {
         items.add(b("Welt","Gamerules, Warps und Welten-Trimmer",Material.GRASS_BLOCK,()->category(p,"Welt")));
         items.add(b("Community","Willkommen, Regeln, Discord und Punkte",Material.FIREWORK_ROCKET,()->category(p,"Community")));
         items.add(b("Team","Aufgaben, Zeitpläne und Admin-Werkzeuge",Material.LECTERN,()->category(p,"Team")));
+        if(plugin.accessLocks!=null&&(plugin.has(p,"simplexadminsuite.accesslocks")||plugin.has(p,"simplexadminsuite.restrictions")))items.add(b("Rechte & Sperren","Alle Spielerrechte an einem Ort: Truhen, Türen, Chat, PvP, Nether … – mit Land und Dauer",Material.IRON_BARS,()->plugin.accessLocks.menu(p)));
         if(plugin.appApi!=null && plugin.adminAccess.master(p)) items.add(b("Simplex Panel verbinden","Optionale HTTPS-App-API und widerrufbare Zugangsschlüssel",Material.TRIPWIRE_HOOK,()->plugin.appApi.menu(p)));
         items.add(b("Schließen","Menü verlassen",Material.BARRIER,p::closeInventory));
         plugin.adminUpdate.show(p,"Admin-Zentrale",items,0);
@@ -77,6 +78,7 @@ final class UnifiedAdminMenu {
             if((link.slot==37||link.slot==39)&&!p.isOp())continue;
             items.add(b(link.title,link.detail,link.icon,()->{if(plugin.has(p,link.permission))plugin.openUnifiedAction(p,link.slot);}));
         }
+        if(group.equals("Moderation")&&plugin.accessLocks!=null&&(plugin.has(p,"simplexadminsuite.accesslocks")||plugin.has(p,"simplexadminsuite.restrictions")))items.add(b("Rechte & Sperren","Bereiche mit Land/Wildnis und alle weiteren Einzelrechte • Dauer",Material.IRON_BARS,()->plugin.accessLocks.menu(p)));
         if(group.equals("Moderation")&&plugin.has(p,"simplexadminsuite.restrictions"))items.add(b("Einschränkungsvorlagen","Text, PvP, Interaktionen • Dauer & Vererbung",Material.WRITABLE_BOOK,()->plugin.moderationControl.players(p,"",true)));
         if(group.equals("Server")&&plugin.has(p,"simplexadminsuite.commands.admin"))items.add(b("Befehlsverwaltung","Spielerbefehle sperren • Vorschläge nach Berechtigung bereinigen",Material.COMMAND_BLOCK,()->plugin.playerCommands.open(p)));
         if(group.equals("Server")&&plugin.has(p,"simplexadminsuite.settings.advanced"))items.add(b("Suite-Einstellungen","Bestehende Einstellungen durchsuchen und nativ bearbeiten",Material.COMPARATOR,()->plugin.moderationControl.settings(p,"")));

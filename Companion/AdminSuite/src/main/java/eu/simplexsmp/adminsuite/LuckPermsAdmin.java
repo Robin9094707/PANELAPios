@@ -169,11 +169,49 @@ final class LuckPermsAdmin {
             case "user-permission-set" -> "lp user " + check(player, PLAYER, "Spieler ungültig") + " permission set " + check(node, NODE, "Recht ungültig") + " " + bool(value) + ctx;
             case "user-permission-temp" -> "lp user " + check(player, PLAYER, "Spieler ungültig") + " permission settemp " + check(node, NODE, "Recht ungültig") + " " + bool(value) + " " + check(duration, DURATION, "Dauer z. B. 1d") + ctx;
             case "user-permission-unset" -> "lp user " + check(player, PLAYER, "Spieler ungültig") + " permission unset " + check(node, NODE, "Recht ungültig") + ctx;
+            case "user-prefix" -> { check(player, PLAYER, "Spieler ungültig"); yield affix.isBlank() ? "lp user " + player + " meta removeprefix " + priority(values) : "lp user " + player + " meta setprefix " + priority(values) + " \"" + affix(affix) + "\""; }
+            case "user-suffix" -> { check(player, PLAYER, "Spieler ungültig"); yield affix.isBlank() ? "lp user " + player + " meta removesuffix " + priority(values) : "lp user " + player + " meta setsuffix " + priority(values) + " \"" + affix(affix) + "\""; }
             case "user-promote" -> "lp user " + check(player, PLAYER, "Spieler ungültig") + " promote " + check(track, GROUP, "Track ungültig");
             case "user-demote" -> "lp user " + check(player, PLAYER, "Spieler ungültig") + " demote " + check(track, GROUP, "Track ungültig");
             case "sync" -> "lp sync";
             default -> throw new IllegalArgumentException("Unbekannte LuckPerms-Aktion");
         };
+    }
+
+    /**
+     * 10.0.0: every permission the server knows, for autocomplete in app and web panel – registered Bukkit
+     * permissions (with description), LuckPerms' known permissions and all nodes already used by groups.
+     * Main thread (Bukkit's permission registry).
+     */
+    List<Map<String, Object>> knownPermissions() {
+        Map<String, String[]> all = new TreeMap<>();
+        Map<String, String> plugins = new HashMap<>();
+        for (Plugin p : Bukkit.getPluginManager().getPlugins()) plugins.put(p.getName().toLowerCase(Locale.ROOT).replace(" ", ""), p.getName());
+        for (org.bukkit.permissions.Permission perm : Bukkit.getPluginManager().getPermissions()) {
+            String name = perm.getName();
+            if (name == null || name.length() > 120 || !name.matches("[A-Za-z0-9_.*\\-]+")) continue;
+            all.put(name.toLowerCase(Locale.ROOT), new String[]{name, perm.getDescription() == null ? "" : perm.getDescription().trim(), "server"});
+        }
+        if (installed()) {
+            try {
+                Object platform = call(api(), "getPlatform");
+                Object known = optional(platform, "getKnownPermissions");
+                if (known instanceof Collection<?> c) for (Object o : c) { String n = String.valueOf(o); if (n.length() <= 120 && n.matches("[A-Za-z0-9_.*\\-]+")) all.putIfAbsent(n.toLowerCase(Locale.ROOT), new String[]{n, "", "luckperms"}); }
+                for (Object group : (Collection<?>) call(call(api(), "getGroupManager"), "getLoadedGroups"))
+                    for (Object node : (Collection<?>) call(group, "getNodes")) {
+                        String key = String.valueOf(call(node, "getKey"));
+                        if (key.matches("(group|prefix|suffix|weight|displayname|meta)\\..*") || key.length() > 120) continue;
+                        all.putIfAbsent(key.toLowerCase(Locale.ROOT), new String[]{key, "", "group"});
+                    }
+            } catch (Throwable ignored) { /* LuckPerms API changed: Bukkit list stays */ }
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (String[] v : all.values()) {
+            if (out.size() >= 6000) break;
+            String root = v[0].contains(".") ? v[0].substring(0, v[0].indexOf('.')).toLowerCase(Locale.ROOT) : v[0].toLowerCase(Locale.ROOT);
+            out.add(SimplexAdminSuite.appMap("node", v[0], "description", v[1], "plugin", plugins.getOrDefault(root, root), "source", v[2]));
+        }
+        return out;
     }
 
     /** Human-readable confirmation text shown before the change is executed. */

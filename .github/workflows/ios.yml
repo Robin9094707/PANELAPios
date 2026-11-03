@@ -53,8 +53,8 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          # 4.0–4.2: focused, minimal unit tests for the new features keep the whole job around five minutes.
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
+          # 4.0–4.3: focused, minimal unit tests for the new features keep the whole job around five minutes.
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -128,7 +128,7 @@ jobs:
       - name: Build with verified real Paper dependencies
         working-directory: Companion/AdminSuite
         run: python3 tools/build-real.py
-      - name: Check HTTPS authentication, accounts, push, admin-log filters, recovery, LuckPerms/Lands, web panel and existing data
+      - name: Check HTTPS authentication, accounts, push, admin-log filters, recovery, LuckPerms/Lands, access locks, web panel and existing data
         working-directory: Companion/AdminSuite
         run: python3 tools/test-830.py
         env:
@@ -139,14 +139,14 @@ jobs:
           python3 tools/package-source.py
           cp ../../docs/Simplex-Admin-Recovery.pdf target/
           cd target
-          sha256sum SimplexAdminSuite-9.9.0.jar SimplexAdminSuite-9.9.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-10.0.1.jar SimplexAdminSuite-10.0.1-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-9.9.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-9.9.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-10.0.1.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-10.0.1-source.zip
             Companion/AdminSuite/target/Simplex-Admin-Recovery.pdf
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
@@ -193,9 +193,11 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 4.2.0 / Admin Suite 9.9.0: configurable admin-log unread counter (team only, selected admins, all or off) shared by app, web panel and push; username change for the main admin and every app user with all sessions, 2FA, passkeys and settings kept; public staff name on ticket replies (login names are never shown to players again, old tickets are cleaned); console-only recovery commands (sas app recovery, user-reset, owner-transfer, unlock, rename); LuckPerms management (groups, prefixes, weights, permissions, inheritance, player groups, tracks) and Lands integration (all lands, admin bypass per switch); rank above the head and in the tab list configurable separately and automatic hand-over of the tab list to TAB plugins; web panel as installable home-screen app for iPhone/iPad and Android with browser push notifications, per-account appearance stored on the server and a refined chat.
+          Simplex Panel 4.3.1 / Admin Suite 10.0.1: rights and locks in one place – the player profile opens one unified view with lock areas (land/wilderness, duration, reason) and every remaining player right (chat, commands, PvP, dimensions, freeze …) blockable for a time or permanently; no double management of chests, doors and co. (existing classic blocks stay valid and are lifted with their area); live player search with autocomplete in app and web panel; the same entry in Java and Bedrock menus.
 
-          Existing API keys, app users, sessions, TLS identity, Bark subscriptions, tickets, admin log and plugin data stay compatible. Replace the JAR and update the app; no reset is required. See UPDATE-4.2.0.md, Companion/AdminSuite/UPDATE-9.9.0.md and docs/Simplex-Admin-Recovery.pdf. This release job only runs after a merge to main; pull requests produce JAR and IPA artifacts without publishing.
+          Simplex Panel 4.3.0 / Admin Suite 10.0.0: big rights update – per-player access locks (chests, shulker boxes, other containers, ender chests, doors, redstone, workstations, frames, animals, building, foreign valuable items) that block using, breaking, blowing up and hopper draining even in trusted lands; per lock everywhere / own land only / own land and wilderness, temporary or permanent, with the reason and remaining time shown to the player; presets (thief, containers, griefer, lockdown); managed in the app, the web panel, Discord (/rechtesperre) and the Java/Bedrock admin menus (/rechtesperre). LuckPerms: permission autocomplete, prefix/suffix editor with colour palette and live preview for groups and players. Explained app-user rights with role presets, one-time changelog per account, web panel ban sources (Minecraft, IP, LiteBans) fixed and reports with notes.
+
+          Existing API keys, app users, sessions, TLS identity, Bark subscriptions, tickets, admin log and plugin data stay compatible. Replace the JAR and update the app; no reset is required. See UPDATE-4.3.1.md, UPDATE-4.3.0.md, Companion/AdminSuite/UPDATE-10.0.1.md and UPDATE-10.0.0.md and docs/Simplex-Admin-Recovery.pdf. This release job only runs after a merge to main; pull requests produce JAR and IPA artifacts without publishing.
 
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)

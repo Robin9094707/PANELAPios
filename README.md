@@ -1,4 +1,12 @@
-## Aktuelles Update: Panel 4.2.0 / Admin Suite 9.9.0
+## Aktuelles Update: Panel 4.3.1 / Admin Suite 10.0.1
+
+Rechte & Sperren an einem Ort: Spielerprofil → **Rechte & Sperren** vereint Bereiche mit Land-Option und alle weiteren Spielerrechte (Chat, PvP, Nether, Freeze …), jeweils mit Dauer; keine doppelte Verwaltung mehr, Alt-Account-Vererbung, Ränge direkt im Profil, Live-Spielersuche mit Teilnamen in allen Spielerfeldern, gleicher Einstieg im Java- und Bedrock-Menü. [Update 4.3.1](UPDATE-4.3.1.md) · [Suite 10.0.1](Companion/AdminSuite/UPDATE-10.0.1.md).
+
+## Panel 4.3.0 / Admin Suite 10.0.0
+
+Großes Rechte-Update: **Rechte-Sperren** je Spieler für Truhen, Shulker, andere Behälter, Endertruhen, Türen, Redstone, Arbeitsblöcke, Rahmen, Tiere, Bauen und fremde Items – temporär oder dauerhaft, überall / nur im eigenen Land / eigenes Land und Wildnis, auch gegen Abbauen, Sprengen und Trichter und unabhängig vom Lands-Trust. Verwaltung in App, Webpanel, Discord (`/rechtesperre`) und in den Java-/Bedrock-Menüs. Dazu LuckPerms-Rechte mit Autovervollständigung, Präfix/Suffix-Editor mit Farbvorschau, verständlich erklärte App-Rechte mit Rollen-Vorlagen und ein einmaliger Changelog. [Update 4.3.0](UPDATE-4.3.0.md) · [Suite 10.0.0](Companion/AdminSuite/UPDATE-10.0.0.md).
+
+## Vorheriges Update: Panel 4.2.0 / Admin Suite 9.9.0
 
 Einstellbarer Ungelesen-Zähler im Admin-Log (nur Team, ausgewählte Admins, alle oder aus – gilt auch für Push), Benutzername ändern ohne Datenverlust, öffentlicher Teamname bei Ticketantworten (Login-Namen werden Spielern nie mehr gezeigt), Wiederherstellung aller App-Admins über die Serverkonsole ([Recovery-PDF](docs/Simplex-Admin-Recovery.pdf)), LuckPerms-Verwaltung und Lands-Integration in App und Webpanel, Rang über dem Kopf und in der Tabliste getrennt einstellbar (TAB-Plugins behalten die Tabliste), Webpanel als Home-Bildschirm-App für iPhone/iPad und Android mit Browser-Push und persönlicher Darstellung. [Update 4.2.0](UPDATE-4.2.0.md) · [Suite 9.9.0](Companion/AdminSuite/UPDATE-9.9.0.md).
 

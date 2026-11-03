@@ -22,6 +22,7 @@
       el = h("textarea", { class: "input", name: name, rows: 2, text: value || "" });
     } else {
       el = S.input({ type: type === 4 || type === 10 ? "number" : "text", name: name, value: value || "", step: type === 10 ? "any" : null, min: f.min_value, max: f.max_value });
+      if (/^(player|player-one|player-two|minecraft|spieler)$/i.test(name) && S.livePlayerInput) return S.livePlayerInput(name, value || "", f.description);
       if (f.autocomplete || /player|spieler/i.test(name)) {
         var dl = h("datalist", { id: "dl-" + name + "-" + Math.random().toString(36).slice(2) });
         el.setAttribute("list", dl.id); var t;
@@ -167,32 +168,47 @@
     var canEdit = S.can("action.accounts.update") && S.full(), isOwner = S.account && (S.account.owner || S.account.kind === "key");
     function editor(row) {
       var fresh = !row, name = S.input({ value: row ? row.username : "", disabled: !fresh, autocapitalize: "none", placeholder: "Minecraft-Name" });
+      // 10.0.2: new accounts pick the Minecraft name from a live player search (partial names are enough).
+      var nameField = fresh && S.livePlayerInput && S.can("data.players") ? S.livePlayerInput("username-search", "", "Minecraft-Name – Teil genügt") : null;
+      if (nameField) name = nameField.querySelector("input");
       var pass = S.input({ type: "password", autocomplete: "new-password", placeholder: fresh ? "Mindestens 12 Zeichen" : "Leer lassen = unverändert" });
       var enabled = row ? row.enabled !== false : true, rights = {}; (row ? row.permissions : ["data.overview", "data.players", "data.profile"]).forEach(function (p) { rights[p] = true; });
       var filter = "", permsBox = h("div", { class: "stack", style: { gap: "10px", maxHeight: "46vh", overflow: "auto" } });
       var catalog = d.catalog || [];
       var GROUPS = [["*", "Vollzugriff"], ["data.", "Lesen"], ["action.", "Aktionen"], ["ticket.", "Tickets"], ["", "Weitere"]];
+      // 10.0.0: the Suite sends a plain-language group and explanation per right – sort by area instead of by prefix.
+      var grouped = catalog.some(function (c) { return c.group; });
+      if (grouped) { var seenGroups = []; catalog.forEach(function (c) { var g = c.group || "Weitere"; if (seenGroups.indexOf(g) < 0) seenGroups.push(g); });
+        var ORDER = ["Vollzugriff", "Übersicht", "Spieler", "Moderation", "Tickets & Chat", "Ränge & Rechte", "Sicherheit", "Server", "Welten", "Plugins", "Einstellungen", "Discord", "Benachrichtigungen", "Protokolle", "Team", "Zugänge"];
+        seenGroups.sort(function (a, b) { var x = ORDER.indexOf(a), y = ORDER.indexOf(b); return (x < 0 ? 99 : x) - (y < 0 ? 99 : y) || a.localeCompare(b); });
+        GROUPS = seenGroups.map(function (g) { return ["group:" + g, g]; }); }
+      var LEVEL = { read: ["Lesen", ""], change: ["Ändern", "info"], critical: ["Kritisch", "danger"] };
+      var presetBar = (d.presets || []).length ? h("div", { class: "row wrap", style: { gap: "6px" } }, h("span", { class: "muted small", text: "Rollen-Vorlage:" }), d.presets.map(function (p) {
+        return S.btn(p.title, { size: "sm", title: p.explain, disabled: (p.id === "full" && !isOwner) || (row && row.owner), onClick: function () { rights = {}; p.permissions.forEach(function (x) { rights[x] = true; }); renderPerms(); S.toast("Vorlage „" + p.title + "“ übernommen – vor dem Speichern anpassbar", "ok", p.explain); } });
+      })) : null;
       function renderPerms() {
         S.clear(permsBox);
         GROUPS.forEach(function (g) {
-          var items = catalog.filter(function (c) { var id = c.id; var match = g[0] === "*" ? id === "*" : g[0] === "" ? !/^(data\.|action\.|ticket\.)/.test(id) && id !== "*" : id.indexOf(g[0]) === 0; return match && (!filter || (c.title + " " + id).toLowerCase().indexOf(filter) >= 0); });
+          var items = catalog.filter(function (c) { var id = c.id; var match = g[0].indexOf("group:") === 0 ? (c.group || "Weitere") === g[0].slice(6) : g[0] === "*" ? id === "*" : g[0] === "" ? !/^(data\.|action\.|ticket\.)/.test(id) && id !== "*" : id.indexOf(g[0]) === 0; return match && (!filter || (c.title + " " + id + " " + (c.explain || "")).toLowerCase().indexOf(filter) >= 0); });
           if (!items.length) return;
           var all = h("button", { type: "button", class: "btn ghost sm right", text: "Alle" });
           all.addEventListener("click", function () { var on = !items.every(function (c) { return rights[c.id]; }); items.forEach(function (c) { if (c.id !== "*" || isOwner) rights[c.id] = on; }); renderPerms(); });
-          permsBox.appendChild(h("div", { class: "perm-group" }, h("header", {}, g[1], h("span", { class: "muted tiny", text: items.filter(function (c) { return rights[c.id]; }).length + "/" + items.length }), g[0] === "*" ? null : all),
+          permsBox.appendChild(h("div", { class: "perm-group" }, h("header", {}, g[1], h("span", { class: "muted tiny", text: items.filter(function (c) { return rights[c.id]; }).length + "/" + items.length }), g[0] === "*" || g[1] === "Vollzugriff" ? null : all),
             h("div", {}, items.map(function (c) {
               var cb = h("input", { type: "checkbox", checked: !!rights[c.id], disabled: c.id === "*" && !isOwner || row && row.owner });
               cb.addEventListener("change", function () { rights[c.id] = cb.checked; });
-              return h("label", { class: "perm-row" }, cb, h("div", { class: "grow" }, h("div", { text: c.title }), h("small", { text: c.id })));
+              return h("label", { class: "perm-row" }, cb, h("div", { class: "grow" }, h("div", { class: "row", style: { gap: "6px" } }, h("span", { text: c.title }), c.level && LEVEL[c.level] && c.level !== "read" ? S.badge(LEVEL[c.level][0], LEVEL[c.level][1]) : null),
+                c.explain ? h("p", { class: "perm-explain", text: c.explain }) : null, h("small", { text: c.id })));
             }))));
         });
       }
       renderPerms();
       var sw = S.sw(enabled, function (v) { enabled = v; }, row && row.owner);
       var body = h("div", { class: "stack" }, row && row.owner ? S.notice("Hauptadmin-Zugang: hat immer Vollzugriff und kann nicht deaktiviert oder gelöscht werden.", "", "crown") : null,
-        h("div", { class: "grid two" }, S.field("Benutzername", name), S.field(fresh ? "Passwort" : "Neues Passwort", pass)), S.strengthMeter(pass),
+        h("div", { class: "grid two" }, S.field("Benutzername", nameField || name), S.field(fresh ? "Passwort" : "Neues Passwort", pass)), S.strengthMeter(pass),
         h("div", { class: "row" }, h("b", { class: "grow", text: "Zugang aktiv" }), sw),
-        h("div", { class: "row" }, h("b", { class: "grow", text: "Rechte" }), h("div", { class: "search", style: { width: "min(260px, 50%)" } }, icon("search"), S.input({ placeholder: "Filtern", onInput: function (e) { filter = e.target.value.toLowerCase(); renderPerms(); } }))), permsBox,
+        h("div", { class: "row" }, h("b", { class: "grow", text: "Rechte" }), h("div", { class: "search", style: { width: "min(260px, 50%)" } }, icon("search"), S.input({ placeholder: "Filtern", onInput: function (e) { filter = e.target.value.toLowerCase(); renderPerms(); } }))),
+        grouped ? h("p", { class: "muted small", text: "Lesen = nur ansehen. Ändern = Aktion mit Bestätigung. Kritisch = kann Zugänge, Server oder Einstellungen verändern. Tipp: mit einer Rollen-Vorlage starten und dann anpassen." }) : null, presetBar, permsBox,
         S.notice("Speichern meldet alle Geräte dieses Benutzers ab, damit neue Rechte sofort gelten.", "", "info"));
       var actions = [];
       if (row && !row.owner) actions.push(S.btn("Löschen", { kind: "danger", icon: "trash", onClick: async function () { if (await S.runAction("accounts.update", { username: row.username, operation: "delete", enabled: "true", permissions: "", password: "" }, { danger: true, title: row.username + " löschen?" })) { dlg.close(); S.reload(); } } }));

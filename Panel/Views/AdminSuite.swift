@@ -242,6 +242,7 @@ struct SuiteActionView: View {
             if let selected = field["choices"].array.first(where: { $0["value"].string == values[id]?.string }) { Text(selected["name"].string).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         } else if id.lowercased().contains("password") { SecureField(field["description"].string, text: Binding(get: { values[id]?.string ?? "" }, set: { values[id] = .string($0) })).textInputAutocapitalization(.never).autocorrectionDisabled()
         } else if field["type"].int == 5 { Toggle(field["description"].string, isOn: Binding(get: { values[id]?.bool ?? false }, set: { values[id] = .bool($0) })).fixedSize(horizontal: false, vertical: true) }
+        else if SuiteLivePlayerField.isPlayerField(field) && !suite.demo { SuiteLivePlayerField(suite: suite, title: field["description"].string, text: Binding(get: { values[id]?.string ?? "" }, set: { values[id] = .string($0) })) }
         else { TextField(field["description"].string, text: Binding(get: { values[id]?.string ?? "" }, set: { values[id] = .string($0) }), axis: .vertical).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(field["type"].int == 4 ? .numbersAndPunctuation : .default) }
     }
     var payload: [String: JSON] { values.filter { $0.value != .null && (!$0.value.string.isEmpty || $0.value == .bool(false) || action.id == "settings.update" && $0.key == "value") } }

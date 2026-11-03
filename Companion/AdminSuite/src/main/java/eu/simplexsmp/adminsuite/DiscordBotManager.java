@@ -191,8 +191,52 @@ final class DiscordBotManager {
             mapOf("type",1,"name","delete","description","Eine noch unbestätigte Nachricht löschen","options",List.of(mapOf("type",3,"name","id","description","Nachrichten-ID","required",true))))));
         commands.add(tickets.command());
         commands.add(onlineCommand());
+        commands.add(accessLockCommand());
         DiscordCommandSchema.validate(commands);
         return commands;
+    }
+    /** 10.0.0: /rechtesperre – fine-grained access locks (same service as app, web panel and in-game menus). */
+    static Map<String,Object> accessLockCommand(){
+        List<Object> flags=new ArrayList<>();flags.add(mapOf("name","Alle Bereiche","value","all"));
+        for(AccessLocks.Flag f:AccessLocks.FLAGS.values())flags.add(mapOf("name",f.title(),"value",f.id()));
+        List<Object> scopes=new ArrayList<>();scopes.add(mapOf("name","Empfohlen je Bereich","value","default"));
+        for(AccessLocks.Scope sc:AccessLocks.SCOPES.values())scopes.add(mapOf("name",sc.title(),"value",sc.id()));
+        List<Object> presets=new ArrayList<>();for(AccessLocks.Preset pr:AccessLocks.PRESETS.values())presets.add(mapOf("name",pr.title(),"value",pr.id()));
+        Map<String,Object> player=mapOf("type",3,"name","spieler","description","Spielername oder UUID (auch offline)","required",true,"autocomplete",true);
+        Map<String,Object> duration=mapOf("type",3,"name","dauer","description","z. B. 30m, 12h, 7d – leer = dauerhaft","required",false,"max_length",16);
+        Map<String,Object> reason=mapOf("type",3,"name","grund","description","Grund – sieht der Spieler","required",false,"max_length",200);
+        return mapOf("name","rechtesperre","description","Rechte-Sperren: Truhen, Shulker, Türen, Aufheben … je Spieler","type",1,"default_member_permissions","0","options",List.of(
+            mapOf("type",1,"name","anzeigen","description","Aktive Rechte-Sperren eines Spielers","options",List.of(player)),
+            mapOf("type",1,"name","liste","description","Alle Spieler mit Rechte-Sperren"),
+            mapOf("type",1,"name","sperren","description","Einen Bereich sperren (temporär oder dauerhaft)","options",List.of(player,mapOf("type",3,"name","bereich","description","Was gesperrt wird","required",true,"choices",flags),
+                mapOf("type",3,"name","gilt","description","Wo die Sperre gilt","required",false,"choices",scopes),duration,reason)),
+            mapOf("type",1,"name","vorlage","description","Vorlage anwenden (Klauer, Behälter, Griefer, alles)","options",List.of(player,mapOf("type",3,"name","vorlage","description","Vorlage","required",true,"choices",presets),duration,reason)),
+            mapOf("type",1,"name","aufheben","description","Sperre wieder aufheben","options",List.of(player,mapOf("type",3,"name","bereich","description","Bereich oder alle","required",true,"choices",flags)))));
+    }
+    private void accessLockInteraction(String id,String token,Map<String,Object> data,Access permission,String userId,String displayName){
+        String action=subcommand(data.get("options"));
+        boolean read=Set.of("anzeigen","liste").contains(action);
+        if(!read&&permission!=Access.FULL){respondReply(id,token,DiscordAdminController.Reply.error("Voller Discord-Adminzugriff erforderlich."),true);return;}
+        if(!acceptCooldown(userId)){respondReply(id,token,DiscordAdminController.Reply.error("Bitte kurz warten."),true);return;}
+        deferInteraction(id,token,false);
+        plugin.runAdminTask(()->{try{
+            AccessLocks locks=plugin.accessLocks;if(locks==null)throw new IllegalArgumentException("Rechte-Sperren nicht geladen");
+            String actor="Discord/"+displayName+" ("+userId+")";
+            if(action.equals("liste")){List<?> rows=(List<?>)locks.data("").get("items");StringBuilder b=new StringBuilder();
+                for(Object o:rows){Map<?,?> r=(Map<?,?>)o;b.append("**").append(r.get("name")).append("** · ").append(((List<?>)r.get("locks")).size()).append(" Sperre(n)").append(Boolean.TRUE.equals(r.get("online"))?" · online":"").append('\n');if(b.length()>3500)break;}
+                editOriginal(token,new DiscordAdminController.Reply("Rechte-Sperren",b.length()==0?"Niemand ist gesperrt.":b.toString(),0x5865F2,List.of(),"/rechtesperre anzeigen für Details"));return;}
+            UUID uuid=locks.resolve(optionText(data.get("options"),"spieler"));
+            if(action.equals("anzeigen")){editOriginal(token,new DiscordAdminController.Reply("Rechte-Sperren · "+locks.name(uuid),locks.describe(uuid),0x5865F2,List.of(),"Gilt zusätzlich zu Lands"));return;}
+            Map<String,Object> values=new LinkedHashMap<>();values.put("player",uuid.toString());
+            switch(action){
+                case "sperren"->{values.put("operation","set");values.put("flags",optionText(data.get("options"),"bereich"));values.put("scope",optionText(data.get("options"),"gilt"));values.put("duration",optionText(data.get("options"),"dauer"));values.put("reason",optionText(data.get("options"),"grund"));}
+                case "vorlage"->{values.put("operation","preset");values.put("preset",optionText(data.get("options"),"vorlage"));values.put("duration",optionText(data.get("options"),"dauer"));values.put("reason",optionText(data.get("options"),"grund"));}
+                case "aufheben"->{String flag=optionText(data.get("options"),"bereich");values.put("operation",flag.equals("all")?"clear":"remove");values.put("flags",flag);}
+                default->throw new IllegalArgumentException("Unbekannte Aktion");
+            }
+            Map<String,Object> result=locks.apply(values,actor);
+            editOriginal(token,DiscordAdminController.Reply.ok(String.valueOf(result.get("title")),String.valueOf(result.get("description"))+"\n\n"+locks.describe(uuid),"Rechte-Sperren"));
+        }catch(Exception e){editOriginal(token,DiscordAdminController.Reply.error("Nicht ausgeführt: "+e.getMessage()));}});
     }
     private boolean featureJob(Runnable action){try{featureExecutor.execute(action);return true;}catch(java.util.concurrent.RejectedExecutionException e){lastError="Discord feature queue full";diagnostics.failure("feature queue", "Queue full or stopped; retry shortly");return false;}}
     private void featureReplyJob(String token,Runnable action){if(!featureJob(action))editOriginal(token,new DiscordAdminController.Reply("Service busy","Please try again in a moment.",0xFEE75C,List.of(),""));}
@@ -208,7 +252,7 @@ final class DiscordBotManager {
     private static String subcommand(Object options){if(options instanceof List<?> l&&!l.isEmpty()&&l.get(0) instanceof Map<?,?> m)return string(m.get("name"));return "";}
     @SuppressWarnings("unchecked") private boolean featureInteraction(Map<String,Object> interaction,Map<String,Object> data,int type){
         String name=string(data.get("name")),custom=string(data.get("custom_id"));
-        if(!Set.of("link","unlink","serverstats","accountadmin","language","devices","announcement","chatnotice","shop","myaccount","quicknote").contains(name)&&!custom.startsWith("saslink:")&&!custom.startsWith("saschatnotice:"))return false;
+        if(!Set.of("link","unlink","serverstats","accountadmin","language","devices","announcement","chatnotice","shop","myaccount","quicknote","rechtesperre").contains(name)&&!custom.startsWith("saslink:")&&!custom.startsWith("saschatnotice:"))return false;
         String id=string(interaction.get("id")),token=string(interaction.get("token")),channel=string(interaction.get("channel_id"));
         Map<String,Object> member=interaction.get("member") instanceof Map?(Map<String,Object>)interaction.get("member"):Map.of();
         Map<String,Object> user=member.get("user") instanceof Map?(Map<String,Object>)member.get("user"):Map.of();String userId=string(user.get("id"));
@@ -222,6 +266,11 @@ final class DiscordBotManager {
             respondReply(id,token,new DiscordAdminController.Reply("Private chat feedback",feedback,0xFEE75C,List.of(),""),true);return true;
         }
         Access permission=access(member,userId,channel);
+        if(type==2&&name.equals("rechtesperre")){
+            if(permission==Access.NONE){respondReply(id,token,DiscordAdminController.Reply.error("Du bist für die Discord-Administration nicht freigegeben."),true);return true;}
+            String display=string(member.get("nick"));if(display.isBlank())display=string(user.get("global_name"));if(display.isBlank())display=string(user.get("username"));
+            accessLockInteraction(id,token,data,permission,userId,display);return true;
+        }
         if(type==2&&Set.of("shop","myaccount","quicknote").contains(name)) {
             if(name.equals("quicknote")&&permission!=Access.FULL){respondReply(id,token,DiscordAdminController.Reply.error("Voller Discord-Adminzugriff erforderlich."),true);return true;}
             if(!acceptCooldown(userId)){respondReply(id,token,DiscordAdminController.Reply.error("Please wait a moment."),true);return true;}
@@ -263,6 +312,7 @@ final class DiscordBotManager {
             });return true;
         }
         if(type==4){
+            if(name.equals("rechtesperre")){if(permission==Access.NONE){respondAutocomplete(id,token,List.of());return true;}FocusedOption f=findFocused(data.get("options"));plugin.runAdminTask(()->respondAutocomplete(id,token,plugin.discordAdminPlayerChoices(f==null?"":f.value,25)));return true;}
             if(!Set.of("accountadmin","quicknote").contains(name)||permission!=Access.FULL){respondAutocomplete(id,token,List.of());return true;}
             FocusedOption focused=findFocused(data.get("options"));String query=focused==null?"":focused.value.toLowerCase(Locale.ROOT);
             plugin.runAdminTask(()->respondAutocomplete(id,token,plugin.expansionProfiles().stream().filter(p->(name.equals("quicknote")||plugin.accountLinks.store.byMinecraft(p.uniqueId())==null)&&p.displayName().toLowerCase(Locale.ROOT).contains(query)).limit(25).map(p->new DiscordAdminController.Choice(name.equals("quicknote")?p.displayName()+" • "+plugin.deliveries.recipientLanguage(p.uniqueId())+" • "+(Bukkit.getPlayer(p.uniqueId())==null?"Offline":"Online"):p.displayName(),p.uniqueId().toString())).toList()));return true;
@@ -1476,7 +1526,7 @@ final class DiscordBotManager {
         if (!enabled() || !configured()) return "Discord-Bot ist nicht vollständig eingerichtet.";
         if (applicationId.isBlank()) return "Discord-Gateway ist noch nicht READY; die Befehle werden beim Verbindungsaufbau automatisch synchronisiert.";
         registerCommands(actor);
-        return "Synchronisierung von `/sasadmin`, `/ssmp`, `/link`, `/unlink`, `/serverstats`, `/accountadmin`, `/shop`, `/myaccount`, `/quicknote` und `/ticket` mit der konfigurierten Guild wurde gestartet.";
+        return "Synchronisierung von `/sasadmin`, `/ssmp`, `/link`, `/unlink`, `/serverstats`, `/accountadmin`, `/shop`, `/myaccount`, `/quicknote`, `/rechtesperre` und `/ticket` mit der konfigurierten Guild wurde gestartet.";
     }
 
     private void registerCommands(String actor) {
