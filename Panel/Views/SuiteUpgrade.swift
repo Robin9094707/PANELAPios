@@ -85,13 +85,14 @@ struct SuiteUsersView: View {
             }
             if !model.notice.isEmpty { Text(model.notice).foregroundStyle(.green) }
         }.panelScreen().navigationTitle("App-Benutzer").toolbar { Button("Neu", systemImage: "plus") { adding = true }.disabled(!suite.can("action.accounts.update")) }.task { await model.load("access") }.refreshable { await model.load("access") }.errorAlert($model.error)
-            .sheet(isPresented: Binding(get: { adding || selected != nil }, set: { if !$0 { adding = false; selected = nil } })) { SuiteUserEditor(suite: suite, row: selected ?? .null, catalog: model.data["catalog"].array) { await model.load("access") } }
+            .sheet(isPresented: Binding(get: { adding || selected != nil }, set: { if !$0 { adding = false; selected = nil } })) { SuiteUserEditor(suite: suite, row: selected ?? .null, catalog: model.data["catalog"].array, presets: model.data["presets"].array) { await model.load("access") } }
     }
 }
 struct SuiteUserEditor: View {
     let suite: SuiteAPI
     let row: JSON
     let catalog: [JSON]
+    var presets: [JSON] = []
     let saved: () async -> Void
     @StateObject private var model: SuiteUpgradeModel
     @Environment(\.dismiss) private var dismiss
@@ -100,14 +101,25 @@ struct SuiteUserEditor: View {
     @State private var enabled = true
     @State private var rights: Set<String> = []
     @State private var query = ""
-    init(suite: SuiteAPI, row: JSON, catalog: [JSON], saved: @escaping () async -> Void) { self.suite = suite; self.row = row; self.catalog = catalog; self.saved = saved; _model = StateObject(wrappedValue: SuiteUpgradeModel(suite)) }
+    init(suite: SuiteAPI, row: JSON, catalog: [JSON], presets: [JSON] = [], saved: @escaping () async -> Void) { self.suite = suite; self.row = row; self.catalog = catalog; self.presets = presets; self.saved = saved; _model = StateObject(wrappedValue: SuiteUpgradeModel(suite)) }
     var body: some View {
         NavigationStack { Form {
             Section("Benutzer") { TextField("Minecraft-Benutzername", text: $name).disabled(row != .null).textInputAutocapitalization(.never).autocorrectionDisabled(); SecureField(row == .null ? "Passwort (mindestens 12 Zeichen)" : "Neues Passwort (leer = behalten)", text: $password); Toggle("Zugang aktiv", isOn: $enabled) }
-            Section("Rechte") {
+            Section {
                 TextField("Rechte suchen", text: $query)
-                ForEach(catalog.filter { query.isEmpty || ($0["title"].string + $0["id"].string).localizedCaseInsensitiveContains(query) }, id: \.["id"].string) { item in
-                    Toggle(isOn: Binding(get: { rights.contains(item["id"].string) }, set: { if $0 { rights.insert(item["id"].string) } else { rights.remove(item["id"].string) } })) { VStack(alignment: .leading) { Text(item["title"].string); Text(item["id"].string).font(.caption.monospaced()).foregroundStyle(.secondary) } }
+                if !presets.isEmpty && !row["owner"].bool {
+                    Menu {
+                        ForEach(presets, id: \.["id"].string) { preset in
+                            Button(preset["title"].string + " – " + preset["explain"].string) { rights = Set(preset["permissions"].array.map(\.string)) }
+                        }
+                    } label: { Label("Rollen-Vorlage übernehmen", systemImage: "person.crop.rectangle.stack") }
+                }
+            } header: { Text("Rechte") } footer: { Text("Lesen = nur ansehen · Ändern = Aktion mit Bestätigung · Kritisch = kann Zugänge, Server oder Einstellungen verändern. Mit einer Vorlage starten und dann anpassen.") }
+            ForEach(SuiteRightsCatalog.groups(catalog, query: query), id: \.0) { group in
+                Section(rightsHeader(group.0, group.1)) {
+                    ForEach(group.1, id: \.["id"].string) { item in
+                        SuiteRightToggle(item: item, on: Binding(get: { rights.contains(item["id"].string) }, set: { if $0 { rights.insert(item["id"].string) } else { rights.remove(item["id"].string) } }))
+                    }
                 }
             }
             if row != .null && row["enabled"].bool && suite.features.contains("setup-links-v1") { Section { NavigationLink { SuiteSetupLinkCreator(suite: suite, username: row["username"].string) } label: { Label("Setup-Link erstellen", systemImage: "link.badge.plus") } } footer: { Text("Einmalig gültig (Standard 1 Stunde). Der Empfänger muss nichts eintippen.") } }
@@ -120,6 +132,10 @@ struct SuiteUserEditor: View {
             }
             if !model.notice.isEmpty { Text(model.notice).foregroundStyle(.green) }
         }.navigationTitle(row == .null ? "Neuer App-Benutzer" : name).toolbar { Button("Fertig") { Task { await saved(); dismiss() } }.disabled(model.busy) }.task { name = row["username"].string; enabled = row == .null || row["enabled"].bool; rights = Set(row["permissions"].array.map(\.string)) }.modifier(UpgradeFeedback(model: model, route: "access")) }.interactiveDismissDisabled(model.busy)
+    }
+    func rightsHeader(_ name: String, _ items: [JSON]) -> String {
+        let on = items.filter { rights.contains($0["id"].string) }.count
+        return name + " · " + String(on) + "/" + String(items.count)
     }
     func prepare(_ operation: String) { Task { await model.prepare("accounts.update", ["username": .string(name), "password": .string(password), "enabled": .string(String(enabled)), "permissions": .string(rights.sorted().joined(separator: ",")), "operation": .string(operation)]); if model.plan != nil { password = "" } } }
 }

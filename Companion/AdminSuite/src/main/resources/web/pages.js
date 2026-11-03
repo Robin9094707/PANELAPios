@@ -151,6 +151,11 @@
       ["Sitzungen", p.activity ? S.num(p.activity.sessions) : null], ["Geräte", p.deviceCount], ["Mögliche Alts", p.altCount], ["Frühere Namen", (p.previousNames || []).join(", ")],
       ["Letzter Ort", p.lastLocation ? fmtLoc(p.lastLocation) : null]]));
     var cards = [head];
+    // 10.0.0: quick access to rank (LuckPerms) and access locks of this player.
+    var quick = h("div", { class: "row wrap" },
+      S.has("access-locks-v1") && S.can("data.access-locks") ? h("a", { class: "btn sm", href: "#/access-locks/" + p.id }, icon("lock"), "Rechte-Sperren") : null,
+      S.has("luckperms-v1") && S.can("data.luckperms") ? h("a", { class: "btn sm", href: "#/luckperms/player/" + p.id }, icon("key"), "Rang & LuckPerms") : null);
+    if (quick.children.length) cards.push(quick);
     var grid = h("div", { class: "grid two" }, info);
     if (p.live) {
       var l = p.live;
@@ -447,14 +452,18 @@
       b.addEventListener("click", function () { Array.prototype.forEach.call(tabs.children, function (c) { c.classList.remove("on"); }); b.classList.add("on"); tab = t[0]; show(); });
       tabs.appendChild(b);
     });
-    var source = "internal", q = "";
+    var source = "internal", q = "", reportFilter = "open";
     async function show() {
       S.clear(body).appendChild(S.skeleton(3));
       try {
         if (tab === "reports") {
           var r = await S.api("data/reports", { query: { q: q } }); if (!alive()) return; S.clear(body);
           var canEdit = S.can("action.reports.update");
-          body.appendChild(S.card(null, { cls: "pad-0" }, h("div", { class: "list" }, (r.items || []).length ? r.items.map(function (x) {
+          var all = r.items || [], counts = { open: 0, done: 0 };
+          all.forEach(function (x) { if (x.status === "OPEN" || x.status === "IN_REVIEW") counts.open++; else counts.done++; });
+          var items = all.filter(function (x) { return reportFilter === "all" || (reportFilter === "open" ? x.status === "OPEN" || x.status === "IN_REVIEW" : x.status === "RESOLVED" || x.status === "REJECTED"); });
+          body.appendChild(h("div", { class: "row wrap", style: { marginBottom: "10px" } }, S.segmented([["open", "Offen (" + counts.open + ")"], ["done", "Erledigt (" + counts.done + ")"], ["all", "Alle"]], reportFilter, function (v) { reportFilter = v; show(); })));
+          body.appendChild(S.card(null, { cls: "pad-0" }, h("div", { class: "list" }, items.length ? items.map(function (x) {
             var sel = h("select", { class: "input", style: { width: "auto", minHeight: "32px", height: "32px", padding: "0 8px" }, disabled: !canEdit, "aria-label": "Status" },
               [["OPEN", "Offen"], ["IN_REVIEW", "In Prüfung"], ["RESOLVED", "Erledigt"], ["REJECTED", "Abgelehnt"]].map(function (o) { return h("option", { value: o[0], selected: o[0] === x.status, text: o[1] }); }));
             sel.addEventListener("change", async function () {
@@ -462,16 +471,28 @@
               if (note === null) { sel.value = x.status; return; }
               try { if (await S.runAction("reports.update", { id: x.id, status: sel.value, note: note, expected: x.revision })) show(); else sel.value = x.status; } catch (e) { S.toast(e.message, "err"); sel.value = x.status; }
             });
-            return h("div", { class: "item" }, icon("flag"), h("div", { class: "meta" }, h("b", { text: x.name + " · " + x.category }), h("p", { text: x.details || "" }), h("small", { text: "von " + x.reporter + " · " + S.date(x.created) + (x.handledBy ? " · bearbeitet von " + x.handledBy : "") + (x.note ? " · " + x.note : "") })), sel);
+            var noteBtn = S.btn("", { size: "sm icon", kind: "ghost", icon: "edit", title: "Interne Notiz bearbeiten", disabled: !canEdit, onClick: async function () {
+              var note = await S.prompt("Notiz zu Report #" + x.id, "Interne Notiz (sieht nur das Team)", x.note || "", "Speichern"); if (note === null) return;
+              if (await S.runAction("reports.update", { id: x.id, status: x.status, note: note, expected: x.revision })) show();
+            } });
+            var STATUS = { OPEN: ["Offen", "warn"], IN_REVIEW: ["In Prüfung", "info"], RESOLVED: ["Erledigt", "ok"], REJECTED: ["Abgelehnt", ""] };
+            return h("div", { class: "item stackable" }, icon("flag"), h("div", { class: "meta" }, h("div", { class: "row wrap", style: { gap: "6px" } }, x.player && S.can("data.profile") ? h("a", { href: "#/player/" + x.player, text: x.name }) : h("b", { text: x.name }), S.badge(x.category || "Report"), S.badge((STATUS[x.status] || [x.status])[0], (STATUS[x.status] || [])[1])),
+              h("p", { text: x.details || "" }), x.note ? h("p", { class: "small", text: "Notiz: " + x.note }) : null, h("small", { text: "#" + x.id + " · von " + x.reporter + " · " + S.date(x.created) + (x.handledBy ? " · bearbeitet von " + x.handledBy : "") })),
+              h("div", { class: "side wrap" }, sel, noteBtn, x.player && S.has("access-locks-v1") && S.can("data.access-locks") ? h("a", { class: "btn sm icon ghost", href: "#/access-locks/" + x.player, title: "Rechte-Sperren" }, icon("lock")) : null));
           }) : S.empty("flag", "Keine Reports"))));
         } else {
-          var bans = await S.api("data/bans", { query: { source: source, q: q } }); if (!alive()) return; S.clear(body);
+          // 10.0.0: LiteBans has its own endpoint; Minecraft profile/IP bans are filtered server-side (older Suites: one "minecraft" list).
+          var bans = source === "litebans" ? await S.api("data/litebans", { query: { q: q } })
+            : await S.api("data/bans", { query: { source: /^minecraft-/.test(source) && !S.has("bans-sources-v2") ? "minecraft" : source, q: q } }); if (!alive()) return; S.clear(body);
+          if (/^minecraft-/.test(source) && !S.has("bans-sources-v2")) bans.items = (bans.items || []).filter(function (b) { return b.source === source; });
           var canRemove = S.can("action.bans.remove");
           body.appendChild(h("div", { class: "stack" }, S.segmented([["internal", "Suite"], ["client", "Client-Sperren"], ["minecraft-profile", "Minecraft"], ["minecraft-ip", "IP"], ["litebans", "LiteBans"]], source, function (v) { source = v; show(); }),
+            bans.available === false ? S.notice(bans.message || "LiteBans ist nicht verfügbar.", "warn", "info") : null,
             S.card(null, { cls: "pad-0" }, h("div", { class: "list" }, (bans.items || []).length ? bans.items.map(function (b) {
               return h("div", { class: "item" }, S.avatar(b.name, "sm"), h("div", { class: "meta" }, h("b", { text: b.name }), h("p", { text: b.reason || "" }), h("small", { text: (b.actor ? "von " + b.actor + " · " : "") + (b.created ? S.date(b.created) : "") + (b.until ? " · bis " + S.date(b.until) : " · dauerhaft") })),
                 S.btn("Aufheben", { size: "sm", icon: "unlock", disabled: !canRemove, title: canRemove ? "" : "Keine Berechtigung", onClick: async function () { if (await S.runAction("bans.remove", { source: b.source || source, id: b.id, expected: b.revision || "" }, { title: "Sperre aufheben?" })) show(); } }));
-            }) : S.empty("gavel", "Keine Sperren")))));
+            }) : S.empty("gavel", "Keine Sperren"))),
+            S.can("action.player.punish") ? h("div", { class: "row wrap" }, S.btn("Spieler bannen oder muten", { icon: "plus", onClick: async function () { var acts = await S.schema(); var a = acts.filter(function (x) { return x.id === "player.punish"; })[0]; if (a) S.openAction(a, { type: "tempban" }); } })) : null));
         }
       } catch (e) { S.clear(body).appendChild(S.errorView(e)); }
     }

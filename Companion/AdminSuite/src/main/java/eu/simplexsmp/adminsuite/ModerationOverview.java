@@ -65,6 +65,7 @@ final class ModerationOverview {
             }
             if(allowed(p,false))items.add(b("Bannart auswählen","Diesen Spieler klassisch, ultra, leise oder als Ghost bannen",Material.IRON_BARS,()->plugin.moderationControl.banTarget(p,s.id)));
             if(plugin.has(p,"simplexadminsuite.restrictions"))items.add(b("Einschränkungen","Vorlage für diesen Spieler anwenden oder aufheben",Material.WRITABLE_BOOK,()->plugin.moderationControl.restrictionTarget(p,s.id)));
+            if(plugin.accessLocks!=null&&(plugin.has(p,"simplexadminsuite.accesslocks")||plugin.has(p,"simplexadminsuite.restrictions")))items.add(b("Rechte-Sperren",plugin.accessLocks.locked(s.id)?"§cAktiv: "+plugin.accessLocks.describe(s.id).replace("\n"," · "):"Truhen, Shulker, Behälter, Türen, fremde Items … einzeln sperren",Material.IRON_BARS,()->plugin.accessLocks.playerMenu(p,s.id)));
             items.add(b("Bisheriges Strafmenü","Konfigurierter Anbieter, Kick und weitere Strafaktionen",Material.SHIELD,()->plugin.openUnifiedPunish(p,s.id)));
             items.add(b("Aktualisieren","Status erneut abfragen",Material.CLOCK,()->open(p,plugin.moderationSubject(s.id.toString()))));
             items.add(b("Zurück","Spielerauswahl",Material.OAK_DOOR,()->select(p)));
@@ -218,7 +219,7 @@ final class ModerationOverview {
                 Subject subject=plugin.moderationSubject(e.getKey().toString());var state=e.getValue();
                 rows.add(SimplexAdminSuite.appMap("id",e.getKey().toString(),"player",e.getKey().toString(),"source","client","name",subject==null?e.getKey().toString():subject.name,"reason",String.join(", ",state.clients())+(state.review()?" · Team-Freigabe erforderlich":""),"until",state.banUntil(),"created",state.lastFailure(),"revision",AppApiSecurity.hash(state.toString())));
             }
-        } else if(source.equals("minecraft"))for(BanList.Type kind:List.of(BanList.Type.PROFILE,BanList.Type.IP)) {
+        } else if(source.equals("minecraft")||source.equals("minecraft-profile")||source.equals("minecraft-ip"))for(BanList.Type kind:source.equals("minecraft-ip")?List.of(BanList.Type.IP):source.equals("minecraft-profile")?List.of(BanList.Type.PROFILE):List.of(BanList.Type.PROFILE,BanList.Type.IP)) {
             BanList list=Bukkit.getBanList(kind);for(Object raw:list.getBanEntries()) {
                 BanEntry entry=(BanEntry)raw;if(entry.getExpiration()!=null&&entry.getExpiration().before(new Date()))continue;
                 Object target=entry.getBanTarget();boolean profile=target instanceof org.bukkit.profile.PlayerProfile;

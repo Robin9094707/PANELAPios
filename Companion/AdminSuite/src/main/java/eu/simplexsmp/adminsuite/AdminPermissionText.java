@@ -45,6 +45,7 @@ final class AdminPermissionText {
         Map.entry("qol.tasks","Teamaufgaben verwalten"),
         Map.entry("qol.timeline","Team-Aktionsverlauf ansehen"),
         Map.entry("rights","Spielerrechte verwalten"),
+        Map.entry("accesslocks","Rechte-Sperren verwalten"),
         Map.entry("rules.admin","Serverregeln bearbeiten"),
         Map.entry("scoreboard.admin","Scoreboard und Spieltage bearbeiten"),
         Map.entry("slowmode","Chat-Intervall begrenzen"),

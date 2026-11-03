@@ -336,6 +336,7 @@ simplexadminsuite.playerdata.edit
 
 simplexadminsuite.moderation.control
 simplexadminsuite.restrictions
+simplexadminsuite.accesslocks
 simplexadminsuite.devices.models
 simplexadminsuite.settings.advanced
 

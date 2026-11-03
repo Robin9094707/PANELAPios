@@ -23,6 +23,7 @@
       { id: "worlds", label: "Welten", icon: "globe", perm: "data.worlds" },
       { id: "plugins", label: "Plugins", icon: "puzzle", perm: "data.plugins" },
       { id: "luckperms", label: "Ränge & Rechte", icon: "crown", perm: "data.luckperms", feature: "luckperms-v1" },
+      { id: "access-locks", label: "Rechte-Sperren", icon: "lock", perm: "data.access-locks", feature: "access-locks-v1" },
       { id: "lands", label: "Lands", icon: "map", perm: "data.lands", feature: "lands-v1" },
       { id: "functions", label: "Alle Funktionen", icon: "grid", perm: null },
       { id: "menu", label: "Suite-Menüs", icon: "box", perm: "action.menu.action", full: true },
@@ -30,7 +31,8 @@
     ] },
     { group: "Persönlich", items: [
       { id: "notifications", label: "Benachrichtigungen", icon: "bell", perm: null, feature: "web-push-v1" },
-      { id: "appearance", label: "Darstellung", icon: "sparkles", perm: null, feature: "web-prefs-v1" }
+      { id: "appearance", label: "Darstellung", icon: "sparkles", perm: null, feature: "web-prefs-v1" },
+      { id: "changelog", label: "Neuigkeiten", icon: "sparkles", perm: null, feature: "changelog-v1" }
     ] },
     { group: "Zugänge", items: [
       { id: "users", label: "Benutzer & Rechte", icon: "key", perm: "data.access", full: true },
@@ -208,6 +210,8 @@
     S.started = true;
     if (S.registerWorker) S.registerWorker().then(function () { if (S.resyncPush) S.resyncPush(); });
     await route();
+    // 10.0.0: what's new – shown once per account and Suite version (stored on the server, survives new logins).
+    if (S.showChangelog) setTimeout(function () { S.showChangelog(false); }, 600);
     refreshBadges(); clearInterval(S.badgeTimer); S.badgeTimer = setInterval(function () { if (!document.hidden && S.health) refreshBadges(); }, 60000);
   };
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });

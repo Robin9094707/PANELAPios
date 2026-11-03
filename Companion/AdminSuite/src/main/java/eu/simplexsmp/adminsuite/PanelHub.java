@@ -72,6 +72,20 @@ final class PanelHub {
                     }
                     AppApiManager.send(x, 200, result);
                 }
+                case "/v1/data/luckperms-permissions" -> {
+                    api.requirePermission(key, "data.luckperms");
+                    AppApiManager.send(x, 200, SimplexAdminSuite.appMap("items", api.onMain(rev, luckPerms::knownPermissions), "installed", luckPerms.installed()));
+                }
+                case "/v1/data/access-locks" -> {
+                    api.requirePermission(key, "data.access-locks");
+                    if (plugin.accessLocks == null) throw new AppApiManager.ApiError(503, "Rechte-Sperren nicht geladen");
+                    String player = query.getOrDefault("player", "");
+                    if (!player.isBlank()) {
+                        Map<String, Object> out = api.onMain(rev, () -> { Map<String, Object> row = new LinkedHashMap<>(plugin.accessLocks.catalog()); row.put("player", plugin.accessLocks.player(plugin.accessLocks.resolve(player))); return row; });
+                        AppApiManager.send(x, 200, out);
+                    } else AppApiManager.send(x, 200, api.onMain(rev, () -> plugin.accessLocks.data(query.getOrDefault("q", ""))));
+                }
+                case "/v1/changelog" -> AppApiManager.send(x, 200, changelog(owner));
                 case "/v1/data/lands" -> {
                     api.requirePermission(key, "data.lands");
                     String player = query.getOrDefault("player", "");
@@ -122,6 +136,13 @@ final class PanelHub {
                 WebPush push = requirePush();
                 if (!api.rate("push-test:" + owner, 5)) throw new AppApiManager.ApiError(429, "Höchstens fünf Tests pro Minute.");
                 AppApiManager.send(x, 200, push.test(owner));
+            }
+            case "/v1/changelog/seen" -> {
+                Map<String, Object> body = AppApiManager.body(x, 512);
+                String version = String.valueOf(body.getOrDefault("version", "")).trim();
+                if (!version.matches("[0-9]{1,3}(\\.[0-9]{1,3}){1,3}")) throw new IllegalArgumentException("Version ungültig");
+                markSeen(owner, version);
+                AppApiManager.send(x, 200, SimplexAdminSuite.appMap("ok", true, "seen", version));
             }
             case "/v1/admin-log/settings" -> {
                 api.requirePermission(key, "data.admin-log");
@@ -192,6 +213,28 @@ final class PanelHub {
     }
     static String ownerKey(String username) { return "user:" + Base64.getUrlEncoder().withoutPadding().encodeToString(username.getBytes(StandardCharsets.UTF_8)); }
 
+    // ---------------------------------------------------------------- 10.0.0 changelog shown once per account (web panel and app)
+
+    private static volatile Object changelogCache;
+    static Object changelogEntries() {
+        if (changelogCache != null) return changelogCache;
+        try (var in = PanelHub.class.getResourceAsStream("/changelog.json")) {
+            changelogCache = in == null ? List.of() : DiscordBotManager.Json.parse(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+        } catch (IOException | RuntimeException e) { changelogCache = List.of(); }
+        return changelogCache;
+    }
+    synchronized Map<String, Object> changelog(String owner) {
+        String version = plugin.getDescription().getVersion();
+        String seen = prefs.getProperty("changelog." + owner, "");
+        return SimplexAdminSuite.appMap("version", version, "seen", seen, "unseen", !seen.equals(version), "entries", changelogEntries());
+    }
+    synchronized void markSeen(String owner, String version) throws IOException {
+        if (version.equals(prefs.getProperty("changelog." + owner))) return;
+        Properties next = new Properties(); next.putAll(prefs); next.setProperty("changelog." + owner, version);
+        AtomicState.save(prefsFile, next, "Simplex web panel appearance per account (9.9.0)");
+        prefs.clear(); prefs.putAll(next);
+    }
+
     // ---------------------------------------------------------------- web panel appearance (per account, on the server)
 
     static final Map<String, List<String>> CHOICES = Map.of(
@@ -233,13 +276,15 @@ final class PanelHub {
     }
 
     private synchronized void renamePrefs(String from, String to) throws IOException {
-        String value = prefs.getProperty(from); if (value == null) return;
-        Properties next = new Properties(); next.putAll(prefs); next.remove(from); next.setProperty(to, value);
+        String value = prefs.getProperty(from), seen = prefs.getProperty("changelog." + from); if (value == null && seen == null) return;
+        Properties next = new Properties(); next.putAll(prefs); next.remove(from); next.remove("changelog." + from);
+        if (value != null) next.setProperty(to, value);
+        if (seen != null) next.setProperty("changelog." + to, seen);
         AtomicState.save(prefsFile, next, "Simplex web panel appearance per account (9.9.0)"); prefs.clear(); prefs.putAll(next);
     }
     synchronized void removeOwner(String owner) throws IOException {
-        if (!prefs.containsKey(owner)) return;
-        Properties next = new Properties(); next.putAll(prefs); next.remove(owner);
+        if (!prefs.containsKey(owner) && !prefs.containsKey("changelog." + owner)) return;
+        Properties next = new Properties(); next.putAll(prefs); next.remove(owner); next.remove("changelog." + owner);
         AtomicState.save(prefsFile, next, "Simplex web panel appearance per account (9.9.0)"); prefs.clear(); prefs.putAll(next);
     }
 }

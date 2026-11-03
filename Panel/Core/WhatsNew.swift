@@ -18,6 +18,15 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "4.3.0", title: "Großes Rechte-Update", summary: "Spielern einzelne Rechte gezielt entziehen – temporär oder dauerhaft, in App, Webpanel, Discord und im Spielmenü für Java und Bedrock.", items: [
+            WhatsNewItem(symbol: "lock.fill", title: "Rechte-Sperren", detail: "Einzelne Schalter für Truhen, Shulker, andere Behälter, Endertruhen, Türen, Redstone, Arbeitsblöcke, Rahmen, Tiere, Bauen und fremde Items. Gesperrtes kann weder geöffnet, abgebaut noch gesprengt werden – auch nicht in vertrauten Ländern."),
+            WhatsNewItem(symbol: "map.fill", title: "Eigenes Land & Wildnis", detail: "Je Sperre wählbar: überall, nur im eigenen Land (als Besitzer) oder eigenes Land und Wildnis erlaubt."),
+            WhatsNewItem(symbol: "diamond.fill", title: "Klauer-Vorlage", detail: "Wertvolle Items anderer Spieler (Diamanten, Netherite, Shulker, Verzaubertes …) nur noch im eigenen Land aufheben, Behälter nur noch im eigenen Land öffnen."),
+            WhatsNewItem(symbol: "clock.badge.checkmark", title: "Temporär oder dauerhaft", detail: "Sperren laufen von selbst ab. Der Spieler sieht bei jedem Versuch, was gesperrt ist, warum und wie lange noch."),
+            WhatsNewItem(symbol: "paintpalette.fill", title: "Präfixe mit Vorschau", detail: "Präfix und Suffix für Gruppen und einzelne Spieler mit Farbpalette, Hex-Farben, Vorlagen und Live-Vorschau wie im Chat."),
+            WhatsNewItem(symbol: "text.magnifyingglass", title: "Rechte-Vorschläge", detail: "Beim Hinzufügen schlägt die App alle bekannten Rechte der Plugins vor – kein Abtippen mehr. Rechte lange drücken oder wischen zum Entfernen."),
+            WhatsNewItem(symbol: "person.badge.key.fill", title: "Rechte einfach erklärt", detail: "App-Benutzerrechte nach Bereichen sortiert, mit kurzer Erklärung und Rollen-Vorlagen für Supporter, Moderator und Admin.")
+        ]),
         WhatsNewRelease(version: "4.2.0", title: "Ränge, Lands & ruhiger Admin-Log", summary: "Selbst einstellen, was als ungelesen zählt, Benutzername ändern, LuckPerms und Lands verwalten – und Tickets ohne deinen Login-Namen.", items: [
             WhatsNewItem(symbol: "line.3.horizontal.decrease.circle", title: "Admin-Log-Filter", detail: "Nur Team, ausgewählte Admins, alle oder gar keine Zahlen – Aktionen normaler Spieler bleiben sichtbar, aber still. Push folgt demselben Filter."),
             WhatsNewItem(symbol: "person.text.rectangle", title: "Name & Anzeige", detail: "Benutzernamen ändern, ohne neu anmelden zu müssen. Spieler sehen bei Ticketantworten nur deinen öffentlichen Namen oder „Team“."),

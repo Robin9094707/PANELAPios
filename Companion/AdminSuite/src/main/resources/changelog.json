@@ -1,0 +1,19 @@
+[
+  {
+    "version": "10.0.0",
+    "app": "4.3.0",
+    "date": "2026-11-03",
+    "title": "Großes Rechte-Update",
+    "intro": "Spielern lassen sich jetzt einzelne Rechte gezielt entziehen – temporär oder dauerhaft, in App, Webpanel, Discord und im Spielmenü (Java und Bedrock).",
+    "items": [
+      { "icon": "lock", "title": "Rechte-Sperren je Spieler", "text": "Einzelne Schalter für Truhen, Shulkerkisten, andere Behälter, Endertruhen, Türen & Tore, Redstone, Arbeitsblöcke, Rahmen & Rüstungsständer, Tiere, Bauen und fremde Items." },
+      { "icon": "shield", "title": "Wirklich gesperrt", "text": "Gesperrtes kann weder geöffnet noch abgebaut, gesprengt (TNT, Kristalle, Betten, Creeper) oder per Trichter leergezogen werden – auch nicht über den Block unter einer Tür. Gilt auch, wenn der Spieler in einem Land vertraut ist." },
+      { "icon": "map", "title": "Eigenes Land & Wildnis", "text": "Je Sperre wählbar: überall gesperrt, nur im eigenen Land erlaubt (als Besitzer) oder eigenes Land und Wildnis erlaubt." },
+      { "icon": "diamond", "title": "Klauer-Modus", "text": "Wertvolle Items (Diamanten, Netherite, Shulker, verzauberte Items …), die andere Spieler gedroppt, verloren oder abgebaut haben, kann ein Klauer nur noch im eigenen Land aufheben." },
+      { "icon": "clock", "title": "Temporär oder dauerhaft", "text": "Sperren laufen automatisch ab; der Spieler sieht bei jedem Versuch, was gesperrt ist, warum und wie lange noch." },
+      { "icon": "crown", "title": "LuckPerms einfacher", "text": "Autovervollständigung aller bekannten Rechte, Rechte direkt filtern und entfernen, Präfixe und Suffixe für Gruppen und Spieler mit Farbpalette und Live-Vorschau." },
+      { "icon": "key", "title": "Rechte einfach erklärt", "text": "App-Benutzerrechte sind nach Bereichen sortiert, verständlich beschrieben und lassen sich mit Rollen-Vorlagen (Supporter, Moderator, Admin) vergeben." },
+      { "icon": "gavel", "title": "Banns im Webpanel", "text": "Minecraft-, IP- und LiteBans-Sperren werden im Webpanel wieder korrekt angezeigt und lassen sich aufheben; Reports mit Notizen bearbeiten." }
+    ]
+  }
+]

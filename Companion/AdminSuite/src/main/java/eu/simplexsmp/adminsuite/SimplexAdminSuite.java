@@ -266,6 +266,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     AdminUpdateMenu adminUpdate;
     LegacyItemCleanup itemCleanup;
     ModerationControl moderationControl;
+    /** 10.0.0 fine-grained, optionally temporary access locks (chests, shulkers, doors, pickup …). */
+    AccessLocks accessLocks;
     UnifiedAdminMenu unifiedMenu;
     ModerationOverview moderationOverview;
     XrayBaitManager xrayBait;
@@ -395,6 +397,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         moderationControl = new ModerationControl(this);
         moderationControl.start();
         Bukkit.getPluginManager().registerEvents(moderationControl, this);
+        accessLocks = new AccessLocks(this);
+        Bukkit.getPluginManager().registerEvents(accessLocks, this);
+        Bukkit.getScheduler().runTaskTimer(this, accessLocks::tick, 100L, 100L);
+        register("rechtesperre");
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(new RelayEvents(this), this);
         Bukkit.getPluginManager().registerEvents(vpnProtection, this);
@@ -617,6 +623,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         reloadConfig();
         if (appApi != null) appApi.reload();
         if (playerCommands != null) playerCommands.reload();
+        if (accessLocks != null) accessLocks.reloadSettings();
         if (adminRuntime != null) adminRuntime.settingsChanged();
         database.loadAll();
         if(pointsEconomy!=null)for(PlayerProfile p:database.sortedProfiles())pointsEconomy.attach(p);
@@ -757,6 +764,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return true;
         }
         if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length > 0 && args[0].equalsIgnoreCase("app")) { if (appApi == null) { sender.sendMessage("App-API nicht geladen; Serverprotokoll prüfen."); return true; } return appApi.command(sender, Arrays.copyOfRange(args, 1, args.length)); }
+        if(rootCommand.equals("rechtesperre")) { if (accessLocks == null) sender.sendMessage(prefix() + "Rechte-Sperren nicht geladen."); else accessLocks.command(sender, args); return true; }
         if(rootCommand.equals("shop")) return shop.command(sender,args);
         if(rootCommand.equals("delivery")) return deliveries.command(sender,args);
         if(rootCommand.equals("spcurrency")) return pointsCommand(sender,args);
@@ -1798,6 +1806,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         String root = command.getName().toLowerCase(Locale.ROOT);
         if(root.equals("delivery"))return deliveries.complete(sender,args);
+        if(root.equals("rechtesperre"))return accessLocks==null||!has(sender,"simplexadminsuite.accesslocks")?List.of():accessLocks.tab(args);
         if(root.equals("shop"))return args.length==1?filter(has(sender,"simplexadminsuite.shop.admin")?List.of("admin"):List.of(),args[0]):List.of();
         if(root.equals("spcurrency"))return currencyComplete(sender,args);
         if((root.equals("sas")||root.equals("simplexadmin"))&&args.length>1){

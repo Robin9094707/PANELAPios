@@ -571,3 +571,50 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
 :root[data-standalone="1"] body { overscroll-behavior-y: none; }
 :root[data-standalone="1"] .auth { padding-top: calc(28px + env(safe-area-inset-top, 0px)); }
 @media (hover: none) { .card.clickable:hover { transform: none; } .btn:active { transform: scale(0.97); } }
+
+/* ===== 10.0.0: Rechte-Sperren, Minecraft colour preview, permission autocomplete, changelog ===== */
+.mc-preview { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0; padding: 10px 12px; border-radius: var(--radius-sm); background: #1b1b1f; color: #fff;
+  font-family: "Minecraft", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 14px; letter-spacing: .2px; text-shadow: 1px 1px 0 rgba(0, 0, 0, .55); border: 1px solid rgba(255, 255, 255, .08); }
+.mc-preview.sm { display: inline-flex; padding: 3px 8px; font-size: 12.5px; border-radius: 8px; margin-top: 4px; }
+.mc-preview .mc-name { color: #fff; }
+.mc-preview .mc-chat { color: #bbb; }
+.mc-text { white-space: pre-wrap; }
+.mc-obf { filter: blur(1.5px); }
+.mc-palette { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 4px; }
+.mc-swatch { aspect-ratio: 1; min-height: 24px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .25); cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25); }
+.mc-swatch:hover { transform: scale(1.08); }
+.mc-color { position: relative; overflow: hidden; }
+.mc-color input { width: 18px; height: 18px; padding: 0; border: 0; background: none; cursor: pointer; }
+.chip.mc-chip { background: #1b1b1f; padding: 0 12px; font-family: ui-monospace, Menlo, Consolas, monospace; cursor: pointer; }
+@media (max-width: 560px) { .mc-palette { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+
+.suggest-wrap { position: relative; display: grid; gap: 4px; }
+.suggest { position: absolute; z-index: 30; top: 44px; left: 0; right: 0; max-height: 280px; overflow: auto; background: var(--surface-solid); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); }
+.suggest[hidden] { display: none; }
+.suggest-row { display: grid; gap: 2px; width: 100%; text-align: left; padding: 8px 12px; border: 0; border-top: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; }
+.suggest-row:first-child { border-top: 0; }
+.suggest-row:hover, .suggest-row.on { background: var(--surface-2); }
+.suggest-row small { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.lock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 10px; }
+.lock-flag { min-width: 0; flex-wrap: wrap; }
+.lock-flag > .grow { min-width: 0; flex: 1 1 180px; }
+.lock-scope .segmented { flex-wrap: wrap; height: auto; }
+.lock-head-actions { flex-wrap: wrap; }
+@media (max-width: 560px) { .lock-head-actions { flex-basis: 100%; } }
+.lock-flag { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; }
+.lock-flag input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--danger); flex: none; }
+.lock-flag small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 4px; line-height: 1.4; }
+.lock-flag.locked { border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); background: color-mix(in srgb, var(--danger) 7%, var(--surface)); }
+.scope-card, .preset { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); display: grid; gap: 6px; align-content: start; }
+.scope-card p, .preset p { margin: 0; }
+.scope-card.danger { border-left: 3px solid var(--danger); }
+.scope-card.warn { border-left: 3px solid var(--warn); }
+.scope-card.accent { border-left: 3px solid var(--accent); }
+.perm-explain { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+
+.changelog h3 { font-size: 18px; }
+.cl-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); }
+.cl-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.cl-item p { margin: 4px 0 0; color: var(--muted); }
+@media (max-width: 720px) { .grid.three { grid-template-columns: 1fr; } .lock-grid, .cl-list { grid-template-columns: 1fr; } }

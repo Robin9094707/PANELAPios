@@ -287,10 +287,24 @@
       remove ? S.btn("", { size: "sm icon", kind: "ghost", icon: "trash", title: "Entfernen", disabled: !S.can("action.luckperms.edit"), onClick: remove }) : null);
   }
   function permForm(onSubmit) {
-    var node = S.input({ placeholder: "z. B. essentials.fly", autocapitalize: "none" }), deny = h("input", { type: "checkbox" }), duration = S.input({ placeholder: "leer = dauerhaft, z. B. 7d" }), context = S.input({ placeholder: "optional: world=farmwelt" });
-    return h("div", { class: "stack" }, h("div", { class: "grid two" }, S.field("Recht", node), S.field("Dauer", duration)), h("div", { class: "grid two" }, S.field("Kontext", context), h("label", { class: "check", style: { alignSelf: "end" } }, deny, "Verweigern (false)")),
+    var picker = S.permInput ? S.permInput() : null, node = picker ? picker.input : S.input({ placeholder: "z. B. essentials.fly", autocapitalize: "none" }), deny = h("input", { type: "checkbox" }), duration = S.input({ placeholder: "leer = dauerhaft, z. B. 7d" }), context = S.input({ placeholder: "optional: world=farmwelt" });
+    return h("div", { class: "stack" }, h("div", { class: "grid two" }, S.field("Recht", picker ? picker.el : node), S.field("Dauer", duration)), h("div", { class: "grid two" }, S.field("Kontext", context), h("label", { class: "check", style: { alignSelf: "end" } }, deny, "Verweigern (false)")),
       h("div", {}, S.btn("Recht setzen", { kind: "primary", icon: "plus", disabled: !S.can("action.luckperms.edit"), onClick: function () { return onSubmit({ node: node.value.trim(), value: deny.checked ? "false" : "true", duration: duration.value.trim(), context: context.value.trim() }); } })));
   }
+  /** 10.0.0: node list with a filter field; every entry can be removed with one click. */
+  function nodeList(title, list, sub, makeRow, empty) {
+    var box = h("div", { class: "list" }), filter = "";
+    function render() {
+      S.clear(box);
+      var shown = list.filter(function (n) { return !filter || (n.key + " " + (n.context || "")).toLowerCase().indexOf(filter) >= 0; });
+      if (!shown.length) box.appendChild(h("div", { class: "item muted small", text: list.length ? "Kein Recht passt zum Filter." : empty }));
+      shown.forEach(function (n) { box.appendChild(makeRow(n)); });
+    }
+    render();
+    var search = list.length > 6 ? h("div", { class: "search", style: { width: "min(240px, 46%)" } }, icon("search"), S.input({ placeholder: "Filtern", onInput: function (e) { filter = e.target.value.toLowerCase(); render(); } })) : null;
+    return S.card(title, { icon: "key", cls: "pad-list", sub: sub, actions: search }, box);
+  }
+  function affixView(text) { return S.mcText ? S.mcText(text) : document.createTextNode(plain(text)); }
   P.luckperms = async function (param, query, alive) {
     var parts = (param || "").split("/"), kind = parts[0], id = parts.slice(1).join("/");
     if (kind === "group" && id) return lpGroup(id, alive);
@@ -305,7 +319,7 @@
     lookup.addEventListener("submit", function (e) { e.preventDefault(); if (search.value.trim()) S.go("#/luckperms/player/" + encodeURIComponent(search.value.trim())); });
     var groups = S.card("Gruppen", { icon: "crown", cls: "pad-list", sub: d.groups.length + " Gruppen · sortiert nach Gewicht" }, h("div", { class: "list" }, d.groups.map(function (g) {
       return h("div", { class: "item link", onClick: function () { S.go("#/luckperms/group/" + encodeURIComponent(g.name)); } }, h("div", { class: "avatar device sm" }, icon("crown")),
-        h("div", { class: "meta" }, h("b", { text: (g.displayName || g.name) + (g.displayName && g.displayName !== g.name ? " (" + g.name + ")" : "") }), h("small", { text: (plain(g.prefix) ? "Präfix „" + plain(g.prefix).trim() + "“ · " : "") + g.permissions + " Rechte" + (g.parents.length ? " · erbt von " + g.parents.join(", ") : "") })),
+        h("div", { class: "meta" }, h("b", { text: (g.displayName || g.name) + (g.displayName && g.displayName !== g.name ? " (" + g.name + ")" : "") }), g.prefix || g.suffix ? h("div", { class: "mc-preview sm" }, affixView(g.prefix), h("span", { class: "mc-name", text: "Name" }), affixView(g.suffix)) : null, h("small", { text: g.permissions + " Rechte" + (g.parents.length ? " · erbt von " + g.parents.join(", ") : "") })),
         S.badge("Gewicht " + g.weight), icon("chevRight", "chev"));
     })));
     var team = S.card("Team", { icon: "users", cls: "pad-list", sub: "Erkannte Teammitglieder und ihre Gruppen" }, h("div", { class: "list" }, (d.staff || []).length ? d.staff.map(function (m) {
@@ -322,20 +336,21 @@
     S.title(g.displayName || g.name, "Gruppe", h("a", { class: "btn ghost sm", href: "#/luckperms" }, icon("chevLeft"), h("span", { class: "hide-mobile", text: "Ränge" })));
     var perms = (g.nodes || []).filter(function (n) { return !/^(group|prefix|suffix|weight|displayname|meta)\./.test(n.key); });
     var head = S.card(null, { cls: "hero" }, h("div", { class: "row wrap", style: { gap: "16px" } }, h("div", { class: "avatar lg device" }, icon("crown")),
-      h("div", { class: "grow" }, h("h2", { style: { margin: 0 }, text: g.displayName || g.name }), h("div", { class: "row wrap", style: { gap: "6px", marginTop: "6px" } }, S.badge("Gewicht " + g.weight), plain(g.prefix) ? S.badge("Präfix " + plain(g.prefix).trim(), "accent") : null,
+      h("div", { class: "grow" }, h("h2", { style: { margin: 0 }, text: g.displayName || g.name }), h("div", { class: "row wrap", style: { gap: "6px", marginTop: "6px" } }, S.badge("Gewicht " + g.weight), g.prefix || g.suffix ? h("span", { class: "mc-preview sm" }, affixView(g.prefix), h("span", { class: "mc-name", text: "Steve" }), affixView(g.suffix)) : null,
         S.badge((g.memberCount >= 0 ? g.memberCount : "?") + " Mitglieder", "info", "users"))),
       h("div", { class: "row wrap" },
         S.btn("Gewicht", { size: "sm", icon: "activity", disabled: !S.can("action.luckperms.edit"), onClick: async function () { var v = await S.prompt("Gewicht", "Höher = wichtiger", String(g.weight), "Speichern", { type: "number", min: 0 }); if (v !== null) await lp({ operation: "group-weight", group: g.name, value: String(v) }); } }),
-        S.btn("Präfix", { size: "sm", icon: "edit", disabled: !S.can("action.luckperms.edit"), onClick: async function () { var v = await S.prompt("Präfix (leer = entfernen)", "z. B. &c[Admin] ", g.prefix, "Speichern"); if (v !== null) await lp({ operation: "group-prefix", group: g.name, value: v, priority: String(Math.max(1, g.weight || 100)) }); } }),
+        S.btn("Präfix", { size: "sm", icon: "edit", disabled: !S.can("action.luckperms.edit"), onClick: async function () { var v = S.affixDialog ? await S.affixDialog("Präfix von " + (g.displayName || g.name), { value: g.prefix, other: g.suffix, label: "Präfix (leer = entfernen)" }) : await S.prompt("Präfix (leer = entfernen)", "z. B. &c[Admin] ", g.prefix, "Speichern"); if (v !== null) await lp({ operation: "group-prefix", group: g.name, value: v, priority: String(Math.max(1, g.weight || 100)) }); } }),
+        S.btn("Suffix", { size: "sm", icon: "edit", disabled: !S.can("action.luckperms.edit"), onClick: async function () { var v = S.affixDialog ? await S.affixDialog("Suffix von " + (g.displayName || g.name), { value: g.suffix, other: g.prefix, kind: "suffix", label: "Suffix (leer = entfernen)", placeholder: "z. B.  &7✦" }) : await S.prompt("Suffix (leer = entfernen)", "z. B. &7 ✦", g.suffix, "Speichern"); if (v !== null) await lp({ operation: "group-suffix", group: g.name, value: v, priority: String(Math.max(1, g.weight || 100)) }); } }),
         S.btn("Anzeigename", { size: "sm", icon: "edit", disabled: !S.can("action.luckperms.edit"), onClick: async function () { var v = await S.prompt("Anzeigename", "Name in Menüs", g.displayName || g.name, "Speichern"); if (v) await lp({ operation: "group-displayname", group: g.name, value: v.trim() }); } }),
         g.name !== "default" ? S.btn("", { size: "sm icon", kind: "danger", icon: "trash", title: "Gruppe löschen", disabled: !S.can("action.luckperms.edit"), onClick: async function () { if (await lp({ operation: "group-delete", group: g.name }, "Gruppe „" + g.name + "“ löschen?", true)) setTimeout(function () { S.go("#/luckperms"); }, 900); } }) : null)));
     var parentSel = h("select", { class: "input" }, all.groups.filter(function (x) { return x.name !== g.name && g.parents.indexOf(x.name) < 0; }).map(function (x) { return h("option", { value: x.name, text: x.displayName || x.name }); }));
     var parents = S.card("Erbt von", { icon: "link" }, h("div", { class: "stack" }, h("div", { class: "row wrap" }, g.parents.length ? g.parents.map(function (p) {
       return h("span", { class: "chip" }, p, h("button", { type: "button", title: "Entfernen", disabled: !S.can("action.luckperms.edit"), onClick: function () { lp({ operation: "group-parent-remove", group: g.name, value: p }, "„" + p + "“ nicht mehr erben?"); } }, icon("x")));
     }) : h("span", { class: "muted small", text: "Keine Elterngruppen" })), h("div", { class: "row" }, parentSel, S.btn("Hinzufügen", { icon: "plus", disabled: !S.can("action.luckperms.edit") || !parentSel.options.length, onClick: function () { return lp({ operation: "group-parent-add", group: g.name, value: parentSel.value }); } }))));
-    var nodes = S.card("Rechte", { icon: "key", cls: "pad-list", sub: perms.length + " Einträge" }, h("div", { class: "list" }, perms.length ? perms.map(function (n) {
-      return nodeRow(n, function () { return lp({ operation: "group-permission-unset", group: g.name, node: n.key, context: n.context && n.context.indexOf(",") < 0 ? n.context.replace(/\s/g, "") : "" }, "Recht entfernen?"); });
-    }) : h("div", { class: "item muted small", text: "Keine eigenen Rechte" })));
+    var nodes = nodeList("Rechte", perms, perms.length + " Einträge", function (n) {
+      return nodeRow(n, function () { return lp({ operation: "group-permission-unset", group: g.name, node: n.key, context: n.context && n.context.indexOf(",") < 0 ? n.context.replace(/\s/g, "") : "" }, "Recht „" + n.key + "“ entfernen?"); });
+    }, "Keine eigenen Rechte");
     var add = S.card("Recht hinzufügen", { icon: "plus" }, permForm(function (v) { return lp(Object.assign({ operation: v.duration ? "group-permission-temp" : "group-permission-set", group: g.name }, v)); }));
     var members = S.card("Mitglieder", { icon: "users", cls: "pad-list", sub: g.memberCount >= 0 ? g.memberCount + " direkt zugewiesen" : "Nicht abrufbar" }, h("div", { class: "list" }, (g.members || []).length ? g.members.map(function (m) {
       return h("div", { class: "item link", onClick: function () { S.go("#/luckperms/player/" + encodeURIComponent(m.uuid)); } }, S.avatar(m.name, "sm"), h("div", { class: "meta" }, h("b", { text: m.name })), m.online ? h("span", { class: "dot on" }) : null, icon("chevRight", "chev"));
@@ -360,13 +375,16 @@
           S.btn("Befördern", { size: "sm", icon: "chevRight", disabled: !S.can("action.luckperms.edit"), onClick: function () { return lp({ operation: "user-promote", player: u.uuid, track: t.name }, who + " auf „" + t.name + "“ befördern?"); } }),
           S.btn("Zurückstufen", { size: "sm", icon: "chevLeft", disabled: !S.can("action.luckperms.edit"), onClick: function () { return lp({ operation: "user-demote", player: u.uuid, track: t.name }, who + " auf „" + t.name + "“ zurückstufen?"); } }));
       })) : null));
-    var nodes = S.card("Eigene Rechte", { icon: "key", cls: "pad-list", sub: (u.nodes || []).length + " Einträge" }, h("div", { class: "list" }, (u.nodes || []).length ? u.nodes.map(function (n) {
-      return nodeRow(n, /^(prefix|suffix|meta|weight|displayname)\./.test(n.key) ? null : function () { return lp({ operation: "user-permission-unset", player: u.uuid, node: n.key, context: n.context && n.context.indexOf(",") < 0 ? n.context.replace(/\s/g, "") : "" }, "Recht entfernen?"); });
-    }) : h("div", { class: "item muted small", text: "Keine eigenen Rechte – alles kommt aus den Gruppen." })));
+    var nodes = nodeList("Eigene Rechte", u.nodes || [], (u.nodes || []).length + " Einträge", function (n) {
+      return nodeRow(n, /^(prefix|suffix|meta|weight|displayname)\./.test(n.key) ? null : function () { return lp({ operation: "user-permission-unset", player: u.uuid, node: n.key, context: n.context && n.context.indexOf(",") < 0 ? n.context.replace(/\s/g, "") : "" }, "Recht „" + n.key + "“ entfernen?"); });
+    }, "Keine eigenen Rechte – alles kommt aus den Gruppen.");
     var add = S.card("Recht hinzufügen", { icon: "plus" }, permForm(function (v) { return lp(Object.assign({ operation: v.duration ? "user-permission-temp" : "user-permission-set", player: u.uuid }, v)); }));
     var head = S.card(null, { cls: "hero" }, h("div", { class: "row wrap", style: { gap: "16px" } }, S.avatar(who, "lg"), h("div", { class: "grow" }, h("h2", { style: { margin: 0 }, text: who }),
-      h("div", { class: "row wrap", style: { gap: "6px", marginTop: "6px" } }, u.online ? S.badge("Online", "ok") : S.badge("Offline"), plain(u.prefix) ? S.badge(plain(u.prefix).trim(), "accent") : null, S.badge(u.uuid, "", "key"))),
-      S.can("data.profile") ? h("a", { class: "btn sm", href: "#/player/" + u.uuid }, icon("user"), "Profil") : null));
+      h("div", { class: "row wrap", style: { gap: "6px", marginTop: "6px" } }, u.online ? S.badge("Online", "ok") : S.badge("Offline"), u.prefix || u.suffix ? h("span", { class: "mc-preview sm" }, affixView(u.prefix), h("span", { class: "mc-name", text: who }), affixView(u.suffix)) : null, S.badge(u.uuid, "", "key"))),
+      h("div", { class: "row wrap" }, S.has("luckperms-v2") ? S.btn("Eigenes Präfix", { size: "sm", icon: "edit", disabled: !S.can("action.luckperms.edit"), title: "Überschreibt das Gruppenpräfix nur für diesen Spieler", onClick: async function () { var v = await S.affixDialog("Präfix nur für " + who, { value: (u.nodes || []).some(function (n) { return /^prefix\./.test(n.key); }) ? u.prefix : "", other: u.suffix, name: who, label: "Eigenes Präfix (leer = Gruppenpräfix verwenden)" }); if (v !== null) await lp({ operation: "user-prefix", player: u.uuid, value: v, priority: "1000" }, "Präfix von " + who + " ändern?"); } }) : null,
+        S.has("luckperms-v2") ? S.btn("Eigenes Suffix", { size: "sm", icon: "edit", disabled: !S.can("action.luckperms.edit"), onClick: async function () { var v = await S.affixDialog("Suffix nur für " + who, { value: (u.nodes || []).some(function (n) { return /^suffix\./.test(n.key); }) ? u.suffix : "", other: u.prefix, name: who, kind: "suffix", label: "Eigenes Suffix (leer = Gruppensuffix verwenden)" }); if (v !== null) await lp({ operation: "user-suffix", player: u.uuid, value: v, priority: "1000" }, "Suffix von " + who + " ändern?"); } }) : null,
+        S.has("access-locks-v1") && S.can("data.access-locks") ? h("a", { class: "btn sm", href: "#/access-locks/" + u.uuid }, icon("lock"), "Rechte-Sperren") : null,
+        S.can("data.profile") ? h("a", { class: "btn sm", href: "#/player/" + u.uuid }, icon("user"), "Profil") : null)));
     S.mount(h("div", { class: "stack" }, head, h("div", { class: "grid two" }, groupsCard, h("div", { class: "stack" }, add, nodes))));
   }
 

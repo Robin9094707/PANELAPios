@@ -282,6 +282,7 @@ struct SuiteLuckPermsGroupRow: View {
             Image(systemName: "crown.fill").foregroundStyle(Color.panelAccent).frame(width: 26)
             VStack(alignment: .leading, spacing: 2) {
                 Text(group["displayName"].string.isEmpty ? group["name"].string : group["displayName"].string).font(.subheadline.weight(.semibold))
+                if !group["prefix"].string.isEmpty || !group["suffix"].string.isEmpty { SuiteMinecraftPreview(prefix: group["prefix"].string, name: "Name", suffix: group["suffix"].string).fixedSize(horizontal: false, vertical: true) }
                 Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
@@ -289,10 +290,8 @@ struct SuiteLuckPermsGroupRow: View {
         }
     }
     var detail: String {
-        let prefix = SuiteRankText.plain(group["prefix"].string)
         let parents = group["parents"].array.map(\.string)
         var parts: [String] = []
-        if !prefix.isEmpty { parts.append("„" + prefix + "“") }
         parts.append(group["permissions"].string + " Rechte")
         if !parents.isEmpty { parts.append("erbt " + parents.joined(separator: ", ")) }
         return parts.joined(separator: " · ")
@@ -346,6 +345,8 @@ struct SuiteLuckPermsGroupView: View {
     @State private var all: [JSON] = []
     @State private var edit: String?
     @State private var value = ""
+    @State private var affix: String?
+    @State private var known: [JSON] = []
     init(suite: SuiteAPI, name: String) { self.suite = suite; self.name = name; _runner = StateObject(wrappedValue: SuiteConfirmRunner(suite)) }
     var canEdit: Bool { suite.scope == "full" && suite.can("action.luckperms.edit") }
     var permissions: [JSON] { group["nodes"].array.filter { $0["key"].string.range(of: "^(group|prefix|suffix|weight|displayname|meta)\\.", options: .regularExpression) == nil } }
@@ -353,7 +354,7 @@ struct SuiteLuckPermsGroupView: View {
         List {
             infoSection
             parentSection
-            Section("Recht hinzufügen") { SuitePermissionForm(disabled: !canEdit || runner.busy) { node, deny, duration, context in ask(["operation": .string(duration.isEmpty ? "group-permission-set" : "group-permission-temp"), "node": .string(node), "value": .string(deny ? "false" : "true"), "duration": .string(duration), "context": .string(context)], "Recht setzen?") } }
+            Section("Recht hinzufügen") { SuitePermissionSuggestForm(disabled: !canEdit || runner.busy, known: known) { node, deny, duration, context in ask(["operation": .string(duration.isEmpty ? "group-permission-set" : "group-permission-temp"), "node": .string(node), "value": .string(deny ? "false" : "true"), "duration": .string(duration), "context": .string(context)], "Recht „" + node + "“ setzen?") } }
             nodeSection
             memberSection
             if name != "default" { Section { Button("Gruppe löschen", systemImage: "trash", role: .destructive) { ask(["operation": .string("group-delete")], "Gruppe „" + name + "“ löschen?") }.disabled(!canEdit) } }
@@ -364,15 +365,23 @@ struct SuiteLuckPermsGroupView: View {
             Button("Abbrechen", role: .cancel) { edit = nil }
             Button("Weiter") { submitEdit() }
         }
+        .sheet(isPresented: Binding(get: { affix != nil }, set: { if !$0 { affix = nil } })) {
+            let kind = affix ?? "prefix"
+            SuiteAffixEditor(title: kind == "suffix" ? "Suffix" : "Präfix", kind: kind, value: group[kind].string, other: group[kind == "suffix" ? "prefix" : "suffix"].string) { text in
+                ask(["operation": .string(kind == "suffix" ? "group-suffix" : "group-prefix"), "value": .string(text), "priority": .string(String(max(1, group["weight"].int)))], text.isEmpty ? (kind == "suffix" ? "Suffix entfernen?" : "Präfix entfernen?") : (kind == "suffix" ? "Suffix setzen?" : "Präfix setzen?"))
+            }
+        }
         .suiteConfirm(runner) { await load() }
     }
     private var infoSection: some View {
         Section {
+            SuiteMinecraftPreview(prefix: group["prefix"].string, name: "Steve", suffix: group["suffix"].string, message: ": Hallo!")
             LabeledContent("Gewicht") { Button(group["weight"].string) { value = group["weight"].string; edit = "Gewicht" }.disabled(!canEdit) }
-            LabeledContent("Präfix") { Button(SuiteRankText.plain(group["prefix"].string).isEmpty ? "–" : SuiteRankText.plain(group["prefix"].string)) { value = group["prefix"].string; edit = "Präfix" }.disabled(!canEdit) }
+            LabeledContent("Präfix") { Button(SuiteRankText.plain(group["prefix"].string).isEmpty ? "–" : SuiteRankText.plain(group["prefix"].string)) { affix = "prefix" }.disabled(!canEdit) }
+            LabeledContent("Suffix") { Button(SuiteRankText.plain(group["suffix"].string).isEmpty ? "–" : SuiteRankText.plain(group["suffix"].string)) { affix = "suffix" }.disabled(!canEdit) }
             LabeledContent("Anzeigename") { Button(group["displayName"].string.isEmpty ? "–" : group["displayName"].string) { value = group["displayName"].string; edit = "Anzeigename" }.disabled(!canEdit) }
             LabeledContent("Mitglieder", value: group["memberCount"].int >= 0 ? group["memberCount"].string : "?")
-        } header: { Text(name) } footer: { Text("Präfixe mit &-Farbcodes, z. B. „&c[Admin] “. Änderungen übernimmt LuckPerms selbst.") }
+        } header: { Text(name) } footer: { Text("Präfix und Suffix mit Farbpalette und Vorschau bearbeiten. Änderungen übernimmt LuckPerms selbst.") }
     }
     private var parentSection: some View {
         Section("Erbt von") {
@@ -387,11 +396,12 @@ struct SuiteLuckPermsGroupView: View {
         }
     }
     private var nodeSection: some View {
-        Section("Rechte (\(permissions.count))") {
+        Section {
             ForEach(permissions, id: \.["key"].string) { node in
-                SuiteNodeRow(node: node).swipeActions { Button("Entfernen", role: .destructive) { ask(["operation": .string("group-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht entfernen?") }.disabled(!canEdit) }
+                SuiteNodeRow(node: node).swipeActions { Button("Entfernen", role: .destructive) { ask(["operation": .string("group-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht „" + node["key"].string + "“ entfernen?") }.disabled(!canEdit) }
+                    .contextMenu { Button("Entfernen", systemImage: "trash", role: .destructive) { ask(["operation": .string("group-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht „" + node["key"].string + "“ entfernen?") }.disabled(!canEdit) }
             }
-        }
+        } header: { Text("Rechte (\(permissions.count))") } footer: { Text("Nach links wischen oder lange drücken zum Entfernen.") }
     }
     @ViewBuilder private var memberSection: some View {
         if !group["members"].array.isEmpty {
@@ -417,6 +427,7 @@ struct SuiteLuckPermsGroupView: View {
     func load() async {
         do { group = try await suite.data("luckperms", query: ["group": name]); all = try await suite.data("luckperms")["groups"].array }
         catch { if !RequestFailure.isCancellation(error) { runner.error = error.localizedDescription } }
+        if known.isEmpty && suite.features.contains("luckperms-v2") { known = (try? await suite.data("luckperms-permissions"))?["items"].array ?? [] }
     }
 }
 
@@ -428,20 +439,29 @@ struct SuiteLuckPermsPlayerView: View {
     @State private var all: JSON = .null
     @State private var pick = ""
     @State private var duration = ""
+    @State private var affix: String?
+    @State private var known: [JSON] = []
     init(suite: SuiteAPI, player: String) { self.suite = suite; self.player = player; _runner = StateObject(wrappedValue: SuiteConfirmRunner(suite)) }
     var canEdit: Bool { suite.scope == "full" && suite.can("action.luckperms.edit") }
     var who: String { user["name"].string.isEmpty ? player : user["name"].string }
+    /// Own prefix/suffix node of the player (not inherited from a group).
+    func own(_ kind: String) -> Bool { user["nodes"].array.contains { $0["key"].string.hasPrefix(kind + ".") } }
     var body: some View {
         List {
             Section {
+                SuiteMinecraftPreview(prefix: user["prefix"].string, name: who, suffix: user["suffix"].string, message: ": Hallo!")
                 LabeledContent("Primäre Gruppe", value: user["primary"].string)
-                if !SuiteRankText.plain(user["prefix"].string).isEmpty { LabeledContent("Präfix", value: SuiteRankText.plain(user["prefix"].string)) }
                 LabeledContent("Status", value: user["online"].bool ? "Online" : "Offline")
-            } header: { Text(who) }
+                if suite.features.contains("luckperms-v2") {
+                    Button(own("prefix") ? "Eigenes Präfix ändern" : "Eigenes Präfix setzen", systemImage: "textformat") { affix = "prefix" }.disabled(!canEdit)
+                    Button(own("suffix") ? "Eigenes Suffix ändern" : "Eigenes Suffix setzen", systemImage: "textformat.abc") { affix = "suffix" }.disabled(!canEdit)
+                }
+                if suite.features.contains("access-locks-v1") { NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: user["uuid"].string.isEmpty ? player : user["uuid"].string) } label: { Label("Rechte-Sperren", systemImage: "lock.fill") }.disabled(!suite.can("data.access-locks")) }
+            } header: { Text(who) } footer: { Text("Ein eigenes Präfix überschreibt das Gruppenpräfix nur für diesen Spieler; leer speichern = wieder das Gruppenpräfix.") }
             groupSection
             addGroupSection
             trackSection
-            Section("Recht hinzufügen") { SuitePermissionForm(disabled: !canEdit || runner.busy) { node, deny, time, context in ask(["operation": .string(time.isEmpty ? "user-permission-set" : "user-permission-temp"), "node": .string(node), "value": .string(deny ? "false" : "true"), "duration": .string(time), "context": .string(context)], "Recht für " + who + " setzen?") } }
+            Section("Recht hinzufügen") { SuitePermissionSuggestForm(disabled: !canEdit || runner.busy, known: known) { node, deny, time, context in ask(["operation": .string(time.isEmpty ? "user-permission-set" : "user-permission-temp"), "node": .string(node), "value": .string(deny ? "false" : "true"), "duration": .string(time), "context": .string(context)], "Recht „" + node + "“ für " + who + " setzen?") } }
             Section("Eigene Rechte") {
                 if user["nodes"].array.isEmpty { Text("Keine – alles kommt aus den Gruppen.").foregroundStyle(.secondary) }
                 ForEach(user["nodes"].array, id: \.["key"].string) { node in
@@ -450,6 +470,12 @@ struct SuiteLuckPermsPlayerView: View {
             }
         }
         .panelScreen().navigationTitle(who).navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }
+        .sheet(isPresented: Binding(get: { affix != nil }, set: { if !$0 { affix = nil } })) {
+            let kind = affix ?? "prefix"
+            SuiteAffixEditor(title: kind == "suffix" ? "Eigenes Suffix" : "Eigenes Präfix", kind: kind, value: own(kind) ? user[kind].string : "", other: user[kind == "suffix" ? "prefix" : "suffix"].string, name: who) { text in
+                ask(["operation": .string(kind == "suffix" ? "user-suffix" : "user-prefix"), "value": .string(text), "priority": .string("1000")], (kind == "suffix" ? "Suffix" : "Präfix") + " von " + who + (text.isEmpty ? " entfernen?" : " setzen?"))
+            }
+        }
         .suiteConfirm(runner) { await load() }
     }
     private var groupSection: some View {
@@ -495,6 +521,7 @@ struct SuiteLuckPermsPlayerView: View {
             all = try await suite.data("luckperms")
             if pick.isEmpty { pick = all["groups"].array.first?["name"].string ?? "" }
         } catch { if !RequestFailure.isCancellation(error) { runner.error = error.localizedDescription } }
+        if known.isEmpty && suite.features.contains("luckperms-v2") { known = (try? await suite.data("luckperms-permissions"))?["items"].array ?? [] }
     }
 }
 
