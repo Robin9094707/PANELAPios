@@ -191,6 +191,8 @@
         S.kv([["Level", l.level], ["Spielmodus", l.gamemode], ["Fliegen erlaubt", l.allowFlight ? "Ja" : "Nein"], ["Unverwundbar", l.invulnerable ? "Ja" : "Nein"]]))));
     }
     if ((p.warningEntries || []).length) grid.appendChild(S.card("Warnungen", { icon: "alert" }, h("div", { class: "list" }, p.warningEntries.map(function (w) { return h("div", { class: "item" }, h("div", { class: "meta" }, h("p", { text: String(w) }))); }))));
+    // 10.2.0: connection history (disconnect reasons, ping, flapping) right in the profile.
+    if (S.has("player-connection-v1") && (S.can("data.diagnostics") || S.can("data.profile")) && S.playerConnectionCard) grid.appendChild(S.playerConnectionCard(p.id));
     if ((p.notes || []).length) grid.appendChild(S.card("Notizen", { icon: "edit" }, h("div", { class: "list" }, p.notes.map(function (n) { return h("div", { class: "item" }, h("div", { class: "meta" }, h("p", { text: String(n) }))); }))));
     cards.push(grid);
     var tabBody = h("div");

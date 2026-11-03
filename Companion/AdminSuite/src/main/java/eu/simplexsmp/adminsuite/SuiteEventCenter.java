@@ -12,7 +12,7 @@ import org.bukkit.entity.Player;
 
 /** Bounded independent event ledger. Existing punishment/report/profile formats are untouched. */
 final class SuiteEventCenter {
-    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent","ticket-low","ticket-high","emergency-restart","admin-log","staff-chat");
+    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent","ticket-low","ticket-high","emergency-restart","admin-log","staff-chat","disconnect-wave","crash","lag-spike");
     static final Set<String> LEVELS = Set.of("active","passive","timeSensitive","critical");
     private final SimplexAdminSuite plugin;
     private final Path eventsFile, subscriptionsFile;
@@ -168,7 +168,9 @@ final class SuiteEventCenter {
             if(onlyOwner!=null&&!owner.equals(onlyOwner))continue;
             if(owners!=null&&!owners.test(owner))continue;
             if(plugin.appApi==null||!plugin.appApi.security.canNotifyOwner(owner))continue;
-            String type=String.valueOf(row.get("type"));String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
+            String type=String.valueOf(row.get("type"));
+            // 10.2.0: diagnostics alarms only reach accounts that may open the diagnostics centre.
+            if(Set.of("disconnect-wave","crash","lag-spike").contains(type)&&!plugin.appApi.diagnosticsNotifiable(owner,type))continue;String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
             // Tickets reach every Bark subscriber until the app stores an explicit rule for them.
             if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true))&&!type.equals("emergency-restart"))continue;
             boolean critical=Boolean.TRUE.equals(row.get("critical"));String hint=row.get("level") instanceof String h&&LEVELS.contains(h)?h:null;
@@ -182,7 +184,7 @@ final class SuiteEventCenter {
             long now=System.currentTimeMillis();String rate=prefix+type;
             if(now-cooldown.getOrDefault(rate,0L)<(type.equals("first-join")||type.startsWith("ticket")?3000:30_000))continue;
             cooldown.put(rate,now);
-            Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",copy.getProperty(prefix+"key",""),"title",row.get("title"),"body",row.get("body"),"group","Simplex Admin Suite","level",level,"sound",sound,"isArchive",1,"url",type.startsWith("ticket")?"panel://suite-tickets":type.equals("admin-log")?"panel://suite-admin-log":"panel://suite-events");
+            Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",copy.getProperty(prefix+"key",""),"title",row.get("title"),"body",row.get("body"),"group","Simplex Admin Suite","level",level,"sound",sound,"isArchive",1,"url",type.startsWith("ticket")?"panel://suite-tickets":type.equals("admin-log")?"panel://suite-admin-log":Set.of("disconnect-wave","crash","lag-spike").contains(type)?"panel://suite-diagnostics":"panel://suite-events");
             String player=String.valueOf(row.getOrDefault("player",""));if(player.matches("[a-fA-F0-9-]{36}")){String avatar=plugin.discordRelay()==null?"":plugin.discordRelay().appAvatar(UUID.fromString(player));payload.put("icon",avatar.isBlank()?"https://mc-heads.net/avatar/"+player+"/128":avatar);}
             payload.put("id",String.valueOf(row.get("id")));
             String alarm="alarm."+owner+"."+row.get("id");

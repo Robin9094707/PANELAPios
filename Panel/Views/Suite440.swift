@@ -206,7 +206,7 @@ struct SuiteCommandPlayerView: View {
             Toggle("Alt-Accounts erben die Sperre", isOn: $alts)
             if !data["alts"].array.isEmpty { Text("Alt-Accounts: " + data["alts"].array.map { $0["name"].string }.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
             Button("Alle eigenen Befehlsrechte entfernen", systemImage: "arrow.uturn.backward", role: .destructive) {
-                Task { await runner.ask("commands.update", ["player": .string(playerId), "operation": .string("clear")], title: "Alle eigenen Befehlsrechte von " + who + " entfernen?") }
+                Task { await runner.ask("commands.update", ["player": .string(playerId), "operation": .string("clear"), "alts": .string("true"), "grant": .string("false")], title: "Alle eigenen Befehlsrechte von " + who + " entfernen?") }
             }.disabled(!canEdit || !items.contains { $0.hasOwn || $0.isException })
         } header: { Text("Beim Ausschalten gilt") } footer: { Text(canGrant ? "Schaltest du einen Befehl ein, den der Rang nicht erlaubt, wird das Recht direkt in LuckPerms gesetzt." : "Befehle, die der Rang nicht erlaubt, lassen sich nur mit Vollzugriff und LuckPerms-Recht einschalten.") }
     }
@@ -236,15 +236,14 @@ struct SuiteCommandPlayerView: View {
     private func change(_ names: [String], _ on: Bool) {
         guard !names.isEmpty else { return }
         for name in names { pending[name] = on }
-        var values: [String: JSON] = ["player": .string(playerId), "commands": .string(names.joined(separator: ","))]
+        // 4.5: always send both choice fields – Admin Suite 10.1.0 rejected requests without them ("Pflichtfeld fehlt: grant").
+        var values: [String: JSON] = ["player": .string(playerId), "commands": .string(names.joined(separator: ",")), "alts": .string(String(alts)), "grant": .string(String(on && canGrant))]
         if on {
             values["operation"] = .string("allow")
-            values["grant"] = .string(String(canGrant))
         } else {
             values["operation"] = .string("block")
             values["duration"] = .string(duration)
             values["reason"] = .string(reason.trimmingCharacters(in: .whitespaces))
-            values["alts"] = .string(String(alts))
         }
         Task {
             _ = await runner.apply("commands.update", values)
@@ -254,7 +253,7 @@ struct SuiteCommandPlayerView: View {
     }
     private func reset(_ name: String) {
         Task {
-            _ = await runner.apply("commands.update", ["player": .string(playerId), "operation": .string("reset"), "commands": .string(name)])
+            _ = await runner.apply("commands.update", ["player": .string(playerId), "operation": .string("reset"), "commands": .string(name), "alts": .string("true"), "grant": .string("false")])
             await load()
         }
     }

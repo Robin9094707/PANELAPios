@@ -67,7 +67,7 @@ struct HomeView: View {
                 .sheet(isPresented: $widgets) { NavigationStack { WidgetSettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { widgets = false } } } } }
                 .sheet(isPresented: $suiteEvents) { NavigationStack { SuiteEventInboxView() } }
                 .sheet(isPresented: $suiteTickets) { NavigationStack { SuiteEventInboxView(tickets: true) } }
-                .onOpenURL { url in if url.host == "setup" { _ = setupInbox.open(url); return }; if url.host == "suite-events" { suiteEvents = true }; if url.host == "suite-tickets" { suiteTickets = true }; if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
+                .onOpenURL { url in if url.host == "setup" { _ = setupInbox.open(url); return }; if url.host == "suite-events" || url.host == "suite-diagnostics" { suiteEvents = true }; if url.host == "suite-tickets" { suiteTickets = true }; if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
                 .task(id: store.api.map { ObjectIdentifier($0) }) { await store.refresh(); await store.pollPresence() }
         }
     }

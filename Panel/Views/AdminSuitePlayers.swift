@@ -212,6 +212,7 @@ struct SuitePlayerView: View {
                 }
             }
             if suite.features.contains("luckperms-v1") && suite.can("data.luckperms") { SuitePlayerRankSection(suite: suite, player: player, name: name) }
+            if suite.features.contains("player-connection-v1") && (suite.can("data.diagnostics") || suite.can("data.profile")) { SuitePlayerConnectionSection(suite: suite, player: player) }
             Section("Spielerverwaltung") {
                 if suite.features.contains("player-rights-v1") {
                     NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: player) } label: { Label("Rechte & Sperren", systemImage: "lock.shield.fill") }.disabled(!suite.can("data.access-locks")).accessibilityIdentifier("player-rights")

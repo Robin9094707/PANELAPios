@@ -1,4 +1,8 @@
-## Aktuelles Update: Panel 4.4.0 / Admin Suite 10.1.0
+## Aktuelles Update: Panel 4.5.0 / Admin Suite 10.2.0
+
+**Diagnosezentrale** in App und Webpanel: Live-TPS/Tickzeit/RAM/CPU, Disconnect-Analyse mit Vorfällen (legitim oder Fehler, z. B. Server-Lag, Netzwerk nur bei Java, defektes Item am selben Ort), Bark-Alarm für Disconnect-Wellen, Abstürze und Server-Hänger, KI-Einschätzung mit dem vorhandenen OpenAI-Schlüssel, Lag-Karte, Spark-Profiler mit serverseitiger Analyse, Absturz-Manager, Volldiagnose und Verbindungsverlauf im Spielerprofil. Fix für „Pflichtfeld fehlt: grant“ bei den Befehle-Schaltern. [Update 4.5.0](UPDATE-4.5.0.md) · [Suite 10.2.0](Companion/AdminSuite/UPDATE-10.2.0.md).
+
+## Panel 4.4.0 / Admin Suite 10.1.0
 
 Live-Schalter (an = erlaubt, aus = gesperrt, sofort gespeichert), Fix für „Bestätigung abgelaufen“ bei Rängen und Sperren, **Befehle pro Spieler** (nach Art/Plugin/A–Z, mit Dauer, Grund und Alt-Vererbung, globale Sperren), Rang mit Präfix/Suffix und Gruppenvergabe im Spielerprofil, LuckPerms-Rechte als Schalter und Rang-Vorlagen – in App, Webpanel und Java-/Bedrock-Menü. [Update 4.4.0](UPDATE-4.4.0.md) · [Suite 10.1.0](Companion/AdminSuite/UPDATE-10.1.0.md).
 

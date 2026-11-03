@@ -1,5 +1,54 @@
 [
   {
+    "version": "10.2.0",
+    "app": "4.5.0",
+    "date": "2026-11-03",
+    "title": "Diagnosezentrale",
+    "intro": "Disconnect-Wellen erkennen und einordnen, Lag finden, Spark-Profile auswerten und Abstürze nachvollziehen – mit KI-Hilfe und Bark-Alarm. Dazu der Fix für die Befehle-Schalter.",
+    "items": [
+      {
+        "icon": "terminal",
+        "title": "Befehle-Schalter repariert",
+        "text": "Einzelne Befehle eines Spielers ließen sich nicht umschalten („Pflichtfeld fehlt: grant“). Erlauben, Sperren und Zurücksetzen funktionieren wieder – in App und Webpanel."
+      },
+      {
+        "icon": "wifi",
+        "title": "Disconnect-Analyse",
+        "text": "Jede Trennung mit Grund, Konsolenmeldung, Ping, Ort und Sitzungsdauer. Mehrere in kurzer Zeit oder viele Spieler gleichzeitig werden zum Vorfall mit Einschätzung „legitim“ oder „Fehler“ und konkreten Schritten."
+      },
+      {
+        "icon": "bell",
+        "title": "Bark-Alarm",
+        "text": "Disconnect-Wellen, Abstürze und Server-Hänger als kritischer oder dringlicher Hinweis – für alle, die es bei den Benachrichtigungen aktivieren."
+      },
+      {
+        "icon": "sparkles",
+        "title": "KI-Einschätzung",
+        "text": "Mit dem hinterlegten OpenAI-Schlüssel: kurze, IP-bereinigte Auszüge statt ganzer Logs. Kritische Vorfälle und Abstürze werden automatisch geprüft."
+      },
+      {
+        "icon": "map",
+        "title": "Lag-Karte",
+        "text": "Chunks mit vielen Mobs, Items oder Trichtern – mit Typen, nächstem Spieler und Teleport-Befehl. Dazu neue Chunks pro Spieler."
+      },
+      {
+        "icon": "chart",
+        "title": "Spark-Profiler",
+        "text": "Profil starten oder Spark-Link einfügen: Der Server wertet es selbst aus – Plugins nach Rechenzeit, teuerste Stellen, Befunde."
+      },
+      {
+        "icon": "alert",
+        "title": "Absturz-Manager & Volldiagnose",
+        "text": "Echte Abstürze werden nach dem Neustart mit den letzten Konsolenzeilen gemeldet. Die Volldiagnose prüft Server, Speicher, Welt, Plugins und Netzwerk mit Punktzahl."
+      },
+      {
+        "icon": "users",
+        "title": "Verbindung im Spielerprofil",
+        "text": "Trennungen der letzten 7 Tage und ob die Verbindung eines Spielers gerade instabil ist."
+      }
+    ]
+  },
+  {
     "version": "10.1.0",
     "app": "4.4.0",
     "date": "2026-11-03",

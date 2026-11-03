@@ -86,6 +86,11 @@ struct SuiteHubView: View {
                     NavigationLink { SuiteReadView(suite: api, path: "server.status", title: "Serverstatus") } label: { Label("Server & Neustartstatus", systemImage: "server.rack") }
                 }
                 
+                if api.features.contains("diagnostics-v1") {
+                    Section {
+                        NavigationLink { SuiteDiagnosticsView(suite: api) } label: { Label("Diagnose: Live, Disconnects, Lag & Abstürze", systemImage: "stethoscope") }.disabled(!api.can("data.diagnostics")).accessibilityIdentifier("suite-diagnostics")
+                    } header: { Text("Diagnose") } footer: { Text("TPS, Tickzeit, RAM und CPU live, Disconnect-Wellen mit Einschätzung, Lag-Karte, Spark-Analyse, Abstürze und KI-Hilfe.") }
+                }
                 if model.health["features"].array.contains(.string("overview")) {
                     Section("Serverbetrieb & Statistiken") {
                         NavigationLink { SuiteOperationsView(suite: api, actions: model.actions) } label: { Label("Server, Statistiken & Discord-Protokolle", systemImage: "chart.xyaxis.line") }
