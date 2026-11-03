@@ -242,30 +242,33 @@
     var current = {}; (u.locks || []).forEach(function (l) { current[l.flag] = l; });
     var inh = {}; (u.inheritedLocks || []).forEach(function (l) { inh[l.flag] = l; });
     S.title(u.name, "Rechte & Sperren", h("a", { class: "btn ghost sm", href: "#/access-locks" }, icon("chevLeft"), h("span", { class: "hide-mobile", text: "Übersicht" })));
-    var picked = {}, scope = "default", dur = durationSelect(d.durations, "1d"), reason = S.input({ placeholder: "Grund – sieht der Spieler (optional)", maxlength: 200 });
+    // 10.1.0: one live switch per area – on = allowed, off = locked (with the scope, duration and reason chosen below).
+    var scope = "default", dur = durationSelect(d.durations, ""), reason = S.input({ placeholder: "Grund – sieht der Spieler (optional)", maxlength: 200 });
     var flagsBox = h("div", { class: "lock-grid" });
+    async function live(values, el, on) {
+      try { var r = await S.runAction("locks.update", values, { skipConfirm: true, silent: true }); if (r) { S.toast(r.title || "Gespeichert", r.ok === false ? "err" : "ok"); setTimeout(S.reload, 250); } }
+      catch (e) { if (el) el.checked = !on; S.toast(e.message, "err"); }
+    }
     function renderFlags() {
       S.clear(flagsBox);
       (d.flags || []).forEach(function (f) {
-        var on = current[f.id], cb = h("input", { type: "checkbox", checked: !!picked[f.id], disabled: !canEdit });
-        cb.addEventListener("change", function () { picked[f.id] = cb.checked; });
-        flagsBox.appendChild(h("label", { class: "lock-flag" + (on ? " locked" : "") }, cb, h("div", { class: "grow" },
-          h("div", { class: "row", style: { gap: "8px" } }, h("b", { text: f.title }), on ? S.badge("gesperrt · " + on.remaining, SCOPE_TONE[on.scope] || "danger", "lock") : inh[f.id] ? S.badge("geerbt", "accent", "link") : (u.legacy || {})[f.id] ? S.badge("alte Sperre", "warn", "lock") : S.badge("erlaubt", "ok")),
+        var on = current[f.id], legacy = (u.legacy || {})[f.id], allowed = !on && !inh[f.id] && !legacy;
+        var toggle = S.sw(allowed, function (value, el) {
+          if (value) return live({ player: u.uuid, operation: "remove", flags: f.id }, el, value);
+          return live({ player: u.uuid, operation: "set", flags: f.id, scope: scope, duration: dur.value, reason: reason.value.trim() }, el, value);
+        }, !canEdit || (!on && !legacy && !!inh[f.id]));
+        flagsBox.appendChild(h("div", { class: "lock-flag" + (on ? " locked" : "") }, h("div", { class: "grow" },
+          h("div", { class: "row", style: { gap: "8px" } }, h("b", { text: f.title }), on ? S.badge("gesperrt · " + on.remaining, SCOPE_TONE[on.scope] || "danger", "lock") : inh[f.id] ? S.badge("geerbt", "accent", "link") : legacy ? S.badge("alte Sperre", "warn", "lock") : S.badge("erlaubt", "ok")),
           h("small", { text: f.explain }),
-          !on && inh[f.id] ? h("small", { class: "inherit-note", text: "Geerbt von " + inh[f.id].fromName + " · " + inh[f.id].scopeTitle + " · " + inh[f.id].remaining }) : null,
-          (u.legacy || {})[f.id] ? h("small", { class: "legacy-note", text: "Alte Einzelsperre: " + u.legacy[f.id].map(function (x) { return x.name + " (" + x.remaining + ")"; }).join(", ") + " – wird mit „Aufheben“ entfernt" }) : null,
+          !on && inh[f.id] ? h("small", { class: "inherit-note", text: "Geerbt von " + inh[f.id].fromName + " · " + inh[f.id].scopeTitle + " · " + inh[f.id].remaining + " – beim Hauptkonto aufheben" }) : null,
+          legacy ? h("small", { class: "legacy-note", text: "Alte Einzelsperre: " + legacy.map(function (x) { return x.name + " (" + x.remaining + ")"; }).join(", ") + " – Schalter an hebt sie auf" }) : null,
           on ? h("small", { class: "muted", text: on.scopeTitle + (on.reason ? " · Grund: " + on.reason : "") + (on.by ? " · von " + on.by.replace(/ \(.*\)$/, "").replace(/^(Simplex Panel|Discord)\//, "") : "") }) : null),
-          on || (u.legacy || {})[f.id] ? S.btn("Aufheben", { size: "sm", icon: "unlock", disabled: !canEdit, onClick: function (e) { e.preventDefault(); return locks({ player: u.uuid, operation: "remove", flags: f.id }, f.title + " für " + u.name + " wieder erlauben?"); } }) : null));
+          toggle));
       });
     }
     renderFlags();
     var scopes = S.segmented([["default", "Empfohlen"]].concat((d.scopes || []).map(function (s) { return [s.id, s.title]; })), scope, function (v) { scope = v; scopeHint.textContent = v === "default" ? "Jeder Bereich nutzt seine empfohlene Einstellung (z. B. Truhen: eigenes Land & Wildnis erlaubt)." : (d.scopes.filter(function (s) { return s.id === v; })[0] || {}).explain; });
     var scopeHint = h("p", { class: "muted small", text: "Jeder Bereich nutzt seine empfohlene Einstellung (z. B. Truhen: eigenes Land & Wildnis erlaubt)." });
-    var apply = S.btn("Ausgewählte sperren", { kind: "primary", icon: "lock", disabled: !canEdit, onClick: function () {
-      var flags = Object.keys(picked).filter(function (k) { return picked[k]; });
-      if (!flags.length) { S.toast("Mindestens einen Bereich auswählen", "err"); return; }
-      return locks({ player: u.uuid, operation: "set", flags: flags.join(","), scope: scope, duration: dur.value, reason: reason.value.trim() }, "Rechte von " + u.name + " sperren?", true);
-    } });
     // 10.0.1: every remaining classic right (chat, PvP, dimensions …) in the same view, each with a duration.
     var groups = {}; (u.rights || []).forEach(function (r) { (groups[r.group] = groups[r.group] || []).push(r); });
     var rightsCard = !u.profile ? S.card("Weitere Rechte", { icon: "key" }, S.notice("Einzelrechte gibt es, sobald der Spieler einmal online war. Bereiche funktionieren schon jetzt.", "", "info"))
@@ -273,15 +276,17 @@
         return h("div", { class: "perm-group" }, h("header", {}, g, h("span", { class: "muted tiny", text: groups[g].filter(function (r) { return r.blocked; }).length + " gesperrt" })),
           h("div", {}, groups[g].map(function (r) {
             return h("div", { class: "right-row" + (r.blocked ? " blocked" : "") }, h("div", { class: "grow" }, h("b", { text: r.name }), h("small", { text: r.blocked ? "gesperrt · " + r.remaining : "erlaubt" })),
-              r.blocked ? S.btn("Erlauben", { size: "sm", icon: "unlock", disabled: !canEdit, onClick: function () { return locks({ player: u.uuid, operation: "right-allow", right: r.id }, r.name + " für " + u.name + " wieder erlauben?"); } })
-                : S.btn("Sperren", { size: "sm", icon: "lock", disabled: !canEdit, onClick: function () { return blockRight(r); } }));
+              S.sw(!r.blocked, function (on, el) { if (on) return live({ player: u.uuid, operation: "right-allow", right: r.id }, el, on); el.checked = true; blockRight(r); }, !canEdit));
           })));
       })));
     function blockRight(r) {
       var sel = durationSelect(d.durations, "1d"), done = false, dlg;
       dlg = S.modal(r.name + " sperren", h("div", { class: "stack" }, h("p", { class: "muted", text: "Für " + u.name + ". Läuft automatisch ab – oder dauerhaft bis zur Freigabe." }), S.field("Dauer", sel)),
-        [S.btn("Abbrechen", { onClick: function () { dlg.close(); } }), S.btn("Weiter", { kind: "primary", icon: "lock", onClick: async function () { if (done) return; done = true; dlg.close(); await locks({ player: u.uuid, operation: "right-block", right: r.id, duration: sel.value }, r.name + " sperren?", true); } })], { icon: "lock" });
+        [S.btn("Abbrechen", { onClick: function () { dlg.close(); } }), S.btn("Sperren", { kind: "primary", icon: "lock", onClick: async function () { if (done) return; done = true; dlg.close(); await live({ player: u.uuid, operation: "right-block", right: r.id, duration: sel.value }); } })], { icon: "lock" });
     }
+    // 10.1.0: commands of this player (blocked / allowed / inherited) – full editor on its own page.
+    var commandsCard = S.has("command-rights-v1") && S.can("data.commands") ? S.card("Befehle", { icon: "terminal", sub: "Jeden Befehl einzeln erlauben oder sperren – live, mit Alt-Vererbung" },
+      h("div", { class: "row wrap" }, h("a", { class: "btn primary sm", href: "#/commands/" + u.uuid }, icon("terminal"), "Befehle von " + u.name + " verwalten"))) : null;
     // 10.0.2: rank (LuckPerms groups) and alt accounts in the same view.
     var rankCard = null;
     if (S.has("luckperms-v1") && S.can("data.luckperms")) {
@@ -328,11 +333,114 @@
         S.has("luckperms-v1") && S.can("data.luckperms") ? h("a", { class: "btn sm", href: "#/luckperms/player/" + u.uuid }, icon("key"), "Rang") : null,
         (u.locks || []).length + (u.blockedRights || 0) ? S.btn("Alle aufheben", { size: "sm", kind: "danger", icon: "unlock", disabled: !canEdit, onClick: function () { return locks({ player: u.uuid, operation: "clear" }, "Alle Sperren von " + u.name + " aufheben – Bereiche und Einzelrechte?"); } }) : null)));
     S.mount(h("div", { class: "stack" }, head, !canEdit ? S.notice("Nur ansehen – zum Ändern wird action.locks.update benötigt.", "warn", "lock") : null,
-      S.card("Bereiche mit Land-Option", { icon: "lock", sub: "Haken setzen, unten Gültigkeit und Dauer wählen, dann sperren" }, flagsBox),
-      S.card("Gültigkeit & Dauer", { icon: "clock" }, h("div", { class: "stack lock-scope" }, S.field("Wo gilt die Sperre?", scopes), scopeHint, h("div", { class: "grid two" }, S.field("Dauer", dur), S.field("Grund", reason)), h("div", {}, apply))),
-      rightsCard, rankCard, altCard,
+      S.card("Beim Ausschalten gilt", { icon: "clock", sub: "Wird für jeden Schalter verwendet, den du ausschaltest" }, h("div", { class: "stack lock-scope" }, S.field("Wo gilt die Sperre?", scopes), scopeHint, h("div", { class: "grid two" }, S.field("Dauer", dur), S.field("Grund", reason)))),
+      S.card("Bereiche mit Land-Option", { icon: "lock", sub: "Schalter an = erlaubt · aus = gesperrt – wird sofort gespeichert" }, flagsBox),
+      rightsCard, commandsCard, rankCard, altCard,
       S.card("Vorlagen", { icon: "sparkles", sub: "Mehrere Sperren auf einmal" }, h("div", { class: "stack" }, S.field("Dauer für Vorlagen", presetDur), presetBox)),
       explainCard(d)));
+  }
+
+  // ============================================================ 10.1.0 Befehle (command rights)
+  var STATE_TEXT = { allowed: "erlaubt", blocked: "gesperrt", inherited: "geerbt", global: "für alle gesperrt", noperm: "kein Recht (Rang)" };
+  var STATE_TONE = { allowed: "ok", blocked: "danger", inherited: "accent", global: "warn", noperm: "" };
+  function groupBy(items, mode, order) {
+    var map = {};
+    items.forEach(function (c) { var k = mode === "plugin" ? c.plugin : mode === "kind" ? c.kind : (c.name[0] || "#").toUpperCase(); (map[k] = map[k] || []).push(c); });
+    var keys = Object.keys(map).sort(function (a, b) { var x = order.indexOf(a), y = order.indexOf(b); x = x < 0 ? 99 : x; y = y < 0 ? 99 : y; return x - y || a.localeCompare(b); });
+    return keys.map(function (k) { return [k, map[k]]; });
+  }
+  function commandBrowser(items, opts) {
+    var mode = "kind", filter = "", stateFilter = "all", box = h("div", { class: "stack" });
+    function render() {
+      S.clear(box);
+      var q = filter.toLowerCase().replace(/^\//, "");
+      var shown = items.filter(function (c) {
+        if (stateFilter === "allowed" && !opts.allowed(c)) return false;
+        if (stateFilter === "blocked" && opts.allowed(c)) return false;
+        return !q || c.name.indexOf(q) >= 0 || (c.aliases || []).some(function (a) { return a.indexOf(q) >= 0; }) || (c.plugin || "").toLowerCase().indexOf(q) >= 0 || (c.permission || "").toLowerCase().indexOf(q) >= 0;
+      });
+      if (!shown.length) { box.appendChild(S.empty("search", "Keine Befehle", "Nichts passt zu Suche oder Filter.")); return; }
+      groupBy(shown, mode, opts.kinds || []).forEach(function (g) {
+        var on = g[1].filter(opts.allowed).length;
+        var rows = h("div", {});
+        var body = h("div", { class: "perm-group" }, h("header", {}, h("span", { class: "grow", text: g[0] }), h("span", { class: "muted tiny", text: on + " / " + g[1].length + " erlaubt" }), opts.groupActions ? opts.groupActions(g[1]) : null), rows);
+        // Large groups render lazily: the first 60 rows immediately, the rest on demand – no lag with 1000+ commands.
+        function fill(limit) {
+          S.clear(rows);
+          g[1].slice(0, limit).forEach(function (c) { rows.appendChild(opts.row(c)); });
+          if (g[1].length > limit) rows.appendChild(h("div", { class: "right-row" }, S.btn("Alle " + g[1].length + " anzeigen", { size: "sm", onClick: function () { fill(100000); } })));
+        }
+        fill(60);
+        box.appendChild(body);
+      });
+    }
+    var search = S.searchBox("Befehl, Plugin oder Recht suchen …", function (v) { filter = v; render(); });
+    var modes = S.segmented([["kind", "Nach Art"], ["plugin", "Nach Plugin"], ["az", "A–Z"]], mode, function (v) { mode = v; render(); });
+    var states = S.segmented([["all", "Alle"], ["allowed", "Erlaubt"], ["blocked", "Gesperrt"]], stateFilter, function (v) { stateFilter = v; render(); });
+    render();
+    return h("div", { class: "stack" }, h("div", { class: "row wrap" }, search, modes, states), box);
+  }
+  P.commands = async function (param, query, alive) {
+    if (!S.has("command-rights-v1")) { S.mount(S.card(null, {}, S.empty("terminal", "Benötigt Admin Suite 10.1.0", "Befehlsrechte gibt es ab Admin Suite 10.1.0."))); return; }
+    if (param) return commandPlayer(decodeURIComponent(param), alive);
+    var d = await S.api("data/commands"); if (!alive()) return;
+    var canGlobal = S.can("action.commands.global") && S.full();
+    S.title("Befehle", d.total + " Befehle auf dem Server");
+    async function global(values, el, on) {
+      try { var r = await S.runAction("commands.global", values, { skipConfirm: !!el, title: "Befehl für alle ändern?" }); if (r) setTimeout(S.reload, 250); else if (el) el.checked = !on; }
+      catch (e) { if (el) el.checked = !on; S.toast(e.message, "err"); }
+    }
+    var open = S.playerSearch(function (row) { S.go("#/commands/" + encodeURIComponent(row.id)); }, "Spieler suchen – Befehle dieses Spielers verwalten");
+    var players = S.card("Spieler mit eigenen Befehlsrechten", { icon: "users", cls: "pad-list" }, h("div", { class: "list" }, (d.players || []).length ? d.players.map(function (r) {
+      return h("div", { class: "item link", onClick: function () { S.go("#/commands/" + r.uuid); } }, S.avatar(r.name, "sm"), h("div", { class: "meta" }, h("b", { text: r.name }),
+        h("small", { text: [r.blocked.length ? r.blocked.length + " gesperrt" : "", r.allowed.length ? r.allowed.length + " freigegeben" : "", r.inherited.length ? r.inherited.length + " geerbt" : ""].filter(Boolean).join(" · ") })), r.online ? h("span", { class: "dot on" }) : null, icon("chevRight", "chev"));
+    }) : h("div", { class: "item muted small", text: "Noch niemand – öffne einen Spieler und schalte Befehle aus." })));
+    var browser = commandBrowser(d.items || [], { kinds: d.kinds, allowed: function (c) { return !c.global; },
+      row: function (c) {
+        return h("div", { class: "right-row" + (c.global ? " blocked" : "") }, h("div", { class: "grow" }, h("b", { class: "mono", text: "/" + c.name }),
+          h("small", { text: [c.plugin, c.permission, c.description, c.global ? "für alle gesperrt · " + c.globalRemaining : ""].filter(Boolean).join(" · ") })),
+          S.sw(!c.global, function (on, el) { return global(on ? { operation: "global-allow", commands: c.name } : { operation: "global-block", commands: c.name, duration: "" }, el, on); }, !canGlobal));
+      } });
+    S.mount(h("div", { class: "stack" }, S.card("Spieler auswählen", { icon: "user", sub: "Pro Spieler sieht jeder Schalter, ob der Befehl erlaubt oder gesperrt ist – live" }, open), players,
+      S.card("Für alle Spieler", { icon: "terminal", sub: "Schalter aus = Befehl für alle gesperrt (OPs und simplexadminsuite.commands.bypass ausgenommen)" }, h("div", { class: "stack" }, !canGlobal ? S.notice("Globale Sperren benötigen Vollzugriff und action.commands.global.", "warn", "lock") : null, browser)),
+      S.notice(d.help, "", "info")));
+  };
+  async function commandPlayer(id, alive) {
+    var d = await S.api("data/commands", { query: { player: id } }); if (!alive()) return;
+    var canEdit = S.can("action.commands.update"), canGrant = S.full() && S.can("action.luckperms.edit") && d.luckperms;
+    var alts = true, dur = durationSelect(d.durations, ""), reason = S.input({ placeholder: "Grund – sieht der Spieler (optional)", maxlength: 200 });
+    S.title(d.name, "Befehle", h("a", { class: "btn ghost sm", href: "#/commands" }, icon("chevLeft"), h("span", { class: "hide-mobile", text: "Befehle" })));
+    async function change(values, el, on) {
+      try { var r = await S.runAction("commands.update", Object.assign({ player: d.uuid }, values), { skipConfirm: true, silent: true }); if (r) { S.toast(r.title, r.ok === false ? "err" : "ok", r.description); setTimeout(S.reload, 250); } }
+      catch (e) { if (el) el.checked = !on; S.toast(e.message, "err"); }
+    }
+    function block(names, el) { return change({ operation: "block", commands: names.join(","), duration: dur.value, reason: reason.value.trim(), alts: String(alts) }, el, false); }
+    function allow(names, el) { return change({ operation: "allow", commands: names.join(","), grant: String(canGrant) }, el, true); }
+    var browser = commandBrowser(d.items || [], { kinds: d.kinds, allowed: function (c) { return c.allowed; },
+      groupActions: canEdit ? function (list) {
+        return h("span", { class: "row", style: { gap: "4px" } }, S.btn("Alle an", { size: "sm", onClick: function () { var n = list.filter(function (c) { return !c.allowed; }).map(function (c) { return c.name; }); if (n.length) allow(n); } }),
+          S.btn("Alle aus", { size: "sm", onClick: function () { var n = list.filter(function (c) { return c.allowed; }).map(function (c) { return c.name; }); if (n.length) block(n); } }));
+      } : null,
+      row: function (c) {
+        var note = c.state === "blocked" ? "gesperrt · " + c.own.remaining + (c.own.reason ? " · " + c.own.reason : "") + (c.own.alts ? " · Alts erben" : "")
+          : c.state === "inherited" ? "geerbt von " + c.inheritedFrom + " · " + c.remaining : c.state === "global" ? "für alle gesperrt · " + c.remaining
+          : c.state === "noperm" ? "Rang erlaubt es nicht (" + c.permission + ")" + (canGrant ? " – Schalter an setzt das Recht in LuckPerms" : "") : c.override ? "erlaubt (Ausnahme)" : "erlaubt";
+        return h("div", { class: "right-row" + (c.allowed ? "" : " blocked") }, h("div", { class: "grow" }, h("div", { class: "row", style: { gap: "6px" } }, h("b", { class: "mono", text: "/" + c.name }), S.badge(STATE_TEXT[c.state] || c.state, STATE_TONE[c.state] || "")),
+          h("small", { text: [c.plugin, note, c.description].filter(Boolean).join(" · ") }),
+          c.own || c.override ? h("button", { type: "button", class: "linklike small", disabled: !canEdit, onClick: function () { change({ operation: "reset", commands: c.name }); } }, "Zurücksetzen (Rang entscheidet)") : null),
+          S.sw(c.allowed, function (on, el) { return on ? allow([c.name], el) : block([c.name], el); }, !canEdit || (c.state === "noperm" && !canGrant)));
+      } });
+    var head = S.card(null, { cls: "hero" }, h("div", { class: "row wrap", style: { gap: "16px" } }, S.avatar(d.name, "lg"), h("div", { class: "grow" }, h("h2", { style: { margin: 0 }, text: d.name }),
+      h("div", { class: "row wrap", style: { gap: "6px", marginTop: "6px" } }, d.online ? S.badge("Online", "ok") : S.badge("Offline"), d.op ? S.badge("OP", "warn") : null, S.badge(d.allowedCount + " erlaubt", "ok", "unlock"), S.badge(d.blockedCount + " gesperrt", d.blockedCount ? "danger" : "", "lock"),
+        !d.permissionsKnown ? S.badge("Rang offline unbekannt", "warn") : null)),
+      h("div", { class: "row wrap" }, S.can("data.access-locks") ? h("a", { class: "btn sm", href: "#/access-locks/" + d.uuid }, icon("lock"), "Rechte & Sperren") : null,
+        S.can("data.luckperms") ? h("a", { class: "btn sm", href: "#/luckperms/player/" + d.uuid }, icon("key"), "Rang") : null,
+        S.btn("Alle eigenen entfernen", { size: "sm", kind: "danger", icon: "unlock", disabled: !canEdit, onClick: function () { return S.runAction("commands.update", { player: d.uuid, operation: "clear" }, { title: "Alle eigenen Befehlsrechte von " + d.name + " entfernen?" }).then(function (r) { if (r) setTimeout(S.reload, 250); }); } }))));
+    var settings = S.card("Beim Ausschalten gilt", { icon: "clock" }, h("div", { class: "stack" }, h("div", { class: "grid two" }, S.field("Dauer", dur), S.field("Grund", reason)),
+      h("div", { class: "row" }, h("b", { class: "grow", text: "Alt-Accounts erben die Sperre" }), S.sw(true, function (on) { alts = on; })),
+      h("p", { class: "muted small", text: "Alt-Accounts: " + ((d.alts || []).length ? d.alts.map(function (a) { return a.name; }).join(", ") : "keine bestätigten") + ". Eine eigene Freigabe eines Alts hat Vorrang." })));
+    S.mount(h("div", { class: "stack" }, head, !canEdit ? S.notice("Nur ansehen – zum Ändern wird action.commands.update benötigt.", "warn", "lock") : null, settings,
+      S.card("Alle Befehle", { icon: "terminal", sub: "Schalter an = erlaubt · aus = gesperrt – wird sofort gespeichert" }, browser)));
   }
 
   // ============================================================ Changelog (once per account and version)
@@ -345,7 +453,7 @@
     var body = changelogBody(entries);
     // Marked as seen as soon as it is shown: it appears exactly once per account and version, on any browser.
     S.api("changelog/seen", { body: { version: d.version }, quiet: true }).catch(function () {});
-    var dlg = S.modal("Neu in Simplex " + d.version, body, [S.btn("Zu den Rechte-Sperren", { icon: "lock", onClick: function () { dlg.close(); S.go("#/access-locks"); } }), S.btn("Verstanden", { kind: "primary", icon: "check", onClick: function () { dlg.close(); } })],
+    var dlg = S.modal("Neu in Simplex " + d.version, body, [S.btn(S.has("command-rights-v1") ? "Zu den Befehlen" : "Zu den Rechte-Sperren", { icon: "lock", onClick: function () { dlg.close(); S.go(S.has("command-rights-v1") ? "#/commands" : "#/access-locks"); } }), S.btn("Verstanden", { kind: "primary", icon: "check", onClick: function () { dlg.close(); } })],
       { wide: true, icon: "sparkles" });
   };
   function changelogBody(entries) {

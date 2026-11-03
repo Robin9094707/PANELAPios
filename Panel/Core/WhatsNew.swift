@@ -18,6 +18,14 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "4.4.0", title: "Live-Schalter & Befehle", summary: "Jeder Schalter zeigt jetzt den echten Stand – an = erlaubt, aus = gesperrt – und speichert sofort. Dazu Befehle pro Spieler und eine vollständige LuckPerms-Verwaltung.", items: [
+            WhatsNewItem(symbol: "checkmark.seal.fill", title: "Bestätigungen repariert", detail: "Änderungen an Rängen, LuckPerms-Rechten, Lands und Sperren schlugen mit „Bestätigung abgelaufen“ fehl. Das ist behoben."),
+            WhatsNewItem(symbol: "switch.2", title: "Echte Schalter", detail: "Bereiche, Einzelrechte und LuckPerms-Rechte zeigen live, was erlaubt ist. Ausschalten sperrt sofort mit der gewählten Dauer, Einschalten gibt frei."),
+            WhatsNewItem(symbol: "terminal.fill", title: "Befehle pro Spieler", detail: "Alle Befehle des Servers – sortiert nach Art, Plugin oder A–Z – einzeln oder gruppenweise erlauben und sperren, mit Dauer, Grund und Alt-Vererbung. Auch für alle Spieler auf einmal."),
+            WhatsNewItem(symbol: "crown.fill", title: "Rang im Profil", detail: "Das Spielerprofil zeigt Präfix, Suffix, primäre Gruppe und alle Gruppen. Gruppen direkt zuweisen, befristen oder ersetzen."),
+            WhatsNewItem(symbol: "sparkles", title: "LuckPerms-Vorlagen", detail: "Spieler, VIP, Builder, Supporter, Moderator und Admin mit Gewicht, Präfix und passenden Rechten in einem Schritt anlegen."),
+            WhatsNewItem(symbol: "person.2.fill", title: "Alt-Accounts erben Befehlssperren", detail: "Standardmäßig an, pro Sperre abschaltbar. Eine Freigabe beim Alt hat Vorrang.")
+        ]),
         WhatsNewRelease(version: "4.3.1", title: "Rechte & Sperren an einem Ort", summary: "Keine doppelten Rechte mehr: Alles läuft über eine Rechteverwaltung – direkt aus dem Spielerprofil, mit Dauer für jedes Recht.", items: [
             WhatsNewItem(symbol: "lock.shield.fill", title: "Eine Rechteverwaltung", detail: "Spielerprofil → Rechte & Sperren zeigt Bereiche (Truhen, Türen, Shulker … mit Land/Wildnis) und alle weiteren Rechte wie Chat, PvP, Nether oder Freeze zusammen."),
             WhatsNewItem(symbol: "clock.fill", title: "Jedes Recht mit Dauer", detail: "„Sperren …“ bietet 30 Minuten bis 30 Tage oder dauerhaft – ohne Umweg über ein anderes Menü."),

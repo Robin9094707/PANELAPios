@@ -85,6 +85,15 @@ final class PanelHub {
                         AppApiManager.send(x, 200, out);
                     } else AppApiManager.send(x, 200, api.onMain(rev, () -> plugin.accessLocks.data(query.getOrDefault("q", ""))));
                 }
+                case "/v1/data/commands" -> {
+                    api.requirePermission(key, "data.commands");
+                    if (plugin.commandRights == null || plugin.accessLocks == null) throw new AppApiManager.ApiError(503, "Befehlsrechte nicht geladen");
+                    String player = query.getOrDefault("player", "");
+                    if (player.isBlank()) { AppApiManager.send(x, 200, api.onMain(rev, plugin.commandRights::overview)); return true; }
+                    UUID uuid = api.onMain(rev, () -> plugin.accessLocks.resolve(player));
+                    Object lpUser = LuckPermsAdmin.loadUserQuietly(uuid); // offline players: loaded here, off the main thread
+                    AppApiManager.send(x, 200, api.onMain(rev, () -> plugin.commandRights.player(uuid, lpUser)));
+                }
                 case "/v1/changelog" -> AppApiManager.send(x, 200, changelog(owner));
                 case "/v1/data/lands" -> {
                     api.requirePermission(key, "data.lands");

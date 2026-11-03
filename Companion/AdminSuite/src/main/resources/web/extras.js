@@ -281,11 +281,17 @@
   // ============================================================ Page: LuckPerms
   function plain(text) { return String(text || "").replace(/[&§][0-9a-fk-orx]/gi, "").replace(/<[^>]{1,24}>/g, "").replace(/\{#[0-9a-f]{6}\}/gi, ""); }
   async function lp(values, title, danger) { var r = await S.runAction("luckperms.edit", values, { title: title || "LuckPerms ändern?", danger: danger }); if (r) setTimeout(S.reload, 900); return r; }
-  function nodeRow(n, remove) {
-    return h("div", { class: "item" }, h("span", { class: "dot " + (n.value === false ? "warn" : "on") }),
+  /** 10.1.0: a node row with a live switch – on = true (erlaubt), off = false (verweigert); trash removes the node. */
+  function nodeRow(n, remove, setValue) {
+    var toggle = setValue && !n.expiry ? S.sw(n.value !== false, async function (on, el) {
+      try { var r = await S.runAction("luckperms.edit", setValue(on), { skipConfirm: true, silent: true }); if (r) { S.toast(r.title, r.ok === false ? "err" : "ok"); setTimeout(S.reload, 700); } }
+      catch (e) { el.checked = !on; S.toast(e.message, "err"); }
+    }, !S.can("action.luckperms.edit") || !S.full()) : h("span", { class: "dot " + (n.value === false ? "warn" : "on") });
+    return h("div", { class: "item" }, toggle,
       h("div", { class: "meta" }, h("b", { class: "mono", text: n.key }), h("small", { text: (n.value === false ? "verweigert" : "erlaubt") + (n.expiry ? " · bis " + S.date(n.expiry) : "") + (n.context ? " · " + n.context : "") })),
       remove ? S.btn("", { size: "sm icon", kind: "ghost", icon: "trash", title: "Entfernen", disabled: !S.can("action.luckperms.edit"), onClick: remove }) : null);
   }
+  function nodeContext(n) { return n.context && n.context.indexOf(",") < 0 ? n.context.replace(/\s/g, "") : ""; }
   function permForm(onSubmit) {
     var picker = S.permInput ? S.permInput() : null, node = picker ? picker.input : S.input({ placeholder: "z. B. essentials.fly", autocapitalize: "none" }), deny = h("input", { type: "checkbox" }), duration = S.input({ placeholder: "leer = dauerhaft, z. B. 7d" }), context = S.input({ placeholder: "optional: world=farmwelt" });
     return h("div", { class: "stack" }, h("div", { class: "grid two" }, S.field("Recht", picker ? picker.el : node), S.field("Dauer", duration)), h("div", { class: "grid two" }, S.field("Kontext", context), h("label", { class: "check", style: { alignSelf: "end" } }, deny, "Verweigern (false)")),
@@ -324,8 +330,16 @@
       return h("div", { class: "item link", onClick: function () { S.go("#/luckperms/player/" + encodeURIComponent(m.uuid)); } }, S.avatar(m.name, "sm"),
         h("div", { class: "meta" }, h("b", { text: m.name }), h("small", { text: "Primär: " + m.primary + " · " + (m.groups || []).join(", ") })), m.online ? h("span", { class: "dot on", title: "online" }) : null, icon("chevRight", "chev"));
     }) : h("div", { class: "item muted small", text: "Keine Teammitglieder erkannt." })));
+    var templates = (d.templates || []).length ? S.card("Vorlagen", { icon: "sparkles", sub: "Fertige Ränge mit Gewicht, Präfix und passenden Rechten – bestehende Rechte bleiben erhalten" }, h("div", { class: "grid two" }, d.templates.map(function (t) {
+      return h("div", { class: "preset" }, h("div", { class: "row", style: { gap: "8px" } }, h("b", { text: t.title }), h("span", { class: "mc-preview sm" }, affixView(t.prefix), h("span", { class: "mc-name", text: "Name" }))),
+        h("p", { class: "small muted", text: t.explain + " · " + t.permissions.length + " Rechte · Gewicht " + t.weight }),
+        S.btn("Gruppe anlegen", { size: "sm", icon: "plus", disabled: !S.can("action.luckperms.edit") || !S.full(), onClick: async function () {
+          var n = await S.prompt("Vorlage „" + t.title + "“", "Gruppenname (a–z, 0–9, _ oder -) – bestehende Gruppe wird ergänzt", t.id, "Weiter"); if (!n) return;
+          await lp({ operation: "group-template", template: t.id, group: n.trim().toLowerCase() }, "Vorlage „" + t.title + "“ anwenden?");
+        } }));
+    }))) : null;
     var tracks = (d.tracks || []).length ? S.card("Tracks (Beförderungsleitern)", { icon: "activity" }, h("div", { class: "stack" }, d.tracks.map(function (t) { return h("div", { class: "row wrap" }, h("b", { text: t.name }), h("span", { class: "muted small", text: t.groups.join(" → ") })); }))) : null;
-    S.mount(h("div", { class: "stack" }, S.card("Spieler verwalten", { icon: "user" }, lookup), h("div", { class: "grid two" }, groups, h("div", { class: "stack" }, team, tracks)),
+    S.mount(h("div", { class: "stack" }, S.card("Spieler verwalten", { icon: "user" }, lookup), h("div", { class: "grid two" }, groups, h("div", { class: "stack" }, team, tracks)), templates,
       h("div", {}, S.btn("LuckPerms synchronisieren", { size: "sm", icon: "refresh", disabled: !S.can("action.luckperms.edit"), onClick: function () { return lp({ operation: "sync" }, "LuckPerms-Daten neu laden?"); } }))));
   };
   async function lpGroup(name, alive) {
@@ -347,7 +361,8 @@
       return h("span", { class: "chip" }, p, h("button", { type: "button", title: "Entfernen", disabled: !S.can("action.luckperms.edit"), onClick: function () { lp({ operation: "group-parent-remove", group: g.name, value: p }, "„" + p + "“ nicht mehr erben?"); } }, icon("x")));
     }) : h("span", { class: "muted small", text: "Keine Elterngruppen" })), h("div", { class: "row" }, parentSel, S.btn("Hinzufügen", { icon: "plus", disabled: !S.can("action.luckperms.edit") || !parentSel.options.length, onClick: function () { return lp({ operation: "group-parent-add", group: g.name, value: parentSel.value }); } }))));
     var nodes = nodeList("Rechte", perms, perms.length + " Einträge", function (n) {
-      return nodeRow(n, function () { return lp({ operation: "group-permission-unset", group: g.name, node: n.key, context: n.context && n.context.indexOf(",") < 0 ? n.context.replace(/\s/g, "") : "" }, "Recht „" + n.key + "“ entfernen?"); });
+      return nodeRow(n, function () { return lp({ operation: "group-permission-unset", group: g.name, node: n.key, context: nodeContext(n) }, "Recht „" + n.key + "“ entfernen?"); },
+        function (on) { return { operation: "group-permission-set", group: g.name, node: n.key, value: String(on), context: nodeContext(n) }; });
     }, "Keine eigenen Rechte");
     var add = S.card("Recht hinzufügen", { icon: "plus" }, permForm(function (v) { return lp(Object.assign({ operation: v.duration ? "group-permission-temp" : "group-permission-set", group: g.name }, v)); }));
     var members = S.card("Mitglieder", { icon: "users", cls: "pad-list", sub: g.memberCount >= 0 ? g.memberCount + " direkt zugewiesen" : "Nicht abrufbar" }, h("div", { class: "list" }, (g.members || []).length ? g.members.map(function (m) {
@@ -374,7 +389,9 @@
           S.btn("Zurückstufen", { size: "sm", icon: "chevLeft", disabled: !S.can("action.luckperms.edit"), onClick: function () { return lp({ operation: "user-demote", player: u.uuid, track: t.name }, who + " auf „" + t.name + "“ zurückstufen?"); } }));
       })) : null));
     var nodes = nodeList("Eigene Rechte", u.nodes || [], (u.nodes || []).length + " Einträge", function (n) {
-      return nodeRow(n, /^(prefix|suffix|meta|weight|displayname)\./.test(n.key) ? null : function () { return lp({ operation: "user-permission-unset", player: u.uuid, node: n.key, context: n.context && n.context.indexOf(",") < 0 ? n.context.replace(/\s/g, "") : "" }, "Recht „" + n.key + "“ entfernen?"); });
+      var meta = /^(prefix|suffix|meta|weight|displayname)\./.test(n.key);
+      return nodeRow(n, meta ? null : function () { return lp({ operation: "user-permission-unset", player: u.uuid, node: n.key, context: nodeContext(n) }, "Recht „" + n.key + "“ entfernen?"); },
+        meta ? null : function (on) { return { operation: "user-permission-set", player: u.uuid, node: n.key, value: String(on), context: nodeContext(n) }; });
     }, "Keine eigenen Rechte – alles kommt aus den Gruppen.");
     var add = S.card("Recht hinzufügen", { icon: "plus" }, permForm(function (v) { return lp(Object.assign({ operation: v.duration ? "user-permission-temp" : "user-permission-set", player: u.uuid }, v)); }));
     var head = S.card(null, { cls: "hero" }, h("div", { class: "row wrap", style: { gap: "16px" } }, S.avatar(who, "lg"), h("div", { class: "grow" }, h("h2", { style: { margin: 0 }, text: who }),
@@ -382,6 +399,7 @@
       h("div", { class: "row wrap" }, S.has("luckperms-v2") ? S.btn("Eigenes Präfix", { size: "sm", icon: "edit", disabled: !S.can("action.luckperms.edit"), title: "Überschreibt das Gruppenpräfix nur für diesen Spieler", onClick: async function () { var v = await S.affixDialog("Präfix nur für " + who, { value: (u.nodes || []).some(function (n) { return /^prefix\./.test(n.key); }) ? u.prefix : "", other: u.suffix, name: who, label: "Eigenes Präfix (leer = Gruppenpräfix verwenden)" }); if (v !== null) await lp({ operation: "user-prefix", player: u.uuid, value: v, priority: "1000" }, "Präfix von " + who + " ändern?"); } }) : null,
         S.has("luckperms-v2") ? S.btn("Eigenes Suffix", { size: "sm", icon: "edit", disabled: !S.can("action.luckperms.edit"), onClick: async function () { var v = await S.affixDialog("Suffix nur für " + who, { value: (u.nodes || []).some(function (n) { return /^suffix\./.test(n.key); }) ? u.suffix : "", other: u.prefix, name: who, kind: "suffix", label: "Eigenes Suffix (leer = Gruppensuffix verwenden)" }); if (v !== null) await lp({ operation: "user-suffix", player: u.uuid, value: v, priority: "1000" }, "Suffix von " + who + " ändern?"); } }) : null,
         S.has("access-locks-v1") && S.can("data.access-locks") ? h("a", { class: "btn sm", href: "#/access-locks/" + u.uuid }, icon("lock"), "Rechte & Sperren") : null,
+        S.has("command-rights-v1") && S.can("data.commands") ? h("a", { class: "btn sm", href: "#/commands/" + u.uuid }, icon("terminal"), "Befehle") : null,
         S.can("data.profile") ? h("a", { class: "btn sm", href: "#/player/" + u.uuid }, icon("user"), "Profil") : null)));
     S.mount(h("div", { class: "stack" }, head, h("div", { class: "grid two" }, groupsCard, h("div", { class: "stack" }, add, nodes))));
   }
