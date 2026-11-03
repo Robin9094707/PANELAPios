@@ -286,22 +286,30 @@ enum SuiteAccessLockText {
 struct SuiteAccessLocksView: View {
     let suite: SuiteAPI
     @State private var data: JSON = .null
-    @State private var lookup = ""
+    @State private var query = ""
+    @State private var matches: [JSON] = []
+    @State private var searching = false
     @State private var error: String?
     var body: some View {
         List {
             Section {
-                TextField("Spielername oder UUID", text: $lookup).textInputAutocapitalization(.never).autocorrectionDisabled()
-                NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: lookup.trimmingCharacters(in: .whitespaces)) } label: { Label("Spieler öffnen", systemImage: "person.crop.circle.badge.questionmark") }
-                    .disabled(lookup.trimmingCharacters(in: .whitespaces).isEmpty)
-            } header: { Text("Spieler sperren") } footer: { Text("Auch offline möglich. Danach Bereiche wählen, Gültigkeit und Dauer festlegen.") }
+                TextField("Spieler suchen – Name eintippen", text: $query).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("rights-search")
+                if searching { ProgressView() }
+                ForEach(matches, id: \.["id"].string) { row in
+                    NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: row["id"].string) } label: { SuitePlayerMatchRow(row: row) }
+                }
+                if !query.trimmingCharacters(in: .whitespaces).isEmpty && !searching && matches.isEmpty {
+                    NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: query.trimmingCharacters(in: .whitespaces)) } label: { Label("„" + query.trimmingCharacters(in: .whitespaces) + "“ direkt öffnen", systemImage: "person.crop.circle.badge.questionmark") }
+                }
+            } header: { Text("Spieler auswählen") } footer: { Text("Beim Tippen erscheinen passende Spieler – online und offline, wie in der Spielerliste.") }
             lockedSection
             SuiteAccessLockHelp(data: data)
         }
-        .panelScreen().navigationTitle("Rechte-Sperren").task { await load() }.refreshable { await load() }.errorAlert($error)
+        .panelScreen().navigationTitle("Rechte & Sperren").task { await load() }.refreshable { await load() }.errorAlert($error)
+        .task(id: query) { await search() }
     }
     @ViewBuilder private var lockedSection: some View {
-        Section("Aktive Sperren") {
+        Section("Spieler mit Sperren") {
             if data == .null { ProgressView() }
             else if data["items"].array.isEmpty { Text("Niemand ist gesperrt.").foregroundStyle(.secondary) }
             ForEach(data["items"].array, id: \.["uuid"].string) { row in
@@ -309,18 +317,48 @@ struct SuiteAccessLocksView: View {
             }
         }
     }
+    private func search() async {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { matches = []; return }
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+            searching = true; defer { searching = false }
+            let result = try await suite.data("players", query: ["q": text, "filter": "all", "limit": "8"])
+            try Task.checkCancellation()
+            matches = Array(result["items"].array.prefix(8))
+        } catch { if !RequestFailure.isCancellation(error) && !(error is CancellationError) { self.error = error.localizedDescription } }
+    }
     func load() async { do { data = try await suite.data("access-locks") } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } } }
+}
+
+struct SuitePlayerMatchRow: View {
+    let row: JSON
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: row["online"].bool ? "person.fill.checkmark" : "person.fill").foregroundStyle(row["online"].bool ? Color.green : Color.secondary).frame(width: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row["name"].string).font(.subheadline.weight(.semibold))
+                Text(row["online"].bool ? "Online" : "Offline").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
 }
 
 struct SuiteAccessLockRow: View {
     let row: JSON
+    static func summary(_ row: JSON) -> String {
+        var parts = row["locks"].array.map { $0["title"].string + " (" + $0["remaining"].string + ")" }
+        parts += row["rights"].array.filter { $0["blocked"].bool }.map { $0["name"].string + " (" + $0["remaining"].string + ")" }
+        for list in row["legacy"].object.values { parts += list.array.map { $0["name"].string + " (" + $0["remaining"].string + ")" } }
+        return parts.joined(separator: " · ")
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(row["name"].string).font(.subheadline.weight(.semibold))
                 if row["online"].bool { Circle().fill(.green).frame(width: 7, height: 7) }
             }
-            Text(row["locks"].array.map { $0["title"].string + " (" + $0["remaining"].string + ")" }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            Text(Self.summary(row)).font(.caption).foregroundStyle(.secondary).lineLimit(3)
         }
     }
 }
@@ -358,28 +396,54 @@ struct SuiteAccessLockPlayerView: View {
     var durations: [String] { data["durations"].array.isEmpty ? ["30m", "2h", "12h", "1d", "3d", "7d", "14d", "30d", ""] : data["durations"].array.map(\.string) }
     var body: some View {
         List {
-            Section {
-                LabeledContent("Status", value: user["online"].bool ? "Online" : "Offline")
-                LabeledContent("Aktive Sperren", value: String(user["locks"].array.count))
-                if !user["locks"].array.isEmpty { Button("Alle Sperren aufheben", systemImage: "lock.open.fill", role: .destructive) { ask(["operation": .string("clear")], "Alle Sperren von " + who + " aufheben?") }.disabled(!canEdit) }
-            } header: { Text(who) }
+            headerSection
             flagSection
             settingsSection
+            rightsSections
             presetSection
             SuiteAccessLockHelp(data: data)
         }
         .panelScreen().navigationTitle(who).navigationBarTitleDisplayMode(.inline).task { await load() }.refreshable { await load() }
         .suiteConfirm(runner) { picked = []; await load() }
     }
+    var activeCount: Int { user["locks"].array.count + user["blockedRights"].int }
+    private var headerSection: some View {
+        Section {
+            LabeledContent("Status", value: user["online"].bool ? "Online" : "Offline")
+            LabeledContent("Aktive Sperren", value: String(activeCount))
+            if suite.features.contains("luckperms-v1") { NavigationLink { SuiteLuckPermsPlayerView(suite: suite, player: user["uuid"].string.isEmpty ? player : user["uuid"].string) } label: { Label("Rang & LuckPerms-Rechte", systemImage: "crown.fill") }.disabled(!suite.can("data.luckperms")) }
+            if user["profile"].bool && suite.scope == "full" && suite.can("action.management.apply") {
+                Toggle("Sperren auf Alt-Accounts übertragen", isOn: Binding(get: { user["inherit"] == .null || user["inherit"].bool }, set: { on in Task { await runner.ask("management.apply", ["operation": .string("inherit"), "player": .string(user["uuid"].string), "node": .string(""), "value": .string(String(on))], title: on ? "Alt-Vererbung einschalten?" : "Alt-Vererbung ausschalten?") } }))
+            }
+            if activeCount > 0 { Button("Alle Sperren aufheben", systemImage: "lock.open.fill", role: .destructive) { ask(["operation": .string("clear")], "Alle Sperren von " + who + " aufheben – Bereiche und Einzelrechte?") }.disabled(!canEdit) }
+        } header: { Text(who) } footer: { Text("Alle Rechte dieses Spielers an einem Ort: Bereiche mit Land-Option und alle weiteren Einzelrechte – jeweils mit Dauer.") }
+    }
+    /** Remaining classic rights grouped (chat, combat, worlds …); each can be blocked for a time or permanently. */
+    @ViewBuilder private var rightsSections: some View {
+        if data != .null && !user["profile"].bool {
+            Section("Weitere Rechte") { Text("Einzelrechte gibt es, sobald der Spieler einmal online war. Bereiche funktionieren schon jetzt.").font(.caption).foregroundStyle(.secondary) }
+        }
+        ForEach(SuiteRightsGrouping.groups(user["rights"].array), id: \.0) { group in
+            Section(group.0) {
+                ForEach(group.1, id: \.["id"].string) { right in
+                    SuiteClassicRightRow(right: right, durations: durations, canEdit: canEdit, block: { time in
+                        ask(["operation": .string("right-block"), "right": right["id"], "duration": .string(time)], right["name"].string + " für " + who + " sperren?")
+                    }, allow: {
+                        ask(["operation": .string("right-allow"), "right": right["id"]], right["name"].string + " für " + who + " wieder erlauben?")
+                    })
+                }
+            }
+        }
+    }
     private func active(_ flag: String) -> JSON { user["locks"].array.first { $0["flag"].string == flag } ?? .null }
     private var flagSection: some View {
         Section {
             ForEach(data["flags"].array, id: \.["id"].string) { flag in
-                SuiteAccessLockFlagRow(flag: flag, active: active(flag["id"].string), picked: Binding(get: { picked.contains(flag["id"].string) }, set: { if $0 { picked.insert(flag["id"].string) } else { picked.remove(flag["id"].string) } }), canEdit: canEdit) {
+                SuiteAccessLockFlagRow(flag: flag, active: active(flag["id"].string), legacy: user["legacy"][flag["id"].string].array, picked: Binding(get: { picked.contains(flag["id"].string) }, set: { if $0 { picked.insert(flag["id"].string) } else { picked.remove(flag["id"].string) } }), canEdit: canEdit) {
                     ask(["operation": .string("remove"), "flags": flag["id"]], flag["title"].string + " für " + who + " wieder erlauben?")
                 }
             }
-        } header: { Text("Bereiche") } footer: { Text("Gesperrtes kann weder benutzt, abgebaut noch gesprengt werden – auch nicht in Ländern, in denen der Spieler vertraut ist. Wischen zum Aufheben.") }
+        } header: { Text("Bereiche mit Land-Option") } footer: { Text("Haken setzen, darunter Gültigkeit und Dauer wählen. Gesperrtes kann weder benutzt, abgebaut noch gesprengt werden – auch nicht in Ländern, in denen der Spieler vertraut ist. Wischen zum Aufheben.") }
     }
     private var settingsSection: some View {
         Section {
@@ -417,6 +481,7 @@ struct SuiteAccessLockPlayerView: View {
 struct SuiteAccessLockFlagRow: View {
     let flag: JSON
     let active: JSON
+    var legacy: [JSON] = []
     @Binding var picked: Bool
     let canEdit: Bool
     let remove: () -> Void
@@ -427,15 +492,52 @@ struct SuiteAccessLockFlagRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(flag["title"].string).font(.subheadline.weight(.semibold))
-                        Text(active == .null ? "erlaubt" : "gesperrt").font(.caption2.bold()).foregroundStyle(active == .null ? .green : .red)
+                        Text(active != .null ? "gesperrt" : legacy.isEmpty ? "erlaubt" : "alte Sperre").font(.caption2.bold()).foregroundStyle(active != .null ? Color.red : legacy.isEmpty ? Color.green : Color.orange)
                     }
                     if active != .null { Text(active["scopeTitle"].string + " · " + active["remaining"].string + (active["reason"].string.isEmpty ? "" : " · " + active["reason"].string)).font(.caption).foregroundStyle(.red) }
+                    if !legacy.isEmpty { Text("Alte Einzelsperre: " + legacy.map { $0["name"].string + " (" + $0["remaining"].string + ")" }.joined(separator: ", ") + " – wird mit aufgehoben").font(.caption).foregroundStyle(.orange) }
                     Text(flag["explain"].string).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
                 }
             }
         }
         .disabled(!canEdit)
-        .swipeActions { if active != .null { Button("Aufheben", role: .destructive, action: remove).disabled(!canEdit) } }
+        .swipeActions { if active != .null || !legacy.isEmpty { Button("Aufheben", role: .destructive, action: remove).disabled(!canEdit) } }
+    }
+}
+
+// MARK: - Classic rights inside the unified view
+
+enum SuiteRightsGrouping {
+    static let order = ["Chat & Befehle", "Kampf & Gegenstände", "Bewegung & Welten", "Weitere"]
+    static func groups(_ rights: [JSON]) -> [(String, [JSON])] {
+        var map: [String: [JSON]] = [:]
+        for right in rights { map[right["group"].string.isEmpty ? "Weitere" : right["group"].string, default: []].append(right) }
+        return map.keys.sorted { (order.firstIndex(of: $0) ?? 99, $0) < (order.firstIndex(of: $1) ?? 99, $1) }.map { ($0, map[$0] ?? []) }
+    }
+}
+
+struct SuiteClassicRightRow: View {
+    let right: JSON
+    let durations: [String]
+    let canEdit: Bool
+    let block: (String) -> Void
+    let allow: () -> Void
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: right["blocked"].bool ? "lock.fill" : "checkmark.circle.fill").foregroundStyle(right["blocked"].bool ? Color.red : Color.green).frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(right["name"].string).font(.subheadline)
+                Text(right["blocked"].bool ? "Gesperrt · " + right["remaining"].string : "Erlaubt").font(.caption).foregroundStyle(right["blocked"].bool ? Color.red : Color.secondary)
+            }
+            Spacer(minLength: 6)
+            if right["blocked"].bool {
+                Button("Erlauben", action: allow).buttonStyle(.bordered).controlSize(.small).disabled(!canEdit)
+            } else {
+                Menu {
+                    ForEach(durations, id: \.self) { time in Button(SuiteAccessLockText.duration(time)) { block(time) } }
+                } label: { Text("Sperren …").font(.footnote.weight(.semibold)) }.disabled(!canEdit)
+            }
+        }
     }
 }
 

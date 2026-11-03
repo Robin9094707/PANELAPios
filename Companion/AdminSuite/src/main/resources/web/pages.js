@@ -153,7 +153,7 @@
     var cards = [head];
     // 10.0.0: quick access to rank (LuckPerms) and access locks of this player.
     var quick = h("div", { class: "row wrap" },
-      S.has("access-locks-v1") && S.can("data.access-locks") ? h("a", { class: "btn sm", href: "#/access-locks/" + p.id }, icon("lock"), "Rechte-Sperren") : null,
+      S.has("access-locks-v1") && S.can("data.access-locks") ? h("a", { class: "btn sm primary", href: "#/access-locks/" + p.id }, icon("lock"), "Rechte & Sperren") : null,
       S.has("luckperms-v1") && S.can("data.luckperms") ? h("a", { class: "btn sm", href: "#/luckperms/player/" + p.id }, icon("key"), "Rang & LuckPerms") : null);
     if (quick.children.length) cards.push(quick);
     var grid = h("div", { class: "grid two" }, info);

@@ -18,6 +18,12 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "4.3.1", title: "Rechte & Sperren an einem Ort", summary: "Keine doppelten Rechte mehr: Alles läuft über eine Rechteverwaltung – direkt aus dem Spielerprofil, mit Dauer für jedes Recht.", items: [
+            WhatsNewItem(symbol: "lock.shield.fill", title: "Eine Rechteverwaltung", detail: "Spielerprofil → Rechte & Sperren zeigt Bereiche (Truhen, Türen, Shulker … mit Land/Wildnis) und alle weiteren Rechte wie Chat, PvP, Nether oder Freeze zusammen."),
+            WhatsNewItem(symbol: "clock.fill", title: "Jedes Recht mit Dauer", detail: "„Sperren …“ bietet 30 Minuten bis 30 Tage oder dauerhaft – ohne Umweg über ein anderes Menü."),
+            WhatsNewItem(symbol: "magnifyingglass", title: "Live-Spielersuche", detail: "In der Rechteverwaltung beim Tippen passende Spieler wählen – online und offline."),
+            WhatsNewItem(symbol: "arrow.triangle.merge", title: "Alte Sperren übernommen", detail: "Frühere Einzelsperren für Truhen, Türen & Co. bleiben gültig, erscheinen im passenden Bereich und werden mit ihm aufgehoben.")
+        ]),
         WhatsNewRelease(version: "4.3.0", title: "Großes Rechte-Update", summary: "Spielern einzelne Rechte gezielt entziehen – temporär oder dauerhaft, in App, Webpanel, Discord und im Spielmenü für Java und Bedrock.", items: [
             WhatsNewItem(symbol: "lock.fill", title: "Rechte-Sperren", detail: "Einzelne Schalter für Truhen, Shulker, andere Behälter, Endertruhen, Türen, Redstone, Arbeitsblöcke, Rahmen, Tiere, Bauen und fremde Items. Gesperrtes kann weder geöffnet, abgebaut noch gesprengt werden – auch nicht in vertrauten Ländern."),
             WhatsNewItem(symbol: "map.fill", title: "Eigenes Land & Wildnis", detail: "Je Sperre wählbar: überall, nur im eigenen Land (als Besitzer) oder eigenes Land und Wildnis erlaubt."),

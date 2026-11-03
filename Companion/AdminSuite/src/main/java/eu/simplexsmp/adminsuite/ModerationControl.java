@@ -459,7 +459,7 @@ final class ModerationControl implements Listener {
         List<AdminUpdateMenu.Button> items=new ArrayList<>();
         if(allowed(p,"bans"))items.add(button("Bannarten & Gruppen","Account • Ultra • leiser Beitrittsbann • Ghost",Material.IRON_BARS,()->players(p,"",false)));
         if(allowed(p,"restrictions"))items.add(button("Einschränkungen","Text • friedliche Ziele • Bau • Inventar • Ablauf & Vererbung",Material.WRITABLE_BOOK,()->players(p,"",true)));
-        if(plugin.accessLocks!=null&&(allowed(p,"accesslocks")||allowed(p,"restrictions")))items.add(button("Rechte-Sperren","Truhen • Shulker • Behälter • Türen • fremde Items • eigenes Land/Wildnis",Material.IRON_BARS,()->plugin.accessLocks.menu(p)));
+        if(plugin.accessLocks!=null&&(allowed(p,"accesslocks")||allowed(p,"restrictions")))items.add(button("Rechte & Sperren","Bereiche • Einzelrechte • eigenes Land/Wildnis • Dauer",Material.IRON_BARS,()->plugin.accessLocks.menu(p)));
         if(allowed(p,"devices.models"))items.add(button("Bedrock-Gerätemodelle","Bekannte Modelle durchsuchen, sperren und freigeben",Material.COMPARATOR,()->devices(p,"")));
         items.add(button("Chat-Farben: "+(plugin.getConfig().getBoolean("moderation-control.chat.block-colors",true)?"GESPERRT":"ERLAUBT"),"Global für Nachrichtentext; Rangdarstellung bleibt farbig",Material.ORANGE_DYE,()->toggleChat(p,"colors")));
         items.add(button("Chat-Formatierung: "+(plugin.getConfig().getBoolean("moderation-control.chat.block-formatting",true)?"GESPERRT":"ERLAUBT"),"Fett, kursiv, Effekte und interaktive Tags im Nachrichtentext",Material.PAPER,()->toggleChat(p,"formatting")));

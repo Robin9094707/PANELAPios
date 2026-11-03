@@ -212,7 +212,11 @@ struct SuitePlayerView: View {
                 }
             }
             Section("Spielerverwaltung") {
-                NavigationLink("Spielerrechte & Vererbung") { SuitePermissionView(suite:suite,player:player) }
+                if suite.features.contains("player-rights-v1") {
+                    NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: player) } label: { Label("Rechte & Sperren", systemImage: "lock.shield.fill") }.disabled(!suite.can("data.access-locks")).accessibilityIdentifier("player-rights")
+                } else {
+                    NavigationLink("Spielerrechte & Vererbung") { SuitePermissionView(suite:suite,player:player) }
+                }
                 NavigationLink("Client jetzt prüfen") { SuiteProbeView(suite:suite,player:player) }.disabled(!current["online"].bool)
             }
             Section("Netzwerk & Verknüpfungen") {

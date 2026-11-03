@@ -23,7 +23,7 @@
       { id: "worlds", label: "Welten", icon: "globe", perm: "data.worlds" },
       { id: "plugins", label: "Plugins", icon: "puzzle", perm: "data.plugins" },
       { id: "luckperms", label: "Ränge & Rechte", icon: "crown", perm: "data.luckperms", feature: "luckperms-v1" },
-      { id: "access-locks", label: "Rechte-Sperren", icon: "lock", perm: "data.access-locks", feature: "access-locks-v1" },
+      { id: "access-locks", label: "Rechte & Sperren", icon: "lock", perm: "data.access-locks", feature: "access-locks-v1" },
       { id: "lands", label: "Lands", icon: "map", perm: "data.lands", feature: "lands-v1" },
       { id: "functions", label: "Alle Funktionen", icon: "grid", perm: null },
       { id: "menu", label: "Suite-Menüs", icon: "box", perm: "action.menu.action", full: true },

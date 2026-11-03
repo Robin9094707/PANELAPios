@@ -44,6 +44,18 @@ import XCTest
         XCTAssertEqual(groups.map(\.0), ["Vollzugriff", "Spieler", "Moderation"])
         XCTAssertEqual(SuiteRightsCatalog.groups(catalog, query: "bann").map(\.0), ["Moderation"])
     }
+    func testClassicRightsGroupedAndSummarised() {
+        let rights: [JSON] = [.object(["id": .string("pvp"), "name": .string("PvP"), "group": .string("Kampf & Gegenstände"), "blocked": .bool(true), "remaining": .string("1 T.")]),
+                              .object(["id": .string("chat"), "name": .string("Chat schreiben"), "group": .string("Chat & Befehle"), "blocked": .bool(false)])]
+        XCTAssertEqual(SuiteRightsGrouping.groups(rights).map(\.0), ["Chat & Befehle", "Kampf & Gegenstände"])
+        let row: JSON = .object(["locks": .array([.object(["title": .string("Truhen"), "remaining": .string("dauerhaft")])]), "rights": .array(rights),
+                                 "legacy": .object(["doors": .array([.object(["name": .string("Türen benutzen"), "remaining": .string("2 Std.")])])])])
+        XCTAssertEqual(SuiteAccessLockRow.summary(row), "Truhen (dauerhaft) · PvP (1 T.) · Türen benutzen (2 Std.)")
+    }
+    func testReleaseNotesFor431() {
+        XCTAssertEqual(WhatsNew.release(for: "4.3.1")?.version, "4.3.1")
+        XCTAssertTrue(WhatsNew.shouldPresent(current: "4.3.1", lastSeen: "4.3.0", existingUser: true))
+    }
     func testReleaseNotesFor430() {
         XCTAssertEqual(WhatsNew.release(for: "4.3.0")?.version, "4.3.0")
         XCTAssertTrue(WhatsNew.shouldPresent(current: "4.3.0", lastSeen: "4.2.0", existingUser: true))

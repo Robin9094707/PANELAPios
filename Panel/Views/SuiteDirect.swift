@@ -82,7 +82,7 @@ struct SuiteDirectDashboard: View {
                     if suite.features.contains("staff-chat-v1") { NavigationLink { SuiteStaffChatView(suite: suite) } label: { Label("Staff-Chat", systemImage: "bubble.left.and.text.bubble.right.fill") }.disabled(!suite.can("data.staff-chat")) }
                     if suite.features.contains("luckperms-v1") { NavigationLink { SuiteLuckPermsView(suite: suite) } label: { Label("Ränge & Rechte", systemImage: "crown.fill") }.disabled(!suite.can("data.luckperms")) }
                     if suite.features.contains("lands-v1") { NavigationLink { SuiteLandsView(suite: suite) } label: { Label("Lands", systemImage: "map.fill") }.disabled(!suite.can("data.lands")) }
-                    if suite.features.contains("access-locks-v1") { NavigationLink { SuiteAccessLocksView(suite: suite) } label: { Label("Rechte-Sperren", systemImage: "lock.fill") }.disabled(!suite.can("data.access-locks")) }
+                    if suite.features.contains("access-locks-v1") { NavigationLink { SuiteAccessLocksView(suite: suite) } label: { Label("Rechte & Sperren", systemImage: "lock.shield.fill") }.disabled(!suite.can("data.access-locks")) }
                     if suite.features.contains("quiet-hours-v1") { NavigationLink { SuiteQuietHoursView(suite: suite) } label: { Label("Ruhezeiten", systemImage: "moon.zzz.fill") }.disabled(!suite.can("action.notifications.update")) }
                     NavigationLink { SuiteActionsView(suite: suite, actions: actions.filter { !["menu.action", "settings.update"].contains($0.id) }, title: "Suite-Funktionen") } label: { Label("Alle Funktionen", systemImage: "square.grid.2x2") }
                 }

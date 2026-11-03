@@ -38,7 +38,7 @@ public final class Release1000Harness {
         luckPerms();
         discord();
         http();
-        System.out.println("PASS " + checks + " 10.0.0 access-lock, LuckPerms, rights catalog, changelog, Discord and web panel checks");
+        System.out.println("PASS " + checks + " 10.0.0/10.0.1 access-lock, unified rights, LuckPerms, rights catalog, changelog, Discord and web panel checks");
     }
 
     // ------------------------------------------------------------------ pure rules
@@ -60,6 +60,16 @@ public final class Release1000Harness {
         fails(() -> AccessLocks.summary(Map.of("operation", "set", "flags", "chest", "scope", "moon"), "Steve"), "unknown scope");
         fails(() -> AccessLocks.summary(Map.of("operation", "preset", "preset", "evil"), "Steve"), "unknown preset");
         fails(() -> AccessLocks.summary(Map.of("operation", "drop"), "Steve"), "unknown operation");
+        // 10.0.1: one rights model – every classic right is either replaced by an area or listed with a duration.
+        Set<String> all = new HashSet<>(SimplexAdminSuite.rightIds()), sorted = new HashSet<>(AccessLocks.COVERED.keySet());
+        sorted.addAll(AccessLocks.RIGHT_GROUPS.keySet());
+        check(all.equals(sorted) && Collections.disjoint(AccessLocks.COVERED.keySet(), AccessLocks.RIGHT_GROUPS.keySet()), "every classic right appears exactly once (area or own row)");
+        check(AccessLocks.COVERED.values().stream().allMatch(AccessLocks.FLAGS::containsKey), "covered rights map to real areas");
+        check(AccessLocks.COVERED.get("chest").equals("chest") && AccessLocks.COVERED.get("shulkers").equals("shulker") && AccessLocks.COVERED.get("doors").equals("doors") && !AccessLocks.COVERED.containsKey("pvp") && !AccessLocks.COVERED.containsKey("nether"), "chests/doors are areas, PvP/Nether stay rights");
+        String rightPlan = AccessLocks.summary(Map.of("operation", "right-block", "right", "pvp", "duration", "2h"), "Steve");
+        check(rightPlan.contains("PvP") && rightPlan.contains("2 Std."), "classic right summary with duration");
+        check(AccessLocks.summary(Map.of("operation", "right-allow", "right", "nether"), "Steve").contains("Nether betreten"), "allow summary");
+        fails(() -> AccessLocks.summary(Map.of("operation", "right-block", "right", "fly-hack"), "Steve"), "unknown classic right");
     }
 
     static void luckPerms() {
@@ -250,6 +260,16 @@ public final class Release1000Harness {
             check(locks.entry(friend, "pickup") == null && locks.entry(friend, "chest") != null, "single lock lifted");
             run(owner, "locks.update", Map.of("operation", "clear", "player", friend.toString()));
             check(!locks.locked(friend), "all locks lifted");
+
+            // 10.0.1 unified view: classic rights live in the same response and action.
+            check(features.contains("player-rights-v1"), "unified rights advertised");
+            var unified = (Map<String, Object>) obj(app("/v1/data/access-locks?player=" + friend, owner, null).body()).get("player");
+            check(unified.containsKey("rights") && unified.containsKey("legacy") && Boolean.FALSE.equals(unified.get("profile")), "player view carries classic rights (none without a profile)");
+            var covered = app("/v1/prepare", owner, Map.of("path", "locks.update", "values", Map.of("operation", "right-block", "player", friend.toString(), "right", "chest", "duration", "1d")));
+            var coveredRun = app("/v1/execute", owner, Map.of("ticket", obj(covered.body()).get("ticket")));
+            check(coveredRun.statusCode() == 400 && coveredRun.body().contains("Truhen"), "chest right is managed by the chest area only (no double management)");
+            var noProfile = app("/v1/execute", owner, Map.of("ticket", obj(app("/v1/prepare", owner, Map.of("path", "locks.update", "values", Map.of("operation", "right-block", "player", friend.toString(), "right", "pvp", "duration", "1d"))).body()).get("ticket")));
+            check(noProfile.statusCode() == 400 && noProfile.body().contains("Profil"), "classic rights need a stored profile, explained clearly");
 
             // Rights catalog with explanations and role presets.
             var access = obj(app("/v1/data/access", owner, null).body());

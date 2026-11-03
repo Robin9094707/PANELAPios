@@ -97,6 +97,23 @@ final class AccessLocks implements Listener {
     private static void flag(String id, String title, String en, String explain, Material icon, String scope) { FLAGS.put(id, new Flag(id, title, en, explain, icon, scope)); }
     private static Map<String, String> linked(String... pairs) { Map<String, String> m = new LinkedHashMap<>(); for (int i = 0; i < pairs.length; i += 2) m.put(pairs[i], pairs[i + 1]); return Collections.unmodifiableMap(m); }
 
+    /**
+     * 10.0.1: classic per-player rights that the lock areas replace. They are no longer offered separately (no
+     * double management); an old block is still honoured, shown inside its area and lifted together with it.
+     */
+    static final Map<String, String> COVERED = linked("chest", "chest", "shulkers", "shulker", "enderchest", "enderchest", "doors", "doors",
+        "buttons", "redstone", "levers", "redstone", "redstone", "redstone", "furnaces", "container", "hoppers", "container", "jukeboxes", "container",
+        "lecterns", "container", "campfires", "container", "crafting", "utility", "enchanting", "utility", "anvils", "utility", "brewing", "utility",
+        "beacons", "utility", "beds", "utility", "respawn-anchors", "utility", "item-frames", "decor", "armor-stands", "decor", "animals", "animals",
+        "villagers", "animals", "build", "build", "break", "build");
+    /** Remaining classic rights, grouped for the unified view (each can be blocked permanently or for a time). */
+    static final Map<String, String> RIGHT_GROUPS = linked("chat", "Chat & Befehle", "chat-colors", "Chat & Befehle", "chat-formatting", "Chat & Befehle",
+        "private-messages", "Chat & Befehle", "mentions", "Chat & Befehle", "commands", "Chat & Befehle", "signs", "Chat & Befehle", "books", "Chat & Befehle",
+        "pvp", "Kampf & Gegenstände", "projectiles", "Kampf & Gegenstände", "potions", "Kampf & Gegenstände", "food", "Kampf & Gegenstände", "explosives", "Kampf & Gegenstände",
+        "fire", "Kampf & Gegenstände", "bucket", "Kampf & Gegenstände", "drop", "Kampf & Gegenstände", "pickup", "Kampf & Gegenstände", "fishing", "Kampf & Gegenstände", "interact", "Kampf & Gegenstände",
+        "move", "Bewegung & Welten", "nether", "Bewegung & Welten", "end", "Bewegung & Welten", "elytra", "Bewegung & Welten", "vehicles", "Bewegung & Welten", "teleportation", "Bewegung & Welten");
+    static String rightGroup(String id) { return RIGHT_GROUPS.getOrDefault(id, "Weitere"); }
+
     static final List<String> DEFAULT_VALUABLES = List.of("DIAMOND*", "*DIAMOND_ORE", "NETHERITE*", "ANCIENT_DEBRIS", "EMERALD*", "*EMERALD_ORE", "GOLD_BLOCK", "RAW_GOLD_BLOCK",
         "*SHULKER_BOX", "ELYTRA", "TOTEM_OF_UNDYING", "ENCHANTED_GOLDEN_APPLE", "GOLDEN_APPLE", "NETHER_STAR", "BEACON", "TRIDENT", "MACE", "HEAVY_CORE", "DRAGON_EGG", "DRAGON_HEAD",
         "*_SMITHING_TEMPLATE", "ENCHANTED_BOOK", "EXPERIENCE_BOTTLE", "CONDUIT", "HEART_OF_THE_SEA", "SPAWNER", "TRIAL_KEY", "OMINOUS_TRIAL_KEY");
@@ -653,13 +670,26 @@ final class AccessLocks implements Listener {
                 b.append("Vorlage: ").append(p.title()).append(" – ").append(p.explain()).append('\n').append("Dauer: ").append(d == 0 ? "dauerhaft" : remaining(d, true));
             }
             case "remove" -> b.append("Aufheben: ").append(String.join(", ", flagList(text(values, "flags")).stream().map(f -> FLAGS.get(f).title()).toList()));
-            case "clear" -> b.append("Alle Rechte-Sperren dieses Spielers aufheben.");
-            default -> throw new IllegalArgumentException("Aktion: set, preset, remove oder clear");
+            case "clear" -> b.append("Alle Sperren dieses Spielers aufheben – Bereiche und Einzelrechte.");
+            case "right-block" -> {
+                String right = rightId(text(values, "right"));
+                long d = duration(text(values, "duration"));
+                b.append("Recht sperren: ").append(SimplexAdminSuite.rightName(right)).append('\n').append("Dauer: ").append(d == 0 ? "dauerhaft" : remaining(d, true));
+            }
+            case "right-allow" -> b.append("Recht wieder erlauben: ").append(SimplexAdminSuite.rightName(rightId(text(values, "right"))));
+            default -> throw new IllegalArgumentException("Aktion: set, preset, remove, clear, right-block oder right-allow");
         }
         String reason = text(values, "reason");
         if (!reason.isEmpty()) b.append("\nGrund: ").append(reason);
         b.append("\nDer Spieler wird bei jedem gesperrten Versuch mit Grund und Restzeit informiert.");
         return b.toString();
+    }
+
+    /** A classic right id; areas replace the covered ones, so only the remaining rights can be newly blocked here. */
+    static String rightId(String raw) {
+        String id = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        if (!SimplexAdminSuite.rightIds().contains(id)) throw new IllegalArgumentException("Unbekanntes Recht: " + id);
+        return id;
     }
 
     private static String scope(String raw, String fallback) {
@@ -720,10 +750,25 @@ final class AccessLocks implements Listener {
             case "remove" -> {
                 List<String> flags = flagList(text(values, "flags"));
                 flags.forEach(map::remove);
+                liftClassic(id, r -> flags.contains(COVERED.get(r)), actor);
                 title = "Rechte-Sperre aufgehoben";
                 detail = String.join(", ", flags.stream().map(f -> FLAGS.get(f).title()).toList());
             }
-            default -> { map.clear(); title = "Alle Rechte-Sperren aufgehoben"; detail = "Keine Sperren mehr aktiv"; }
+            case "right-block" -> {
+                String right = rightId(text(values, "right"));
+                if (COVERED.containsKey(right)) throw new IllegalArgumentException("„" + SimplexAdminSuite.rightName(right) + "“ wird über den Bereich „" + FLAGS.get(COVERED.get(right)).title() + "“ gesperrt.");
+                long d = duration(text(values, "duration"));
+                plugin.unifiedRight(id, right, true, d, text(values, "duration"), actor);
+                title = "Recht gesperrt";
+                detail = SimplexAdminSuite.rightName(right) + " · " + (d == 0 ? "dauerhaft" : remaining(d, true));
+            }
+            case "right-allow" -> {
+                String right = rightId(text(values, "right"));
+                plugin.unifiedRight(id, right, false, 0, "", actor);
+                title = "Recht erlaubt";
+                detail = SimplexAdminSuite.rightName(right);
+            }
+            default -> { map.clear(); liftClassic(id, r -> true, actor); title = "Alle Sperren aufgehoben"; detail = "Keine Bereiche und keine Einzelrechte mehr gesperrt"; }
         }
         if (map.isEmpty()) locks.remove(id);
         refreshPickup();
@@ -735,6 +780,13 @@ final class AccessLocks implements Listener {
             else online.sendMessage(plugin.prefix() + plugin.playerText(online, "§cFür dich gelten jetzt Rechte-Sperren: §f" + detail + (reason.isEmpty() ? "" : " §7Grund: " + reason), "§cAccess locks now apply to you." + (reason.isEmpty() ? "" : " §7Reason: " + reason)));
         }
         return SimplexAdminSuite.appMap("ok", true, "title", title, "description", playerName + ": " + detail, "player", player(id));
+    }
+
+    /** Allows every currently blocked classic right that matches; players without a profile have none. */
+    private void liftClassic(UUID id, java.util.function.Predicate<String> which, String actor) {
+        Map<String, long[]> states = plugin.rightStates(id);
+        if (states == null) return;
+        states.forEach((right, st) -> { if (st[0] == 1 && which.test(right)) plugin.unifiedRight(id, right, false, 0, "", actor); });
     }
 
     // ------------------------------------------------------------------ views (main thread)
@@ -761,15 +813,28 @@ final class AccessLocks implements Listener {
             active.add(SimplexAdminSuite.appMap("flag", f.id(), "title", f.title(), "scope", e.scope(), "scopeTitle", SCOPES.get(e.scope()).title(), "until", e.until(), "permanent", e.until() == 0,
                 "remaining", e.until() == 0 ? "dauerhaft" : remaining(e.until() - now, true), "reason", e.reason(), "by", e.actor(), "since", e.since()));
         }
-        return SimplexAdminSuite.appMap("uuid", id.toString(), "name", name(id), "online", Bukkit.getPlayer(id) != null, "locks", active);
+        Map<String, long[]> states = plugin.rightStates(id);
+        List<Map<String, Object>> rights = new ArrayList<>();
+        Map<String, List<Map<String, Object>>> legacy = new LinkedHashMap<>();
+        if (states != null) states.forEach((right, st) -> {
+            String state = st[0] == 0 ? "" : st[1] > 0 ? remaining(st[1] - now, true) : "dauerhaft";
+            Map<String, Object> row = SimplexAdminSuite.appMap("id", right, "name", SimplexAdminSuite.rightName(right), "group", rightGroup(right), "blocked", st[0] == 1, "until", st[1], "remaining", state);
+            if (COVERED.containsKey(right)) { if (st[0] == 1) legacy.computeIfAbsent(COVERED.get(right), k -> new ArrayList<>()).add(row); }
+            else rights.add(row);
+        });
+        long blockedRights = rights.stream().filter(r -> Boolean.TRUE.equals(r.get("blocked"))).count() + legacy.values().stream().mapToInt(List::size).sum();
+        return SimplexAdminSuite.appMap("uuid", id.toString(), "name", name(id), "online", Bukkit.getPlayer(id) != null, "locks", active,
+            "rights", rights, "legacy", legacy, "profile", states != null, "blockedRights", blockedRights, "inherit", plugin.altInherit(id));
     }
 
     Map<String, Object> data(String query) {
         List<Map<String, Object>> rows = new ArrayList<>();
         String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
-        for (UUID id : new ArrayList<>(locks.keySet())) {
+        Set<UUID> ids = new LinkedHashSet<>(locks.keySet());
+        ids.addAll(plugin.blockedRightPlayers());
+        for (UUID id : ids) {
             Map<String, Object> row = player(id);
-            if (((List<?>) row.get("locks")).isEmpty()) continue;
+            if (((List<?>) row.get("locks")).isEmpty() && ((Number) row.get("blockedRights")).longValue() == 0) continue;
             if (!q.isEmpty() && !String.valueOf(row.get("name")).toLowerCase(Locale.ROOT).contains(q)) continue;
             rows.add(row);
         }
@@ -783,37 +848,47 @@ final class AccessLocks implements Listener {
     String describe(UUID id) {
         Map<String, Object> row = player(id);
         List<?> active = (List<?>) row.get("locks");
-        if (active.isEmpty()) return "Keine Rechte-Sperren";
         List<String> parts = new ArrayList<>();
         for (Object o : active) { Map<?, ?> m = (Map<?, ?>) o; parts.add(m.get("title") + " (" + m.get("scopeTitle") + ", " + m.get("remaining") + ")"); }
+        for (Object o : (List<?>) row.get("rights")) { Map<?, ?> m = (Map<?, ?>) o; if (Boolean.TRUE.equals(m.get("blocked"))) parts.add(m.get("name") + " (" + m.get("remaining") + ")"); }
+        for (Object list : ((Map<?, ?>) row.get("legacy")).values()) for (Object o : (List<?>) list) { Map<?, ?> m = (Map<?, ?>) o; parts.add(m.get("name") + " (alte Einzelsperre, " + m.get("remaining") + ")"); }
+        if (parts.isEmpty()) return "Keine Sperren";
         return String.join("\n", parts);
     }
 
     // ------------------------------------------------------------------ in-game menus (Java inventory + Floodgate forms)
 
     private AdminUpdateMenu.Button button(String title, String detail, Material icon, Runnable action) { return new AdminUpdateMenu.Button(title, detail, icon, action); }
-    private boolean allowed(Player p) { return plugin.has(p, "simplexadminsuite.accesslocks") || plugin.has(p, "simplexadminsuite.restrictions"); }
+    private boolean allowed(Player p) { return plugin.has(p, "simplexadminsuite.accesslocks") || plugin.has(p, "simplexadminsuite.restrictions") || plugin.has(p, "simplexadminsuite.rights"); }
 
     void menu(Player p) {
         if (!allowed(p)) { p.sendMessage(plugin.prefix() + "§cKeine Berechtigung für Rechte-Sperren."); return; }
         List<AdminUpdateMenu.Button> items = new ArrayList<>();
-        items.add(button("Spieler sperren", "Online- oder gespeicherten Spieler auswählen", Material.PLAYER_HEAD, () -> pick(p, 0)));
-        items.add(button("Spieler suchen", "Namen eingeben – auch offline", Material.NAME_TAG, () -> plugin.adminUpdate.prompt(p, "Spielername", "", value -> playerMenu(p, resolve(value)))));
-        for (var e : locks.entrySet()) {
-            Map<String, Object> row = player(e.getKey());
-            List<?> active = (List<?>) row.get("locks");
-            if (active.isEmpty()) continue;
-            items.add(button("§c" + row.get("name"), active.size() + " Sperre(n) · " + (Boolean.TRUE.equals(row.get("online")) ? "online" : "offline") + "\n" + describe(e.getKey()), Material.IRON_BARS, () -> playerMenu(p, e.getKey())));
+        items.add(button("Online-Spieler", "Spieler auswählen und Rechte ändern", Material.PLAYER_HEAD, () -> pick(p, 0)));
+        items.add(button("Spieler suchen", "Teil des Namens eingeben – auch offline; Treffer zur Auswahl", Material.NAME_TAG, () -> plugin.adminUpdate.prompt(p, "Spielername (auch Teil)", "", value -> search(p, value))));
+        for (Object o : (List<?>) data("").get("items")) {
+            Map<?, ?> row = (Map<?, ?>) o; UUID target = UUID.fromString(String.valueOf(row.get("uuid")));
+            items.add(button("§c" + row.get("name"), (Boolean.TRUE.equals(row.get("online")) ? "online" : "offline") + "\n" + describe(target), Material.IRON_BARS, () -> playerMenu(p, target)));
         }
         items.add(AdminUpdateMenu.info("So funktioniert es", "Sperren gelten zusätzlich zu Lands. Gesperrtes kann weder benutzt, abgebaut noch gesprengt werden. Der Spieler sieht Grund und Restzeit.", Material.BOOK));
         items.add(button("Zurück", "Admin-Zentrale", Material.OAK_DOOR, () -> plugin.unifiedMenu.open(p)));
-        plugin.adminUpdate.show(p, "Rechte-Sperren", items, 0);
+        plugin.adminUpdate.show(p, "Rechte & Sperren", items, 0);
+    }
+
+    /** Name search over all known players (same matching as the Discord/app player autocomplete). */
+    private void search(Player p, String query) {
+        List<AdminUpdateMenu.Button> items = new ArrayList<>();
+        try { for (var choice : plugin.discordAdminPlayerChoices(query, 25)) { UUID target = UUID.fromString(choice.value); items.add(button(choice.name.replaceFirst("^(Online|Offline) • ", ""), choice.name.startsWith("Online") ? "§aonline" : "offline", Material.PLAYER_HEAD, () -> playerMenu(p, target))); } }
+        catch (RuntimeException unavailable) { /* database not ready */ }
+        if (items.isEmpty()) items.add(AdminUpdateMenu.info("Keine Treffer", "Kein bekannter Spieler passt zu „" + query + "“.", Material.BARRIER));
+        items.add(button("Zurück", "Rechte & Sperren", Material.OAK_DOOR, () -> menu(p)));
+        plugin.adminUpdate.show(p, "Suche: " + query, items, 0);
     }
 
     private void pick(Player p, int page) {
         List<AdminUpdateMenu.Button> items = new ArrayList<>();
         for (Player online : Bukkit.getOnlinePlayers()) items.add(button(online.getName(), locked(online.getUniqueId()) ? "§cHat Sperren" : "Keine Sperren", Material.PLAYER_HEAD, () -> playerMenu(p, online.getUniqueId())));
-        items.add(button("Zurück", "Rechte-Sperren", Material.OAK_DOOR, () -> menu(p)));
+        items.add(button("Zurück", "Rechte & Sperren", Material.OAK_DOOR, () -> menu(p)));
         plugin.adminUpdate.show(p, "Spieler auswählen", items, page);
     }
 
@@ -821,15 +896,44 @@ final class AccessLocks implements Listener {
         if (!allowed(p)) return;
         String n = name(id);
         List<AdminUpdateMenu.Button> items = new ArrayList<>();
+        Map<?, ?> legacy = (Map<?, ?>) player(id).get("legacy");
         for (Flag f : FLAGS.values()) {
             Entry e = entry(id, f.id());
             String state = e == null ? "§aErlaubt" : "§cGesperrt · " + SCOPES.get(e.scope()).title() + " · " + (e.until() == 0 ? "dauerhaft" : "noch " + remaining(e.until() - System.currentTimeMillis(), true));
+            if (legacy.get(f.id()) instanceof List<?> old && !old.isEmpty()) state += "\n§6Alte Einzelsperre: " + String.join(", ", old.stream().map(o -> String.valueOf(((Map<?, ?>) o).get("name"))).toList()) + " – wird mit aufgehoben";
             items.add(button((e == null ? "§a" : "§c") + f.title(), state + "\n" + f.explain() + "\nKlick: " + (e == null ? "sperren" : "ändern oder aufheben"), e == null ? f.icon() : Material.BARRIER, () -> flagMenu(p, id, f.id())));
         }
+        Map<String, Object> row = player(id);
+        long blocked = ((Number) row.get("blockedRights")).longValue();
+        items.add(button("Weitere Rechte", "Chat, Befehle, PvP, Nether, End, Elytra, Freeze, Teleport …\n" + (blocked > 0 ? "§c" + blocked + " gesperrt" : "§aAlle erlaubt") + "\n§7Sperren mit Dauer oder dauerhaft", Material.COMPARATOR, () -> rightsMenu(p, id, "")));
         items.add(button("Vorlage anwenden", "Klauer, Behälter komplett, Griefer oder alles sperren", Material.WRITABLE_BOOK, () -> presetMenu(p, id)));
-        if (locked(id)) items.add(button("§cAlle Sperren aufheben", "Sofort alle Rechte-Sperren von " + n + " entfernen", Material.MILK_BUCKET, () -> run(p, id, SimplexAdminSuite.appMap("operation", "clear"))));
-        items.add(button("Zurück", "Rechte-Sperren", Material.OAK_DOOR, () -> menu(p)));
-        plugin.adminUpdate.show(p, "Rechte · " + n, items, 0);
+        if (locked(id) || blocked > 0) items.add(button("§cAlle Sperren aufheben", "Bereiche und Einzelrechte von " + n + " sofort freigeben", Material.MILK_BUCKET, () -> run(p, id, SimplexAdminSuite.appMap("operation", "clear"))));
+        items.add(button("Zurück", "Rechte & Sperren", Material.OAK_DOOR, () -> menu(p)));
+        plugin.adminUpdate.show(p, "Rechte & Sperren · " + n, items, 0);
+    }
+
+    /** Remaining classic rights (chat, PvP, dimensions, …) with a duration picker – same data as before. */
+    void rightsMenu(Player p, UUID id, String unused) {
+        if (!allowed(p)) return;
+        Map<String, Object> row = player(id);
+        List<AdminUpdateMenu.Button> items = new ArrayList<>();
+        if (!Boolean.TRUE.equals(row.get("profile"))) items.add(AdminUpdateMenu.info("Kein Spielerprofil", "Einzelrechte gibt es erst, wenn der Spieler einmal online war. Bereiche funktionieren trotzdem.", Material.BARRIER));
+        for (Object o : (List<?>) row.get("rights")) {
+            Map<?, ?> r = (Map<?, ?>) o; String right = String.valueOf(r.get("id")); boolean blocked = Boolean.TRUE.equals(r.get("blocked"));
+            items.add(button((blocked ? "§c" : "§a") + r.get("name"), r.get("group") + "\n" + (blocked ? "§cGesperrt · " + r.get("remaining") + "\n§7Klick: wieder erlauben" : "§aErlaubt\n§7Klick: sperren (Dauer wählen)"), blocked ? Material.RED_DYE : Material.LIME_DYE,
+                () -> { if (blocked) { run(p, id, SimplexAdminSuite.appMap("operation", "right-allow", "right", right)); rightsMenu(p, id, ""); } else rightDuration(p, id, right); }));
+        }
+        items.add(button("Zurück", name(id), Material.OAK_DOOR, () -> playerMenu(p, id)));
+        plugin.adminUpdate.show(p, "Weitere Rechte · " + name(id), items, 0);
+    }
+    private void rightDuration(Player p, UUID id, String right) {
+        List<AdminUpdateMenu.Button> items = new ArrayList<>();
+        for (String d : List.of("30m", "2h", "12h", "1d", "3d", "7d", "30d", ""))
+            items.add(button(d.isEmpty() ? "Dauerhaft" : remaining(duration(d), true), d.isEmpty() ? "Bis ein Teammitglied es wieder erlaubt" : "Läuft automatisch ab", d.isEmpty() ? Material.OBSIDIAN : Material.CLOCK,
+                () -> { run(p, id, SimplexAdminSuite.appMap("operation", "right-block", "right", right, "duration", d)); rightsMenu(p, id, ""); }));
+        items.add(button("Eigene Dauer", "z. B. 45m, 5d oder 2w", Material.NAME_TAG, () -> plugin.adminUpdate.prompt(p, "Dauer (z. B. 45m, 5d, 2w)", "", d -> { run(p, id, SimplexAdminSuite.appMap("operation", "right-block", "right", right, "duration", d)); rightsMenu(p, id, ""); })));
+        items.add(button("Zurück", "Weitere Rechte", Material.OAK_DOOR, () -> rightsMenu(p, id, "")));
+        plugin.adminUpdate.show(p, SimplexAdminSuite.rightName(right) + " · Dauer", items, 0);
     }
 
     private void flagMenu(Player p, UUID id, String flag) {
@@ -872,7 +976,7 @@ final class AccessLocks implements Listener {
         v.put("player", id.toString());
         try { Map<String, Object> result = apply(v, p.getName()); p.sendMessage(plugin.prefix() + "§a" + result.get("title") + " §7· " + result.get("description")); }
         catch (IllegalArgumentException e) { p.sendMessage(plugin.prefix() + "§c" + e.getMessage()); }
-        playerMenu(p, id);
+        if (!String.valueOf(values.get("operation")).startsWith("right-")) playerMenu(p, id);
     }
 
     // ------------------------------------------------------------------ command /rechtesperre

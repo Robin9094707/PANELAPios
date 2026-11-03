@@ -65,7 +65,7 @@ final class ModerationOverview {
             }
             if(allowed(p,false))items.add(b("Bannart auswählen","Diesen Spieler klassisch, ultra, leise oder als Ghost bannen",Material.IRON_BARS,()->plugin.moderationControl.banTarget(p,s.id)));
             if(plugin.has(p,"simplexadminsuite.restrictions"))items.add(b("Einschränkungen","Vorlage für diesen Spieler anwenden oder aufheben",Material.WRITABLE_BOOK,()->plugin.moderationControl.restrictionTarget(p,s.id)));
-            if(plugin.accessLocks!=null&&(plugin.has(p,"simplexadminsuite.accesslocks")||plugin.has(p,"simplexadminsuite.restrictions")))items.add(b("Rechte-Sperren",plugin.accessLocks.locked(s.id)?"§cAktiv: "+plugin.accessLocks.describe(s.id).replace("\n"," · "):"Truhen, Shulker, Behälter, Türen, fremde Items … einzeln sperren",Material.IRON_BARS,()->plugin.accessLocks.playerMenu(p,s.id)));
+            if(plugin.accessLocks!=null&&(plugin.has(p,"simplexadminsuite.accesslocks")||plugin.has(p,"simplexadminsuite.restrictions")))items.add(b("Rechte & Sperren","Aktuell: "+plugin.accessLocks.describe(s.id).replace("\n"," · "),Material.IRON_BARS,()->plugin.accessLocks.playerMenu(p,s.id)));
             items.add(b("Bisheriges Strafmenü","Konfigurierter Anbieter, Kick und weitere Strafaktionen",Material.SHIELD,()->plugin.openUnifiedPunish(p,s.id)));
             items.add(b("Aktualisieren","Status erneut abfragen",Material.CLOCK,()->open(p,plugin.moderationSubject(s.id.toString()))));
             items.add(b("Zurück","Spielerauswahl",Material.OAK_DOOR,()->select(p)));

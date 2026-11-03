@@ -456,7 +456,7 @@ struct SuiteLuckPermsPlayerView: View {
                     Button(own("prefix") ? "Eigenes Präfix ändern" : "Eigenes Präfix setzen", systemImage: "textformat") { affix = "prefix" }.disabled(!canEdit)
                     Button(own("suffix") ? "Eigenes Suffix ändern" : "Eigenes Suffix setzen", systemImage: "textformat.abc") { affix = "suffix" }.disabled(!canEdit)
                 }
-                if suite.features.contains("access-locks-v1") { NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: user["uuid"].string.isEmpty ? player : user["uuid"].string) } label: { Label("Rechte-Sperren", systemImage: "lock.fill") }.disabled(!suite.can("data.access-locks")) }
+                if suite.features.contains("access-locks-v1") { NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: user["uuid"].string.isEmpty ? player : user["uuid"].string) } label: { Label("Rechte & Sperren", systemImage: "lock.shield.fill") }.disabled(!suite.can("data.access-locks")) }
             } header: { Text(who) } footer: { Text("Ein eigenes Präfix überschreibt das Gruppenpräfix nur für diesen Spieler; leer speichern = wieder das Gruppenpräfix.") }
             groupSection
             addGroupSection

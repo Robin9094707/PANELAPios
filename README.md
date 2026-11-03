@@ -1,4 +1,8 @@
-## Aktuelles Update: Panel 4.3.0 / Admin Suite 10.0.0
+## Aktuelles Update: Panel 4.3.1 / Admin Suite 10.0.1
+
+Rechte & Sperren an einem Ort: Spielerprofil → **Rechte & Sperren** vereint Bereiche mit Land-Option und alle weiteren Spielerrechte (Chat, PvP, Nether, Freeze …), jeweils mit Dauer; keine doppelte Verwaltung mehr, Live-Spielersuche in App und Webpanel, gleicher Einstieg im Java- und Bedrock-Menü. [Update 4.3.1](UPDATE-4.3.1.md) · [Suite 10.0.1](Companion/AdminSuite/UPDATE-10.0.1.md).
+
+## Panel 4.3.0 / Admin Suite 10.0.0
 
 Großes Rechte-Update: **Rechte-Sperren** je Spieler für Truhen, Shulker, andere Behälter, Endertruhen, Türen, Redstone, Arbeitsblöcke, Rahmen, Tiere, Bauen und fremde Items – temporär oder dauerhaft, überall / nur im eigenen Land / eigenes Land und Wildnis, auch gegen Abbauen, Sprengen und Trichter und unabhängig vom Lands-Trust. Verwaltung in App, Webpanel, Discord (`/rechtesperre`) und in den Java-/Bedrock-Menüs. Dazu LuckPerms-Rechte mit Autovervollständigung, Präfix/Suffix-Editor mit Farbvorschau, verständlich erklärte App-Rechte mit Rollen-Vorlagen und ein einmaliger Changelog. [Update 4.3.0](UPDATE-4.3.0.md) · [Suite 10.0.0](Companion/AdminSuite/UPDATE-10.0.0.md).
 
