@@ -240,7 +240,7 @@ struct SuiteLuckPermsView: View {
     }
     private var playerSection: some View {
         Section("Spieler verwalten") {
-            TextField("Spielername oder UUID", text: $lookup).textInputAutocapitalization(.never).autocorrectionDisabled()
+            SuiteLivePlayerField(suite: suite, title: "Spieler suchen – Teil des Namens genügt", text: $lookup)
             NavigationLink { SuiteLuckPermsPlayerView(suite: suite, player: lookup.trimmingCharacters(in: .whitespaces)) } label: { Label("Öffnen", systemImage: "person.crop.circle") }.disabled(lookup.trimmingCharacters(in: .whitespaces).isEmpty)
         }
     }

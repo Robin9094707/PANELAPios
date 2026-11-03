@@ -243,19 +243,80 @@ final class AccessLocks implements Listener {
         if (explosives.size() > 512) explosives.clear();
         synchronized (deaths) { deaths.removeIf(d -> Bukkit.getCurrentTick() - (int) d[3] > 2); }
         if (changed) { refreshPickup(); save(); }
+        if (changed || ++inheritanceTicks >= 6) { inheritanceTicks = 0; refreshInheritance(); }
     }
 
     private void refreshPickup() { anyPickup = locks.values().stream().anyMatch(m -> m.containsKey("pickup") || m.containsKey("pickupall")); }
 
     // ------------------------------------------------------------------ queries
 
+    /** Effective lock: the player's own entry wins; otherwise one inherited from a linked main/alt account. */
     Entry entry(UUID player, String flag) {
+        long now = System.currentTimeMillis();
         Map<String, Entry> map = locks.get(player);
-        if (map == null) return null;
-        Entry e = map.get(flag);
-        return e != null && e.active(System.currentTimeMillis()) ? e : null;
+        Entry e = map == null ? null : map.get(flag);
+        if (e != null && e.active(now)) return e;
+        Map<String, Entry> from = inherited.get(player);
+        Entry i = from == null ? null : from.get(flag);
+        return i != null && i.active(now) ? i : null;
     }
-    boolean locked(UUID player) { Map<String, Entry> m = locks.get(player); return m != null && !m.isEmpty(); }
+    Entry ownEntry(UUID player, String flag) { Map<String, Entry> map = locks.get(player); Entry e = map == null ? null : map.get(flag); return e != null && e.active(System.currentTimeMillis()) ? e : null; }
+    boolean locked(UUID player) { Map<String, Entry> m = locks.get(player); if (m != null && !m.isEmpty()) return true; Map<String, Entry> i = inherited.get(player); return i != null && !i.isEmpty(); }
+
+    // ------------------------------------------------------------------ alt-account inheritance
+
+    /** target → flag → entry inherited from a linked account; source → accounts that inherit from it. */
+    private volatile Map<UUID, Map<String, Entry>> inherited = Map.of();
+    private volatile Map<UUID, Set<UUID>> heirs = Map.of();
+    private volatile Map<UUID, Map<String, UUID>> inheritedFrom = Map.of();
+    private int inheritanceTicks;
+
+    /**
+     * Locks apply to every confirmed alt account (alt detection's safe links) – existing ones and accounts detected
+     * later – as long as the alt-inheritance switch of both accounts is on (the same switch as for classic rights,
+     * default on). Nothing is copied: the effective view is recomputed, so lifting a lock lifts it on all alts.
+     */
+    synchronized void refreshInheritance() {
+        long now = System.currentTimeMillis();
+        Map<UUID, Map<String, Entry>> next = new HashMap<>();
+        Map<UUID, Map<String, UUID>> origin = new HashMap<>();
+        Map<UUID, Set<UUID>> family = new HashMap<>();
+        for (var source : locks.entrySet()) {
+            if (source.getValue().isEmpty()) continue;
+            boolean sourceInherits; try { sourceInherits = plugin.altInherit(source.getKey()); } catch (RuntimeException e) { sourceInherits = false; }
+            if (!sourceInherits) continue;
+            Set<UUID> alts = plugin.confirmedAlts(source.getKey());
+            if (alts.isEmpty()) continue;
+            String sourceName = name(source.getKey());
+            for (UUID target : alts) {
+                boolean targetInherits; try { targetInherits = plugin.altInherit(target); } catch (RuntimeException e) { targetInherits = false; }
+                if (!targetInherits) continue;
+                family.computeIfAbsent(source.getKey(), k -> new LinkedHashSet<>()).add(target);
+                for (var flag : source.getValue().entrySet()) {
+                    Entry e = flag.getValue();
+                    if (!e.active(now)) continue;
+                    Entry derived = new Entry(e.scope(), e.until(), "Vererbt von " + sourceName + (e.reason().isBlank() ? "" : ": " + e.reason()), "Alt-Vererbung (" + sourceName + ")", e.since());
+                    Map<String, Entry> forTarget = next.computeIfAbsent(target, k -> new HashMap<>());
+                    Entry old = forTarget.get(flag.getKey());
+                    if (old == null || stricter(derived, old)) { forTarget.put(flag.getKey(), derived); origin.computeIfAbsent(target, k -> new HashMap<>()).put(flag.getKey(), source.getKey()); }
+                }
+            }
+        }
+        inherited = next; inheritedFrom = origin; heirs = family;
+        boolean pickup = next.values().stream().anyMatch(m -> m.containsKey("pickup") || m.containsKey("pickupall"));
+        refreshPickup(); if (pickup) anyPickup = true;
+    }
+    private static int rank(String scope) { return scope.equals("everywhere") ? 2 : scope.equals("own") ? 1 : 0; }
+    private static boolean stricter(Entry a, Entry b) {
+        if (rank(a.scope()) != rank(b.scope())) return rank(a.scope()) > rank(b.scope());
+        return a.until() == 0 ? b.until() != 0 : b.until() != 0 && a.until() > b.until();
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void joinRefresh(PlayerJoinEvent e) {
+        // Alt detection links new accounts shortly after joining; future alts inherit as soon as they are linked.
+        if (!locks.isEmpty()) Bukkit.getScheduler().runTaskLater(plugin, this::refreshInheritance, 200L);
+    }
 
     Standing standing(UUID player, Location location) { return lands.standing(location, player); }
 
@@ -773,6 +834,7 @@ final class AccessLocks implements Listener {
         if (map.isEmpty()) locks.remove(id);
         refreshPickup();
         save();
+        refreshInheritance();
         plugin.suiteAudit(actor, title, playerName + " · " + detail);
         Player online = Bukkit.getPlayer(id);
         if (online != null) {
@@ -807,6 +869,17 @@ final class AccessLocks implements Listener {
         long now = System.currentTimeMillis();
         List<Map<String, Object>> active = new ArrayList<>();
         Map<String, Entry> map = locks.getOrDefault(id, Map.of());
+        List<Map<String, Object>> fromAlts = new ArrayList<>();
+        Map<String, Entry> inh = inherited.getOrDefault(id, Map.of());
+        Map<String, UUID> inhFrom = inheritedFrom.getOrDefault(id, Map.of());
+        for (Flag f : FLAGS.values()) {
+            Entry ie = inh.get(f.id());
+            if (ie != null && ie.active(now) && ownEntry(id, f.id()) == null) {
+                UUID src = inhFrom.get(f.id());
+                fromAlts.add(SimplexAdminSuite.appMap("flag", f.id(), "title", f.title(), "scope", ie.scope(), "scopeTitle", SCOPES.get(ie.scope()).title(), "until", ie.until(), "permanent", ie.until() == 0,
+                    "remaining", ie.until() == 0 ? "dauerhaft" : remaining(ie.until() - now, true), "reason", ie.reason(), "from", src == null ? "" : src.toString(), "fromName", src == null ? "" : name(src)));
+            }
+        }
         for (Flag f : FLAGS.values()) {
             Entry e = map.get(f.id());
             if (e == null || !e.active(now)) continue;
@@ -824,7 +897,9 @@ final class AccessLocks implements Listener {
         });
         long blockedRights = rights.stream().filter(r -> Boolean.TRUE.equals(r.get("blocked"))).count() + legacy.values().stream().mapToInt(List::size).sum();
         return SimplexAdminSuite.appMap("uuid", id.toString(), "name", name(id), "online", Bukkit.getPlayer(id) != null, "locks", active,
-            "rights", rights, "legacy", legacy, "profile", states != null, "blockedRights", blockedRights, "inherit", plugin.altInherit(id));
+            "rights", rights, "legacy", legacy, "profile", states != null, "blockedRights", blockedRights, "inherit", plugin.altInherit(id),
+            "inheritedLocks", fromAlts, "heirs", heirs.getOrDefault(id, Set.of()).stream().map(alt -> SimplexAdminSuite.appMap("uuid", alt.toString(), "name", name(alt), "online", Bukkit.getPlayer(alt) != null, "inherit", plugin.altInherit(alt))).toList(),
+            "alts", plugin.confirmedAlts(id).stream().map(alt -> SimplexAdminSuite.appMap("uuid", alt.toString(), "name", name(alt), "online", Bukkit.getPlayer(alt) != null, "inherit", plugin.altInherit(alt))).toList());
     }
 
     Map<String, Object> data(String query) {
@@ -832,9 +907,10 @@ final class AccessLocks implements Listener {
         String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         Set<UUID> ids = new LinkedHashSet<>(locks.keySet());
         ids.addAll(plugin.blockedRightPlayers());
+        ids.addAll(inherited.keySet());
         for (UUID id : ids) {
             Map<String, Object> row = player(id);
-            if (((List<?>) row.get("locks")).isEmpty() && ((Number) row.get("blockedRights")).longValue() == 0) continue;
+            if (((List<?>) row.get("locks")).isEmpty() && ((List<?>) row.get("inheritedLocks")).isEmpty() && ((Number) row.get("blockedRights")).longValue() == 0) continue;
             if (!q.isEmpty() && !String.valueOf(row.get("name")).toLowerCase(Locale.ROOT).contains(q)) continue;
             rows.add(row);
         }
@@ -852,6 +928,7 @@ final class AccessLocks implements Listener {
         for (Object o : active) { Map<?, ?> m = (Map<?, ?>) o; parts.add(m.get("title") + " (" + m.get("scopeTitle") + ", " + m.get("remaining") + ")"); }
         for (Object o : (List<?>) row.get("rights")) { Map<?, ?> m = (Map<?, ?>) o; if (Boolean.TRUE.equals(m.get("blocked"))) parts.add(m.get("name") + " (" + m.get("remaining") + ")"); }
         for (Object list : ((Map<?, ?>) row.get("legacy")).values()) for (Object o : (List<?>) list) { Map<?, ?> m = (Map<?, ?>) o; parts.add(m.get("name") + " (alte Einzelsperre, " + m.get("remaining") + ")"); }
+        for (Object o : (List<?>) row.get("inheritedLocks")) { Map<?, ?> m = (Map<?, ?>) o; parts.add(m.get("title") + " (vererbt von " + m.get("fromName") + ", " + m.get("remaining") + ")"); }
         if (parts.isEmpty()) return "Keine Sperren";
         return String.join("\n", parts);
     }
@@ -905,6 +982,18 @@ final class AccessLocks implements Listener {
         }
         Map<String, Object> row = player(id);
         long blocked = ((Number) row.get("blockedRights")).longValue();
+        if (Bukkit.getPluginManager().getPlugin("LuckPerms") != null && (p.isOp() || plugin.adminAccess.master(p))) items.add(button("Rang (LuckPerms)", "Gruppen ansehen, vergeben oder entfernen – auch befristet", Material.GOLDEN_HELMET, () -> rankMenu(p, id)));
+        List<?> heirsList = (List<?>) row.get("heirs"), altList = (List<?>) row.get("alts"); List<?> fromAlts = (List<?>) row.get("inheritedLocks");
+        String altText = "Alt-Accounts: " + (altList.isEmpty() ? "keine bestätigten" : String.join(", ", altList.stream().map(o -> String.valueOf(((Map<?, ?>) o).get("name"))).toList()))
+            + "\nSperren übertragen: " + (Boolean.TRUE.equals(row.get("inherit")) ? "§aja" : "§cnein") + "§7 · künftige Alts erben automatisch"
+            + (heirsList.isEmpty() ? "" : "\nErben gerade: " + String.join(", ", heirsList.stream().map(o -> String.valueOf(((Map<?, ?>) o).get("name"))).toList()))
+            + (fromAlts.isEmpty() ? "" : "\n§6Erbt Sperren von: " + String.join(", ", fromAlts.stream().map(o -> String.valueOf(((Map<?, ?>) o).get("fromName"))).distinct().toList()));
+        items.add(button("Alt-Account-Vererbung", altText + (plugin.has(p, "simplexadminsuite.alt-rights") ? "\n§7Klick: umschalten" : ""), Material.ENDER_EYE, () -> {
+            if (!plugin.has(p, "simplexadminsuite.alt-rights") || plugin.suitePolicies == null) { playerMenu(p, id); return; }
+            try { plugin.suitePolicies.changeInheritance(id, !plugin.altInherit(id)); refreshInheritance(); plugin.suiteAudit(p.getName(), "Alt-Vererbung geändert", name(id) + " → " + plugin.altInherit(id)); }
+            catch (java.io.IOException | RuntimeException e) { p.sendMessage(plugin.prefix() + "§cAlt-Vererbung nicht gespeichert: " + e.getMessage()); }
+            playerMenu(p, id);
+        }));
         items.add(button("Weitere Rechte", "Chat, Befehle, PvP, Nether, End, Elytra, Freeze, Teleport …\n" + (blocked > 0 ? "§c" + blocked + " gesperrt" : "§aAlle erlaubt") + "\n§7Sperren mit Dauer oder dauerhaft", Material.COMPARATOR, () -> rightsMenu(p, id, "")));
         items.add(button("Vorlage anwenden", "Klauer, Behälter komplett, Griefer oder alles sperren", Material.WRITABLE_BOOK, () -> presetMenu(p, id)));
         if (locked(id) || blocked > 0) items.add(button("§cAlle Sperren aufheben", "Bereiche und Einzelrechte von " + n + " sofort freigeben", Material.MILK_BUCKET, () -> run(p, id, SimplexAdminSuite.appMap("operation", "clear"))));
@@ -936,11 +1025,59 @@ final class AccessLocks implements Listener {
         plugin.adminUpdate.show(p, SimplexAdminSuite.rightName(right) + " · Dauer", items, 0);
     }
 
+    // ------------------------------------------------------------------ rank (LuckPerms) inside the rights menu
+
+    private LuckPermsAdmin lp;
+    private LuckPermsAdmin lp() { if (lp == null) lp = new LuckPermsAdmin(plugin); return lp; }
+    void rankMenu(Player p, UUID id) {
+        if (!(p.isOp() || plugin.adminAccess.master(p))) return;
+        // LuckPerms may load offline users from storage: read off the main thread, show the menu on it.
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            Map<String, Object> user = null, overview = null; String error = null;
+            try { if (!lp().installed()) throw new IllegalArgumentException("LuckPerms ist nicht installiert."); user = lp().user(id.toString()); overview = lp().overview(); }
+            catch (Exception e) { error = String.valueOf(e.getMessage()); }
+            Map<String, Object> u = user, o = overview; String err = error;
+            Bukkit.getScheduler().runTask(plugin, () -> showRank(p, id, u, o, err));
+        });
+    }
+    private void showRank(Player p, UUID id, Map<String, Object> user, Map<String, Object> overview, String error) {
+        if (!p.isOnline()) return;
+        List<AdminUpdateMenu.Button> items = new ArrayList<>();
+        if (error != null || user == null || overview == null) items.add(AdminUpdateMenu.info("LuckPerms nicht lesbar", error == null ? "Keine Daten" : error, Material.BARRIER));
+        else {
+            Set<String> member = new HashSet<>();
+            for (Object o : (List<?>) user.get("groups")) { Map<?, ?> g = (Map<?, ?>) o; String group = String.valueOf(g.get("group")); member.add(group);
+                long expiry = g.get("expiry") instanceof Number n ? n.longValue() : 0L;
+                items.add(button("§a" + group + (group.equals(user.get("primary")) ? " §7(primär)" : ""), (expiry > 0 ? "befristet · noch " + remaining(expiry - System.currentTimeMillis(), true) : "dauerhaft") + "\n§7Klick: Gruppe entfernen", Material.LIME_DYE,
+                    () -> rankRun(p, id, SimplexAdminSuite.appMap("operation", "user-parent-remove", "player", id.toString(), "group", group)))); }
+            for (Object o : (List<?>) overview.get("groups")) { Map<?, ?> g = (Map<?, ?>) o; String group = String.valueOf(g.get("name")); if (member.contains(group)) continue;
+                items.add(button("§7" + group, "Gewicht " + g.get("weight") + "\n§7Klick: vergeben (Dauer wählen)", Material.GRAY_DYE, () -> rankDuration(p, id, group))); }
+        }
+        items.add(button("Zurück", name(id), Material.OAK_DOOR, () -> playerMenu(p, id)));
+        plugin.adminUpdate.show(p, "Rang · " + name(id), items, 0);
+    }
+    private void rankDuration(Player p, UUID id, String group) {
+        List<AdminUpdateMenu.Button> items = new ArrayList<>();
+        for (String d : List.of("1d", "7d", "30d", ""))
+            items.add(button(d.isEmpty() ? "Dauerhaft" : remaining(duration(d), true), "Gruppe " + group, d.isEmpty() ? Material.OBSIDIAN : Material.CLOCK,
+                () -> rankRun(p, id, SimplexAdminSuite.appMap("operation", d.isEmpty() ? "user-parent-add" : "user-parent-temp", "player", id.toString(), "group", group, "duration", d))));
+        items.add(button("Zurück", "Rang", Material.OAK_DOOR, () -> rankMenu(p, id)));
+        plugin.adminUpdate.show(p, group + " · Dauer", items, 0);
+    }
+    private void rankRun(Player p, UUID id, Map<String, Object> values) {
+        if (!(p.isOp() || plugin.adminAccess.master(p))) return;
+        try { Map<String, Object> r = lp().apply(values, p.getName()); p.sendMessage(plugin.prefix() + (Boolean.TRUE.equals(r.get("ok")) ? "§a" : "§c") + r.get("title") + " §7" + r.get("command")); }
+        catch (IllegalArgumentException e) { p.sendMessage(plugin.prefix() + "§c" + e.getMessage()); }
+        Bukkit.getScheduler().runTaskLater(plugin, () -> rankMenu(p, id), 30L);
+    }
+
     private void flagMenu(Player p, UUID id, String flag) {
         Flag f = FLAGS.get(flag);
         List<AdminUpdateMenu.Button> items = new ArrayList<>();
         for (Scope s : SCOPES.values()) items.add(button(s.title(), s.explain() + (s.id().equals(f.defaultScope()) ? "\n§eEmpfohlen" : ""), s.id().equals("everywhere") ? Material.RED_CONCRETE : s.id().equals("own") ? Material.ORANGE_CONCRETE : Material.YELLOW_CONCRETE, () -> durationMenu(p, id, flag, s.id())));
-        if (entry(id, flag) != null) items.add(button("§aSperre aufheben", f.title() + " wieder erlauben", Material.LIME_DYE, () -> run(p, id, SimplexAdminSuite.appMap("operation", "remove", "flags", flag))));
+        Entry own = ownEntry(id, flag), effective = entry(id, flag);
+        if (own == null && effective != null) items.add(AdminUpdateMenu.info("Vom Alt-Account geerbt", effective.reason() + "\nAufheben beim Hauptkonto oder Alt-Vererbung ausschalten. Eine eigene Sperre hier hat Vorrang.", Material.ENDER_EYE));
+        if (own != null) items.add(button("§aSperre aufheben", f.title() + " wieder erlauben", Material.LIME_DYE, () -> run(p, id, SimplexAdminSuite.appMap("operation", "remove", "flags", flag))));
         items.add(AdminUpdateMenu.info(f.title(), f.explain(), f.icon()));
         items.add(button("Zurück", name(id), Material.OAK_DOOR, () -> playerMenu(p, id)));
         plugin.adminUpdate.show(p, f.title() + " · Bereich", items, 0);

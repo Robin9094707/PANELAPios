@@ -22,9 +22,19 @@
         "text": "„Rechte & Sperren“ im Profil öffnet alles: Bereiche, Einzelrechte, Vorlagen, Dauer und Grund – ohne Umweg über ein anderes Menü."
       },
       {
+        "icon": "shield",
+        "title": "Alt-Accounts erben Sperren",
+        "text": "Sperren gelten automatisch für alle bestätigten Alt-Accounts – auch für künftig erkannte. In „Rechte & Sperren“ siehst du, welche Konten erben und von wem eine Sperre stammt; die Vererbung ist pro Spieler abschaltbar."
+      },
+      {
+        "icon": "crown",
+        "title": "Rang im Spielerprofil",
+        "text": "Gruppen vergeben (auch befristet) und entfernen direkt in „Rechte & Sperren“ – in App, Webpanel und im Spielmenü."
+      },
+      {
         "icon": "map",
-        "title": "Live-Spielersuche",
-        "text": "In der Rechteverwaltung beim Tippen Spieler vorschlagen lassen – online und offline, wie in der Spielerliste."
+        "title": "Spieler überall live suchen",
+        "text": "Jedes Spielerfeld in App und Webpanel schlägt beim Tippen passende Spieler vor – ein Teil des Namens genügt."
       }
     ]
   },

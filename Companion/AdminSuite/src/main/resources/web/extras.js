@@ -314,9 +314,7 @@
       var n = await S.prompt("Neue LuckPerms-Gruppe", "Name (a–z, 0–9, _ oder -)", "", "Anlegen"); if (!n) return; await lp({ operation: "group-create", group: n.trim().toLowerCase() }, "Gruppe „" + n + "“ anlegen?");
     } }) : null);
     if (!d.installed) { S.mount(S.card(null, {}, S.empty("crown", "LuckPerms ist nicht installiert", "Installiere LuckPerms, um Gruppen, Ränge und Rechte hier zu verwalten."))); return; }
-    var search = S.input({ placeholder: "Spielername oder UUID", autocapitalize: "none" });
-    var lookup = h("form", { class: "row" }, h("div", { class: "search grow" }, icon("search"), search), S.btn("Öffnen", { kind: "primary", submit: true, icon: "chevRight" }));
-    lookup.addEventListener("submit", function (e) { e.preventDefault(); if (search.value.trim()) S.go("#/luckperms/player/" + encodeURIComponent(search.value.trim())); });
+    var lookup = S.playerSearch ? S.playerSearch(function (row) { S.go("#/luckperms/player/" + encodeURIComponent(row.id)); }, "Spieler suchen – Teil des Namens genügt") : null;
     var groups = S.card("Gruppen", { icon: "crown", cls: "pad-list", sub: d.groups.length + " Gruppen · sortiert nach Gewicht" }, h("div", { class: "list" }, d.groups.map(function (g) {
       return h("div", { class: "item link", onClick: function () { S.go("#/luckperms/group/" + encodeURIComponent(g.name)); } }, h("div", { class: "avatar device sm" }, icon("crown")),
         h("div", { class: "meta" }, h("b", { text: (g.displayName || g.name) + (g.displayName && g.displayName !== g.name ? " (" + g.name + ")" : "") }), g.prefix || g.suffix ? h("div", { class: "mc-preview sm" }, affixView(g.prefix), h("span", { class: "mc-name", text: "Name" }), affixView(g.suffix)) : null, h("small", { text: g.permissions + " Rechte" + (g.parents.length ? " · erbt von " + g.parents.join(", ") : "") })),

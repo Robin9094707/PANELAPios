@@ -628,3 +628,4 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
 .search-live .suggest { top: 46px; }
 .suggest-row.player .avatar { flex: none; }
 .suggest-row.player small { display: block; margin-top: 1px; }
+.inherit-note { color: var(--accent) !important; }

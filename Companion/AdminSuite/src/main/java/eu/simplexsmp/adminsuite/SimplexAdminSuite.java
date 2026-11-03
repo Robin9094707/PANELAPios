@@ -7571,7 +7571,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (!Arrays.asList(RIGHTS).contains(right)) throw new IllegalArgumentException("Unbekanntes Recht: " + right);
         PlayerProfile p = database == null ? null : database.get(id);
         if (p == null) throw new IllegalArgumentException("Für diesen Spieler gibt es noch kein Profil (er war noch nie online).");
-        if (blocked && millis > 0) { if (suitePolicies != null) suitePolicies.recordRight(id, right, true); setTemporaryRight(actor, p, right, durationText, System.currentTimeMillis() + millis); }
+        // Temporary blocks follow the existing alt-rights policy sync (rightsChanged), never a permanent inheritance record.
+        if (blocked && millis > 0) setTemporaryRight(actor, p, right, durationText, System.currentTimeMillis() + millis);
         else setRight(actor, p, right, blocked);
     }
     /** Players with at least one active classic right block (for the unified "who is restricted" list). */
@@ -7580,6 +7581,11 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         List<UUID> out = new ArrayList<>(); long now = System.currentTimeMillis();
         for (PlayerProfile p : database.sortedProfiles()) if (!p.blockedRightsSet().isEmpty() || p.temporaryBlockedRightsMap().values().stream().anyMatch(u -> u > now)) out.add(p.uuid);
         return out;
+    }
+    /** Confirmed alt accounts of a player (without the player); empty when alt detection is not ready. */
+    Set<UUID> confirmedAlts(UUID id) {
+        try { Set<UUID> ids = new LinkedHashSet<>(controlLinked(id)); ids.remove(id); return ids; }
+        catch (RuntimeException notReady) { return Set.of(); }
     }
     boolean altInherit(UUID id) { return suitePolicies == null || suitePolicies.inherit(id); }
     void openClassicRights(Player admin, UUID id) { openRights(admin, id); }
@@ -8744,7 +8750,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             case "admin-role"->adminAccess.assign(actor,id,value);
             case "admin-limits"->adminAccess.limits(actor,id,Long.parseLong(value),Boolean.parseBoolean(String.valueOf(v.getOrDefault("altBans","false"))));
             case "admin-right"->{if(!Set.of("inherit","true","false").contains(value))throw new IllegalArgumentException("Boolean oder inherit erforderlich");adminAccess.changeAuthorized(actor,id,node,value.equals("inherit")?null:Boolean.valueOf(value),null);}
-            case "inherit"->suitePolicies.changeInheritance(id,Boolean.parseBoolean(value));
+            case "inherit"->{suitePolicies.changeInheritance(id,Boolean.parseBoolean(value));if(accessLocks!=null)accessLocks.refreshInheritance();}
             case "right"->{if(!Arrays.asList(powerRights()).contains(node))throw new IllegalArgumentException("Unbekanntes Recht");setRight(actor,p,node,!Boolean.parseBoolean(value));}
             case "probe"->{Player online=Bukkit.getPlayer(id);if(online==null)throw new IllegalArgumentException("Prüfung benötigt Online-Spieler");qualityOfLife.probes.appStart(online);}
             default->throw new IllegalArgumentException("Unbekannte Aktion");

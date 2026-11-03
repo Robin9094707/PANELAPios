@@ -104,7 +104,7 @@ struct SuiteUserEditor: View {
     init(suite: SuiteAPI, row: JSON, catalog: [JSON], presets: [JSON] = [], saved: @escaping () async -> Void) { self.suite = suite; self.row = row; self.catalog = catalog; self.presets = presets; self.saved = saved; _model = StateObject(wrappedValue: SuiteUpgradeModel(suite)) }
     var body: some View {
         NavigationStack { Form {
-            Section("Benutzer") { TextField("Minecraft-Benutzername", text: $name).disabled(row != .null).textInputAutocapitalization(.never).autocorrectionDisabled(); SecureField(row == .null ? "Passwort (mindestens 12 Zeichen)" : "Neues Passwort (leer = behalten)", text: $password); Toggle("Zugang aktiv", isOn: $enabled) }
+            Section("Benutzer") { if row == .null && suite.can("data.players") { SuiteLivePlayerField(suite: suite, title: "Minecraft-Name – Teil genügt", text: $name) } else { TextField("Minecraft-Benutzername", text: $name).disabled(row != .null).textInputAutocapitalization(.never).autocorrectionDisabled() }; SecureField(row == .null ? "Passwort (mindestens 12 Zeichen)" : "Neues Passwort (leer = behalten)", text: $password); Toggle("Zugang aktiv", isOn: $enabled) }
             Section {
                 TextField("Rechte suchen", text: $query)
                 if !presets.isEmpty && !row["owner"].bool {

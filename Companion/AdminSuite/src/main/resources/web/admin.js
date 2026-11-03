@@ -22,6 +22,7 @@
       el = h("textarea", { class: "input", name: name, rows: 2, text: value || "" });
     } else {
       el = S.input({ type: type === 4 || type === 10 ? "number" : "text", name: name, value: value || "", step: type === 10 ? "any" : null, min: f.min_value, max: f.max_value });
+      if (/^(player|player-one|player-two|minecraft|spieler)$/i.test(name) && S.livePlayerInput) return S.livePlayerInput(name, value || "", f.description);
       if (f.autocomplete || /player|spieler/i.test(name)) {
         var dl = h("datalist", { id: "dl-" + name + "-" + Math.random().toString(36).slice(2) });
         el.setAttribute("list", dl.id); var t;
@@ -167,6 +168,9 @@
     var canEdit = S.can("action.accounts.update") && S.full(), isOwner = S.account && (S.account.owner || S.account.kind === "key");
     function editor(row) {
       var fresh = !row, name = S.input({ value: row ? row.username : "", disabled: !fresh, autocapitalize: "none", placeholder: "Minecraft-Name" });
+      // 10.0.2: new accounts pick the Minecraft name from a live player search (partial names are enough).
+      var nameField = fresh && S.livePlayerInput && S.can("data.players") ? S.livePlayerInput("username-search", "", "Minecraft-Name – Teil genügt") : null;
+      if (nameField) name = nameField.querySelector("input");
       var pass = S.input({ type: "password", autocomplete: "new-password", placeholder: fresh ? "Mindestens 12 Zeichen" : "Leer lassen = unverändert" });
       var enabled = row ? row.enabled !== false : true, rights = {}; (row ? row.permissions : ["data.overview", "data.players", "data.profile"]).forEach(function (p) { rights[p] = true; });
       var filter = "", permsBox = h("div", { class: "stack", style: { gap: "10px", maxHeight: "46vh", overflow: "auto" } });
@@ -201,7 +205,7 @@
       renderPerms();
       var sw = S.sw(enabled, function (v) { enabled = v; }, row && row.owner);
       var body = h("div", { class: "stack" }, row && row.owner ? S.notice("Hauptadmin-Zugang: hat immer Vollzugriff und kann nicht deaktiviert oder gelöscht werden.", "", "crown") : null,
-        h("div", { class: "grid two" }, S.field("Benutzername", name), S.field(fresh ? "Passwort" : "Neues Passwort", pass)), S.strengthMeter(pass),
+        h("div", { class: "grid two" }, S.field("Benutzername", nameField || name), S.field(fresh ? "Passwort" : "Neues Passwort", pass)), S.strengthMeter(pass),
         h("div", { class: "row" }, h("b", { class: "grow", text: "Zugang aktiv" }), sw),
         h("div", { class: "row" }, h("b", { class: "grow", text: "Rechte" }), h("div", { class: "search", style: { width: "min(260px, 50%)" } }, icon("search"), S.input({ placeholder: "Filtern", onInput: function (e) { filter = e.target.value.toLowerCase(); renderPerms(); } }))),
         grouped ? h("p", { class: "muted small", text: "Lesen = nur ansehen. Ändern = Aktion mit Bestätigung. Kritisch = kann Zugänge, Server oder Einstellungen verändern. Tipp: mit einer Rollen-Vorlage starten und dann anpassen." }) : null, presetBar, permsBox,

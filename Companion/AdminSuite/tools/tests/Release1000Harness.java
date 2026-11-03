@@ -221,6 +221,20 @@ public final class Release1000Harness {
             check(messages.stream().anyMatch(s -> s.contains("abgelaufen")), "player is told when a lock expires");
             check(Files.readString(dir.resolve("access-locks.properties")).contains(thief.toString()), "stored in access-locks.properties");
 
+            // 10.0.2 alt inheritance: an alt without own locks is locked through the effective (inherited) view.
+            UUID alt = UUID.randomUUID();
+            Field inheritedField = AccessLocks.class.getDeclaredField("inherited"); inheritedField.setAccessible(true);
+            Field fromField = AccessLocks.class.getDeclaredField("inheritedFrom"); fromField.setAccessible(true);
+            inheritedField.set(locks, Map.of(alt, Map.of("chest", new AccessLocks.Entry("everywhere", 0, "Vererbt von Klauer", "Alt-Vererbung (Klauer)", 0))));
+            fromField.set(locks, Map.of(alt, Map.of("chest", thief)));
+            check(locks.locked(alt) && locks.blocked(alt, "chest", there) && locks.entry(alt, "chest").reason().startsWith("Vererbt"), "alt is locked through inheritance");
+            check(locks.ownEntry(alt, "chest") == null, "nothing copied to the alt");
+            var altView = locks.player(alt);
+            check(((List<Map<String, Object>>) altView.get("inheritedLocks")).stream().anyMatch(l -> "chest".equals(l.get("flag")) && thief.toString().equals(l.get("from"))) && ((List<?>) altView.get("locks")).isEmpty(), "inherited locks listed with their source, separate from own locks");
+            check(locks.describe(alt).contains("vererbt von"), "description names the inheritance");
+            locks.refreshInheritance();
+            check(!locks.locked(alt), "without confirmed alt links the inheritance disappears again (recomputed, never stored)");
+
             // ---------------- HTTPS
             int port; try (var socket = new java.net.ServerSocket(0)) { port = socket.getLocalPort(); }
             plugin.getConfig().set("app-api.enabled", true); plugin.getConfig().set("app-api.bind", "127.0.0.1"); plugin.getConfig().set("app-api.port", port); plugin.getConfig().set("app-api.transport", "tls");

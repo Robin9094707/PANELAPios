@@ -389,6 +389,8 @@ struct SuiteAccessLockPlayerView: View {
     @State private var duration = "1d"
     @State private var presetDuration = "7d"
     @State private var reason = ""
+    @State private var rank: JSON = .null
+    @State private var groups: [JSON] = []
     init(suite: SuiteAPI, player: String) { self.suite = suite; self.player = player; _runner = StateObject(wrappedValue: SuiteConfirmRunner(suite)) }
     var canEdit: Bool { suite.can("action.locks.update") && suite.scope != "read" }
     var user: JSON { data["player"] }
@@ -397,6 +399,8 @@ struct SuiteAccessLockPlayerView: View {
     var body: some View {
         List {
             headerSection
+            rankSection
+            altSection
             flagSection
             settingsSection
             rightsSections
@@ -439,7 +443,7 @@ struct SuiteAccessLockPlayerView: View {
     private var flagSection: some View {
         Section {
             ForEach(data["flags"].array, id: \.["id"].string) { flag in
-                SuiteAccessLockFlagRow(flag: flag, active: active(flag["id"].string), legacy: user["legacy"][flag["id"].string].array, picked: Binding(get: { picked.contains(flag["id"].string) }, set: { if $0 { picked.insert(flag["id"].string) } else { picked.remove(flag["id"].string) } }), canEdit: canEdit) {
+                SuiteAccessLockFlagRow(flag: flag, active: active(flag["id"].string), legacy: user["legacy"][flag["id"].string].array, inherited: inherited(flag["id"].string), picked: Binding(get: { picked.contains(flag["id"].string) }, set: { if $0 { picked.insert(flag["id"].string) } else { picked.remove(flag["id"].string) } }), canEdit: canEdit) {
                     ask(["operation": .string("remove"), "flags": flag["id"]], flag["title"].string + " für " + who + " wieder erlauben?")
                 }
             }
@@ -475,6 +479,78 @@ struct SuiteAccessLockPlayerView: View {
     func load() async {
         do { data = try await suite.data("access-locks", query: ["player": player]) }
         catch { if !RequestFailure.isCancellation(error) { runner.error = error.localizedDescription } }
+        if showsRank {
+            let id = user["uuid"].string.isEmpty ? player : user["uuid"].string
+            rank = (try? await suite.data("luckperms", query: ["player": id])) ?? .null
+            if groups.isEmpty { groups = (try? await suite.data("luckperms"))?["groups"].array ?? [] }
+        }
+    }
+    // MARK: rank (LuckPerms) and alt accounts inside the same view
+    var showsRank: Bool { suite.features.contains("luckperms-v1") && suite.can("data.luckperms") }
+    var canEditRank: Bool { suite.scope == "full" && suite.can("action.luckperms.edit") }
+    private func askRank(_ values: [String: JSON], _ title: String) {
+        var payload = values; payload["player"] = .string(user["uuid"].string.isEmpty ? player : user["uuid"].string)
+        Task { await runner.ask("luckperms.edit", payload, title: title) }
+    }
+    @ViewBuilder private var rankSection: some View {
+        if showsRank {
+            Section {
+                if !rank["prefix"].string.isEmpty || !rank["suffix"].string.isEmpty { SuiteMinecraftPreview(prefix: rank["prefix"].string, name: who, suffix: rank["suffix"].string) }
+                ForEach(rank["groups"].array, id: \.["key"].string) { group in
+                    SuiteRankGroupRow(group: group, primary: rank["primary"].string)
+                        .swipeActions { Button("Entfernen", role: .destructive) { askRank(["operation": .string("user-parent-remove"), "group": group["group"]], who + " aus „" + group["group"].string + "“ entfernen?") }.disabled(!canEditRank) }
+                }
+                Menu {
+                    ForEach(availableGroups, id: \.["name"].string) { group in
+                        Menu(group["name"].string) {
+                            ForEach(["", "1d", "7d", "30d"], id: \.self) { time in
+                                Button(SuiteAccessLockText.duration(time)) { askRank(["operation": .string(time.isEmpty ? "user-parent-add" : "user-parent-temp"), "group": group["name"], "duration": .string(time)], who + " zu „" + group["name"].string + "“ hinzufügen?") }
+                            }
+                        }
+                    }
+                } label: { Label("Gruppe vergeben …", systemImage: "plus.circle") }.disabled(!canEditRank || groups.isEmpty)
+                NavigationLink { SuiteLuckPermsPlayerView(suite: suite, player: user["uuid"].string.isEmpty ? player : user["uuid"].string) } label: { Label("Präfix, Befördern & eigene LuckPerms-Rechte", systemImage: "crown.fill") }
+            } header: { Text("Rang & Gruppen") } footer: { Text("Gruppen nach links wischen zum Entfernen. Änderungen übernimmt LuckPerms selbst.") }
+        }
+    }
+    @ViewBuilder private var altSection: some View {
+        if user["alts"] != .null {
+            Section {
+                if user["alts"].array.isEmpty { Text("Keine bestätigten Alt-Accounts.").foregroundStyle(.secondary) }
+                ForEach(user["alts"].array, id: \.["uuid"].string) { alt in
+                    NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: alt["uuid"].string) } label: {
+                        HStack {
+                            Label(alt["name"].string, systemImage: alt["online"].bool ? "person.fill.checkmark" : "person")
+                            Spacer()
+                            Text(heirIds.contains(alt["uuid"].string) ? "erbt Sperren" : alt["inherit"].bool ? "erbt bei Sperren" : "Vererbung aus").font(.caption).foregroundStyle(heirIds.contains(alt["uuid"].string) ? Color.orange : Color.secondary)
+                        }
+                    }
+                }
+                ForEach(user["inheritedLocks"].array, id: \.["flag"].string) { lock in
+                    Label(lock["title"].string + " · geerbt von " + lock["fromName"].string + " · " + lock["remaining"].string, systemImage: "arrow.triangle.branch").font(.caption).foregroundStyle(.purple)
+                }
+            } header: { Text("Alt-Accounts") } footer: { Text("Sperren gelten automatisch für alle bestätigten Alt-Accounts – auch für künftig erkannte –, solange die Alt-Vererbung oben eingeschaltet ist. Aufheben beim Hauptkonto hebt sie überall auf.") }
+        }
+    }
+    var availableGroups: [JSON] {
+        let current = Set(rank["groups"].array.map { $0["group"].string })
+        return groups.filter { !current.contains($0["name"].string) }
+    }
+    var heirIds: Set<String> { Set(user["heirs"].array.map { $0["uuid"].string }) }
+    private func inherited(_ flag: String) -> JSON { user["inheritedLocks"].array.first { $0["flag"].string == flag } ?? .null }
+}
+
+struct SuiteRankGroupRow: View {
+    let group: JSON
+    let primary: String
+    var body: some View {
+        HStack {
+            Image(systemName: "crown.fill").foregroundStyle(.yellow)
+            Text(group["group"].string).bold(group["group"].string == primary)
+            if group["group"].string == primary { Text("primär").font(.caption2).foregroundStyle(.secondary) }
+            Spacer()
+            Text(group["expiry"].double > 0 ? "bis " + Date(timeIntervalSince1970: group["expiry"].double / 1000).formatted(date: .abbreviated, time: .shortened) : "dauerhaft").font(.caption).foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -482,6 +558,7 @@ struct SuiteAccessLockFlagRow: View {
     let flag: JSON
     let active: JSON
     var legacy: [JSON] = []
+    var inherited: JSON = .null
     @Binding var picked: Bool
     let canEdit: Bool
     let remove: () -> Void
@@ -495,6 +572,7 @@ struct SuiteAccessLockFlagRow: View {
                         Text(active != .null ? "gesperrt" : legacy.isEmpty ? "erlaubt" : "alte Sperre").font(.caption2.bold()).foregroundStyle(active != .null ? Color.red : legacy.isEmpty ? Color.green : Color.orange)
                     }
                     if active != .null { Text(active["scopeTitle"].string + " · " + active["remaining"].string + (active["reason"].string.isEmpty ? "" : " · " + active["reason"].string)).font(.caption).foregroundStyle(.red) }
+                    if active == .null && inherited != .null { Text("Geerbt von " + inherited["fromName"].string + " · " + inherited["scopeTitle"].string + " · " + inherited["remaining"].string).font(.caption).foregroundStyle(.purple) }
                     if !legacy.isEmpty { Text("Alte Einzelsperre: " + legacy.map { $0["name"].string + " (" + $0["remaining"].string + ")" }.joined(separator: ", ") + " – wird mit aufgehoben").font(.caption).foregroundStyle(.orange) }
                     Text(flag["explain"].string).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
                 }
@@ -584,5 +662,40 @@ struct SuiteRightToggle: View {
                 Text(item["id"].string).font(.caption2.monospaced()).foregroundStyle(.tertiary)
             }
         }
+    }
+}
+
+// MARK: - Live player search for every player field
+
+/// Text field that suggests matching players (online first, partial names) while typing – used in action forms,
+/// LuckPerms and the rights view. Picking a player fills in the exact name.
+struct SuiteLivePlayerField: View {
+    let suite: SuiteAPI
+    let title: String
+    @Binding var text: String
+    @State private var matches: [JSON] = []
+    @State private var picked = ""
+    var body: some View {
+        TextField(title, text: $text).textInputAutocapitalization(.never).autocorrectionDisabled()
+            .task(id: text) { await search() }
+        ForEach(matches, id: \.["id"].string) { row in
+            Button { picked = row["name"].string; text = row["name"].string; matches = [] } label: { SuitePlayerMatchRow(row: row) }.buttonStyle(.plain)
+        }
+    }
+    private func search() async {
+        let query = text.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty, query != picked, suite.can("data.players") else { matches = []; return }
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+            let result = try await suite.data("players", query: ["q": query, "filter": "all", "limit": "6"])
+            try Task.checkCancellation()
+            let rows = Array(result["items"].array.prefix(6))
+            matches = rows.count == 1 && rows[0]["name"].string.caseInsensitiveCompare(query) == .orderedSame ? [] : rows
+        } catch { matches = [] }
+    }
+    /// Field names that hold a player (Suite actions use player, player-one, player-two, target).
+    static func isPlayerField(_ field: JSON) -> Bool {
+        let name = field["name"].string.lowercased()
+        return ["player", "player-one", "player-two", "minecraft", "spieler"].contains(name) || (name == "target" && field["description"].string.localizedCaseInsensitiveContains("spieler"))
     }
 }

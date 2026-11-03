@@ -1,6 +1,6 @@
 ## Aktuelles Update: Panel 4.3.1 / Admin Suite 10.0.1
 
-Rechte & Sperren an einem Ort: Spielerprofil → **Rechte & Sperren** vereint Bereiche mit Land-Option und alle weiteren Spielerrechte (Chat, PvP, Nether, Freeze …), jeweils mit Dauer; keine doppelte Verwaltung mehr, Live-Spielersuche in App und Webpanel, gleicher Einstieg im Java- und Bedrock-Menü. [Update 4.3.1](UPDATE-4.3.1.md) · [Suite 10.0.1](Companion/AdminSuite/UPDATE-10.0.1.md).
+Rechte & Sperren an einem Ort: Spielerprofil → **Rechte & Sperren** vereint Bereiche mit Land-Option und alle weiteren Spielerrechte (Chat, PvP, Nether, Freeze …), jeweils mit Dauer; keine doppelte Verwaltung mehr, Alt-Account-Vererbung, Ränge direkt im Profil, Live-Spielersuche mit Teilnamen in allen Spielerfeldern, gleicher Einstieg im Java- und Bedrock-Menü. [Update 4.3.1](UPDATE-4.3.1.md) · [Suite 10.0.1](Companion/AdminSuite/UPDATE-10.0.1.md).
 
 ## Panel 4.3.0 / Admin Suite 10.0.0
 
