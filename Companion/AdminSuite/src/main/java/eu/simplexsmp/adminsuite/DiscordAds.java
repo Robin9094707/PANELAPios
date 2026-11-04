@@ -822,10 +822,10 @@ final class DiscordAds {
     private void verify(Campaign c) {
         Account a; String messageId;
         synchronized (this) { a = accounts.get(c.accountId); messageId = c.verifyMessageId; c.verifyAt = 0; }
-        if (a == null || !a.usable(clock.getAsLong())) { synchronized (this) { c.verifyMessageId = ""; save(); } return; }
+        if (a == null || !a.usable(clock.getAsLong())) { synchronized (this) { c.verifyMessageId = ""; c.consecutiveFailures = 0; save(); } return; }
         Resp r;
         try { r = request(a.token, "GET", "/channels/" + c.channelId + "/messages?around=" + messageId + "&limit=1", null); }
-        catch (IOException e) { synchronized (this) { c.verifyMessageId = ""; save(); } return; }
+        catch (IOException e) { synchronized (this) { c.verifyMessageId = ""; c.consecutiveFailures = 0; save(); } return; }
         catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
         synchronized (this) {
             c.verifyMessageId = "";
@@ -836,8 +836,8 @@ final class DiscordAds {
                     // A timer bot usually counts from the last accepted post: wait a quarter of the interval (15 min – 6 h) before trying again.
                     long retry = Math.max(15 * 60_000L, Math.min(6 * 3_600_000L, c.effectiveMillis() / 4));
                     failure(c, "deleted", "Der Post wurde kurz nach dem Senden entfernt – vermutlich von einem Moderations- oder Timer-Bot (zu früh, falscher Kanal oder nicht erlaubt). Bitte Kanalregeln und Intervall prüfen.", retry);
-                }
-            }
+                } else c.consecutiveFailures = 0; // the post stayed: only now the failure streak ends
+            } else c.consecutiveFailures = 0; // not verifiable (no history access): count the successful send
             save();
         }
     }
@@ -890,9 +890,12 @@ final class DiscordAds {
             if (r.status / 100 == 2) {
                 String messageId = str(r.obj().get("id"));
                 c.lastSentAt = now; c.lastMessageId = messageId; c.lastResult = "sent"; c.lastError = ""; c.sentCount++;
-                c.consecutiveFailures = 0; c.transientFailures = 0; c.slowmodeStreak = 0;
+                c.transientFailures = 0; c.slowmodeStreak = 0;
                 c.nextRunAt = now + delayMillis(c.intervalMinutes, c.slowmodeSeconds, random);
+                // The failure streak only ends once the post survived the deletion check; otherwise a timer bot that
+                // removes every advertisement would reset the streak on each send and the channel would never pause.
                 if (settings.verifyDelete && !messageId.isBlank()) { c.verifyAt = now + 180_000L; c.verifyMessageId = messageId; }
+                else c.consecutiveFailures = 0;
                 a.lastPostAt = now; a.sent++; a.nextAllowedAt = now + settings.gapSeconds * 1000L + random.nextInt(settings.gapSeconds * 500 + 1);
                 history(c, "sent", "Gesendet – nächster Post " + clock(c.nextRunAt) + ".", messageId);
                 addLog(c, "sent", "#" + c.channelName + " auf " + c.guildName + " gesendet");

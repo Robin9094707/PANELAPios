@@ -343,6 +343,26 @@ public final class Release1040Harness {
             Map<String, Object> deleted = campaign(ads2, ids.get("6h"));
             check(lng(deleted.get("deletedCount")) == 1 && "deleted".equals(deleted.get("lastResult")) && lng(deleted.get("consecutiveFailures")) == 1 && rec.notes.size() == notes + 1, "removed post detected and reported: " + deleted);
             check(lng(deleted.get("nextRunAt")) >= clock.get() + 80 * 60_000L, "retry after a quarter of the interval, not immediately");
+            // Repeated deletions must keep the streak (a successful send alone does not end it) and pause after three.
+            for (int cycle = 2; cycle <= 3; cycle++) {
+                long sentBefore = lng(campaign(ads2, ids.get("6h")).get("sentCount"));
+                clock.set(Math.max(clock.get(), lng(campaign(ads2, ids.get("6h")).get("nextRunAt"))) + 1_000L);
+                for (int i = 0; i < 15 && lng(campaign(ads2, ids.get("6h")).get("sentCount")) == sentBefore; i++) { ads2.tick(); clock.addAndGet(70_000L); }
+                Map<String, Object> again6 = campaign(ads2, ids.get("6h"));
+                check(lng(again6.get("sentCount")) == sentBefore + 1 && lng(again6.get("consecutiveFailures")) == cycle - 1, "sending keeps the deletion streak until verified: " + again6.get("consecutiveFailures"));
+                String gone = String.valueOf(again6.get("lastMessageId"));
+                discord.messages.get(ch6).removeIf(x -> gone.equals(x.get("id")));
+                clock.addAndGet(200_000L); ads2.tick();
+            }
+            Map<String, Object> pausedByBot = campaign(ads2, ids.get("6h"));
+            check(Boolean.FALSE.equals(pausedByBot.get("enabled")) && lng(pausedByBot.get("deletedCount")) == 3 && String.valueOf(pausedByBot.get("pausedReason")).contains("3 Fehlern"), "three removed posts in a row pause the channel: " + pausedByBot);
+            ads2.campaignAction(ids.get("6h"), "resume", "juhas");
+            // A post that stays visible ends the streak.
+            long sentBeforeOk = lng(campaign(ads2, ids.get("6h")).get("sentCount"));
+            clock.set(Math.max(clock.get(), lng(campaign(ads2, ids.get("6h")).get("nextRunAt"))) + 1_000L);
+            for (int i = 0; i < 15 && lng(campaign(ads2, ids.get("6h")).get("sentCount")) == sentBeforeOk; i++) { ads2.tick(); clock.addAndGet(70_000L); }
+            clock.addAndGet(200_000L); ads2.tick();
+            check(lng(campaign(ads2, ids.get("6h")).get("consecutiveFailures")) == 0 && lng(campaign(ads2, ids.get("6h")).get("deletedCount")) == 3, "a verified post ends the streak");
 
             // ---- send now respects the interval
             fails(() -> ads2.campaignAction(ids.get("1h"), "send-now", "juhas"), "Frühestens", "send-now never undercuts the interval");
