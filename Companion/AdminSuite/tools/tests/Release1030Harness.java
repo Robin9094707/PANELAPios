@@ -166,6 +166,7 @@ public final class Release1030Harness {
             Field bd = SimplexAdminSuite.PlayerProfile.class.getDeclaredField("bedrockDiagnostics"); bd.setAccessible(true); ((Map<String, String>) bd.get(profile)).put("lastDisconnectReason", "Timed out");
             Field warnings = SimplexAdminSuite.PlayerProfile.class.getDeclaredField("warnings"); warnings.setAccessible(true); ((List<String>) warnings.get(profile)).add("Spam");
             Field cp = SimplexAdminSuite.PlayerProfile.class.getDeclaredField("clientPlatform"); cp.setAccessible(true); cp.set(profile, "BEDROCK");
+            plugin.appEvents = new SuiteEventCenter(plugin);
             WorldTrimManager trimmer = new WorldTrimManager(plugin);
             Moderation790Harness.set(plugin, SimplexAdminSuite.class, "worldTrimmer", trimmer);
             DiscordBotManager bot = null;
@@ -230,6 +231,15 @@ public final class Release1030Harness {
                 var ok = Release1020Harness.call(client, base, "/v1/studio/discord-status", owner, Map.of("operation", "save", "preset", "neon", "values", Map.of("healthy-color", "#00F5D4", "presence.healthy", "{players} online")));
                 check(ok.statusCode() == 200 && plugin.getConfig().getString("discord-bot.status.design.healthy-color").equals("#00F5D4") && plugin.getConfig().getString("discord-bot.presence.healthy").equals("{players} online"), "status design saved: " + ok.body());
             }
+
+            // ---- Bark test (no network call: missing and invalid keys are answered locally)
+            check(features.contains("bark-test-v1"), "health advertises the Bark test");
+            check(SuiteEventCenter.barkKey("https://api.day.app/AbCdEf123456/Titel/Text").equals("AbCdEf123456") && SuiteEventCenter.barkKey(" AbCdEf123456 ").equals("AbCdEf123456"), "Bark key from push address");
+            var noKey = Release1020Harness.call(client, base, "/v1/bark/test", viewer, Map.of());
+            check(noKey.statusCode() == 200 && Boolean.FALSE.equals(obj(noKey.body()).get("ok")) && noKey.body().contains("Kein Bark-Schlüssel"), "Bark test works for every account and explains a missing key: " + noKey.body());
+            var badKey = Release1020Harness.call(client, base, "/v1/bark/test", viewer, Map.of("key", "x y"));
+            check(badKey.statusCode() == 200 && badKey.body().contains("Ungültiger Bark-Schlüssel"), "Bark test validates a typed key");
+            check(Release1020Harness.call(client, base, "/v1/bark/test", null, Map.of()).statusCode() == 401, "Bark test needs sign-in");
 
             // ---- dossier
             check(Release1020Harness.call(client, base, "/v1/player/dossier?player=" + steve, null, null).statusCode() == 401, "dossier needs sign-in");

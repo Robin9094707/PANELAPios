@@ -223,6 +223,8 @@ struct SuiteBarkSettingsView: View {
     @State private var quietEnd="07:00"
     @State private var timezone="Europe/Berlin"
     @State private var quietKinds: Set<String> = []
+    @State private var testing = false
+    @State private var testResult: JSON = .null
     var encodedRules: String { events.map { event in let id=event.0;return [id,selected.contains(id) ? (rules[id] ?? Self.defaultLevel(id, level: level, critical: critical)):"off",sounds[id] ?? (Self.criticalKinds.contains(id) ? criticalSound:sound),repeats.contains(id) ? "120":"0"].joined(separator:":") }.joined(separator:";") }
     @Environment(\.dismiss) private var dismiss
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteSecurityModel(suite)) }
@@ -251,6 +253,7 @@ struct SuiteBarkSettingsView: View {
                 Toggle("Benachrichtigungen aktiv", isOn: $enabled)
                 SecureField(configured ? "Neuer Bark-Schlüssel (leer = behalten)" : "Bark-Schlüssel oder Push-Adresse", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled()
                 if configured { Label("Schlüssel sicher auf dem Server hinterlegt", systemImage: "checkmark.shield.fill").font(.footnote).foregroundStyle(.green) }
+                if suite.features.contains("bark-test-v1") { barkTestRow }
                 Text("Kopiere die Push-Adresse aus Bark. Das Plugin nutzt den öffentlichen Bark-Dienst und sendet auch bei geschlossener Panel-App. Nachrichteninhalt wird dabei an Bark und Apple übertragen.").font(.footnote).foregroundStyle(.secondary)
             }
             Section("Ereignisse einzeln konfigurieren") {
@@ -281,6 +284,22 @@ struct SuiteBarkSettingsView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() } } }
             .task { do { let value = try await suite.request("notifications"); configured = value["configured"].bool; enabled = value["enabled"].bool; selected = Set(value["events"].string.split(separator: ",").map(String.init)); level = value["level"].string; critical = value["critical"].string; sound = value["sound"].string; criticalSound = value["criticalSound"].string; delivery = value["deliveryStatus"].string; quietMode=value["quietMode"].string.isEmpty ? "off":value["quietMode"].string;quietStart=value["quietStart"].string.isEmpty ? "22:00":value["quietStart"].string;quietEnd=value["quietEnd"].string.isEmpty ? "07:00":value["quietEnd"].string;timezone=value["timezone"].string.isEmpty ? "Europe/Berlin":value["timezone"].string;quietKinds=Set(value["quietKinds"].string.split(separator:",").map(String.init));for rule in value["rules"].string.split(separator:";"){let a=rule.split(separator:":",omittingEmptySubsequences:false).map(String.init);if a.count==4 {if a[1] != "off"{rules[a[0]]=a[1]};sounds[a[0]]=a[2];if a[1]=="off"{selected.remove(a[0])}else{selected.insert(a[0])};if a[3] != "0"{repeats.insert(a[0])}}}; if suite.features.contains("tickets-v1") { for kind in (Self.ticketEvents + (suite.features.contains("tickets-v2") ? Self.priorityTicketEvents : [])).map(\.0) where !value["rules"].string.contains(";" + kind + ":") && !value["rules"].string.hasPrefix(kind + ":") { selected.insert(kind) } } } catch { model.error = error.localizedDescription } }
             .sheet(isPresented: Binding(get: { model.plan != nil }, set: { if !$0 { model.plan = nil } })) { SuiteSecurityConfirmation(model: model) { key = ""; configured = true; dismiss() } }
+    }
+    /// 4.6.0: test message to this device – always possible, also during quiet hours and before saving.
+    @ViewBuilder private var barkTestRow: some View {
+        Button { Task { await sendTest() } } label: { if testing { ProgressView() } else { Label("Testnachricht senden", systemImage: "paperplane.fill") } }
+            .disabled(testing || (!configured && key.trimmingCharacters(in: .whitespaces).isEmpty)).accessibilityIdentifier("bark-test")
+        if testResult != .null {
+            Label(testResult["title"].string + " – " + testResult["description"].string, systemImage: testResult["ok"].bool ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                .font(.footnote).foregroundStyle(testResult["ok"].bool ? Color.green : Color.red)
+        }
+    }
+    func sendTest() async {
+        testing = true; defer { testing = false }
+        do {
+            testResult = try await suite.post("bark/test", ["key": .string(key)])
+            if testResult["ok"].bool { Feedback.success() }
+        } catch { model.error = error.localizedDescription }
     }
     func save() async {
         var values: [String: JSON] = ["key": .string(key), "enabled": .string(String(enabled)), "events": .string(selected.sorted().joined(separator: ",")), "level": .string(level), "critical": .string(critical), "sound": .string(sound), "criticalSound": .string(criticalSound)]

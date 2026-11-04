@@ -199,5 +199,29 @@ final class SuiteEventCenter {
 
         }
     }
+    /** Bark device key from a plain key or any https://api.day.app/<key>/… push address. */
+    static String barkKey(String raw){String v=raw==null?"":raw.trim();if(v.startsWith("https://api.day.app/")){v=v.substring("https://api.day.app/".length());int slash=v.indexOf('/');if(slash>=0)v=v.substring(0,slash);}return v;}
+    /**
+     * 10.3.0: test message to the caller's own Bark device. It is always sent – independent of the enabled switch,
+     * event rules, quiet hours and cooldowns – so the connection can be checked at any time. A key typed into the form
+     * can be tested before it is saved; otherwise the stored key of this account is used.
+     */
+    Map<String,Object> barkTest(String owner,String supplied){
+        String key=barkKey(supplied);String sound;
+        synchronized(this){if(key.isBlank())key=subscriptions.getProperty(owner+".key","");sound=subscriptions.getProperty(owner+".sound","minuet");}
+        if(key.isBlank())return SimplexAdminSuite.appMap("ok",false,"title","Kein Bark-Schlüssel","description","Bark-Schlüssel oder Push-Adresse eingeben und „Test senden“ tippen – speichern ist dafür nicht nötig.");
+        if(!key.matches("[A-Za-z0-9_-]{8,160}"))return SimplexAdminSuite.appMap("ok",false,"title","Ungültiger Bark-Schlüssel","description","Bark-Geräteschlüssel oder https://api.day.app/<Schlüssel>/ eingeben.");
+        String time=java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.of("Europe/Berlin")).format(java.time.Instant.now());
+        Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",key,"title","Simplex Admin Suite · Test","body","Bark funktioniert ✓ · "+time+" · "+Bukkit.getServer().getName(),"group","Simplex Admin Suite","level","active","sound",sound.matches("[a-zA-Z0-9_.-]{1,64}")?sound:"minuet","isArchive",1,"url","panel://suite-events");
+        try{
+            HttpRequest request=HttpRequest.newBuilder(URI.create("https://api.day.app/push")).timeout(Duration.ofSeconds(8)).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(DiscordBotManager.Json.stringify(payload))).build();
+            HttpResponse<InputStream> response=http.send(request,HttpResponse.BodyHandlers.ofInputStream());
+            Object reply;try(InputStream input=response.body()){byte[] bytes=input.readNBytes(16385);if(bytes.length>16384)throw new IOException("Oversize Bark reply");reply=DiscordBotManager.Json.parse(new String(bytes,java.nio.charset.StandardCharsets.UTF_8));}
+            if(response.statusCode()==200&&reply instanceof Map<?,?> m&&m.get("code") instanceof Number n&&n.intValue()==200){deliveryStatus="Test erfolgreich ("+time+")";return SimplexAdminSuite.appMap("ok",true,"title","Test gesendet","description","Bark hat die Testnachricht angenommen ("+time+"). Sie sollte gleich auf deinem Gerät erscheinen.");}
+            String message=reply instanceof Map<?,?> m&&m.get("message")!=null?String.valueOf(m.get("message")):"HTTP "+response.statusCode();
+            return SimplexAdminSuite.appMap("ok",false,"title","Bark hat abgelehnt","description","Antwort von Bark: "+message.substring(0,Math.min(200,message.length()))+". Schlüssel in der Bark-App prüfen.");
+        }catch(InterruptedException e){Thread.currentThread().interrupt();return SimplexAdminSuite.appMap("ok",false,"title","Abgebrochen","description","Der Test wurde unterbrochen.");}
+        catch(Exception e){return SimplexAdminSuite.appMap("ok",false,"title","Bark nicht erreichbar","description","api.day.app war vom Server aus nicht erreichbar ("+e.getClass().getSimpleName()+"). Internet/Firewall des Servers prüfen.");}
+    }
     void stop() {try{persist();}catch(IOException e){plugin.getLogger().warning("App event checkpoint failed");}worker.shutdownNow();}
 }

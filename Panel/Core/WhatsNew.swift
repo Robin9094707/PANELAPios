@@ -26,6 +26,7 @@ enum WhatsNew {
             WhatsNewItem(symbol: "person.text.rectangle.fill", title: "Steckbrief im Spielerprofil", detail: "Identität, Aktivität, Client, Bedrock-Gerät, Netzwerk, Moderation, Position und letzter Verlauf – durchsuchbar und je nach deinen Rechten."),
             WhatsNewItem(symbol: "gamecontroller.fill", title: "Mehr über Clients", detail: "Bedrock: Trennungsgrund aus Geyser, Drittanbieter-Name, Skin-Engine, Floodgate-Verknüpfung. Java: Beitrittsadresse, Server-Transfer und Ressourcenpaket-Status."),
             WhatsNewItem(symbol: "square.grid.2x2.fill", title: "Aufgeräumte Übersicht", detail: "Die Admin-Suite-Startseite ist nach Aufgaben gegliedert: Spieler, Server & Diagnose, Kommunikation & Studio, Verwaltung."),
+            WhatsNewItem(symbol: "paperplane.fill", title: "Bark-Test jederzeit", detail: "In den Bark-Einstellungen sofort eine Testnachricht senden – auch in Ruhezeiten und schon vor dem Speichern eines neuen Schlüssels."),
             WhatsNewItem(symbol: "lock.fill", title: "Neue Rechte, nicht vorbelegt", detail: "Trimmer, Discord-Status und Scoreboard haben eigene Rechte. Sie stecken in keiner Rollenvorlage – nur Vollzugriff oder eine gezielte Freigabe schaltet sie frei.")
         ]),
         WhatsNewRelease(version: "4.5.0", title: "Diagnosezentrale", summary: "Disconnect-Wellen erkennen und einordnen, Lag finden, Spark-Profile auswerten und Abstürze nachvollziehen – mit KI-Hilfe und Bark-Alarm.", items: [

@@ -54,6 +54,12 @@ Supporter, Moderator und Admin erhalten diese Rechte **nicht** automatisch; nur 
   bekommen die Floodgate-UUID aus der XUID; ohne jede Identität antwortet die Suite `202 deferred` statt 422 (auch für
   Brücke 1.5.0). Brücke 1.6.0 sendet solche Pakete gar nicht mehr und meldet Trennungen (`snapshotPhase=DISCONNECT`).
 
+## Bark-Test
+
+- `POST /v1/bark/test` (`key` optional): sendet sofort eine Testnachricht an den eigenen bzw. eingetippten Bark-Schlüssel –
+  unabhängig vom Aktiv-Schalter, Ereignisregeln, Ruhezeiten und Sperrzeiten; höchstens fünf pro Minute. Antwort mit
+  klarer Ursache (kein/ungültiger Schlüssel, Bark lehnt ab, api.day.app nicht erreichbar). Feature `bark-test-v1`.
+
 ## Client-Prüfung
 
 - Katalog mit CheckHacks 1.3.1 (30.08.2026) abgeglichen: alle Signaturen von 1.3.0 sind enthalten, 1.3.1 brachte keine

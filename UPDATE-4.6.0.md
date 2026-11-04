@@ -25,6 +25,12 @@ IPA einfach drüber installieren (gleiche Bundle-ID und Signatur) – Verbindung
 - Die Admin-Suite-Startseite ist nach Aufgaben gegliedert: Spieler & Moderation, Server & Diagnose, Kommunikation &
   Studio, Verwaltung & Zugänge. Alle bisherigen Einträge sind weiterhin da.
 
+## Bark
+
+- **Testnachricht jederzeit:** In den Bark-Einstellungen „Testnachricht senden“ – immer möglich, auch während Ruhezeiten,
+  bei ausgeschaltetem Bark und mit einem eingetippten, noch nicht gespeicherten Schlüssel. Im Webpanel unter
+  Benachrichtigungen → „Bark testen“.
+
 ## Rechte
 
 - Neue App-Benutzerrechte: *Welten-Trimmer ansehen/ausführen*, *Discord-Status ansehen/gestalten*, *Scoreboard

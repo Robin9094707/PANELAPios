@@ -40,6 +40,11 @@
         "icon": "search",
         "title": "Schnellsuche",
         "text": "Strg/⌘ + K öffnet die Suche nach Seiten und Spielern im Webpanel."
+      },
+      {
+        "icon": "send",
+        "title": "Bark-Test jederzeit",
+        "text": "Testnachricht an dein Bark-Gerät – auch in Ruhezeiten und vor dem Speichern eines neuen Schlüssels (App: Bark-Einstellungen, Web: Benachrichtigungen)."
       }
     ]
   },
