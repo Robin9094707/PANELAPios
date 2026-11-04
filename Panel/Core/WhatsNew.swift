@@ -18,6 +18,15 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "4.7.0", title: "Discord-Werbeplaner", summary: "Werbetexte mit Discord-Formatierung gestalten und mit einem Zweitaccount automatisch in erlaubten Werbekanälen posten – jeder Kanal mit eigenem Timer, serverseitig und neustartfest.", items: [
+            WhatsNewItem(symbol: "link.badge.plus", title: "Discord-Account verknüpfen", detail: "Zweitaccount per Token verbinden, prüfen, Token erneuern oder abmelden. Der Token liegt nur verschlüsselt auf dem Server."),
+            WhatsNewItem(symbol: "textformat", title: "Werbetexte mit Vorschau", detail: "Benennen, bearbeiten, kopieren und löschen – mit Formatierungsleiste (fett, kursiv, Überschriften, Zitate, Listen, Spoiler, Links, Emojis) und Vorschau im Discord-Look."),
+            WhatsNewItem(symbol: "megaphone.fill", title: "Kanäle mit eigenem Timer", detail: "Alle Discord-Server des Accounts sehen und bis zu vier Kanäle pro Server wählen, jeweils mit eigenem Text und Intervall – mit Warnung, ob Werbung dort wirklich erlaubt ist."),
+            WhatsNewItem(symbol: "clock.badge.checkmark.fill", title: "Nie zu früh", detail: "Jeder Post kommt etwas nach dem Intervall (24 Std → etwa 24,1–24,5 Std), nie davor. Slowmode wird erkannt und eingehalten."),
+            WhatsNewItem(symbol: "bell.badge.fill", title: "Fehler per Bark", detail: "Fehlende Rechte, Captcha, abgemeldeter Token oder von Timer-Bots gelöschte Posts werden erkannt – mit Bark-Hinweis und automatischer Pause."),
+            WhatsNewItem(symbol: "arrow.clockwise.circle.fill", title: "Neustartfest", detail: "Timer sind feste Zeitpunkte auf dem Server – ein Neustart setzt nichts zurück, verpasste Posts werden kurz danach nachgeholt."),
+            WhatsNewItem(symbol: "lock.fill", title: "Eigene Rechte", detail: "„Discord-Werbung ansehen“ und „verwalten“ stecken in keiner Rollenvorlage.")
+        ]),
         WhatsNewRelease(version: "4.6.0", title: "Studio, Welten-Trimmer & Steckbrief", summary: "Discord-Status und Scoreboard mit Vorlagen und Live-Vorschau gestalten, Welten sicher trimmen und alles über einen Spieler auf einen Blick – in App und Webpanel.", items: [
             WhatsNewItem(symbol: "paintpalette.fill", title: "Discord-Status-Designer", detail: "Texte, Farben, Felder, Bilder und Bot-Aktivität bearbeiten – mit Discord-Vorschau für Online, Instabil, Überlastet, Neustart und Offline. Sieben Vorlagen; „Simplex Standard“ ist der bisherige Status."),
             WhatsNewItem(symbol: "list.bullet.rectangle.fill", title: "Scoreboard-Designer", detail: "Titel und Zeilen mit Farbcodes, Platzhaltern und Hex-Farbverlauf bearbeiten. Die Minecraft-Vorschau nutzt echte Werte vom Server; sieben Vorlagen inklusive Standard."),

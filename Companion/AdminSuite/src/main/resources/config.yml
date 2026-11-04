@@ -1187,3 +1187,10 @@ emergency-restart:
 # app-api.push-contact: 'mailto:you@example.eu'  # optional VAPID contact for browser push (default: https://<public-domain>)
 # Browser push needs the web panel on a domain with a valid HTTPS certificate (same as passkeys).
 # Recovery (server console only): sas app recovery | owner-reset [name] | user-reset <name> | owner-transfer <name> | unlock <name>
+
+# Optional 10.4.0 addition: Discord-Werbeplaner (App/Webpanel → Kommunikation & Studio → Discord-Werbung).
+# Everything else (accounts, texts, channels, timers) is set up in the app or web panel and stored in
+# plugins/SimplexAdminSuite/discord-ads/ (state.json, token encrypted with secret.key – keep both together).
+# Automating a Discord user account violates Discord's terms of service and can get that account banned – use an alt.
+discord-ads:
+  enabled: true # false = planner off; stored channels, texts and timers are kept untouched

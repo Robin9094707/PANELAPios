@@ -4,7 +4,7 @@
 var VERSION = "{{VERSION}}";
 var SHELL = "simplex-shell-" + VERSION;
 var ASSETS = ["/", "/assets/app.css?v=" + VERSION, "/assets/core.js?v=" + VERSION, "/assets/auth.js?v=" + VERSION, "/assets/pages.js?v=" + VERSION,
-  "/assets/admin.js?v=" + VERSION, "/assets/extras.js?v=" + VERSION, "/assets/rights.js?v=" + VERSION, "/assets/diagnostics.js?v=" + VERSION, "/assets/studio.js?v=" + VERSION, "/assets/app.js?v=" + VERSION, "/assets/qr.js?v=" + VERSION, "/assets/logo.png", "/assets/icon-192.png"];
+  "/assets/admin.js?v=" + VERSION, "/assets/extras.js?v=" + VERSION, "/assets/rights.js?v=" + VERSION, "/assets/diagnostics.js?v=" + VERSION, "/assets/studio.js?v=" + VERSION, "/assets/ads.js?v=" + VERSION, "/assets/app.js?v=" + VERSION, "/assets/qr.js?v=" + VERSION, "/assets/logo.png", "/assets/icon-192.png"];
 
 self.addEventListener("install", function (event) {
   event.waitUntil(caches.open(SHELL).then(function (cache) { return cache.addAll(ASSETS).catch(function () { /* offline install is optional */ }); }).then(function () { return self.skipWaiting(); }));

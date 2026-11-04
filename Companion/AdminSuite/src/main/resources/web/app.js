@@ -37,7 +37,8 @@
     ] },
     { group: "Studio", items: [
       { id: "discord-status", label: "Discord-Status", icon: "palette", perm: "data.discord-status", feature: "discord-status-designer-v1" },
-      { id: "scoreboard", label: "Scoreboard", icon: "layers", perm: "data.scoreboard", feature: "scoreboard-designer-v1" }
+      { id: "scoreboard", label: "Scoreboard", icon: "layers", perm: "data.scoreboard", feature: "scoreboard-designer-v1" },
+      { id: "discord-ads", label: "Discord-Werbung", icon: "send", perm: "data.discord-ads", feature: "discord-ads-v1" }
     ] },
     { group: "Persönlich", items: [
       { id: "notifications", label: "Benachrichtigungen", icon: "bell", perm: null, feature: "web-push-v1" },
