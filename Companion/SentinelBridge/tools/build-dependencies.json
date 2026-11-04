@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Geyser-Spigot-2.12.1-1284.jar",
+    "url": "https://download.geysermc.org/v2/projects/geyser/versions/2.12.1/builds/1284/downloads/spigot",
+    "sha256": "2a8af1fc256864f4d76af219366bf28efa1558cacb6bb06cf0b1639c4c3e241d"
+  },
+  {
+    "name": "ecj-3.46.0.jar",
+    "url": "https://repo.maven.apache.org/maven2/org/eclipse/jdt/ecj/3.46.0/ecj-3.46.0.jar",
+    "sha256": "d0d43f8e2d7003e5efed612e2cbb5f01870043397d8f1bbe536fd9128f4fcbf7"
+  }
+]

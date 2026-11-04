@@ -13,16 +13,18 @@ import java.util.Set;
 public final class BedrockMetadata {
     private BedrockMetadata() { }
     private static final Map<String,String> CLAIMS = new LinkedHashMap<>();
-    public static final Set<String> COSMETICS = Set.of("profileHash", "skinId", "personaSkin", "premiumSkin", "skinColor", "skinImageWidth", "skinImageHeight", "capeId", "capeOnClassicSkin", "trustedSkin", "overrideSkin");
+    public static final Set<String> COSMETICS = Set.of("profileHash", "skinId", "personaSkin", "premiumSkin", "skinColor", "skinImageWidth", "skinImageHeight", "capeId", "capeOnClassicSkin", "trustedSkin", "overrideSkin", "skinGeometryEngine", "capeImageWidth", "capeImageHeight");
     public static final Set<String> PARTY = Set.of("partyId", "isPartyLeader");
-    public static final Set<String> MISC = Set.of("filterProfanity", "clientEditorConnectionIntent", "clientIsEditorCapable");
+    public static final Set<String> MISC = Set.of("filterProfanity", "clientEditorConnectionIntent", "clientIsEditorCapable", "editorMode", "thirdPartyName");
     static {
         String[][] fields = {{"MaxViewDistance","maxViewDistance"},{"MemoryTier","memoryTier"},{"GraphicsMode","loginGraphicsMode"},{"PlatformType","platformType"},
             {"CompatibleWithClientSideChunkGen","clientSideChunkGen"},{"ProfileHash","profileHash"},{"PlatformUserId","platformUserId"},
             {"SkinId","skinId"},{"PersonaSkin","personaSkin"},{"PremiumSkin","premiumSkin"},{"SkinColor","skinColor"},
             {"SkinImageWidth","skinImageWidth"},{"SkinImageHeight","skinImageHeight"},{"CapeId","capeId"},{"CapeOnClassicSkin","capeOnClassicSkin"},
             {"TrustedSkin","trustedSkin"},{"OverrideSkin","overrideSkin"},{"PartyId","partyId"},{"IsPartyLeader","isPartyLeader"},
-            {"FilterProfanity","filterProfanity"},{"ClientEditorConnectionIntent","clientEditorConnectionIntent"},{"ClientIsEditorCapable","clientIsEditorCapable"}};
+            {"FilterProfanity","filterProfanity"},{"ClientEditorConnectionIntent","clientEditorConnectionIntent"},{"ClientIsEditorCapable","clientIsEditorCapable"},
+            // 1.6.0 / Suite 10.3.0: further scalar ClientData claims (still no images, geometry or tokens).
+            {"ThirdPartyName","thirdPartyName"},{"SkinGeometryDataEngineVersion","skinGeometryEngine"},{"IsEditorMode","editorMode"},{"CapeImageWidth","capeImageWidth"},{"CapeImageHeight","capeImageHeight"}};
         for (String[] field : fields) CLAIMS.put(field[0], field[1]);
     }
     public static void collect(Object connection, Object clientData, Properties out, boolean cosmetics, boolean party, boolean misc, boolean session) {
@@ -52,6 +54,7 @@ public final class BedrockMetadata {
             String value = raw.get(name);
             // Prefer raw claims for primitives: a missing claim must not become a default false/zero.
             if (value == null && original == null) value = read(clientData,"get"+name,"is"+name);
+            if (key.equals("skinGeometryEngine") && value != null) value = engineVersion(value);
             if (value != null && !value.isBlank()) put(out,key,value);
         }
         put(out,"collectionSource",state);
@@ -78,6 +81,12 @@ public final class BedrockMetadata {
             put(out,"deviceIdFormatValid",expected.equals("UNDOCUMENTED") ? "UNKNOWN" : Boolean.toString(matchesFormat(id,expected)));
         }
         put(out,"metadataTrust","client-reported; not hardware-attested");
+    }
+    /** SkinGeometryDataEngineVersion is Base64 of a short version string such as "1.21.0"; anything else is dropped. */
+    static String engineVersion(String raw) {
+        if (raw == null || raw.isBlank() || raw.length() > 64) return "";
+        try { String v = new String(Base64.getDecoder().decode(raw.trim()), StandardCharsets.UTF_8).trim(); return v.matches("[0-9][0-9.]{0,23}") ? v : ""; }
+        catch (IllegalArgumentException e) { return raw.matches("[0-9][0-9.]{0,23}") ? raw : ""; }
     }
     private static boolean positive(String raw) { try { return Integer.parseInt(raw)>0; } catch (Exception e) { return false; } }
     public static boolean matchesFormat(String id,String expected) {

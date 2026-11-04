@@ -182,6 +182,10 @@ final class WorldTrimManager {
     private volatile boolean shuttingDown;
     private volatile long lastDiscordProgressAt;
     private volatile int lastDiscordProgress = -1;
+    private volatile String lastSafety = "";
+
+    /** Integrity failures are kept apart so the run ends in recovery instead of an automatic restart. */
+    private static final class IntegrityException extends Exception { IntegrityException(String message) { super(message); } }
 
     WorldTrimManager(SimplexAdminSuite plugin) {
         this.plugin = plugin;
@@ -545,6 +549,69 @@ final class WorldTrimManager {
         return true;
     }
 
+    /** 10.3.0: App/web run preparation; the same safety path as Discord (operator proxy, preflight, barrier, override). */
+    boolean configureAppRun(Player admin, List<String> ids, long threshold, int countdown, boolean snapshot) {
+        String joined = ids == null || ids.isEmpty() ? "" : String.join(",", ids);
+        if (joined.isBlank()) { admin.sendMessage(plugin.prefix() + "Wähle mindestens eine Dimension aus."); return false; }
+        if (!configureDiscordRun(admin, joined, threshold, countdown)) return false;
+        Session session = session(admin.getUniqueId());
+        session.snapshot = snapshot;
+        return true;
+    }
+
+    /** 10.3.0: everything the app and web panel show; the viewer id is the operator proxy of the signed-in user. */
+    Map<String, Object> appState(UUID viewer) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        Phase current = phase.get();
+        out.put("enabled", plugin.getConfig().getBoolean("world-trimmer.enabled", true));
+        out.put("phase", current.name());
+        out.put("status", SimplexAdminSuite.stripFormatting(statusGerman()));
+        out.put("progress", progress);
+        out.put("countdown", countdownRemaining);
+        out.put("target", currentTarget);
+        out.put("eta", current == Phase.RUNNING ? eta() : "");
+        out.put("operationId", operationId);
+        out.put("actor", actor);
+        out.put("remainingLoadedChunks", remainingLoadedChunks);
+        out.put("isActor", viewer != null && viewer.equals(actorUuid));
+        out.put("canDecide", viewer != null && viewer.equals(actorUuid) && current == Phase.AWAITING_OVERRIDE && pendingPlan != null);
+        out.put("scanning", scanRunning.get());
+        out.put("downloading", downloadRunning.get());
+        out.put("lastScanAt", lastScanAt);
+        out.put("legacyPlugin", legacyPluginActive());
+        out.put("tool", SimplexAdminSuite.appMap("label", SimplexAdminSuite.stripFormatting(toolLabel()), "ready", toolReadyFast(), "version", toolVersion, "sha256", toolSha256, "minimum", minimumToolVersion()));
+        List<Map<String, Object>> dims = new ArrayList<>();
+        for (WorldTarget t : targetsSnapshot()) dims.add(SimplexAdminSuite.appMap("id", t.id, "label", t.label, "layout", t.layout, "bytes", t.bytes, "poi", t.hasPoi(), "entities", t.hasEntities()));
+        out.put("targets", dims);
+        Session session = viewer == null ? null : session(viewer);
+        out.put("selection", session == null ? List.of() : new ArrayList<>(session.selected));
+        out.put("threshold", session == null ? plugin.getConfig().getLong("world-trimmer.default-threshold-ticks", 1200L) : session.thresholdTicks);
+        out.put("countdownChoice", session == null ? 180 : session.countdownSeconds);
+        out.put("snapshotDefault", plugin.getConfig().getBoolean("world-trimmer.safety.snapshot-regions", false));
+        List<Map<String, Object>> thresholds = new ArrayList<>();
+        for (long ticks : new long[]{600L, 1200L, 3600L, 6000L, 12000L}) if (ticks >= minimumThreshold()) thresholds.add(SimplexAdminSuite.appMap("ticks", ticks, "label", thresholdDuration(ticks)));
+        out.put("thresholds", thresholds);
+        out.put("countdowns", List.of(0, 60, 180, 300));
+        long free = -1L;
+        try { free = Files.getFileStore(folder).getUsableSpace(); } catch (IOException ignored) { }
+        out.put("freeBytes", free);
+        out.put("minimumFreeBytes", Math.max(0L, plugin.getConfig().getLong("world-trimmer.preflight.minimum-free-space-gib", 2L)) * 1073741824L);
+        out.put("safety", SimplexAdminSuite.appMap("refuseLoadedChunks", plugin.getConfig().getBoolean("world-trimmer.preflight.refuse-loaded-chunks", true),
+                "operatorBypass", plugin.getConfig().getBoolean("world-trimmer.preflight.allow-operator-bypass", true),
+                "restartAfterFailure", plugin.getConfig().getBoolean("world-trimmer.restart-after-failure", true),
+                "stallMinutes", Math.max(5L, Math.min(720L, plugin.getConfig().getLong("world-trimmer.safety.stall-timeout-minutes", 60L))),
+                "last", lastSafety));
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (HistoryEntry e : historySnapshot()) {
+            if (rows.size() >= 30) break;
+            rows.add(SimplexAdminSuite.appMap("id", e.id, "status", e.status, "actor", e.actor, "targets", e.targets, "threshold", e.thresholdTicks, "countdown", e.countdownSeconds,
+                    "startedAt", e.startedAt, "finishedAt", e.finishedAt, "before", e.beforeBytes, "after", e.afterBytes, "saved", e.savedBytes(), "tool", e.toolVersion, "error", e.error));
+        }
+        out.put("history", rows);
+        out.put("totalSaved", totalSavedBytes());
+        return out;
+    }
+
     void requestStart(Player admin) {
         if (!requireOperator(admin)) return;
         if (!plugin.getConfig().getBoolean("world-trimmer.enabled", true)) {
@@ -574,6 +641,7 @@ final class WorldTrimManager {
         Set<String> selectedIds = new LinkedHashSet<>(session.selected);
         long threshold = Math.max(minimumThreshold(), session.thresholdTicks);
         int countdown = session.countdownSeconds;
+        boolean snapshot = session.snapshot != null ? session.snapshot : plugin.getConfig().getBoolean("world-trimmer.safety.snapshot-regions", false);
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
                 List<WorldTarget> fresh = discoverCurrentTargets();
@@ -590,7 +658,15 @@ final class WorldTrimManager {
                 long minimumFree = Math.max(0L, plugin.getConfig().getLong("world-trimmer.preflight.minimum-free-space-gib", 2L)) * 1073741824L;
                 if (store.getUsableSpace() < minimumFree) throw new IllegalStateException("Zu wenig freier Speicher für einen abgesicherten Lauf.");
                 long before = selected.stream().mapToLong(target -> target.bytes).sum();
-                RunPlan plan = new RunPlan(selected, threshold, countdown, admin.getUniqueId(), admin.getName(), before);
+                if (snapshot) {
+                    long measured = 0L; for (WorldTarget target : selected) measured += sizeOfTarget(target.folder);
+                    long needed = minimumFree + measured + measured / 10L;
+                    if (Files.getFileStore(folder).getUsableSpace() < needed)
+                        throw new IllegalStateException("Für die Sicherheitskopie werden " + formatBytes(needed) + " freier Speicher benötigt, verfügbar sind "
+                                + formatBytes(Files.getFileStore(folder).getUsableSpace()) + ". Sicherheitskopie abwählen oder Speicher freigeben.");
+                    before = measured;
+                }
+                RunPlan plan = new RunPlan(selected, threshold, countdown, admin.getUniqueId(), admin.getName(), before, snapshot);
                 plugin.runAdminTask( () -> acceptPreflight(admin, plan));
             } catch (Exception error) {
                 plugin.runAdminTask( () -> failPreflight(admin, cleanReason(error)));
@@ -878,10 +954,21 @@ final class WorldTrimManager {
 
     private void processPlan(RunPlan plan) {
         long before = 0L;
+        Path snapshotFolder = null;
+        lastSafety = "";
+        List<Path> dimensions = plan.targets.stream().map(target -> target.folder).toList();
         try {
             for (WorldTarget target : plan.targets) before += sizeOfTarget(target.folder);
             operationBeforeBytes = before;
             persistState();
+            if (plan.snapshot) {
+                currentTarget = "Safety copy of region files";
+                persistState();
+                snapshotFolder = folder.resolve("snapshots").resolve(operationId.isBlank() ? UUID.randomUUID().toString() : operationId);
+                long copied = RegionSafety.snapshot(dimensions, snapshotFolder);
+                lastSafety = "Sicherheitskopie: " + formatBytes(copied);
+                plugin.getLogger().info("Trimmer-Sicherheitskopie erstellt: " + formatBytes(copied) + " in " + snapshotFolder);
+            }
             int count = plan.targets.size();
             for (int index = 0; index < count; index++) {
                 WorldTarget target = plan.targets.get(index);
@@ -894,6 +981,17 @@ final class WorldTrimManager {
                 progress = ((index + 1) * 100) / count;
                 notifyDiscordProgress(true);
             }
+            currentTarget = "Integrity check";
+            persistState();
+            RegionSafety.Report report = RegionSafety.check(dimensions, operationStartedAt - 5_000L, 20);
+            lastSafety = (plan.snapshot ? lastSafety + " • " : "") + "Integrität: " + report.files() + " Dateien, " + report.chunks() + " Chunks, "
+                    + (report.ok() ? "keine Fehler" : report.problems().size() + " Fehler");
+            if (!report.ok()) {
+                plugin.getLogger().severe("Trimmer-Integritätsprüfung fehlgeschlagen: " + String.join(" | ", report.problems()));
+                throw new IntegrityException("Integrity check failed: " + report.problems().get(0)
+                        + (report.problems().size() > 1 ? " (+" + (report.problems().size() - 1) + " more)" : ""));
+            }
+            if (snapshotFolder != null) { RegionSafety.delete(snapshotFolder); snapshotFolder = null; }
             long after = 0L;
             for (WorldTarget target : plan.targets) after += sizeOfTarget(target.folder);
             HistoryEntry entry = new HistoryEntry(operationId, "SUCCESS", plan.actor, labels(plan.targets), plan.thresholdTicks,
@@ -907,7 +1005,24 @@ final class WorldTrimManager {
             persistState();
             if (!shuttingDown) plugin.runAdminTask( () -> completeSuccessfully(entry));
         } catch (Exception error) {
-            failRun(plan, cleanReason(error));
+            String reason = cleanReason(error);
+            boolean restored = false;
+            if (snapshotFolder != null && !shuttingDown) {
+                try {
+                    Process process = activeProcess;
+                    if (process != null && process.isAlive()) { process.destroy(); process.waitFor(10L, java.util.concurrent.TimeUnit.SECONDS); }
+                    int files = RegionSafety.restore(dimensions, snapshotFolder);
+                    restored = true;
+                    reason += " • Sicherheitskopie wiederhergestellt (" + files + " Dateien)";
+                    plugin.getLogger().warning("Trimmer: Sicherheitskopie nach Fehler wiederhergestellt (" + files + " Dateien).");
+                    RegionSafety.delete(snapshotFolder);
+                } catch (Exception restoreError) {
+                    reason += " • Wiederherstellung fehlgeschlagen: " + cleanReason(restoreError) + " (Kopie bleibt unter " + snapshotFolder + ")";
+                    plugin.getLogger().severe("Trimmer: Sicherheitskopie konnte nicht wiederhergestellt werden: " + restoreError.getMessage());
+                }
+            }
+            // A failed integrity check without a restored copy keeps joins blocked for an operator review.
+            failRun(plan, reason, error instanceof IntegrityException && !restored);
         } finally {
             activeProcess = null;
         }
@@ -919,7 +1034,7 @@ final class WorldTrimManager {
         Path javaBinary = Path.of(System.getProperty("java.home"), "bin", javaName);
         List<String> command = new ArrayList<>();
         command.add(javaBinary.toString());
-        command.add("-Xmx" + plugin.getConfig().getString("world-trimmer.performance.heap", "3G"));
+        command.add("-Xmx" + RegionSafety.heap(plugin.getConfig().getString("world-trimmer.performance.heap", "3G")));
         command.add("-Djava.awt.headless=true");
         command.add("-jar");
         command.add(toolFile.toString());
@@ -937,13 +1052,34 @@ final class WorldTrimManager {
         activeProcess = process;
         activeProcessPid = process.pid();
         persistState();
+        // 10.3.0: a hung MCA Selector (no output for the configured time) is stopped instead of locking the server forever.
+        long stallMillis = Math.max(5L, Math.min(720L, plugin.getConfig().getLong("world-trimmer.safety.stall-timeout-minutes", 60L))) * 60_000L;
+        java.util.concurrent.atomic.AtomicLong lastOutput = new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
+        java.util.concurrent.atomic.AtomicBoolean stalled = new java.util.concurrent.atomic.AtomicBoolean(false);
+        Thread watchdog = new Thread(() -> {
+            while (process.isAlive()) {
+                try { Thread.sleep(10_000L); } catch (InterruptedException interrupted) { return; }
+                if (System.currentTimeMillis() - lastOutput.get() > stallMillis && process.isAlive()) {
+                    stalled.set(true);
+                    plugin.getLogger().severe("MCA Selector meldet seit " + (stallMillis / 60_000L) + " Minuten nichts mehr und wird beendet.");
+                    process.destroy();
+                    try { if (!process.waitFor(15L, java.util.concurrent.TimeUnit.SECONDS)) process.destroyForcibly(); } catch (InterruptedException interrupted) { process.destroyForcibly(); }
+                    return;
+                }
+            }
+        }, "SimplexTrimmer-Watchdog");
+        watchdog.setDaemon(true);
+        watchdog.start();
         try {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
-                while ((line = reader.readLine()) != null) output.accept(line);
+                while ((line = reader.readLine()) != null) { lastOutput.set(System.currentTimeMillis()); output.accept(line); }
             }
-            return process.waitFor();
+            int exit = process.waitFor();
+            if (stalled.get()) throw new IllegalStateException("MCA Selector hung without output for " + (stallMillis / 60_000L) + " minutes and was stopped.");
+            return exit;
         } finally {
+            watchdog.interrupt();
             activeProcessPid = 0L;
         }
     }
@@ -977,7 +1113,9 @@ final class WorldTrimManager {
         plugin.restartImmediatelyAfterTrim(entry.actor);
     }
 
-    private void failRun(RunPlan plan, String reason) {
+    private void failRun(RunPlan plan, String reason) { failRun(plan, reason, false); }
+
+    private void failRun(RunPlan plan, String reason, boolean forceRecovery) {
         if (shuttingDown) {
             phase.set(Phase.RECOVERY);
             recordInterrupted("The server stopped while the active trim process was being terminated.");
@@ -991,7 +1129,7 @@ final class WorldTrimManager {
                 plan.countdownSeconds, operationStartedAt, System.currentTimeMillis(), operationBeforeBytes, after,
                 toolVersion, reason);
         addHistory(entry);
-        boolean restart = plugin.getConfig().getBoolean("world-trimmer.restart-after-failure", true);
+        boolean restart = !forceRecovery && plugin.getConfig().getBoolean("world-trimmer.restart-after-failure", true);
         phase.set(restart ? Phase.RESTARTING : Phase.RECOVERY);
         pendingPlan = null;
         remainingLoadedChunks = 0L;
@@ -1854,6 +1992,8 @@ final class WorldTrimManager {
         long thresholdTicks;
         int countdownSeconds;
         long backupConfirmedAt;
+        /** 10.3.0: copy the selected region files before trimming and restore them automatically on any failure. */
+        Boolean snapshot;
         Session(LinkedHashSet<String> selected, long thresholdTicks, int countdownSeconds, long backupConfirmedAt) {
             this.selected = selected; this.thresholdTicks = thresholdTicks;
             this.countdownSeconds = countdownSeconds; this.backupConfirmedAt = backupConfirmedAt;
@@ -1867,11 +2007,14 @@ final class WorldTrimManager {
         final UUID actorUuid;
         final String actor;
         final long beforeBytes;
+        final boolean snapshot;
         RunPlan(List<WorldTarget> targets, long thresholdTicks, int countdownSeconds, UUID actorUuid,
-                String actor, long beforeBytes) {
+                String actor, long beforeBytes) { this(targets, thresholdTicks, countdownSeconds, actorUuid, actor, beforeBytes, false); }
+        RunPlan(List<WorldTarget> targets, long thresholdTicks, int countdownSeconds, UUID actorUuid,
+                String actor, long beforeBytes, boolean snapshot) {
             this.targets = List.copyOf(targets); this.thresholdTicks = thresholdTicks;
             this.countdownSeconds = countdownSeconds; this.actorUuid = actorUuid;
-            this.actor = actor; this.beforeBytes = beforeBytes;
+            this.actor = actor; this.beforeBytes = beforeBytes; this.snapshot = snapshot;
         }
     }
 

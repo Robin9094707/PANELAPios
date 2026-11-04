@@ -1,4 +1,12 @@
-## Aktuelles Update: Panel 4.5.0 / Admin Suite 10.2.0
+## Aktuelles Update: Panel 4.6.0 / Admin Suite 10.3.0 / SentinelBridge 1.6.0
+
+**Studio, Welten-Trimmer & Steckbrief** in App und Webpanel: Discord-Status und Scoreboard mit Vorlagen und Live-Vorschau
+(Standard = bisheriger Stand), Welten-Trimmer mit Sicherheitskopie, Integritätsprüfung und Hänger-Wächter, durchsuchbarer
+Spieler-Steckbrief, mehr Java-/Bedrock-Clientdaten, Fix für „HTTP 422“ der Bedrock-Brücke (neue Brücke gegen Geyser 2.12.1),
+aufgeräumte Navigation und Schnellsuche. Neue Rechte sind in keiner Rollenvorlage. [Update 4.6.0](UPDATE-4.6.0.md) ·
+[Suite 10.3.0](Companion/AdminSuite/UPDATE-10.3.0.md) · [Brücke 1.6.0](Companion/SentinelBridge/CHANGELOG.md).
+
+## Panel 4.5.0 / Admin Suite 10.2.0
 
 **Diagnosezentrale** in App und Webpanel: Live-TPS/Tickzeit/RAM/CPU, Disconnect-Analyse mit Vorfällen (legitim oder Fehler, z. B. Server-Lag, Netzwerk nur bei Java, defektes Item am selben Ort), Bark-Alarm für Disconnect-Wellen, Abstürze und Server-Hänger, KI-Einschätzung mit dem vorhandenen OpenAI-Schlüssel, Lag-Karte, Spark-Profiler mit serverseitiger Analyse, Absturz-Manager, Volldiagnose und Verbindungsverlauf im Spielerprofil. Fix für „Pflichtfeld fehlt: grant“ bei den Befehle-Schaltern. [Update 4.5.0](UPDATE-4.5.0.md) · [Suite 10.2.0](Companion/AdminSuite/UPDATE-10.2.0.md).
 

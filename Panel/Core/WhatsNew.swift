@@ -18,6 +18,16 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "4.6.0", title: "Studio, Welten-Trimmer & Steckbrief", summary: "Discord-Status und Scoreboard mit Vorlagen und Live-Vorschau gestalten, Welten sicher trimmen und alles über einen Spieler auf einen Blick – in App und Webpanel.", items: [
+            WhatsNewItem(symbol: "paintpalette.fill", title: "Discord-Status-Designer", detail: "Texte, Farben, Felder, Bilder und Bot-Aktivität bearbeiten – mit Discord-Vorschau für Online, Instabil, Überlastet, Neustart und Offline. Sieben Vorlagen; „Simplex Standard“ ist der bisherige Status."),
+            WhatsNewItem(symbol: "list.bullet.rectangle.fill", title: "Scoreboard-Designer", detail: "Titel und Zeilen mit Farbcodes, Platzhaltern und Hex-Farbverlauf bearbeiten. Die Minecraft-Vorschau nutzt echte Werte vom Server; sieben Vorlagen inklusive Standard."),
+            WhatsNewItem(symbol: "scissors", title: "Welten-Trimmer in der App", detail: "Dimensionen wählen, Besuchsgrenze und Countdown festlegen, Fortschritt live verfolgen, Notfallentscheidung und Recovery – mit Backup-Bestätigung und eigenem Recht."),
+            WhatsNewItem(symbol: "checkmark.shield.fill", title: "Sicherer trimmen", detail: "Optionale Sicherheitskopie mit automatischer Wiederherstellung, Integritätsprüfung aller geänderten Regionsdateien und ein Wächter für hängende MCA-Selector-Läufe."),
+            WhatsNewItem(symbol: "person.text.rectangle.fill", title: "Steckbrief im Spielerprofil", detail: "Identität, Aktivität, Client, Bedrock-Gerät, Netzwerk, Moderation, Position und letzter Verlauf – durchsuchbar und je nach deinen Rechten."),
+            WhatsNewItem(symbol: "gamecontroller.fill", title: "Mehr über Clients", detail: "Bedrock: Trennungsgrund aus Geyser, Drittanbieter-Name, Skin-Engine, Floodgate-Verknüpfung. Java: Beitrittsadresse, Server-Transfer und Ressourcenpaket-Status."),
+            WhatsNewItem(symbol: "square.grid.2x2.fill", title: "Aufgeräumte Übersicht", detail: "Die Admin-Suite-Startseite ist nach Aufgaben gegliedert: Spieler, Server & Diagnose, Kommunikation & Studio, Verwaltung."),
+            WhatsNewItem(symbol: "lock.fill", title: "Neue Rechte, nicht vorbelegt", detail: "Trimmer, Discord-Status und Scoreboard haben eigene Rechte. Sie stecken in keiner Rollenvorlage – nur Vollzugriff oder eine gezielte Freigabe schaltet sie frei.")
+        ]),
         WhatsNewRelease(version: "4.5.0", title: "Diagnosezentrale", summary: "Disconnect-Wellen erkennen und einordnen, Lag finden, Spark-Profile auswerten und Abstürze nachvollziehen – mit KI-Hilfe und Bark-Alarm.", items: [
             WhatsNewItem(symbol: "terminal.fill", title: "Befehle-Schalter repariert", detail: "Einzelne Befehle eines Spielers ließen sich nicht umschalten („Pflichtfeld fehlt: grant“). Erlauben, Sperren und Zurücksetzen funktionieren wieder."),
             WhatsNewItem(symbol: "wifi.exclamationmark", title: "Disconnect-Analyse", detail: "Jede Trennung mit Grund, Ping, Ort und Sitzungsdauer. Drei oder mehr in kurzer Zeit – oder ein großer Teil der Spieler – werden zum Vorfall mit Einschätzung „legitim“ oder „Fehler“ und konkreten Schritten."),

@@ -22,14 +22,22 @@
       { id: "diagnostics", label: "Diagnose", icon: "activity", perm: "data.diagnostics", feature: "diagnostics-v1", badge: "diagnostics" },
       { id: "statistics", label: "Statistiken", icon: "chart", perm: "data.statistics" },
       { id: "worlds", label: "Welten", icon: "globe", perm: "data.worlds" },
+      { id: "world-trim", label: "Welten-Trimmer", icon: "scissors", perm: "data.world-trim", feature: "world-trim-v1" },
       { id: "plugins", label: "Plugins", icon: "puzzle", perm: "data.plugins" },
-      { id: "luckperms", label: "Ränge & Rechte", icon: "crown", perm: "data.luckperms", feature: "luckperms-v1" },
-      { id: "access-locks", label: "Rechte & Sperren", icon: "lock", perm: "data.access-locks", feature: "access-locks-v1" },
-      { id: "commands", label: "Befehle", icon: "terminal", perm: "data.commands", feature: "command-rights-v1" },
-      { id: "lands", label: "Lands", icon: "map", perm: "data.lands", feature: "lands-v1" },
       { id: "functions", label: "Alle Funktionen", icon: "grid", perm: null },
       { id: "menu", label: "Suite-Menüs", icon: "box", perm: "action.menu.action", full: true },
       { id: "settings", label: "Einstellungen", icon: "settings", perm: "data.app-settings", feature: "app-settings-v1" }
+    ] },
+    // 10.3.0: rights got their own group; the long "Server" list is easier to scan.
+    { group: "Ränge & Rechte", items: [
+      { id: "luckperms", label: "Ränge & LuckPerms", icon: "crown", perm: "data.luckperms", feature: "luckperms-v1" },
+      { id: "access-locks", label: "Rechte & Sperren", icon: "lock", perm: "data.access-locks", feature: "access-locks-v1" },
+      { id: "commands", label: "Befehle", icon: "terminal", perm: "data.commands", feature: "command-rights-v1" },
+      { id: "lands", label: "Lands", icon: "map", perm: "data.lands", feature: "lands-v1" }
+    ] },
+    { group: "Studio", items: [
+      { id: "discord-status", label: "Discord-Status", icon: "palette", perm: "data.discord-status", feature: "discord-status-designer-v1" },
+      { id: "scoreboard", label: "Scoreboard", icon: "layers", perm: "data.scoreboard", feature: "scoreboard-designer-v1" }
     ] },
     { group: "Persönlich", items: [
       { id: "notifications", label: "Benachrichtigungen", icon: "bell", perm: null, feature: "web-push-v1" },
@@ -115,7 +123,8 @@
         S.btn("", { kind: "ghost", size: "sm icon", icon: "logout", title: "Abmelden", onClick: logout }))));
 
     var title = h("h1", { id: "page-title", text: "" }), crumb = h("span", { class: "crumb hide-mobile", id: "page-crumb" });
-    var topbar = h("header", { class: "topbar" }, S.btn("", { kind: "ghost", size: "icon", icon: "menu", title: "Menü", onClick: openDrawer, aria: "Menü öffnen" }), h("div", { class: "grow row", style: { gap: "12px", minWidth: 0 } }, title, crumb), h("div", { id: "page-actions", class: "row" }));
+    var finder = h("button", { type: "button", class: "finder hide-mobile", title: "Schnellsuche (Strg/⌘ + K)", onClick: function () { if (S.palette) S.palette(); } }, icon("search"), h("span", { text: "Suchen" }), h("kbd", { text: /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘K" : "Strg K" }));
+    var topbar = h("header", { class: "topbar" }, S.btn("", { kind: "ghost", size: "icon", icon: "menu", title: "Menü", onClick: openDrawer, aria: "Menü öffnen" }), h("div", { class: "grow row", style: { gap: "12px", minWidth: 0 } }, title, crumb), finder, h("div", { id: "page-actions", class: "row" }));
     topbar.firstChild.classList.add("menu-btn");
     var content = h("div", { class: "content", id: "content" });
     var tabbar = h("nav", { class: "tabbar", "aria-label": "Schnellnavigation" });

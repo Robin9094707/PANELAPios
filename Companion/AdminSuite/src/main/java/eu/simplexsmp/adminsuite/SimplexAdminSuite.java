@@ -8837,6 +8837,71 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if(online!=null){List<Object> preview=new ArrayList<>();int occupied=0;for(org.bukkit.inventory.ItemStack item:online.getInventory().getStorageContents())if(item!=null&&!item.getType().isAir()){occupied++;if(preview.size()<6)preview.add(appMap("id",String.valueOf(occupied),"name",item.getType().name().toLowerCase(Locale.ROOT).replace('_',' '),"amount",item.getAmount()));}row.put("inventoryPreview",appMap("occupied",occupied,"items",preview));Location loc=online.getLocation();row.put("live",appMap("health",online.getHealth(),"maxHealth",online.getMaxHealth(),"food",online.getFoodLevel(),"saturation",online.getSaturation(),"level",online.getLevel(),"exp",online.getExp(),"gamemode",online.getGameMode().name().toLowerCase(Locale.ROOT),"invulnerable",online.isInvulnerable(),"allowFlight",online.getAllowFlight(),"world",loc.getWorld()==null?"":loc.getWorld().getName(),"x",loc.getX(),"y",loc.getY(),"z",loc.getZ()));}
         }return row;
     }
+    // ------------------------------------------------------------------ 10.3.0 player dossier
+    private static final java.time.format.DateTimeFormatter DOSSIER_TIME=java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm",Locale.GERMANY).withZone(java.time.ZoneId.of("Europe/Berlin"));
+    private static String dossierFirst(String... values){for(String v:values)if(v!=null&&!v.isBlank())return v;return "";}
+    private static String dossierDate(long millis){return millis<=0?"–":DOSSIER_TIME.format(java.time.Instant.ofEpochMilli(millis));}
+    private static String dossierDuration(long millis){long m=Math.max(0,millis)/60000L;if(m>=1440)return (m/1440)+" T "+(m%1440/60)+" Std";if(m>=60)return (m/60)+" Std "+(m%60)+" Min";return m+" Min";}
+    private static void dossierRow(List<Object> rows,String label,Object value){dossierRow(rows,label,value,false,"");}
+    private static void dossierRow(List<Object> rows,String label,Object value,boolean mono,String tone){String text=value==null?"":String.valueOf(value).trim();if(text.isEmpty()||text.equals("-1")||text.equalsIgnoreCase("null"))return;rows.add(appMap("label",label,"value",text.length()>600?text.substring(0,600)+" …":text,"mono",mono,"tone",tone));}
+    private static Map<String,Object> dossierSection(String id,String title,String symbol,String webIcon,List<Object> rows,List<String> list){return appMap("id",id,"title",title,"symbol",symbol,"icon",webIcon,"rows",rows,"list",list==null?List.of():list);}
+    private static void dossierDiagnostics(List<Object> rows,Map<String,String> values){
+        Map<String,String> copy;synchronized(values){copy=new LinkedHashMap<>(values);}
+        for(var e:copy.entrySet()){String key=e.getKey();if(Set.of("availableFields","observedAt","metadataTrust","schemaVersion").contains(key))continue;String label=DeviceDiagnostics.LABELS.getOrDefault(key,key);String v=e.getValue();if("true".equals(v))v="Ja";else if("false".equals(v))v="Nein";dossierRow(rows,label,v,key.toLowerCase(Locale.ROOT).contains("id")||key.contains("Hash"),"");}
+    }
+    /** Everything the suite knows about one player, grouped for app and web; sections the viewer may not see are left out. */
+    Map<String,Object> appPlayerDossier(String query,java.util.function.Predicate<String> allowed){
+        PlayerProfile p=database.find(query);if(p==null)throw new IllegalArgumentException("Spieler nicht gefunden");
+        Player online=Bukkit.getPlayer(p.uuid);long now=System.currentTimeMillis();List<Object> sections=new ArrayList<>();
+        List<Object> id=new ArrayList<>();dossierRow(id,"Name",p.name);dossierRow(id,"UUID",p.uuid,true,"");dossierRow(id,"Status",online!=null?"Online seit "+dossierDuration(now-p.currentSessionStartedAt):"Offline",false,online!=null?"ok":"");
+        dossierRow(id,"Erster Beitritt",dossierDate(p.firstSeen));dossierRow(id,"Zuletzt gesehen",online!=null?"jetzt":dossierDate(p.lastSeen));
+        if(adminAccess!=null)try{Map<String,Boolean> lp=luckPerms==null?Map.of():luckPerms.permissions.getOrDefault(p.uuid,Map.of());if(adminAccess.hasAccess(p.uuid,online,lp))dossierRow(id,"Team",adminAccess.roleLabel(p.uuid),false,"info");}catch(RuntimeException ignored){}
+        if(accountLinks!=null&&allowed.test("data.links")){AccountLinks.Link link=accountLinks.store.byMinecraft(p.uuid);if(link!=null){dossierRow(id,"Discord",link.name()+" ("+link.discord()+")",false,"info");dossierRow(id,"Verknüpft seit",dossierDate(link.linkedAt()));}}
+        dossierRow(id,"Sprache",dossierFirst(p.clientLanguage,p.javaLocale));
+        sections.add(dossierSection("identity","Identität","person.text.rectangle","user",id,p.previousNames.isEmpty()?List.of():List.of("Frühere Namen: "+String.join(", ",new ArrayList<>(p.previousNames)))));
+        List<Object> act=new ArrayList<>();ServerStatistics.Profile st=p.statisticsSnapshot();dossierRow(act,"Sitzungen",st.sessions());dossierRow(act,"Spielzeit",dossierDuration(st.play()));dossierRow(act,"Davon AFK",dossierDuration(st.afk()));
+        if(st.play()>0)dossierRow(act,"Aktiv-Anteil",Math.round(100D*(st.play()-st.afk())/Math.max(1,st.play()))+" %");dossierRow(act,"Ø Sitzung",st.sessions()>0?dossierDuration(st.play()/st.sessions()):"");
+        dossierRow(act,"Letzter Beitritt",dossierDate(p.lastJoinAt));dossierRow(act,"Letzte Chatnachricht",dossierDate(p.lastChatAt));dossierRow(act,"Simplex Points",p.simplexPoints());dossierRow(act,"Geräte",st.devices());
+        sections.add(dossierSection("activity","Aktivität","chart.bar.fill","chart",act,null));
+        List<Object> client=new ArrayList<>();dossierRow(client,"Plattform",p.clientPlatform);dossierRow(client,"Client-Brand",p.javaClientBrandValue());dossierRow(client,"Spielversion",p.clientVersion);
+        if(p.javaProtocolVersion>0)dossierRow(client,"Protokoll",p.javaProtocolVersion,true,"");if(p.javaClientViewDistance>0)dossierRow(client,"Sichtweite",p.javaClientViewDistance+" Chunks");if(p.javaLastPing>=0)dossierRow(client,"Letzter Ping",p.javaLastPing+" ms");
+        dossierRow(client,"Eingabe",p.clientInput);dossierRow(client,"Gerät",p.clientDevice);
+        List<String> mods;synchronized(p.javaDetectedMods){mods=new ArrayList<>(p.javaDetectedMods);}if(!mods.isEmpty())dossierRow(client,"Erkannte Mods/Clients",String.join(", ",mods),false,"warn");
+        List<String> channels;synchronized(p.javaRegisteredChannels){channels=new ArrayList<>(p.javaRegisteredChannels);}if(!channels.isEmpty())dossierRow(client,"Plugin-Kanäle",channels.size()+(p.javaChannelsUpdatedAt>0?" • Stand "+dossierDate(p.javaChannelsUpdatedAt):""));
+        dossierDiagnostics(client,p.javaDiagnostics);
+        sections.add(dossierSection("client","Client & Verbindung","desktopcomputer","monitor",client,channels.size()>60?channels.subList(0,60):channels));
+        if(!"JAVA".equals(p.clientPlatform)||!p.bedrockDiagnostics.isEmpty()||!p.bedrockDeviceModel.isBlank()){
+            List<Object> bed=new ArrayList<>();dossierRow(bed,"Gerätemodell",p.bedrockDeviceModel);dossierRow(bed,"Betriebssystem",p.bedrockDeviceOs);dossierRow(bed,"Oberfläche",p.bedrockUiProfile);
+            dossierRow(bed,"Eingabe aktuell",p.bedrockCurrentInput);dossierRow(bed,"Eingabe Standard",p.bedrockDefaultInput);if(p.bedrockGuiScale>-1)dossierRow(bed,"GUI-Skalierung",p.bedrockGuiScale);
+            dossierRow(bed,"Beitrittsadresse",p.bedrockServerAddress,true,"");dossierRow(bed,"Armgröße",p.bedrockArmSize);if(p.bedrockThirdPartyNameOnly)dossierRow(bed,"Nur Drittanbieter-Name","Ja");
+            if(allowed.test("data.devices")){dossierRow(bed,"Plattform-ID online",p.bedrockPlatformOnlineId,true,"");dossierRow(bed,"Plattform-ID offline",p.bedrockPlatformOfflineId,true,"");}
+            dossierRow(bed,"Letzter Brücken-Schnappschuss",dossierDate(p.lastBedrockSnapshotAt));dossierDiagnostics(bed,p.bedrockDiagnostics);
+            if(!bed.isEmpty())sections.add(dossierSection("bedrock","Bedrock-Gerät","gamecontroller.fill","gamepad",bed,null));
+        }
+        if(allowed.test("data.devices")){List<Object> dev=new ArrayList<>();List<DeviceRecord> list;synchronized(p.devices){list=new ArrayList<>(p.devices.values());}list.sort((a,b)->Long.compare(b.lastSeen,a.lastSeen));
+            for(DeviceRecord d:list.subList(0,Math.min(12,list.size())))dossierRow(dev,dossierFirst(d.model,d.platform),String.join(" • ",java.util.stream.Stream.of(d.platform,d.os,d.gameVersion,d.currentInput,d.language).filter(v->v!=null&&!v.isBlank()).toList())+" • zuletzt "+dossierDate(d.lastSeen));
+            if(!dev.isEmpty())sections.add(dossierSection("devices","Geräte ("+list.size()+")","iphone.gen3","devices",dev,null));}
+        if(allowed.test("data.alts")){List<Object> net=new ArrayList<>();dossierRow(net,"Letzte IP (maskiert)",p.lastIpMasked,true,"");dossierRow(net,"Bekannte IPs",p.altIpHistory.size());
+            if(altDetection!=null&&altDetection.matchCache!=null)dossierRow(net,"Mögliche Alt-Accounts",altDetection.matchCache.counts.getOrDefault(p.uuid,0),false,altDetection.matchCache.counts.getOrDefault(p.uuid,0)>0?"warn":"");
+            dossierRow(net,"Bekannte Geräte-IDs",p.altDeviceHistory.size());dossierRow(net,"Xbox-IDs",p.altXuidHistory.size());if(vpnProtection!=null&&vpnProtection.isWhitelisted(p.uuid,p.name))dossierRow(net,"VPN-Ausnahme","Ja",false,"info");
+            sections.add(dossierSection("network","Netzwerk & Alts","network","globe",net,null));}
+        List<Object> mod=new ArrayList<>();
+        if(p.internalBanActive(now))dossierRow(mod,"Bann",(p.internalBanUntil>now+1576800000000L?"dauerhaft":"bis "+dossierDate(p.internalBanUntil))+" • "+p.internalBanReason+" • von "+p.internalBanBy,false,"danger");
+        if(p.internalMuteActive(now))dossierRow(mod,"Stummschaltung",(p.internalMuteUntil>now+1576800000000L?"dauerhaft":"bis "+dossierDate(p.internalMuteUntil))+" • "+p.internalMuteReason+" • von "+p.internalMuteBy,false,"warn");
+        dossierRow(mod,"Warnungen",p.warnings.size(),false,p.warnings.isEmpty()?"":"warn");dossierRow(mod,"Teamnotizen",p.notes.size());
+        Set<String> blocked=p.blockedRightsSet();Map<String,Long> temp=p.temporaryBlockedRightsMap();if(!blocked.isEmpty()||!temp.isEmpty())dossierRow(mod,"Gesperrte Rechte",String.join(", ",new java.util.TreeSet<>(blocked))+(temp.isEmpty()?"":" (befristet: "+String.join(", ",temp.keySet())+")"),false,"warn");
+        List<String> modList=new ArrayList<>();synchronized(p.warnings){for(String w:p.warnings)modList.add("Warnung: "+w);}synchronized(p.notes){for(String n:p.notes)modList.add("Notiz: "+n);}
+        sections.add(dossierSection("moderation","Moderation","hand.raised.fill","gavel",mod,modList.size()>40?modList.subList(modList.size()-40,modList.size()):modList));
+        List<Object> pos=new ArrayList<>();
+        if(online!=null){Location l=online.getLocation();dossierRow(pos,"Jetzt",(l.getWorld()==null?"":l.getWorld().getName())+" • "+Math.round(l.getX())+" / "+Math.round(l.getY())+" / "+Math.round(l.getZ()),true,"");dossierRow(pos,"Spielmodus",online.getGameMode().name().toLowerCase(Locale.ROOT));dossierRow(pos,"Gesundheit",Math.round(online.getHealth())+" / "+Math.round(online.getMaxHealth()));dossierRow(pos,"Hunger",online.getFoodLevel()+" / 20");dossierRow(pos,"XP-Level",online.getLevel());dossierRow(pos,"Fliegen erlaubt",online.getAllowFlight()?"Ja":"Nein");}
+        if(p.logoutLocation!=null)dossierRow(pos,"Ausgeloggt bei",p.logoutLocation.world+" • "+Math.round(p.logoutLocation.x)+" / "+Math.round(p.logoutLocation.y)+" / "+Math.round(p.logoutLocation.z),true,"");
+        if(p.lastLocation!=null)dossierRow(pos,"Letzte bekannte Position",p.lastLocation.world+" • "+Math.round(p.lastLocation.x)+" / "+Math.round(p.lastLocation.y)+" / "+Math.round(p.lastLocation.z),true,"");
+        if(!pos.isEmpty())sections.add(dossierSection("position","Position & Werte","location.fill","map",pos,null));
+        if(allowed.test("data.chat")){List<String> chat;synchronized(p.recentChat){chat=new ArrayList<>(p.recentChat);}List<String> actions;synchronized(p.recentActions){actions=new ArrayList<>(p.recentActions);}List<String> combat;synchronized(p.recentCombat){combat=new ArrayList<>(p.recentCombat);}
+            List<String> all=new ArrayList<>();for(String c:chat.subList(Math.max(0,chat.size()-15),chat.size()))all.add("Chat: "+c);for(String a:actions.subList(Math.max(0,actions.size()-15),actions.size()))all.add("Aktion: "+a);for(String c:combat.subList(Math.max(0,combat.size()-10),combat.size()))all.add("Kampf: "+c);
+            if(!all.isEmpty())sections.add(dossierSection("recent","Zuletzt (Chat, Aktionen, Kämpfe)","text.bubble.fill","chat",List.of(),all));}
+        return appMap("player",p.uuid.toString(),"name",p.name,"online",online!=null,"generatedAt",now,"sections",sections);
+    }
     Object appApiMutation(String route,Map<String,Object> values,String actor){
         if(route.equals("logs.retry")){if(securityHub==null)throw new IllegalArgumentException("Client-Protokollmodul nicht aktiv");securityHub.retryLogs();expansionAudit(actor,null,"App-Protokollversand","Erneut versuchen");return appMap("ok",true,"title","Versand erneut geplant","description","Gespeicherte Ereignisse werden automatisch erneut geprüft und versendet.");}
         if(route.equals("world.update")){
@@ -8983,6 +9048,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     void discordPollVote(String player, String question, List<String> options) { if (discordBot != null) discordBot.relayPollVote(player, question, options); }
     void discordPollEnded(String question, String result) { if (discordBot != null) discordBot.relayPollEnded(question, result); }
     void discordPointsChanged() { if (discordBot != null) discordBot.playerStateChanged(); }
+    /** 10.3.0: app/web access to the trimmer and scoreboard; the operator proxy is the same one Discord uses. */
+    WorldTrimManager worldTrimmerManager() { return worldTrimmer; }
+    NativeScoreboardManager scoreboardManager() { return nativeScoreboard; }
+    Player appOperator(String accountId, String actor, List<String> output) { return discordVirtualPlayer("app:" + accountId, actor, output); }
     WorldTrimManager.TrimStatus worldTrimStatus() {
         return worldTrimmer == null ? new WorldTrimManager.TrimStatus(WorldTrimManager.Phase.IDLE, 0, 0, "", "", "") : worldTrimmer.discordStatus();
     }
@@ -16289,8 +16358,24 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 if (timestamp <= 0L || Math.abs(now - timestamp) > skew) { respond(exchange, 409, "stale timestamp"); return; }
                 if (nonce.isEmpty()) { respond(exchange, 422, "missing nonce"); return; }
                 BedrockSession session = BedrockSession.from(properties, now);
-                if (session.name.isEmpty() && session.uuid == null) { respond(exchange, 422, "missing player identity"); return; }
+                // 10.3.0: Geyser can report a connection before its Java name/UUID exist (early login, refresh of a
+                // half-open session). Floodgate derives unlinked UUIDs from the XUID, so use that instead of failing.
+                if (session.name.isEmpty() && session.uuid == null) session.uuid = floodgateUuid(session.xuid);
+                if (session.name.isEmpty() && session.uuid == null) {
+                    bridgeDeferred++;
+                    lastBridgePacket = now;
+                    respond(exchange, 202, "deferred: no player identity yet");
+                    return;
+                }
                 if (usedNonces.putIfAbsent(nonce, now) != null) { respond(exchange, 200, "already accepted"); return; }
+                if ("DISCONNECT".equals(session.diagnostics.get("snapshotPhase"))) {
+                    lastBridgePacket = now;
+                    bridgeVersion = clean(properties.getProperty("bridgeVersion"), 64);
+                    String reason = clean(properties.getProperty("disconnectReason"), 300);
+                    plugin.runAdminTask(() -> recordBedrockDisconnect(session, reason));
+                    respond(exchange, 202, "accepted");
+                    return;
+                }
                 queuePendingSession(session);
                 lastBridgePacket = now;
                 bridgeVersion = clean(properties.getProperty("bridgeVersion"), 64);
@@ -16347,6 +16432,27 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             } finally {
                 try { exchange.close(); } catch (Exception ignored) { }
             }
+        }
+
+        private volatile int bridgeDeferred;
+        int bridgeDeferred() { return bridgeDeferred; }
+
+        /** Floodgate's UUID for an unlinked Bedrock account: most significant bits 0, least significant bits = XUID. */
+        static UUID floodgateUuid(String xuid) {
+            if (xuid == null || !xuid.matches("[0-9]{1,19}")) return null;
+            try { long value = Long.parseLong(xuid); return value > 0L ? new UUID(0L, value) : null; } catch (NumberFormatException e) { return null; }
+        }
+
+        /** Stores Geyser's Bedrock-side disconnect reason on the (now offline) profile; never queued for a later login. */
+        private void recordBedrockDisconnect(BedrockSession session, String reason) {
+            PlayerProfile profile = session.uuid != null ? plugin.database.get(session.uuid) : null;
+            if (profile == null && !session.name.isEmpty()) { profile = plugin.database.find(session.name); if (profile != null && !profile.name.equalsIgnoreCase(session.name)) profile = null; }
+            if (profile == null || reason.isBlank()) return;
+            synchronized (profile.bedrockDiagnostics) {
+                profile.bedrockDiagnostics.put("lastDisconnectReason", reason);
+                profile.bedrockDiagnostics.put("lastDisconnectAt", dossierDate(System.currentTimeMillis()));
+            }
+            plugin.database.save(profile);
         }
 
         private void applyToOnlinePlayer(BedrockSession session) {

@@ -194,6 +194,11 @@ struct SuitePlayerView: View {
                 LabeledContent("Warnungen", value: current["warnings"].string)
             }
             quickActionSection
+            if suite.features.contains("player-dossier-v1") && suite.can("data.profile") {
+                Section {
+                    NavigationLink { SuitePlayerDossierView(suite: suite, player: player) } label: { Label("Steckbrief: alles über \(name)", systemImage: "person.text.rectangle.fill") }.accessibilityIdentifier("player-dossier")
+                } footer: { Text("Identität, Aktivität, Client, Bedrock-Gerät, Netzwerk, Moderation und Verlauf auf einen Blick – durchsuchbar.") }
+            }
             Section("Inventar & Speicherstand") {
                 if current["inventoryPreview"] != .null {
                     LabeledContent("Belegte Inventarplätze", value: current["inventoryPreview"]["occupied"].string + " / 36")

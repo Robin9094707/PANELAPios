@@ -195,6 +195,8 @@
     if (S.has("player-connection-v1") && (S.can("data.diagnostics") || S.can("data.profile")) && S.playerConnectionCard) grid.appendChild(S.playerConnectionCard(p.id));
     if ((p.notes || []).length) grid.appendChild(S.card("Notizen", { icon: "edit" }, h("div", { class: "list" }, p.notes.map(function (n) { return h("div", { class: "item" }, h("div", { class: "meta" }, h("p", { text: String(n) }))); }))));
     cards.push(grid);
+    // 10.3.0: one searchable dossier with everything the suite knows about this player.
+    if (S.has("player-dossier-v1") && S.dossierCard) cards.push(S.dossierCard(p.id));
     var tabBody = h("div");
     var tabs = h("div", { class: "tabs" });
     [["devices", "Geräte", "data.devices"], ["alts", "Alt-Accounts", "data.alts"]].forEach(function (t, i) {
