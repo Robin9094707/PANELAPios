@@ -165,8 +165,20 @@
           h("small", { text: (d.service || "") + " · seit " + S.date(d.created) + (d.delivered ? " · zuletzt zugestellt " + S.ago(d.delivered) : "") + " · " + (d.events || []).length + " Arten" })),
         S.btn("", { size: "sm icon", kind: "ghost", icon: "trash", title: "Entfernen", onClick: async function () { await S.api("push/update", { body: { id: d.id, operation: "delete" } }); S.reload(); } }));
     }) : S.empty("bell", "Noch kein Gerät", "Aktiviere Push oben auf jedem Gerät, das Hinweise bekommen soll.")));
+    // 10.3.0: Bark test – always possible, also during quiet hours; a typed key can be tested before saving it in the app.
+    var barkCard = null;
+    if (S.has("bark-test-v1")) {
+      var barkKey = S.input({ type: "password", placeholder: "Leer = gespeicherten Bark-Schlüssel nutzen", autocomplete: "off" }), barkOut = h("div");
+      barkCard = S.card("Bark testen", { icon: "send", sub: "Schickt sofort eine Testnachricht an dein Bark-Gerät – unabhängig von Ruhezeiten und Ereignis-Auswahl." },
+        h("div", { class: "stack" }, S.field("Bark-Schlüssel oder Push-Adresse (optional)", barkKey),
+          h("div", { class: "row wrap" }, S.btn("Bark-Test senden", { kind: "primary", icon: "send", onClick: async function () {
+            var r = await S.api("bark/test", { body: { key: barkKey.value.trim() } });
+            S.clear(barkOut).appendChild(S.notice(r.title + " – " + r.description, r.ok ? "ok" : "danger", r.ok ? "check" : "alert"));
+            S.toast(r.title, r.ok ? "ok" : "err");
+          } })), barkOut));
+    }
     S.title("Benachrichtigungen", "Push für Browser und Home-Bildschirm-App");
-    S.mount(h("div", { class: "stack" }, h("div", { class: "grid two" }, here, devices)));
+    S.mount(h("div", { class: "stack" }, h("div", { class: "grid two" }, here, devices), barkCard));
   };
 
   // ============================================================ Page: appearance

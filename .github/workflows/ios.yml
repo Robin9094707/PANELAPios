@@ -53,8 +53,8 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          # 4.0–4.5: focused, minimal unit tests for the new features keep the whole job around five minutes.
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
+          # 4.0–4.6: focused, minimal unit tests for the new features keep the whole job around five minutes.
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -only-testing:PanelTests/Panel460Tests -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -125,10 +125,14 @@ jobs:
         with:
           path: Companion/AdminSuite/target/build-deps
           key: suite-build-deps-${{ hashFiles('Companion/AdminSuite/tools/build-dependencies.json') }}
+      - uses: actions/cache@v4
+        with:
+          path: Companion/SentinelBridge/target/build-deps
+          key: bridge-build-deps-${{ hashFiles('Companion/SentinelBridge/tools/build-dependencies.json') }}
       - name: Build with verified real Paper dependencies
         working-directory: Companion/AdminSuite
         run: python3 tools/build-real.py
-      - name: Check HTTPS authentication, accounts, push, admin-log filters, recovery, LuckPerms/Lands, access locks, command rights, diagnostics, web panel and existing data
+      - name: Check HTTPS authentication, accounts, push, admin-log filters, recovery, LuckPerms/Lands, access locks, command rights, diagnostics, world trimmer, studio designers, dossier, web panel and existing data
         working-directory: Companion/AdminSuite
         run: python3 tools/test-830.py
         env:
@@ -139,16 +143,33 @@ jobs:
           python3 tools/package-source.py
           cp ../../docs/Simplex-Admin-Recovery.pdf target/
           cd target
-          sha256sum SimplexAdminSuite-10.2.0.jar SimplexAdminSuite-10.2.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-10.3.0.jar SimplexAdminSuite-10.3.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
+      - name: Build and test SimplexSentinelBridge (Geyser extension) against the real Geyser API
+        working-directory: Companion/SentinelBridge
+        run: |
+          python3 tools/build-real.py
+          python3 tools/test-real.py
+          bash tools/run-bridge-test.sh
+          zip -qr target/SimplexSentinelBridge-1.6.0-source.zip src stubs tools README.md CHANGELOG.md BUILDING.md INSTALLATION-ALT-DETECTION.md
+          cd target && sha256sum SimplexSentinelBridge-1.6.0.jar SimplexSentinelBridge-1.6.0-source.zip > SentinelBridge-SHA256SUMS.txt
       - name: Upload companion plugin
         uses: actions/upload-artifact@v4
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-10.2.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-10.2.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-10.3.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-10.3.0-source.zip
             Companion/AdminSuite/target/Simplex-Admin-Recovery.pdf
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Upload Geyser bridge extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimplexSentinelBridge-geyser-extension
+          path: |
+            Companion/SentinelBridge/target/SimplexSentinelBridge-1.6.0.jar
+            Companion/SentinelBridge/target/SimplexSentinelBridge-1.6.0-source.zip
+            Companion/SentinelBridge/target/SentinelBridge-SHA256SUMS.txt
           if-no-files-found: error
 
 
@@ -170,6 +191,10 @@ jobs:
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: build/companion
+      - uses: actions/download-artifact@v4
+        with:
+          name: SimplexSentinelBridge-geyser-extension
+          path: build/bridge
       - name: Publish versioned IPA and checksum
         env:
           GH_TOKEN: ${{ github.token }}
@@ -193,6 +218,8 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
+          Simplex Panel 4.6.0 / Admin Suite 10.3.0 / SentinelBridge 1.6.0: studio, world trimmer and dossier – Discord status designer (texts, colours, fields, images, bot activity; seven presets, "Simplex Standard" = previous status) and scoreboard designer (colour codes, placeholders, hex gradients; seven presets, standard = previous board) with exact live previews in app and web panel; the world trimmer in app and web panel (dimensions, threshold, countdown, live progress, override decision, recovery) with backup confirmation, typed confirmation and its own right; optional transactional safety copy with automatic restore, integrity check of every changed region file and a watchdog for a hung MCA Selector; searchable player dossier (identity, activity, client, Bedrock device, network, moderation, position, recent chat/actions) filtered by the viewer's rights; Bedrock: Geyser disconnect reason, third-party name, skin geometry engine, Floodgate link; Java: join host, server transfer, resource-pack status; bridge HTTP 422 fixed (identity-less early packets are skipped by the bridge and accepted as deferred by the suite, Floodgate UUID from XUID, no retries on permanent 4xx, throttled warnings), bridge built against Geyser 2.12.1; Bark test notification can always be sent (also during quiet hours and before saving a key); app hub and web navigation regrouped, web quick search (Ctrl/⌘+K). New rights (data.world-trim, world-trim.run, data.discord-status, discord-status.edit, data.scoreboard, scoreboard.edit) are not part of any role template.
+
           Simplex Panel 4.5.0 / Admin Suite 10.2.0: diagnostics centre – fixes per-player command switches ("Pflichtfeld fehlt: grant"); every disconnect with category (timeout, connection reset, packet error, own quit, kicks …), ping, session length and chunk, console "lost connection" reasons attached; three or more disconnects within seconds or a share of all players become an incident with a verdict (legit / problem: server lag, watchdog, network path Java-only/Bedrock-only, broken item/chunk, anticheat wave) and concrete steps; Bark/browser push as critical or time-sensitive alarm for subscribers (disconnect-wave, crash, lag-spike); short, IP-redacted AI analyses with the existing OpenAI key (automatic for critical incidents and crashes, hourly limit); live TPS/tick/RAM/GC/CPU charts and lag spikes; lag map (entity and block-entity hotspots per chunk with types, nearest player and teleport command, chunk generation per player); spark profiler control and server-side analysis of raw spark profiles (plugins by CPU time with deepest-plugin attribution, hot methods, findings); crash manager (heartbeat + live console mirror: watchdog, OutOfMemoryError, JVM hs_err, tick exceptions, hard kills); full diagnosis with score (incl. DNS, Mojang auth, internet latency); connection history in the player profile; player profiles are saved off the server thread.
 
           Simplex Panel 4.4.0 / Admin Suite 10.1.0: live switches and command rights – every switch now shows the real state (on = allowed, off = blocked) and saves immediately; fixes the app confirmation bug ("Bestätigung abgelaufen …") that made rank, LuckPerms, Lands and lock changes fail; every server command per player (grouped by kind, plugin or A–Z) can be blocked or allowed live with duration, reason and alt-account inheritance (default on), global blocks for all players, missing rank permissions granted through LuckPerms; rank with prefix/suffix and group assignment in the player profile; LuckPerms node switches and group templates (player, VIP, builder, supporter, moderator, admin); the same in the web panel and the Java/Bedrock menus.
@@ -201,10 +228,11 @@ jobs:
 
           Simplex Panel 4.3.0 / Admin Suite 10.0.0: big rights update – per-player access locks (chests, shulker boxes, other containers, ender chests, doors, redstone, workstations, frames, animals, building, foreign valuable items) that block using, breaking, blowing up and hopper draining even in trusted lands; per lock everywhere / own land only / own land and wilderness, temporary or permanent, with the reason and remaining time shown to the player; presets (thief, containers, griefer, lockdown); managed in the app, the web panel, Discord (/rechtesperre) and the Java/Bedrock admin menus (/rechtesperre). LuckPerms: permission autocomplete, prefix/suffix editor with colour palette and live preview for groups and players. Explained app-user rights with role presets, one-time changelog per account, web panel ban sources (Minecraft, IP, LiteBans) fixed and reports with notes.
 
-          Existing API keys, app users, sessions, TLS identity, Bark subscriptions, tickets, admin log and plugin data stay compatible. Replace the JAR and update the app; no reset is required. See UPDATE-4.5.0.md, Companion/AdminSuite/UPDATE-10.2.0.md, UPDATE-4.4.0.md, UPDATE-4.3.1.md, UPDATE-4.3.0.md, Companion/AdminSuite/UPDATE-10.1.0.md, UPDATE-10.0.1.md and UPDATE-10.0.0.md and docs/Simplex-Admin-Recovery.pdf. This release job only runs after a merge to main; pull requests produce JAR and IPA artifacts without publishing.
+          Existing API keys, app users, sessions, TLS identity, Bark subscriptions, tickets, admin log and plugin data stay compatible. Replace the JAR and update the app; no reset is required. See UPDATE-4.6.0.md, Companion/AdminSuite/UPDATE-10.3.0.md, Companion/SentinelBridge/CHANGELOG.md, UPDATE-4.5.0.md, Companion/AdminSuite/UPDATE-10.2.0.md, UPDATE-4.4.0.md, UPDATE-4.3.1.md, UPDATE-4.3.0.md, Companion/AdminSuite/UPDATE-10.1.0.md, UPDATE-10.0.1.md and UPDATE-10.0.0.md and docs/Simplex-Admin-Recovery.pdf. This release job only runs after a merge to main; pull requests produce JAR and IPA artifacts without publishing.
 
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)
-          gh release create "$tag" build/companion/*.jar build/companion/*-source.zip build/companion/Simplex-Admin-Recovery.pdf build/companion/AdminSuite-SHA256SUMS.txt "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest
+          (cd build/bridge && sha256sum -c SentinelBridge-SHA256SUMS.txt)
+          gh release create "$tag" build/companion/*.jar build/companion/*-source.zip build/companion/Simplex-Admin-Recovery.pdf build/companion/AdminSuite-SHA256SUMS.txt build/bridge/*.jar build/bridge/*-source.zip build/bridge/SentinelBridge-SHA256SUMS.txt "${ipa_files[0]}" "$ipa_directory/SHA256SUMS.txt" build/release/validation-proof.json --target "$GITHUB_SHA" --title "Simplex Panel ${ipa_version}" --notes-file build/release/RELEASE-NOTES.md --latest
 
 

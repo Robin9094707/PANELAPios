@@ -1,5 +1,54 @@
 [
   {
+    "version": "10.3.0",
+    "app": "4.6.0",
+    "date": "2026-11-04",
+    "title": "Studio, Welten-Trimmer & Steckbrief",
+    "intro": "Discord-Status und Scoreboard mit Vorlagen und Live-Vorschau gestalten, Welten sicher trimmen und alles über einen Spieler auf einen Blick. Neue Rechte sind in keiner Rollenvorlage enthalten.",
+    "items": [
+      {
+        "icon": "palette",
+        "title": "Discord-Status-Designer",
+        "text": "Texte, Farben, Felder, Bilder und Bot-Aktivität mit Discord-Vorschau für alle Zustände. Sieben Vorlagen; „Simplex Standard“ ist der bisherige Status."
+      },
+      {
+        "icon": "layers",
+        "title": "Scoreboard-Designer",
+        "text": "Titel und Zeilen mit Farbcodes, Platzhaltern und Hex-Farbverlauf, Minecraft-Vorschau mit echten Werten. Sieben Vorlagen inklusive Standard."
+      },
+      {
+        "icon": "scissors",
+        "title": "Welten-Trimmer im Panel",
+        "text": "Dimensionen wählen, Countdown, Fortschritt live, Notfallentscheidung und Recovery – mit Backup-Bestätigung und eigenem Recht."
+      },
+      {
+        "icon": "shieldCheck",
+        "title": "Sicherer trimmen",
+        "text": "Optionale Sicherheitskopie mit automatischer Wiederherstellung, Integritätsprüfung geänderter Regionsdateien und Wächter für hängende Läufe."
+      },
+      {
+        "icon": "id",
+        "title": "Steckbrief",
+        "text": "Identität, Aktivität, Client, Bedrock-Gerät, Netzwerk, Moderation und Verlauf eines Spielers – durchsuchbar, je nach Rechten."
+      },
+      {
+        "icon": "wifi",
+        "title": "Bedrock-Brücke ohne HTTP 422",
+        "text": "Frühe Logins ohne Namen werden nicht mehr als Fehler gemeldet; neue Brücke 1.6.0 mit Trennungsgrund aus Geyser."
+      },
+      {
+        "icon": "search",
+        "title": "Schnellsuche",
+        "text": "Strg/⌘ + K öffnet die Suche nach Seiten und Spielern im Webpanel."
+      },
+      {
+        "icon": "send",
+        "title": "Bark-Test jederzeit",
+        "text": "Testnachricht an dein Bark-Gerät – auch in Ruhezeiten und vor dem Speichern eines neuen Schlüssels (App: Bark-Einstellungen, Web: Benachrichtigungen)."
+      }
+    ]
+  },
+  {
     "version": "10.2.0",
     "app": "4.5.0",
     "date": "2026-11-03",

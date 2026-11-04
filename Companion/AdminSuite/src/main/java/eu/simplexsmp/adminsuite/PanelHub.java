@@ -142,6 +142,13 @@ final class PanelHub {
                 Map<String, Object> body = AppApiManager.body(x, 2048);
                 AppApiManager.send(x, 200, push.unsubscribe(owner, String.valueOf(body.getOrDefault("endpoint", ""))));
             }
+            case "/v1/bark/test" -> {
+                // 10.3.0: always possible for every signed-in account; only reaches the caller's own (or typed) Bark key.
+                if (plugin.appEvents == null) throw new AppApiManager.ApiError(503, "Ereignismodul nicht verfügbar");
+                if (!api.rate("bark-test:" + owner, 5)) throw new AppApiManager.ApiError(429, "Höchstens fünf Tests pro Minute.");
+                Map<String, Object> body = AppApiManager.body(x, 1024);
+                AppApiManager.send(x, 200, plugin.appEvents.barkTest(owner, String.valueOf(body.getOrDefault("key", ""))));
+            }
             case "/v1/push/test" -> {
                 WebPush push = requirePush();
                 if (!api.rate("push-test:" + owner, 5)) throw new AppApiManager.ApiError(429, "Höchstens fünf Tests pro Minute.");

@@ -1,0 +1,6 @@
+id: simplexsentinelbridge
+name: SimplexSentinelBridge
+version: 1.6.0
+main: eu.simplexsmp.sentinelbridge.SimplexSentinelBridge
+api: 2.4.0
+authors: [RJ, Simplex SMP]

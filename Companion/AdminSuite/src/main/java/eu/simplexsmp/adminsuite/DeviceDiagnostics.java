@@ -24,6 +24,10 @@ final class DeviceDiagnostics {
             {"channelCount","Registrierte Kanäle"},{"channelNamespaces","Kanal-Namensräume"},{"channelSignature","Kanal-Signatur (SHA-256; veränderlich)"},
             {"linkedJavaUuid","Floodgate: offiziell verknüpfte Java-UUID"},{"linkedJavaName","Floodgate: verknüpfter Java-Name"},
             {"geyserVersion","Geyser-Version (falls bereitgestellt)"},{"schemaVersion","Payload-Schema"},{"snapshotPhase","Erfassungsphase"},{"collectionSource","Datenquelle"},
+            {"thirdPartyName","Drittanbieter-Anzeigename (Bedrock)"},{"skinGeometryEngine","Skin-Geometrie-Engine"},{"editorMode","Editor-Modus"},{"capeImageWidth","Cape-Breite"},{"capeImageHeight","Cape-Höhe"},
+            {"floodgateLinked","Floodgate: Java-Konto verknüpft"},{"floodgateProxy","Floodgate: über Proxy verbunden"},{"bridgeVersion","SentinelBridge-Version"},{"geyserApiVersion","Geyser-API-Version"},
+            {"lastDisconnectReason","Letzter Bedrock-Trennungsgrund (Geyser)"},{"lastDisconnectAt","Letzte Bedrock-Trennung"},{"sessionSkinChanges","Skin-Wechsel in der Sitzung"},
+            {"virtualHost","Beitrittsadresse (Java)"},{"transferred","Per Server-Transfer verbunden"},{"resourcePackStatus","Ressourcenpaket-Status"},
             {"metadataTrust","Vertrauenshinweis"},{"observedAt","Letzte Zusatzdatenerfassung (Zeitstempel)"},{"availableFields","Felder im letzten Snapshot"}};
         for(String[] pair:pairs) LABELS.put(pair[0],pair[1]);
     }
@@ -89,6 +93,13 @@ final class DeviceDiagnostics {
         option(player,ClientOption.ALLOW_SERVER_LISTINGS,"serverListings",p); option(player,ClientOption.PARTICLE_VISIBILITY,"particleVisibility",p);
         try { var parts=player.getClientOption(ClientOption.SKIN_PARTS); if(parts!=null) p.setProperty("skinParts",Integer.toString(parts.getRaw())); } catch(RuntimeException|LinkageError ignored) { }
         BedrockMetadata.put(p,"javaBrand",ClientProbeDiagnostics.brand(player));
+        // 10.3.0: join hostname, server transfer and resource-pack state (Paper API, read reflectively for older builds).
+        Object host=BedrockMetadata.call(player,"getVirtualHost");
+        if(host instanceof java.net.InetSocketAddress address) BedrockMetadata.put(p,"virtualHost",address.getHostString()+":"+address.getPort());
+        Object transferred=BedrockMetadata.call(player,"isTransferred");
+        if(transferred instanceof Boolean value) p.setProperty("transferred",value.toString());
+        Object pack=BedrockMetadata.call(player,"getResourcePackStatus");
+        if(pack!=null) BedrockMetadata.put(p,"resourcePackStatus",String.valueOf(pack));
         Object connection=BedrockMetadata.call(player,"getConnection");
         String protocol=BedrockMetadata.read(connection,"getProtocolVersion","protocolVersion");
         if(protocol.isBlank()) protocol=BedrockMetadata.read(player,"getProtocolVersion");

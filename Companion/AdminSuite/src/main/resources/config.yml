@@ -296,6 +296,12 @@ world-trimmer:
     heap: '3G'
     process-threads: 2
     write-threads: 1
+  # 10.3.0: optional transactional safety. snapshot-regions copies the selected region/poi/entities files before the
+  # run and restores them automatically if MCA Selector fails, hangs or the integrity check finds a damaged file.
+  # In App/Webpanel this can be chosen per run. A hung MCA Selector (no output) is stopped after stall-timeout-minutes.
+  safety:
+    snapshot-regions: false
+    stall-timeout-minutes: 60
   default-threshold-ticks: 1200
   minimum-threshold-ticks: 20
   history-limit: 100
@@ -794,6 +800,12 @@ discord-bot:
       show-tps: true
       show-stability: true
       show-leaderboard: false
+      # 10.3.0 (App/Webpanel → Studio → Discord-Status): optional fields and images; empty = not shown.
+      show-world-info: true
+      show-server-load: true
+      author-name: ''
+      thumbnail-url: ''
+      image-url: ''
   alerts:
     enabled: true
     channel-id: ''

@@ -17,7 +17,7 @@ final class WebPanel {
     private static final Map<String, String> TYPES = Map.of(
         "html", "text/html; charset=utf-8", "css", "text/css; charset=utf-8", "js", "text/javascript; charset=utf-8",
         "svg", "image/svg+xml", "png", "image/png", "webmanifest", "application/manifest+json; charset=utf-8", "json", "application/json; charset=utf-8");
-    private static final String CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
+    private static final String CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://cdn.discordapp.com; media-src 'self' blob:; "
         + "connect-src 'self'; font-src 'self'; manifest-src 'self'; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
     private final Map<String, byte[]> cache = new ConcurrentHashMap<>();
     private final String version;

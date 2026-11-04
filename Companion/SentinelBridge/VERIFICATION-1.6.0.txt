@@ -1,0 +1,8 @@
+SimplexSentinelBridge 1.6.0
+
+PASS: real-API build against verified Geyser 2.12.1 build 1284 (sha256 2a8af1fc256864f4d76af219366bf28efa1558cacb6bb06cf0b1639c4c3e241d).
+PASS: production collector with actual GeyserConnection API and BedrockClientData class (tools/test-real.py).
+PASS: loopback HTTP/HMAC session delivery, server-clock retry, snapshot timing, scalar allowlist, signed remote settings, forged settings rejected, bounded outbox (tools/run-bridge-test.sh).
+PASS: Admin Suite 10.3.0 Release1030Harness – Floodgate UUID from XUID, new ClientData claims allowlisted (skin data dropped), new diagnostic fields survive storage.
+The extension ID, main class, data folder, bridge.properties and shared-secret stay unchanged. Minimum API declaration remains 2.4.0.
+A live Geyser/Minecraft session was not available in this workspace.

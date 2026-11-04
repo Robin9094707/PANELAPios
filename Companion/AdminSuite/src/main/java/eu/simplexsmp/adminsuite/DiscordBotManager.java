@@ -118,6 +118,8 @@ final class DiscordBotManager {
     private volatile String sessionId = "";
     private volatile String applicationId = "";
     private volatile String statusMessageId = "";
+    private volatile String botDisplayName = "";
+    private volatile String botAvatarUrl = "";
     private volatile boolean connected;
     private volatile String lastError = "not configured";
     private volatile int restartSeconds = -1;
@@ -1450,6 +1452,8 @@ final class DiscordBotManager {
             Map<String, Object> user = data.get("user") instanceof Map ? (Map<String, Object>) data.get("user") : Collections.emptyMap();
             applicationId = string(application.get("id"));
             if (applicationId.isBlank()) applicationId = string(user.get("id"));
+            String readyName = string(user.get("global_name")); if (readyName.isBlank()) readyName = string(user.get("username")); if (!readyName.isBlank()) botDisplayName = cleanText(readyName, 80);
+            String readyAvatar = string(user.get("avatar")); botAvatarUrl = readyAvatar.matches("[a-zA-Z0-9_]{6,80}") && !applicationId.isBlank() ? "https://cdn.discordapp.com/avatars/" + string(user.get("id")) + "/" + readyAvatar + ".png?size=64" : "";
             if (!applicationId.equals(profileApplicationId)) { profileApplicationId=applicationId; lastProfileDescription=""; presentation.newApplication(); }
             registerCommands("Gateway READY");
             refreshProfile();
@@ -2277,14 +2281,64 @@ final class DiscordBotManager {
                 .replace("{seconds}", Integer.toString(Math.max(0, snapshot.restartSeconds)));
     }
 
+    /** 10.3.0: status designer overrides for previews; the live status always reads the saved config. */
+    private final ThreadLocal<Map<String, Object>> designOverride = new ThreadLocal<>();
+    private Object designValue(String key) { Map<String, Object> o = designOverride.get(); return o != null && o.containsKey(key) ? o.get(key) : null; }
+    private String designString(String key, String fallback) { Object v = designValue(key); return v != null ? String.valueOf(v) : plugin.getConfig().getString("discord-bot.status.design." + key, fallback); }
+    private double designDouble(String key, double fallback) { Object v = designValue(key); if (v != null) try { return Double.parseDouble(String.valueOf(v)); } catch (NumberFormatException ignored) { return fallback; } return plugin.getConfig().getDouble("discord-bot.status.design." + key, fallback); }
+    private boolean designBoolean(String key, boolean fallback) { Object v = designValue(key); return v != null ? Boolean.parseBoolean(String.valueOf(v)) : plugin.getConfig().getBoolean("discord-bot.status.design." + key, fallback); }
+    private int designInt(String key, int fallback) { Object v = designValue(key); if (v != null) try { return Integer.parseInt(String.valueOf(v)); } catch (NumberFormatException ignored) { return fallback; } return plugin.getConfig().getInt("discord-bot.status." + key, fallback); }
+    private String designUrl(String key) { String v = designString(key, "").trim(); return v.length() <= 500 && v.matches("https://[^\\s\"<>]+") ? v : ""; }
+
+    /** Builds the exact status embed (and bot activity) for a simulated state without saving or sending anything. */
+    Map<String, Object> designerPreview(Map<String, Object> overrides, String state) {
+        StatusSnapshot base = snapshot(StatusMode.ONLINE);
+        StatusSnapshot shot = switch (state == null ? "live" : state) {
+            case "online" -> new StatusSnapshot(StatusMode.ONLINE, base.players(), base.maxPlayers(), 20.0D, 0, idleTrim(), base.timestamp());
+            case "warning" -> new StatusSnapshot(StatusMode.ONLINE, base.players(), base.maxPlayers(), 17.4D, 0, idleTrim(), base.timestamp());
+            case "critical" -> new StatusSnapshot(StatusMode.ONLINE, base.players(), base.maxPlayers(), 12.6D, 0, idleTrim(), base.timestamp());
+            case "restarting" -> new StatusSnapshot(StatusMode.RESTARTING, base.players(), base.maxPlayers(), base.tps(), 60, idleTrim(), base.timestamp());
+            case "offline" -> new StatusSnapshot(StatusMode.OFFLINE, List.of(), base.maxPlayers(), base.tps(), 0, idleTrim(), base.timestamp());
+            default -> base;
+        };
+        designOverride.set(overrides == null ? Map.of() : overrides);
+        try {
+            Object payload = Json.parse(statusPayload(shot));
+            Map<String, Object> presenceOverrides = new LinkedHashMap<>();
+            if (overrides != null) for (var e : overrides.entrySet()) if (e.getKey().startsWith("presence.")) presenceOverrides.put(e.getKey().substring(9), e.getValue());
+            String activity = shot.mode() == StatusMode.OFFLINE ? "Server offline • See you soon" : shot.mode() == StatusMode.RESTARTING
+                    ? presenceText(presenceOverrides, "restarting", "Restarting server • {seconds}s", shot)
+                    : statusSeverity(shot.tps(), designDouble("warning-tps", 18.5D), designDouble("critical-tps", 16D)) == StatusSeverity.CRITICAL ? presenceText(presenceOverrides, "critical", "Responding to server load • {tps} TPS", shot)
+                    : statusSeverity(shot.tps(), designDouble("warning-tps", 18.5D), designDouble("critical-tps", 16D)) == StatusSeverity.WARNING ? presenceText(presenceOverrides, "warning", "Watching server stability • {tps} TPS", shot)
+                    : presenceText(presenceOverrides, "healthy", "Managing {players} players • {tps} TPS", shot);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("message", payload);
+            out.put("activity", activity);
+            out.put("activityType", "Schaut");
+            out.put("presenceStatus", shot.mode() == StatusMode.OFFLINE ? "invisible" : activity.contains("load") && shot.tps() < designDouble("critical-tps", 16D) ? "dnd" : "online");
+            out.put("botName", botDisplayName.isBlank() ? "Simplex" : botDisplayName);
+            out.put("botAvatar", botAvatarUrl);
+            out.put("state", state == null ? "live" : state);
+            out.put("connected", connected);
+            out.put("channel", statusChannelId());
+            return out;
+        } finally { designOverride.remove(); }
+    }
+    private static WorldTrimManager.TrimStatus idleTrim() { return new WorldTrimManager.TrimStatus(WorldTrimManager.Phase.IDLE, 0, 0, "", "", ""); }
+    private String presenceText(Map<String, Object> overrides, String key, String fallback, StatusSnapshot snapshot) {
+        String raw = overrides.containsKey(key) ? String.valueOf(overrides.get(key)) : plugin.getConfig().getString("discord-bot.presence." + key, fallback);
+        return cleanText(raw, 128).replace("{players}", Integer.toString(snapshot.players().size())).replace("{max}", Integer.toString(snapshot.maxPlayers()))
+                .replace("{tps}", String.format(Locale.ROOT, "%.2f", snapshot.tps())).replace("{progress}", "0").replace("{seconds}", Integer.toString(Math.max(0, snapshot.restartSeconds())));
+    }
+
     private String statusPayload(StatusSnapshot snapshot) {
         String title;
         String description;
         int color;
         String designBase = "discord-bot.status.design.";
-        String serverName = cleanText(plugin.getConfig().getString(designBase + "server-name", "Simplex SMP"), 80);
-        double warningTps = Math.max(10D, Math.min(20D, plugin.getConfig().getDouble(designBase + "warning-tps", 18.5D)));
-        double criticalTps = Math.max(5D, Math.min(warningTps - 0.1D, plugin.getConfig().getDouble(designBase + "critical-tps", 16.0D)));
+        String serverName = cleanText(designString("server-name", "Simplex SMP"), 80);
+        double warningTps = Math.max(10D, Math.min(20D, designDouble("warning-tps", 18.5D)));
+        double criticalTps = Math.max(5D, Math.min(warningTps - 0.1D, designDouble("critical-tps", 16.0D)));
         StatusSeverity severity = statusSeverity(snapshot.tps, warningTps, criticalTps);
         WorldTrimManager.TrimStatus trim = snapshot.trim;
         if (snapshot.mode != StatusMode.OFFLINE && trim.phase == WorldTrimManager.Phase.RUNNING) {
@@ -2313,45 +2367,45 @@ final class DiscordBotManager {
             title="🟠 "+serverName+" is under maintenance";description="The server is currently in maintenance mode. Please try again later.";color=0xFEE75C;
         } else if (snapshot.mode == StatusMode.ONLINE) {
             if (severity == StatusSeverity.CRITICAL) {
-                title = plugin.getConfig().getString(designBase + "critical-title", "🔴 {server} is under heavy load");
-                description = plugin.getConfig().getString(designBase + "critical-description", "Server performance is currently unstable. Staff have been notified.");
-                color = parseColor(plugin.getConfig().getString(designBase + "critical-color", "#ED4245"), 0xED4245);
+                title = designString("critical-title", "🔴 {server} is under heavy load");
+                description = designString("critical-description", "Server performance is currently unstable. Staff have been notified.");
+                color = parseColor(designString("critical-color", "#ED4245"), 0xED4245);
             } else if (severity == StatusSeverity.WARNING) {
-                title = plugin.getConfig().getString(designBase + "warning-title", "🟡 {server} stability warning");
-                description = plugin.getConfig().getString(designBase + "warning-description", "Server performance is currently degraded. Gameplay may feel less responsive.");
-                color = parseColor(plugin.getConfig().getString(designBase + "warning-color", "#FEE75C"), 0xFEE75C);
+                title = designString("warning-title", "🟡 {server} stability warning");
+                description = designString("warning-description", "Server performance is currently degraded. Gameplay may feel less responsive.");
+                color = parseColor(designString("warning-color", "#FEE75C"), 0xFEE75C);
             } else {
-                title = plugin.getConfig().getString(designBase + "online-title", "🟢 {server} is online");
-                description = plugin.getConfig().getString(designBase + "online-description", "The server is online and accepting players.");
-                color = parseColor(plugin.getConfig().getString(designBase + "healthy-color", "#57F287"), 0x57F287);
+                title = designString("online-title", "🟢 {server} is online");
+                description = designString("online-description", "The server is online and accepting players.");
+                color = parseColor(designString("healthy-color", "#57F287"), 0x57F287);
             }
             title = title.replace("{server}", serverName);
             description = description.replace("{server}", serverName);
         } else if (snapshot.mode == StatusMode.RESTARTING) {
-            title = plugin.getConfig().getString(designBase + "restarting-title", "🟠 {server} is restarting").replace("{server}", serverName);
+            title = designString("restarting-title", "🟠 {server} is restarting").replace("{server}", serverName);
             String restartDefault = snapshot.restartSeconds > 0
                     ? "A server restart was scheduled. Restarting in **{seconds} seconds**."
                     : "A shutdown or restart was detected. Players can reconnect shortly.";
-            description = plugin.getConfig().getString(designBase + "restarting-description", restartDefault)
+            description = designString("restarting-description", restartDefault)
                     .replace("{server}", serverName).replace("{seconds}", Integer.toString(Math.max(0, snapshot.restartSeconds)));
-            color = parseColor(plugin.getConfig().getString(designBase + "restarting-color", "#FEE75C"), 0xFEE75C);
+            color = parseColor(designString("restarting-color", "#FEE75C"), 0xFEE75C);
         } else {
-            title = plugin.getConfig().getString(designBase + "offline-title", "🔴 {server} is offline").replace("{server}", serverName);
-            description = plugin.getConfig().getString(designBase + "offline-description", "The server is currently shut down.").replace("{server}", serverName);
-            color = parseColor(plugin.getConfig().getString(designBase + "offline-color", "#ED4245"), 0xED4245);
+            title = designString("offline-title", "🔴 {server} is offline").replace("{server}", serverName);
+            description = designString("offline-description", "The server is currently shut down.").replace("{server}", serverName);
+            color = parseColor(designString("offline-color", "#ED4245"), 0xED4245);
         }
         String stability = snapshot.mode == StatusMode.OFFLINE ? "Offline"
                 : severity == StatusSeverity.HEALTHY ? "Healthy" : severity == StatusSeverity.WARNING ? "Degraded" : "Critical";
         String tpsText = snapshot.mode == StatusMode.OFFLINE ? "**Offline**" : String.format(Locale.ROOT, "**%.2f**", snapshot.tps);
         List<Map<String, Object>> fields = new ArrayList<>();
-        if (plugin.getConfig().getBoolean(designBase + "show-player-count", true)) fields.add(mapOf("name", "Players", "value", "**" + snapshot.players.size() + "/" + snapshot.maxPlayers + "**", "inline", true));
-        if (plugin.getConfig().getBoolean(designBase + "show-tps", true)) fields.add(mapOf("name", "TPS", "value", tpsText, "inline", true));
-        if (plugin.getConfig().getBoolean(designBase + "show-stability", true)) fields.add(mapOf("name", "Stability", "value", "**" + stability + "**", "inline", true));
-        if (plugin.getConfig().getBoolean(designBase + "show-player-list", true)) fields.add(mapOf("name", "Online players", "value", playerList(snapshot.players), "inline", false));
+        if (designBoolean("show-player-count", true)) fields.add(mapOf("name", "Players", "value", "**" + snapshot.players.size() + "/" + snapshot.maxPlayers + "**", "inline", true));
+        if (designBoolean("show-tps", true)) fields.add(mapOf("name", "TPS", "value", tpsText, "inline", true));
+        if (designBoolean("show-stability", true)) fields.add(mapOf("name", "Stability", "value", "**" + stability + "**", "inline", true));
+        if (designBoolean("show-player-list", true)) fields.add(mapOf("name", "Online players", "value", playerList(snapshot.players), "inline", false));
         ServerStatistics.Live live=statusLive;
         if(live!=null){
-            fields.add(mapOf("name","🌍 Main Overworld","value","**"+live.days()+" In-game days** • "+live.phase()+" • "+live.clock(),"inline",false));
-            fields.add(mapOf("name","⚙️ Server load","value","CPU "+ServerStatistics.bar(live.cpu())+" • RAM "+ServerStatistics.bar(live.ramMax()>0?(double)live.ramUsed()/live.ramMax():-1)+"\n"+(live.ramUsed()/1048576)+" / "+(live.ramMax()/1048576)+" MiB JVM heap","inline",false));
+            if(designBoolean("show-world-info", true))fields.add(mapOf("name","🌍 Main Overworld","value","**"+live.days()+" In-game days** • "+live.phase()+" • "+live.clock(),"inline",false));
+            if(designBoolean("show-server-load", true))fields.add(mapOf("name","⚙️ Server load","value","CPU "+ServerStatistics.bar(live.cpu())+" • RAM "+ServerStatistics.bar(live.ramMax()>0?(double)live.ramUsed()/live.ramMax():-1)+"\n"+(live.ramUsed()/1048576)+" / "+(live.ramMax()/1048576)+" MiB JVM heap","inline",false));
         }
         if (trim.active()) {
             String trimValue = "**State:** " + trim.phase.name().toLowerCase(Locale.ROOT).replace('_', ' ')
@@ -2359,10 +2413,10 @@ final class DiscordBotManager {
                     + (trim.phase == WorldTrimManager.Phase.RUNNING ? "\n**Progress:** " + trim.progress + "%\n**ETA:** " + escapeMarkdown(cleanText(trim.eta, 80)) : "");
             fields.add(mapOf("name", "🛠️ World maintenance", "value", truncate(trimValue, 1024), "inline", false));
         }
-        if (plugin.getConfig().getBoolean(designBase + "show-leaderboard", plugin.getConfig().getBoolean("simplex-points.discord-leaderboard", false))) {
+        if (designBoolean("show-leaderboard", plugin.getConfig().getBoolean("simplex-points.discord-leaderboard", false))) {
             fields.add(mapOf("name", "🏆 Simplex Points — Top 10", "value", truncate(plugin.discordPointsLeaderboard(), 1024), "inline", false));
         }
-        String footer = plugin.getConfig().getString(designBase + "footer", "Persistent status • Java and Bedrock")
+        String footer = designString("footer", "Persistent status • Java and Bedrock")
                 .replace("{server}", serverName).replace("{interval}", Integer.toString(Math.max(10, plugin.getConfig().getInt("discord-bot.status.update-interval-seconds", 10))));
         int budget=Math.min(256,title.length())+Math.min(2400,description.length())+Math.min(400,footer.length());
         java.util.Iterator<Map<String,Object>> iterator=fields.iterator();
@@ -2376,16 +2430,21 @@ final class DiscordBotManager {
         Map<String, Object> embed = mapOf("title", truncate(title, 256), "description", truncate(description, 2400), "color", color, "fields", fields,
                 "footer", mapOf("text", truncate(footer, 400)),
                 "timestamp", java.time.Instant.ofEpochMilli(snapshot.timestamp).toString());
+        // 10.3.0: optional images and author line from the status designer (only https URLs are ever sent).
+        String thumbnail = designUrl("thumbnail-url"), image = designUrl("image-url"), author = cleanText(designString("author-name", ""), 256);
+        if (!thumbnail.isEmpty()) embed.put("thumbnail", mapOf("url", thumbnail));
+        if (!image.isEmpty()) embed.put("image", mapOf("url", image));
+        if (!author.isEmpty()) embed.put("author", mapOf("name", author));
         return Json.stringify(mapOf("content", "", "embeds", List.of(embed), "allowed_mentions", mapOf("parse", List.of())));
     }
 
     private String playerList(List<PlayerSnapshot> players) {
         List<String> lines = new ArrayList<>();
-        int maximum = Math.max(5, Math.min(50, plugin.getConfig().getInt("discord-bot.status.max-player-lines", 30)));
+        int maximum = Math.max(5, Math.min(50, designInt("max-player-lines", 30)));
         for (int index = 0; index < Math.min(players.size(), maximum); index++) {
             PlayerSnapshot player = players.get(index);
             String afk = player.afk ? " 💤 **AFK**" : "";
-            String platform = plugin.getConfig().getBoolean("discord-bot.status.design.show-platform", true) ? " — " + escapeMarkdown(player.platform) : "";
+            String platform = designBoolean("show-platform", true) ? " — " + escapeMarkdown(player.platform) : "";
             lines.add(player.emoji + " **" + escapeMarkdown(player.name) + "**" + afk + platform);
         }
         if (lines.isEmpty()) return "_No players online_";
