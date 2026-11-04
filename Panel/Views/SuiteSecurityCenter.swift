@@ -226,7 +226,7 @@ struct SuiteBarkSettingsView: View {
     var encodedRules: String { events.map { event in let id=event.0;return [id,selected.contains(id) ? (rules[id] ?? Self.defaultLevel(id, level: level, critical: critical)):"off",sounds[id] ?? (Self.criticalKinds.contains(id) ? criticalSound:sound),repeats.contains(id) ? "120":"0"].joined(separator:":") }.joined(separator:";") }
     @Environment(\.dismiss) private var dismiss
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteSecurityModel(suite)) }
-    static let criticalKinds: Set<String> = ["ban", "ban-evasion", "overload", "ticket-urgent"]
+    static let criticalKinds: Set<String> = ["ban", "ban-evasion", "overload", "ticket-urgent", "crash", "disconnect-wave", "lag-spike"]
     static let ticketEvents = [("ticket","Tickets · Normal"),("ticket-urgent","Tickets · Notfall")]
     /// Admin Suite 9.5.0 separates low and high tickets; older suites reject these rule types.
     static let priorityTicketEvents = [("ticket-low","Tickets · Niedrig (still)"),("ticket-high","Tickets · Hoch (dringend)")]
@@ -236,7 +236,15 @@ struct SuiteBarkSettingsView: View {
     }
     private let baseEvents = [("first-join","Neue Spieler"),("join","Alle Beitritte"),("client-brand","Ungewöhnlicher Client-Brand"),("client-check","Client-Prüfungen"),("ban","Sperren"),("ban-evasion","Bannumgehungsversuche"),("vpn-kick","VPN-Kicks"),("report","Neue Reports"),("overload","Längere Serverüberlastung"),("guard","Spielerschutz korrigiert"),("admin","Admin-Aktionen")]
     /// Ticket events exist from Admin Suite 9.4.0; older suites reject unknown rule types.
-    private var events: [(String, String)] { baseEvents + (suite.features.contains("tickets-v1") ? Self.ticketEvents : []) + (suite.features.contains("tickets-v2") ? Self.priorityTicketEvents : []) }
+    /// Admin Suite 10.2.0 diagnostics alarms (disconnect waves, crashes, server freezes).
+    static let diagnosticsEvents = [("disconnect-wave","Disconnect-Wellen & Verbindungsprobleme"),("crash","Serverabsturz erkannt"),("lag-spike","Server-Hänger (Watchdog)")]
+    private var events: [(String, String)] {
+        var list: [(String, String)] = baseEvents
+        if suite.features.contains("tickets-v1") { list += Self.ticketEvents }
+        if suite.features.contains("tickets-v2") { list += Self.priorityTicketEvents }
+        if suite.features.contains("diagnostics-v1") { list += Self.diagnosticsEvents }
+        return list
+    }
     var body: some View {
         Form {
             Section("Bark verbinden") {

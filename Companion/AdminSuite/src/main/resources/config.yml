@@ -179,6 +179,40 @@ player-data:
 
 # Every OpenAI feature is opt-in. The API key is stored in ai-secret.properties (owner-only where supported),
 # never in this normal config. OPENAI_API_KEY can be used instead.
+# 10.2.0 Diagnosezentrale (App/Webpanel → Diagnose). Alles läuft auf dem Server; App und Webpanel lesen nur.
+diagnostics:
+  enabled: true
+  # Mehrere Disconnects in kurzer Zeit werden zu einem Vorfall (Bark-Ereignis "disconnect-wave").
+  burst:
+    window-seconds: 10
+    min-players: 3
+  # Welle: dieser Anteil der Online-Spieler trennt sich innerhalb des Fensters.
+  wave:
+    share: 0.35
+    window-seconds: 30
+  # Ein Spieler mit so vielen unfreiwilligen Trennungen in 10 Minuten gilt als "instabile Verbindung".
+  flapping:
+    count: 3
+  # Ticks ab dieser Dauer gelten als Lag-Spitze; ab 5000 ms (oder Watchdog) als Server-Hänger (Bark "lag-spike").
+  spike-ms: 1000
+  # Auch legitime Wellen (alle selbst getrennt) per Bark melden.
+  notify-legit: false
+  # Letzte 500 Konsolenzeilen laufend nach diagnostics/live-log.txt schreiben (für Absturzberichte).
+  live-log: true
+  ai:
+    # Nutzt den vorhandenen OpenAI-Schlüssel (openai.*). Es werden nur kurze, IP-bereinigte Auszüge gesendet.
+    enabled: true
+    auto-critical: true
+    auto-crash: true
+    max-per-hour: 20
+  spark:
+    # Auch Spark-Profile, die in der Konsole gestartet wurden, automatisch analysieren.
+    import-all: true
+
+performance:
+  # 10.2.0: Spielerprofile gebündelt im Hintergrund speichern statt im Server-Tick (gleiches Dateiformat).
+  async-profile-saves: true
+
 openai:
   enabled: false
   model: gpt-5.6-luna

@@ -18,6 +18,17 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "4.5.0", title: "Diagnosezentrale", summary: "Disconnect-Wellen erkennen und einordnen, Lag finden, Spark-Profile auswerten und Abstürze nachvollziehen – mit KI-Hilfe und Bark-Alarm.", items: [
+            WhatsNewItem(symbol: "terminal.fill", title: "Befehle-Schalter repariert", detail: "Einzelne Befehle eines Spielers ließen sich nicht umschalten („Pflichtfeld fehlt: grant“). Erlauben, Sperren und Zurücksetzen funktionieren wieder."),
+            WhatsNewItem(symbol: "wifi.exclamationmark", title: "Disconnect-Analyse", detail: "Jede Trennung mit Grund, Ping, Ort und Sitzungsdauer. Drei oder mehr in kurzer Zeit – oder ein großer Teil der Spieler – werden zum Vorfall mit Einschätzung „legitim“ oder „Fehler“ und konkreten Schritten."),
+            WhatsNewItem(symbol: "bell.badge.fill", title: "Bark-Alarm", detail: "Disconnect-Wellen, Abstürze und Server-Hänger als kritischer oder dringlicher Hinweis – für alle, die es in den Bark-Ereignissen aktivieren."),
+            WhatsNewItem(symbol: "sparkles", title: "KI-Einschätzung", detail: "Mit dem hinterlegten OpenAI-Schlüssel: kurze, IP-bereinigte Auszüge statt ganzer Logs. Kritische Vorfälle und Abstürze werden automatisch geprüft."),
+            WhatsNewItem(symbol: "map.fill", title: "Lag-Karte", detail: "Wo stehen viele Mobs, Items oder Trichter? Hotspots je Chunk mit Typen, nächstem Spieler und Teleport-Befehl, dazu Chunk-Generierung pro Spieler."),
+            WhatsNewItem(symbol: "flame.fill", title: "Spark-Profiler", detail: "Profil aus der App starten oder einen Spark-Link einfügen. Der Server wertet es selbst aus: Plugins nach Rechenzeit, teuerste Stellen, Befunde."),
+            WhatsNewItem(symbol: "bolt.trianglebadge.exclamationmark.fill", title: "Absturz-Manager", detail: "Erkennt nach dem Neustart echte Abstürze (Watchdog, Speicher voll, Java-VM) und harte Beendigungen – mit den letzten Konsolenzeilen."),
+            WhatsNewItem(symbol: "stethoscope", title: "Volldiagnose", detail: "TPS, Tickzeiten, RAM, GC, CPU, Speicherplatz, Plugins, Konsolenfehler, Mojang, DNS und Internet in einem Durchlauf – mit Punktzahl."),
+            WhatsNewItem(symbol: "person.crop.circle.badge.checkmark", title: "Verbindung im Spielerprofil", detail: "Trennungen der letzten 7 Tage und ob die Verbindung eines Spielers gerade instabil ist.")
+        ]),
         WhatsNewRelease(version: "4.4.0", title: "Live-Schalter & Befehle", summary: "Jeder Schalter zeigt jetzt den echten Stand – an = erlaubt, aus = gesperrt – und speichert sofort. Dazu Befehle pro Spieler und eine vollständige LuckPerms-Verwaltung.", items: [
             WhatsNewItem(symbol: "checkmark.seal.fill", title: "Bestätigungen repariert", detail: "Änderungen an Rängen, LuckPerms-Rechten, Lands und Sperren schlugen mit „Bestätigung abgelaufen“ fehl. Das ist behoben."),
             WhatsNewItem(symbol: "switch.2", title: "Echte Schalter", detail: "Bereiche, Einzelrechte und LuckPerms-Rechte zeigen live, was erlaubt ist. Ausschalten sperrt sofort mit der gewählten Dauer, Einschalten gibt frei."),

@@ -1531,6 +1531,35 @@ final class OpenAiIntegration implements Listener {
         "retry-exhausted", "Context model compatibility/recovery retries exhausted");
   }
 
+  /**
+   * 10.2.0 diagnostics: one short, bounded analysis with the already configured key and model. The caller supplies a
+   * compact, redacted input; nothing is stored at OpenAI (store=false). Falls back when a model rejects reasoning.
+   */
+  String diagnosticsText(String instructions, String input, int maxTokens) throws Exception {
+    if (!configured()) throw new IllegalStateException("Kein OpenAI-Schlüssel hinterlegt");
+    boolean reasoning = reasoningModel(model());
+    int budget = Math.max(400, Math.min(6000, maxTokens));
+    for (int attempt = 0; attempt < 3; attempt++) {
+      Map<String, Object> payload = new LinkedHashMap<>();
+      payload.put("model", model());
+      payload.put("store", false);
+      payload.put("instructions", instructions);
+      payload.put("input", input);
+      payload.put("max_output_tokens", reasoning ? budget + 1200 : budget);
+      if (reasoning) payload.put("reasoning", Map.of("effort", "low"));
+      try {
+        return parseResponseText(post("/v1/responses", DiscordBotManager.Json.stringify(payload), Duration.ofSeconds(60)));
+      } catch (ApiFailure error) {
+        if (reasoning && error.unsupported("reasoning")) { reasoning = false; continue; }
+        throw error;
+      } catch (ResponseFailure error) {
+        if (Set.of("max_output_tokens", "empty-output").contains(error.kind) && budget < 6000) { budget = Math.min(6000, budget * 2); continue; }
+        throw error;
+      }
+    }
+    throw new ResponseFailure("retry-exhausted", "KI-Antwort unvollständig");
+  }
+
   static boolean reasoningModel(String model) {
     return model != null
         && model.toLowerCase(Locale.ROOT).matches("(?:gpt-[56](?:[.-].*)?|o[1-4](?:-.*)?)");

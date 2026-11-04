@@ -258,6 +258,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     private NativeScoreboardManager nativeScoreboard;
     private PlayerDataManager playerData;
     private OpenAiIntegration openAi;
+    /** 10.2.0: live diagnostics, disconnect waves, crash manager, lag map and spark analysis. */
+    DiagnosticsCenter diagnostics;
+    OpenAiIntegration openAiIntegration() { return openAi; }
     SuiteExpansion expansion;
     AdminAccessManager adminAccess;
     AdminRuntime adminRuntime;
@@ -426,6 +429,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         Bukkit.getPluginManager().registerEvents(menuAudio, this);
         connectionDiagnostics.start();
         register("connection");
+        try { diagnostics = new DiagnosticsCenter(this); Bukkit.getPluginManager().registerEvents(diagnostics, this); diagnostics.start(); }
+        catch (Throwable error) { diagnostics = null; getLogger().warning("Diagnosezentrale nicht verfügbar: " + error.getClass().getSimpleName() + "; alle anderen Funktionen laufen weiter."); }
         register("vanish"); register("link"); register("unlink");
         Bukkit.getPluginManager().registerEvents(accountLinks,this);
         Bukkit.getPluginManager().registerEvents(serverStatistics,this);
@@ -519,6 +524,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(tickets!=null)tickets.stop();
         Bukkit.getServicesManager().unregisterAll(this);
         if (community != null) community.stop();
+        if (diagnostics != null) { try { diagnostics.stop(); } catch (Throwable error) { getLogger().warning("Diagnose konnte nicht sauber beendet werden: " + error.getClass().getSimpleName()); } }
         if (connectionDiagnostics != null) connectionDiagnostics.stop();
         if(database==null)return; // Failed startup: do not rewrite partial plugin data.
         if (serverStatistics != null) serverStatistics.stop();
@@ -17805,17 +17811,43 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         private synchronized PlayerProfile find(String name) { if (name == null) return null; for (PlayerProfile p : profiles.values()) if (p.name.equalsIgnoreCase(name)) return p; for (PlayerProfile p : profiles.values()) if (p.name.toLowerCase(Locale.ROOT).startsWith(name.toLowerCase(Locale.ROOT))) return p; for (PlayerProfile p : profiles.values()) for (String previous : p.previousNames) if (previous.equalsIgnoreCase(name)) return p; try { return profiles.get(UUID.fromString(name)); } catch (Exception ignored) {} return null; }
         private synchronized List<String> names() { return profiles.values().stream().map(p -> p.name).sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList()); }
         private synchronized List<PlayerProfile> sortedProfiles() { List<PlayerProfile> list = new ArrayList<>(profiles.values()); list.sort(Comparator.comparingLong((PlayerProfile p) -> p.lastSeen).reversed()); return list; }
-        private synchronized void save(PlayerProfile profile) {
-            File dir = new File(folder, profile.uuid.toString());
-            if (!dir.exists()) dir.mkdirs();
-            File target = new File(dir, "profil.yml");
-            File temporary = new File(dir, "profil.yml.tmp");
-            try {
-                profile.save(temporary);
-                try { Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
-                catch (Exception atomicMoveUnavailable) { Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING); }
-            } catch (Exception e) {
-                plugin.getLogger().warning("Konnte Profil nicht atomar speichern: " + profile.uuid + " - " + e.getMessage());
+        /**
+         * 10.2.0: profile saves from the server thread are coalesced and written by one background thread about a
+         * second later (the spark profile showed synchronous YAML writes as the suite's largest tick cost). The file
+         * format and the atomic replace stay identical; shutdown writes every profile synchronously.
+         */
+        private final Set<UUID> pendingSaves = ConcurrentHashMap.newKeySet();
+        private volatile java.util.concurrent.ScheduledExecutorService saver;
+        private volatile boolean deferredSaves = true;
+        private void save(PlayerProfile profile) {
+            if (profile == null) return;
+            boolean defer = deferredSaves && plugin.isEnabled() && plugin.getConfig().getBoolean("performance.async-profile-saves", true) && Bukkit.isPrimaryThread();
+            if (!defer) { saveNow(profile); return; }
+            if (!pendingSaves.add(profile.uuid)) return;
+            try { saverThread().schedule(() -> { pendingSaves.remove(profile.uuid); if (!saveNow(profile, true)) Bukkit.getScheduler().runTask(plugin, () -> saveNow(profile)); }, 1200, java.util.concurrent.TimeUnit.MILLISECONDS); }
+            catch (java.util.concurrent.RejectedExecutionException stopped) { pendingSaves.remove(profile.uuid); saveNow(profile); }
+        }
+        private synchronized java.util.concurrent.ScheduledExecutorService saverThread() {
+            if (saver == null) saver = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> { Thread t = new Thread(r, "Simplex-Profile-Save"); t.setDaemon(true); return t; });
+            return saver;
+        }
+        private boolean saveNow(PlayerProfile profile) { return saveNow(profile, false); }
+        /** Atomic write of one profile; returns false when it failed (quiet = the caller retries on the server thread). */
+        private boolean saveNow(PlayerProfile profile, boolean quiet) {
+            synchronized (profile) {
+                File dir = new File(folder, profile.uuid.toString());
+                if (!dir.exists()) dir.mkdirs();
+                File target = new File(dir, "profil.yml");
+                File temporary = new File(dir, "profil.yml.tmp");
+                try {
+                    profile.save(temporary);
+                    try { Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
+                    catch (Exception atomicMoveUnavailable) { Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING); }
+                    return true;
+                } catch (Exception e) {
+                    if (!quiet) plugin.getLogger().warning("Konnte Profil nicht atomar speichern: " + profile.uuid + " - " + e.getMessage());
+                    return false;
+                }
             }
         }
         private synchronized List<PlayerProfile> expireTemporaryRights(long now) {
@@ -17823,7 +17855,14 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             for (PlayerProfile profile : profiles.values()) if (profile.clearExpiredTemporaryRights(now)) changed.add(profile);
             return changed;
         }
-        private synchronized void saveAll() { for (PlayerProfile profile : profiles.values()) save(profile); }
+        private void saveAll() {
+            deferredSaves = false;
+            java.util.concurrent.ScheduledExecutorService pending = saver;
+            if (pending != null) { pending.shutdown(); try { pending.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } }
+            List<PlayerProfile> all; synchronized (this) { all = new ArrayList<>(profiles.values()); }
+            for (PlayerProfile profile : all) saveNow(profile);
+            pendingSaves.clear();
+        }
     }
 
     private static final class DeviceRecord {

@@ -411,7 +411,7 @@
     var alts = true, dur = durationSelect(d.durations, ""), reason = S.input({ placeholder: "Grund – sieht der Spieler (optional)", maxlength: 200 });
     S.title(d.name, "Befehle", h("a", { class: "btn ghost sm", href: "#/commands" }, icon("chevLeft"), h("span", { class: "hide-mobile", text: "Befehle" })));
     async function change(values, el, on) {
-      try { var r = await S.runAction("commands.update", Object.assign({ player: d.uuid }, values), { skipConfirm: true, silent: true }); if (r) { S.toast(r.title, r.ok === false ? "err" : "ok", r.description); setTimeout(S.reload, 250); } }
+      try { var r = await S.runAction("commands.update", Object.assign({ player: d.uuid, alts: "true", grant: "false" }, values), { skipConfirm: true, silent: true }); if (r) { S.toast(r.title, r.ok === false ? "err" : "ok", r.description); setTimeout(S.reload, 250); } }
       catch (e) { if (el) el.checked = !on; S.toast(e.message, "err"); }
     }
     function block(names, el) { return change({ operation: "block", commands: names.join(","), duration: dur.value, reason: reason.value.trim(), alts: String(alts) }, el, false); }
@@ -435,7 +435,7 @@
         !d.permissionsKnown ? S.badge("Rang offline unbekannt", "warn") : null)),
       h("div", { class: "row wrap" }, S.can("data.access-locks") ? h("a", { class: "btn sm", href: "#/access-locks/" + d.uuid }, icon("lock"), "Rechte & Sperren") : null,
         S.can("data.luckperms") ? h("a", { class: "btn sm", href: "#/luckperms/player/" + d.uuid }, icon("key"), "Rang") : null,
-        S.btn("Alle eigenen entfernen", { size: "sm", kind: "danger", icon: "unlock", disabled: !canEdit, onClick: function () { return S.runAction("commands.update", { player: d.uuid, operation: "clear" }, { title: "Alle eigenen Befehlsrechte von " + d.name + " entfernen?" }).then(function (r) { if (r) setTimeout(S.reload, 250); }); } }))));
+        S.btn("Alle eigenen entfernen", { size: "sm", kind: "danger", icon: "unlock", disabled: !canEdit, onClick: function () { return S.runAction("commands.update", { player: d.uuid, operation: "clear", alts: "true", grant: "false" }, { title: "Alle eigenen Befehlsrechte von " + d.name + " entfernen?" }).then(function (r) { if (r) setTimeout(S.reload, 250); }); } }))));
     var settings = S.card("Beim Ausschalten gilt", { icon: "clock" }, h("div", { class: "stack" }, h("div", { class: "grid two" }, S.field("Dauer", dur), S.field("Grund", reason)),
       h("div", { class: "row" }, h("b", { class: "grow", text: "Alt-Accounts erben die Sperre" }), S.sw(true, function (on) { alts = on; })),
       h("p", { class: "muted small", text: "Alt-Accounts: " + ((d.alts || []).length ? d.alts.map(function (a) { return a.name; }).join(", ") : "keine bestätigten") + ". Eine eigene Freigabe eines Alts hat Vorrang." })));

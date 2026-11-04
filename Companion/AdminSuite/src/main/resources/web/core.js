@@ -6,7 +6,7 @@
 
   // ------------------------------------------------------------ DOM
   function h(tag, props) {
-    var el = tag === "svg" || tag === "path" || tag === "circle" || tag === "rect" || tag === "line" || tag === "polyline" || tag === "defs" || tag === "linearGradient" || tag === "stop"
+    var el = tag === "svg" || tag === "path" || tag === "circle" || tag === "rect" || tag === "line" || tag === "polyline" || tag === "defs" || tag === "linearGradient" || tag === "stop" || tag === "text"
       ? document.createElementNS("http://www.w3.org/2000/svg", tag) : document.createElement(tag);
     if (props) for (var k in props) {
       var v = props[k];

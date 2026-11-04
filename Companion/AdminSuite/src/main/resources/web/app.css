@@ -639,3 +639,33 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
 .perm-group > header .btn { padding: 3px 8px; }
 .linklike { background: none; border: 0; padding: 0; margin-top: 3px; color: var(--accent); cursor: pointer; font: inherit; }
 .linklike:disabled { opacity: .5; cursor: default; }
+
+/* 10.2.0 Diagnose */
+.diag-chart { width: 100%; height: 180px; display: block; }
+.diag-chart path { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.diag-chart path.tps { stroke: var(--ok); }
+.diag-chart path.avg { stroke: var(--accent); }
+.diag-chart path.max { stroke: var(--danger); stroke-width: 1.5; opacity: 0.85; }
+.diag-chart line.budget { stroke: var(--warn); stroke-dasharray: 4 4; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.diag-chart text.lbl { fill: var(--muted); font-size: 11px; }
+.dot::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.dot.tps::before { background: var(--ok); } .dot.avg::before { background: var(--accent); } .dot.max::before { background: var(--danger); }
+.diag-hist { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 3px; height: 90px; align-items: end; }
+.diag-hist .col { position: relative; height: 100%; display: flex; align-items: flex-end; }
+.diag-hist .col i { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 4px 4px 0 0; min-height: 2px; }
+.diag-hist .col i.all { background: var(--surface-2); border: 1px solid var(--border); }
+.diag-hist .col i.inv { background: var(--danger); opacity: 0.85; }
+.diag-log { font-family: var(--mono); font-size: 12px; max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-2); }
+.diag-log .line { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr); gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); align-items: baseline; }
+.diag-log .line:last-child { border-bottom: 0; }
+.diag-log .t, .diag-log .src { color: var(--muted); white-space: nowrap; }
+.diag-log .lv { font-weight: 700; color: var(--text-2); }
+.diag-log .msg { white-space: pre-wrap; word-break: break-word; }
+.diag-log .line.warn .lv { color: var(--warn); } .diag-log .line.error .lv, .diag-log .line.fatal .lv, .diag-log .line.error .msg { color: var(--danger); }
+.diag-pre { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 460px; overflow: auto; margin: 0; padding: 12px; border-radius: 12px; background: var(--bg-2); border: 1px solid var(--border); }
+.diag-score { width: 72px; height: 72px; border-radius: 22px; display: grid; place-items: center; font-size: 28px; font-weight: 800; }
+.diag-score.ok { background: rgba(52, 211, 153, 0.14); color: var(--ok); } .diag-score.warn { background: rgba(251, 191, 36, 0.14); color: var(--warn); } .diag-score.danger { background: rgba(248, 113, 113, 0.14); color: var(--danger); }
+.ai-text p { margin: 0 0 6px; line-height: 1.5; }
+a.right-row.clickable, a.notice.clickable { color: inherit; text-decoration: none; cursor: pointer; }
+a.right-row.clickable:hover { background: var(--surface-2); }
+@media (max-width: 640px) { .diag-log .line { grid-template-columns: auto minmax(0, 1fr); } .diag-log .src, .diag-log .t { display: none; } }
