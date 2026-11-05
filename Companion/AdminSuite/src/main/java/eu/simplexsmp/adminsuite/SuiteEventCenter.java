@@ -12,7 +12,7 @@ import org.bukkit.entity.Player;
 
 /** Bounded independent event ledger. Existing punishment/report/profile formats are untouched. */
 final class SuiteEventCenter {
-    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent","ticket-low","ticket-high","emergency-restart","admin-log","staff-chat","disconnect-wave","crash","lag-spike","discord-ads");
+    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent","ticket-low","ticket-high","emergency-restart","admin-log","staff-chat","disconnect-wave","crash","lag-spike","discord-ads","ad-reminder");
     static final Set<String> LEVELS = Set.of("active","passive","timeSensitive","critical");
     private final SimplexAdminSuite plugin;
     private final Path eventsFile, subscriptionsFile;
@@ -69,6 +69,20 @@ final class SuiteEventCenter {
     void direct(String type,String title,String body,java.util.function.Predicate<String> owners){
         if(!TYPES.contains(type))throw new IllegalArgumentException("Unbekanntes Ereignis");
         Map<String,Object> row=SimplexAdminSuite.appMap("id",String.format(Locale.ROOT,"%013d-direct-%s",System.currentTimeMillis(),UUID.randomUUID()),"time",System.currentTimeMillis(),"type",type,"player","","title",ClientBrands.evidence(title),"body",clip(body,600),"critical",false,"note","","direct",true);
+        try{worker.execute(()->{try{push(row,null,false,owners);}catch(Exception e){deliveryStatus="Versand fehlgeschlagen";}webPush(row,owners);});}catch(RejectedExecutionException busy){deliveryStatus="Ereigniswarteschlange ausgelastet";}
+    }
+    /**
+     * 10.5.0 Werbe-Zentrale: a reminder with its own tap target ({@code appUrl} for Bark, {@code webUrl} for browser
+     * push) and the ad text Bark can copy on a long press. Never stored, never repeated by the ledger (the Werbe-Zentrale
+     * repeats on its own until the ad is posted or snoozed).
+     */
+    void reminder(String type,String title,String body,String appUrl,String webUrl,String copy,java.util.function.Predicate<String> owners){
+        if(!TYPES.contains(type))throw new IllegalArgumentException("Unbekanntes Ereignis");
+        Map<String,Object> row=SimplexAdminSuite.appMap("id",String.format(Locale.ROOT,"%013d-direct-%s",System.currentTimeMillis(),UUID.randomUUID()),"time",System.currentTimeMillis(),"type",type,"player","","title",clip(title,180),"body",clip(body,600),"critical",false,"note","","direct",true,"level","timeSensitive");
+        if(appUrl!=null&&appUrl.startsWith("panel://")&&appUrl.length()<=600)row.put("url",appUrl);
+        if(webUrl!=null&&webUrl.startsWith("/#/"))row.put("webUrl",webUrl);
+        // APNs allows 4 KB per notification: only shorter ads ride along for Bark's copy action.
+        if(copy!=null&&!copy.isBlank()&&copy.getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=1800)row.put("copy",copy);
         try{worker.execute(()->{try{push(row,null,false,owners);}catch(Exception e){deliveryStatus="Versand fehlgeschlagen";}webPush(row,owners);});}catch(RejectedExecutionException busy){deliveryStatus="Ereigniswarteschlange ausgelastet";}
     }
     private void webPush(Map<String,Object> row,java.util.function.Predicate<String> owners){
@@ -170,9 +184,9 @@ final class SuiteEventCenter {
             if(plugin.appApi==null||!plugin.appApi.security.canNotifyOwner(owner))continue;
             String type=String.valueOf(row.get("type"));
             // 10.2.0: diagnostics alarms only reach accounts that may open the diagnostics centre.
-            if(Set.of("disconnect-wave","crash","lag-spike","discord-ads").contains(type)&&!plugin.appApi.diagnosticsNotifiable(owner,type))continue;String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
+            if(Set.of("disconnect-wave","crash","lag-spike","discord-ads","ad-reminder").contains(type)&&!plugin.appApi.diagnosticsNotifiable(owner,type))continue;String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
             // Tickets reach every Bark subscriber until the app stores an explicit rule for them.
-            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true))&&!type.equals("emergency-restart")&&!type.equals("discord-ads"))continue;
+            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true))&&!type.equals("emergency-restart")&&!type.equals("discord-ads")&&!type.equals("ad-reminder"))continue;
             boolean critical=Boolean.TRUE.equals(row.get("critical"));String hint=row.get("level") instanceof String h&&LEVELS.contains(h)?h:null;
             String level=rule!=null?rule[1]:hint!=null?hint:copy.getProperty(prefix+(critical?"critical":"level"),"active");
             if(type.equals("emergency-restart")&&rule==null)level="critical";
@@ -182,9 +196,10 @@ final class SuiteEventCenter {
 
             if(repeated){boolean retained;synchronized(this){retained=events.containsKey(String.valueOf(row.get("id")));}if(repeat==0||!retained){acknowledge(owner,String.valueOf(row.get("id")));continue;}}
             long now=System.currentTimeMillis();String rate=prefix+type;
-            if(now-cooldown.getOrDefault(rate,0L)<(type.equals("first-join")||type.startsWith("ticket")||type.equals("discord-ads")?3000:30_000))continue;
+            if(!type.equals("ad-reminder")&&now-cooldown.getOrDefault(rate,0L)<(type.equals("first-join")||type.startsWith("ticket")||type.equals("discord-ads")?3000:30_000))continue;
             cooldown.put(rate,now);
-            Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",copy.getProperty(prefix+"key",""),"title",row.get("title"),"body",row.get("body"),"group","Simplex Admin Suite","level",level,"sound",sound,"isArchive",1,"url",type.startsWith("ticket")?"panel://suite-tickets":type.equals("admin-log")?"panel://suite-admin-log":Set.of("disconnect-wave","crash","lag-spike").contains(type)?"panel://suite-diagnostics":type.equals("discord-ads")?"panel://suite-discord-ads":"panel://suite-events");
+            Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",copy.getProperty(prefix+"key",""),"title",row.get("title"),"body",row.get("body"),"group","Simplex Admin Suite","level",level,"sound",sound,"isArchive",1,"url",type.startsWith("ticket")?"panel://suite-tickets":type.equals("admin-log")?"panel://suite-admin-log":Set.of("disconnect-wave","crash","lag-spike").contains(type)?"panel://suite-diagnostics":row.get("url") instanceof String u&&u.startsWith("panel://")?u:type.equals("ad-reminder")?"panel://suite-ad-hub":"panel://suite-events");
+            if(type.equals("ad-reminder")){payload.put("group","Werbe-Zentrale");if(row.get("copy") instanceof String c){payload.put("copy",c);payload.put("autoCopy","1");}}
             String player=String.valueOf(row.getOrDefault("player",""));if(player.matches("[a-fA-F0-9-]{36}")){String avatar=plugin.discordRelay()==null?"":plugin.discordRelay().appAvatar(UUID.fromString(player));payload.put("icon",avatar.isBlank()?"https://mc-heads.net/avatar/"+player+"/128":avatar);}
             payload.put("id",String.valueOf(row.get("id")));
             String alarm="alarm."+owner+"."+row.get("id");

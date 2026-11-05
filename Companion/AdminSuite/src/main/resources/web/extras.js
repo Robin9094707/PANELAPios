@@ -224,6 +224,13 @@
           h("div", { class: "section-title" }, h("h2", { text: "Tableiste (Handy)" })), h("div", { class: "grid two" }, tabSelects))),
         S.card("Menüpunkte anzeigen", { icon: "list", sub: "Ausgeblendete Bereiche bleiben über die Adresse erreichbar." }, hideList)),
       S.card("Chat", { icon: "chat" }, S.field("Enter-Taste im Chat", seg("chatEnter", [["send", "Senden (Umschalt+Enter = neue Zeile)"], ["newline", "Neue Zeile (Strg/⌘+Enter = senden)"]]))),
+      (function () {
+        var pf = S.perf || { mode: "auto", reasons: [] }, info = h("small", { class: "muted" });
+        function explain() { info.textContent = pf.lite ? "Aktiv" + (pf.mode === "auto" ? " – erkannt: " + (pf.reasons.join(", ") || "schwaches Gerät") : " (fest eingeschaltet)") + ". Ohne Unschärfe, Animationen und Schatten; Seiten aktualisieren seltener." : pf.mode === "off" ? "Aus – volle Darstellung, auch auf schwachen Geräten." : "Automatisch – dieses Gerät wirkt schnell genug" + (pf.reasons.length ? " (" + pf.reasons.join(", ") + ")" : "") + "."; }
+        explain();
+        return S.card("Leistung", { icon: "activity", sub: "Gilt für diesen Browser." }, h("div", { class: "stack" },
+          S.field("Leistungsmodus für schwache Rechner", S.segmented([["auto", "Automatisch"], ["on", "An"], ["off", "Aus"]], pf.mode, function (v) { if (pf.set) pf.set(v); explain(); })), info));
+      })(),
       platform.mobile && !platform.standalone ? S.card("App auf dem Startbildschirm", { icon: "phone" }, guideBody()) : null));
   };
 

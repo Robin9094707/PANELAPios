@@ -204,7 +204,7 @@ final class WebPush {
             String level = quiet == null ? "active" : quiet.level(owner, type, critical ? "critical" : "active");
             if (level == null) continue;
             Map<String, Object> payload = SimplexAdminSuite.appMap("title", row.get("title"), "body", row.get("body"), "type", type, "critical", critical || level.equals("critical"),
-                "tag", type.startsWith("ticket") ? "ticket" : type, "url", url(type), "time", row.get("time"), "id", row.get("id"));
+                "tag", type.startsWith("ticket") ? "ticket" : type, "url", row.get("webUrl") instanceof String w && w.startsWith("/#/") ? w : url(type), "time", row.get("time"), "id", row.get("id"));
             try {
                 int code = send(target.getValue(), DiscordBotManager.Json.stringify(payload).getBytes(StandardCharsets.UTF_8), critical ? "high" : "normal");
                 if (code == 404 || code == 410) { drop(target.getKey()); continue; }

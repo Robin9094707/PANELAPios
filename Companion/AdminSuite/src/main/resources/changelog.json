@@ -1,40 +1,54 @@
 [
   {
+    "version": "10.5.0",
+    "app": "4.8.0",
+    "date": "2026-11-05",
+    "title": "Werbe-Zentrale",
+    "intro": "Statt automatisch zu posten (Self-Bot, gegen die Discord-Regeln) erinnert dich die Suite per Bark, wenn du wieder werben darfst. Ein Tipp kopiert den passend formatierten Text und öffnet Discord, Reddit, Planet Minecraft, Facebook & Co. direkt. Deine Texte und Kanäle wurden übernommen, der Discord-Token gelöscht.",
+    "items": [
+      {
+        "icon": "send",
+        "title": "Alle Werbe-Orte an einem Platz",
+        "text": "Discord-Kanäle per Kanal-Link, Reddit, Planet Minecraft, Facebook-Gruppen, Telegram, WhatsApp, X und Serverlisten – jeweils mit Link, Werbetext und Intervall (z. B. alle 6 Std)."
+      },
+      {
+        "icon": "bell",
+        "title": "Bark-Erinnerung mit Snooze",
+        "text": "Ist ein Ort wieder dran, kommt eine Bark-Mitteilung. Tippen kopiert den Text in die Zwischenablage und öffnet den Kanal bzw. die Seite. Später erinnern (15 Min bis 1 Tag) und automatische Wiederholung, bis geworben wurde."
+      },
+      {
+        "icon": "clock",
+        "title": "Timer wie gewohnt – nur manuell",
+        "text": "Nach dem Werben startet der Timer neu, leicht über dem Intervall (6 Std → etwa 6,1 Std). Neustarts setzen nichts zurück, „Rückgängig“ nimmt einen Fehltipp zurück."
+      },
+      {
+        "icon": "edit",
+        "title": "Passende Formate mit Vorschau",
+        "text": "Discord-Markdown, Reddit-Markdown, BBCode (Planet Minecraft, Foren), WhatsApp/Telegram, Facebook mit Unicode-Fett und reiner Text – mit Vorschau und Umwandeln per Tipp. Fertige Simplex-Texte für Reddit, Planet Minecraft und Facebook sind dabei."
+      },
+      {
+        "icon": "shield",
+        "title": "Kein Token mehr",
+        "text": "Der Discord-Token-Login wurde vollständig entfernt; gespeicherte Token und ihr Schlüssel werden beim ersten Start gelöscht. Tipp: Passwort des Zweitaccounts ändern, damit der alte Token auch bei Discord ungültig wird."
+      },
+      {
+        "icon": "activity",
+        "title": "Webpanel: Leistungsmodus",
+        "text": "Erkennt schwache Rechner automatisch und schaltet Unschärfe, Animationen und häufige Aktualisierungen ab (Darstellung → Leistung: Automatisch/An/Aus). Anfragen haben Zeitlimits und wiederholen sich bei kurzen Aussetzern."
+      }
+    ]
+  },
+  {
     "version": "10.4.0",
     "app": "4.7.0",
     "date": "2026-11-04",
-    "title": "Discord-Werbeplaner",
-    "intro": "Werbetexte mit Discord-Formatierung und Vorschau gestalten und mit einem verknüpften Zweitaccount automatisch in erlaubten Werbekanälen posten – jeder Kanal mit eigenem Timer, serverseitig und neustartfest. Neue Rechte sind in keiner Rollenvorlage enthalten.",
+    "title": "Discord-Werbeplaner (in 10.5.0 ersetzt)",
+    "intro": "Der automatische Discord-Werbeplaner wurde in 10.5.0 durch die Werbe-Zentrale ersetzt (manuelles Posten mit Bark-Erinnerung). Texte und Kanäle wurden übernommen, gespeicherte Token gelöscht.",
     "items": [
-      {
-        "icon": "link",
-        "title": "Discord-Account verknüpfen",
-        "text": "Zweitaccount per Token verbinden, prüfen, Token erneuern oder abmelden. Der Token liegt nur verschlüsselt auf dem Server und wird nie angezeigt."
-      },
       {
         "icon": "edit",
         "title": "Werbetexte mit Vorschau",
         "text": "Benennen, bearbeiten, löschen und kopieren – mit Formatierungsleiste (fett, kursiv, Überschriften, Zitate, Listen, Spoiler, Links, Emojis) und Vorschau im Discord-Look. Drei Simplex-Vorlagen sind dabei."
-      },
-      {
-        "icon": "send",
-        "title": "Kanäle mit eigenem Timer",
-        "text": "Alle Server des Accounts sehen, bis zu vier Kanäle pro Server wählen (einstellbar), jeweils mit eigenem Text und Intervall. Vor dem Planen kommt eine Warnung, ob Werbung dort wirklich erlaubt ist."
-      },
-      {
-        "icon": "clock",
-        "title": "Nie zu früh",
-        "text": "Jeder Post kommt etwas nach dem eingestellten Intervall (24 h → etwa 24,1–24,5 h), nie davor. Slowmode wird erkannt und eingehalten, eigene frühere Posts verschieben den nächsten."
-      },
-      {
-        "icon": "alert",
-        "title": "Fehler erkennen",
-        "text": "Fehlende Rechte, Captcha, abgemeldeter Token oder von Timer-Bots gelöschte Posts werden erkannt – mit Bark-Hinweis und automatischer Pause nach mehreren Fehlern."
-      },
-      {
-        "icon": "refresh",
-        "title": "Neustartfest",
-        "text": "Timer liegen als feste Zeitpunkte auf dem Server; ein Neustart setzt nichts zurück, verpasste Posts werden kurz danach nachgeholt."
       }
     ]
   },

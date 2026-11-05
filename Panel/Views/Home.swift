@@ -11,6 +11,7 @@ struct HomeView: View {
     @State private var widgets = false
     @State private var suiteEvents = false
     @State private var suiteTickets = false
+    @State private var adHub = false
     @State private var search = ""
     @State private var editLayout = false
     @State private var iconRevision = 0
@@ -67,7 +68,8 @@ struct HomeView: View {
                 .sheet(isPresented: $widgets) { NavigationStack { WidgetSettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { widgets = false } } } } }
                 .sheet(isPresented: $suiteEvents) { NavigationStack { SuiteEventInboxView() } }
                 .sheet(isPresented: $suiteTickets) { NavigationStack { SuiteEventInboxView(tickets: true) } }
-                .onOpenURL { url in if url.host == "setup" { _ = setupInbox.open(url); return }; if url.host == "suite-events" || url.host == "suite-diagnostics" { suiteEvents = true }; if url.host == "suite-tickets" { suiteTickets = true }; if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
+                .sheet(isPresented: $adHub) { SuiteAdHubLauncher() }
+                .onOpenURL { url in if url.host == "setup" { _ = setupInbox.open(url); return }; if url.host == "suite-events" || url.host == "suite-diagnostics" { suiteEvents = true }; if url.host == "suite-tickets" { suiteTickets = true }; if url.host == "suite-ad-hub" { adHub = true }; if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
                 .task(id: store.api.map { ObjectIdentifier($0) }) { await store.refresh(); await store.pollPresence() }
         }
     }

@@ -38,7 +38,7 @@
     { group: "Studio", items: [
       { id: "discord-status", label: "Discord-Status", icon: "palette", perm: "data.discord-status", feature: "discord-status-designer-v1" },
       { id: "scoreboard", label: "Scoreboard", icon: "layers", perm: "data.scoreboard", feature: "scoreboard-designer-v1" },
-      { id: "discord-ads", label: "Discord-Werbung", icon: "send", perm: "data.discord-ads", feature: "discord-ads-v1" }
+      { id: "ad-hub", label: "Werbe-Zentrale", icon: "send", perm: "data.discord-ads", feature: "ad-hub-v1", badge: "adHub" }
     ] },
     { group: "Persönlich", items: [
       { id: "notifications", label: "Benachrichtigungen", icon: "bell", perm: null, feature: "web-push-v1" },
@@ -159,12 +159,20 @@
     if (!S.health) return;
     try { if (S.can("data.admin-log") && S.has("admin-log-v1")) { var log = await S.api("data/admin-log", { quiet: true }); setBadge("adminLog", log.unread || 0); } } catch (e) { /* optional */ }
     try { if (S.can("data.diagnostics") && S.has("diagnostics-v1")) { var dg = await S.api("diagnostics/overview", { quiet: true, query: { range: 60 } }); setBadge("diagnostics", dg.alert ? 1 : 0); } } catch (e) { /* optional */ }
+    try { if (S.can("data.discord-ads") && S.has("ad-hub-v1")) { var ah = await S.api("ad-hub", { quiet: true }); setBadge("adHub", ah.stats ? ah.stats.due || 0 : 0); } } catch (e) { /* optional */ }
     try { if (S.can("data.tickets")) { var t = await S.api("data/tickets", { quiet: true, query: { status: "open" } }); setBadge("tickets", t.counts ? (t.counts.open || 0) : 0); } } catch (e) { /* optional */ }
   }
 
   // ------------------------------------------------------------ Router
   var current = null, timers = [];
-  S.every = function (ms, fn) { var t = setInterval(function () { if (!document.hidden) fn(); }, ms); timers.push(t); return t; };
+  /** Page refresh timer: paused while hidden, never overlapping, twice as slow in the performance mode. */
+  S.every = function (ms, fn) {
+    var busy = false, t = setInterval(async function () {
+      if (document.hidden || busy) return; busy = true;
+      try { await fn(); } catch (e) { /* the page keeps its last view */ } finally { busy = false; }
+    }, S.perf && S.perf.lite ? ms * 2 : ms);
+    timers.push(t); return t;
+  };
   function parse() {
     var raw = location.hash.replace(/^#\/?/, ""), q = raw.indexOf("?"), path = q >= 0 ? raw.slice(0, q) : raw, query = new URLSearchParams(q >= 0 ? raw.slice(q + 1) : "");
     var parts = path.split("/").filter(Boolean).map(decodeURIComponent);
@@ -225,8 +233,11 @@
     await route();
     // 10.0.0: what's new – shown once per account and Suite version (stored on the server, survives new logins).
     if (S.showChangelog) setTimeout(function () { S.showChangelog(false); }, 600);
-    refreshBadges(); clearInterval(S.badgeTimer); S.badgeTimer = setInterval(function () { if (!document.hidden && S.health) refreshBadges(); }, 60000);
+    refreshBadges(); clearInterval(S.badgeTimer); S.badgeTimer = setInterval(function () { if (!document.hidden && S.health) refreshBadges(); }, S.perf && S.perf.lite ? 120000 : 60000);
   };
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });
+  // Back from the background or a lost connection: refresh the counters once instead of waiting a full minute.
+  document.addEventListener("visibilitychange", function () { if (!document.hidden && S.health) refreshBadges(); });
+  window.addEventListener("online", function () { S.net(true); if (S.health) { refreshBadges(); route(); } });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { S.boot(); }); else S.boot();
 })();

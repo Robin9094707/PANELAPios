@@ -1188,9 +1188,10 @@ emergency-restart:
 # Browser push needs the web panel on a domain with a valid HTTPS certificate (same as passkeys).
 # Recovery (server console only): sas app recovery | owner-reset [name] | user-reset <name> | owner-transfer <name> | unlock <name>
 
-# Optional 10.4.0 addition: Discord-Werbeplaner (App/Webpanel → Kommunikation & Studio → Discord-Werbung).
-# Everything else (accounts, texts, channels, timers) is set up in the app or web panel and stored in
-# plugins/SimplexAdminSuite/discord-ads/ (state.json, token encrypted with secret.key – keep both together).
-# Automating a Discord user account violates Discord's terms of service and can get that account banned – use an alt.
-discord-ads:
-  enabled: true # false = planner off; stored channels, texts and timers are kept untouched
+# Optional 10.5.0: Werbe-Zentrale (App/Webpanel → Kommunikation & Studio → Werbe-Zentrale). Replaces the 10.4.0
+# Discord self-bot planner: nothing is posted automatically any more. Places (Discord channels, Reddit, Planet
+# Minecraft, Facebook groups …), ad texts and timers are set up in the app or web panel and stored in
+# plugins/SimplexAdminSuite/ad-hub/. When an ad is due, Bark reminds you; tapping copies the text and opens the place.
+# Old discord-ads data is taken over on the first start; stored Discord tokens are deleted.
+ad-hub:
+  enabled: true # false = Werbe-Zentrale off; places, texts and timers stay untouched

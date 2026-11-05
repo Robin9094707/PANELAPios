@@ -137,10 +137,10 @@ struct SuiteHubCommunicationSection: View {
             if api.features.contains("scoreboard-designer-v1") {
                 NavigationLink { SuiteScoreboardDesignerView(suite: api) } label: { Label("Scoreboard gestalten", systemImage: "list.bullet.rectangle.fill") }.disabled(!api.can("data.scoreboard")).accessibilityIdentifier("suite-scoreboard")
             }
-            if api.features.contains("discord-ads-v1") {
-                NavigationLink { SuiteDiscordAdsView(suite: api) } label: { Label("Discord-Werbung planen", systemImage: "megaphone.fill") }.disabled(!api.can("data.discord-ads")).accessibilityIdentifier("suite-discord-ads")
+            if api.features.contains("ad-hub-v1") {
+                NavigationLink { SuiteAdHubView(suite: api) } label: { Label("Werbe-Zentrale", systemImage: "megaphone.fill") }.disabled(!api.can("data.discord-ads")).accessibilityIdentifier("suite-ad-hub")
             }
-        } header: { Text("Kommunikation & Studio") } footer: { Text("Discord-Status und Scoreboard mit Vorlagen und Live-Vorschau bearbeiten, Werbung in erlaubten Discord-Kanälen mit eigenem Timer planen.") }
+        } header: { Text("Kommunikation & Studio") } footer: { Text("Discord-Status und Scoreboard mit Vorlagen und Live-Vorschau bearbeiten. Werbe-Zentrale: Discord, Reddit, Planet Minecraft, Facebook & Co. mit Bark-Erinnerung – kopieren, öffnen, einfügen.") }
     }
 }
 

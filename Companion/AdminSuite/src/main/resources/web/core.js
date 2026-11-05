@@ -154,9 +154,23 @@
         .map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(options.query[k]); }).join("&");
       if (q) url += "?" + q;
     }
-    var res;
-    try { res = await fetch(url, { method: options.method || (body !== undefined ? "POST" : "GET"), headers: headers, body: body, credentials: "same-origin", cache: "no-store", redirect: "error" }); }
-    catch (e) { throw new ApiError(0, "Server nicht erreichbar. Verbindung prüfen."); }
+    // 10.5.0: every request has a time limit; reads are retried once after a short network hiccup or a 502/503/504.
+    var res, method = options.method || (body !== undefined ? "POST" : "GET"), attempts = method === "GET" && !options.noRetry ? 2 : 1;
+    var limit = options.timeout || (options.raw || options.body instanceof Blob ? 180000 : method === "GET" ? 60000 : 150000);
+    for (var attempt = 0; ; attempt++) {
+      var ctrl = typeof AbortController === "function" ? new AbortController() : null, timer = ctrl ? setTimeout(function () { ctrl.abort(); }, limit) : null;
+      try { res = await fetch(url, { method: method, headers: headers, body: body, credentials: "same-origin", cache: "no-store", redirect: "error", signal: ctrl ? ctrl.signal : undefined }); }
+      catch (e) {
+        if (timer) clearTimeout(timer);
+        if (attempt + 1 < attempts) { await wait(800); continue; }
+        S.net(false);
+        throw new ApiError(0, e && e.name === "AbortError" ? "Zeitüberschreitung – der Server antwortet gerade nicht." : "Server nicht erreichbar. Verbindung prüfen.");
+      }
+      if (timer) clearTimeout(timer);
+      if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt + 1 < attempts) { await wait(1200); continue; }
+      break;
+    }
+    S.net(true);
     if (options.raw) { if (!res.ok) throw new ApiError(res.status, "Datei konnte nicht geladen werden (" + res.status + ")."); return res; }
     var data = null; try { data = await res.json(); } catch (e) { data = null; }
     if (!res.ok) {
@@ -167,6 +181,14 @@
     }
     return data;
   }
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  /** Small offline banner: shown after a failed request, removed by the next successful one. */
+  S.net = function (ok) {
+    var bar = document.getElementById("net-banner");
+    if (ok) { if (bar) bar.remove(); return; }
+    if (bar || !document.body) return;
+    document.body.appendChild(h("div", { id: "net-banner", class: "net-banner", role: "status" }, icon("wifi"), h("span", { text: "Keine Verbindung zum Server – es wird automatisch weiter versucht." })));
+  };
   async function blobUrl(path, query) { var res = await api(path, { raw: true, query: query }); return URL.createObjectURL(await res.blob()); }
 
   // ------------------------------------------------------------ Permissions
@@ -303,6 +325,53 @@
     if (!opts.silent) toast(result && result.title ? result.title : "Ausgeführt", result && result.ok === false ? "err" : "ok", result && result.description ? String(result.description).replace(/\*\*/g, "").slice(0, 400) : null);
     return result;
   }
+
+
+  // ------------------------------------------------------------ 10.5.0 performance mode for weak computers
+  /**
+   * "auto" (default) switches to the lite mode when the device looks weak (≤ 4 CPU threads, ≤ 4 GB RAM, data saver,
+   * reduced motion) or when the first seconds render slowly (frame rate / long tasks). "on" and "off" force it.
+   * Lite: no blur, no animations, no shadows, slower background refreshes. Stored per browser.
+   */
+  var perfStore = { get: function () { try { return localStorage.getItem("simplex-perf"); } catch (e) { return null; } }, set: function (v) { try { localStorage.setItem("simplex-perf", v); } catch (e) { /* private mode */ } } };
+  var perf = S.perf = { mode: perfStore.get() || "auto", lite: false, weak: false, reasons: [] };
+  function staticWeak() {
+    var r = [], n = navigator.hardwareConcurrency || 8, mem = navigator.deviceMemory || 8, conn = navigator.connection || {};
+    if (n <= 4) r.push(n + " CPU-Threads"); if (mem <= 4) r.push("≤ " + mem + " GB RAM");
+    if (conn.saveData) r.push("Datensparmodus"); if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) r.push("Bewegung reduziert");
+    return r;
+  }
+  function applyPerf() {
+    perf.lite = perf.mode === "on" || perf.mode === "auto" && perf.weak;
+    document.documentElement.setAttribute("data-perf", perf.lite ? "lite" : "full");
+  }
+  perf.set = function (mode) { perf.mode = mode === "on" || mode === "off" ? mode : "auto"; perfStore.set(perf.mode); applyPerf(); };
+  perf.reasons = staticWeak(); perf.weak = perf.reasons.length > 0 && (perf.reasons.length > 1 || (navigator.hardwareConcurrency || 8) <= 2 || (navigator.deviceMemory || 8) <= 2 || perf.reasons[0] === "Datensparmodus");
+  applyPerf();
+  // Measure the real rendering speed once: ~120 frames, slow average or many long tasks → lite.
+  (function probe() {
+    if (perf.weak || !window.requestAnimationFrame) return;
+    var long = 0, frames = 0, start = 0, last = 0, slow = 0;
+    try { if (window.PerformanceObserver && PerformanceObserver.supportedEntryTypes && PerformanceObserver.supportedEntryTypes.indexOf("longtask") >= 0) { var po = new PerformanceObserver(function (l) { long += l.getEntries().length; }); po.observe({ entryTypes: ["longtask"] }); setTimeout(function () { po.disconnect(); }, 12000); } } catch (e) { /* optional */ }
+    function frame(t) {
+      if (document.hidden) { start = 0; requestAnimationFrame(frame); return; }
+      if (!start) { start = last = t; requestAnimationFrame(frame); return; }
+      if (t - last > 50) slow++; last = t; frames++;
+      if (frames < 120) { requestAnimationFrame(frame); return; }
+      var avg = (t - start) / frames;
+      if (avg > 28 || slow > 25 || long >= 8) { perf.weak = true; perf.reasons.push(avg > 28 ? "langsame Darstellung (" + Math.round(1000 / avg) + " FPS)" : "viele Hänger"); applyPerf(); }
+    }
+    setTimeout(function () { requestAnimationFrame(frame); }, 2500);
+  })();
+
+  // ------------------------------------------------------------ 10.5.0 last-resort error handling
+  var lastCrash = 0;
+  window.addEventListener("error", function (e) {
+    if (!e || !e.message || /ResizeObserver|Script error/.test(e.message)) return;
+    if (Date.now() - lastCrash < 30000) return; lastCrash = Date.now();
+    try { toast("Unerwarteter Fehler in der Seite", "err", "Falls etwas nicht reagiert: Seite neu laden. (" + String(e.message).slice(0, 120) + ")"); } catch (x) { /* ignore */ }
+  });
+  window.addEventListener("unhandledrejection", function (e) { if (e && e.reason && e.reason.status !== undefined) e.preventDefault(); });
 
   Object.assign(S, { h: h, add: add, clear: clear, mount: mount, icon: icon, num: num, bytes: bytes, dur: dur, date: date, ago: ago, avatar: avatar, prose: prose,
     api: api, blobUrl: blobUrl, ApiError: ApiError, can: can, has: has, full: full, btn: btn, badge: badge, card: card, lockedCard: lockedCard, empty: empty, notice: notice,

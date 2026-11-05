@@ -53,8 +53,8 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          # 4.0–4.7: focused, minimal unit tests for the new features keep the whole job around five minutes.
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -only-testing:PanelTests/Panel460Tests -only-testing:PanelTests/Panel470Tests -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
+          # 4.0–4.8: focused, minimal unit tests for the new features keep the whole job around five minutes.
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -only-testing:PanelTests/Panel460Tests -only-testing:PanelTests/Panel480Tests -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -132,7 +132,7 @@ jobs:
       - name: Build with verified real Paper dependencies
         working-directory: Companion/AdminSuite
         run: python3 tools/build-real.py
-      - name: Check HTTPS authentication, accounts, push, admin-log filters, recovery, LuckPerms/Lands, access locks, command rights, diagnostics, world trimmer, studio designers, dossier, Discord advertising planner, web panel and existing data
+      - name: Check HTTPS authentication, accounts, push, admin-log filters, recovery, LuckPerms/Lands, access locks, command rights, diagnostics, world trimmer, studio designers, dossier, Werbe-Zentrale (ad hub), web panel and existing data
         working-directory: Companion/AdminSuite
         run: python3 tools/test-830.py
         env:
@@ -143,7 +143,7 @@ jobs:
           python3 tools/package-source.py
           cp ../../docs/Simplex-Admin-Recovery.pdf target/
           cd target
-          sha256sum SimplexAdminSuite-10.4.0.jar SimplexAdminSuite-10.4.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-10.5.0.jar SimplexAdminSuite-10.5.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
       - name: Build and test SimplexSentinelBridge (Geyser extension) against the real Geyser API
         working-directory: Companion/SentinelBridge
         run: |
@@ -157,8 +157,8 @@ jobs:
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-10.4.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-10.4.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-10.5.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-10.5.0-source.zip
             Companion/AdminSuite/target/Simplex-Admin-Recovery.pdf
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
@@ -218,7 +218,9 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 4.7.0 / Admin Suite 10.4.0: Discord advertising planner – link a Discord (alt) account by token (validated, stored AES-GCM encrypted on the server, never returned; re-check, renew, unlink with optional Discord logout); named ad texts with Discord formatting toolbar and exact Discord-style preview in app and web panel (three Simplex texts shipped); all joined servers with icons, channels with real write permissions, slowmode, topic and hints, up to four channels per server (configurable), each with its own text and interval; confirmation that advertising is allowed before a channel is planned; every post comes slightly after the interval (24 h → about 24.1–24.5 h), never before, and never before the channel slowmode; timers are absolute timestamps, so restarts do not reset them and overdue posts are caught up shortly after a restart; own recent post check, slowmode (20016) rescheduling and adoption, duplicate-safe nonces, no pings; detection of missing permissions, captcha, account verification, revoked tokens, deleted channels and posts removed by timer bots, with Bark/browser push ("discord-ads") and automatic pause after N failures in a row. New rights (data.discord-ads, discord-ads.manage) are not part of any role template. Automating a user account violates Discord's terms; the app and web panel warn before linking.
+          Simplex Panel 4.8.0 / Admin Suite 10.5.0: Werbe-Zentrale replaces the Discord self-bot planner – the Discord token login and all automatic posting are removed (stored tokens and their key are deleted on the first start; change the alt account password to invalidate the token at Discord too). Advertising places for Discord channels (channel link opens the channel directly in the Discord iOS app), Reddit, Planet Minecraft, Facebook groups, Telegram, WhatsApp, X and server lists, each with link, ad text and interval; when a place is due, a Bark reminder arrives ("ad-reminder", time-sensitive, repeats until posted) – tapping it copies the text into the iOS clipboard and opens the place, and the timer restarts slightly above the interval (6 h → about 6.1 h); snooze from the app, the web panel or the reminder sheet, undo for a mistaken tap; Bark links are HMAC-bound to one place and cycle and work without login. Formats with platform-style previews and one-tap conversion: Discord markdown, Reddit markdown, BBCode (Planet Minecraft, forums), WhatsApp/Telegram, Facebook Unicode bold and plain text; ready-made Simplex texts for Reddit, Planet Minecraft and Facebook. Existing 10.4.0 texts and channels (with their running timers) are migrated without data loss. Web panel: automatic performance mode for weak computers (no blur/animations/shadows, slower refreshes; Appearance → Performance: auto/on/off), request time limits, one retry for reads after network hiccups or 502/503/504, non-overlapping page refreshes, offline banner and last-resort error handling.
+
+          Simplex Panel 4.7.0 / Admin Suite 10.4.0: Discord advertising planner (replaced in 4.8.0 / 10.5.0 by the Werbe-Zentrale).
 
           Simplex Panel 4.6.0 / Admin Suite 10.3.0 / SentinelBridge 1.6.0: studio, world trimmer and dossier – Discord status designer (texts, colours, fields, images, bot activity; seven presets, "Simplex Standard" = previous status) and scoreboard designer (colour codes, placeholders, hex gradients; seven presets, standard = previous board) with exact live previews in app and web panel; the world trimmer in app and web panel (dimensions, threshold, countdown, live progress, override decision, recovery) with backup confirmation, typed confirmation and its own right; optional transactional safety copy with automatic restore, integrity check of every changed region file and a watchdog for a hung MCA Selector; searchable player dossier (identity, activity, client, Bedrock device, network, moderation, position, recent chat/actions) filtered by the viewer's rights; Bedrock: Geyser disconnect reason, third-party name, skin geometry engine, Floodgate link; Java: join host, server transfer, resource-pack status; bridge HTTP 422 fixed (identity-less early packets are skipped by the bridge and accepted as deferred by the suite, Floodgate UUID from XUID, no retries on permanent 4xx, throttled warnings), bridge built against Geyser 2.12.1; Bark test notification can always be sent (also during quiet hours and before saving a key); app hub and web navigation regrouped, web quick search (Ctrl/⌘+K). New rights (data.world-trim, world-trim.run, data.discord-status, discord-status.edit, data.scoreboard, scoreboard.edit) are not part of any role template.
 
@@ -230,7 +232,7 @@ jobs:
 
           Simplex Panel 4.3.0 / Admin Suite 10.0.0: big rights update – per-player access locks (chests, shulker boxes, other containers, ender chests, doors, redstone, workstations, frames, animals, building, foreign valuable items) that block using, breaking, blowing up and hopper draining even in trusted lands; per lock everywhere / own land only / own land and wilderness, temporary or permanent, with the reason and remaining time shown to the player; presets (thief, containers, griefer, lockdown); managed in the app, the web panel, Discord (/rechtesperre) and the Java/Bedrock admin menus (/rechtesperre). LuckPerms: permission autocomplete, prefix/suffix editor with colour palette and live preview for groups and players. Explained app-user rights with role presets, one-time changelog per account, web panel ban sources (Minecraft, IP, LiteBans) fixed and reports with notes.
 
-          Existing API keys, app users, sessions, TLS identity, Bark subscriptions, tickets, admin log and plugin data stay compatible. Replace the JAR and update the app; no reset is required. See UPDATE-4.7.0.md, Companion/AdminSuite/UPDATE-10.4.0.md, UPDATE-4.6.0.md, Companion/AdminSuite/UPDATE-10.3.0.md, Companion/SentinelBridge/CHANGELOG.md, UPDATE-4.5.0.md, Companion/AdminSuite/UPDATE-10.2.0.md, UPDATE-4.4.0.md, UPDATE-4.3.1.md, UPDATE-4.3.0.md, Companion/AdminSuite/UPDATE-10.1.0.md, UPDATE-10.0.1.md and UPDATE-10.0.0.md and docs/Simplex-Admin-Recovery.pdf. This release job only runs after a merge to main; pull requests produce JAR and IPA artifacts without publishing.
+          Existing API keys, app users, sessions, TLS identity, Bark subscriptions, tickets, admin log and plugin data stay compatible. Replace the JAR and update the app; no reset is required. See UPDATE-4.8.0.md, Companion/AdminSuite/UPDATE-10.5.0.md, UPDATE-4.7.0.md, Companion/AdminSuite/UPDATE-10.4.0.md, UPDATE-4.6.0.md, Companion/AdminSuite/UPDATE-10.3.0.md, Companion/SentinelBridge/CHANGELOG.md, UPDATE-4.5.0.md, Companion/AdminSuite/UPDATE-10.2.0.md, UPDATE-4.4.0.md, UPDATE-4.3.1.md, UPDATE-4.3.0.md, Companion/AdminSuite/UPDATE-10.1.0.md, UPDATE-10.0.1.md and UPDATE-10.0.0.md and docs/Simplex-Admin-Recovery.pdf. This release job only runs after a merge to main; pull requests produce JAR and IPA artifacts without publishing.
 
           NOTES
           (cd build/companion && sha256sum -c AdminSuite-SHA256SUMS.txt)
