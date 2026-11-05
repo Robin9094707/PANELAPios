@@ -46,7 +46,7 @@ import SwiftUI
         XCTAssertEqual(link?.place, "abcDEF123")
         XCTAssertEqual(link?.cycle, 4)
         XCTAssertNil(AdPostLink(URL(string: "panel://ad-post?s=srv-1&p=abc&c=0&k=AbCdEfGhIjKlMnOpQrStUvWx")!), "cycle must be positive")
-        XCTAssertNil(AdPostLink(URL(string: "panel://ad-post?p=abc&c=1&k=<script>")!), "signature characters are checked")
+        XCTAssertNil(AdPostLink(URL(string: "panel://ad-post?p=abc&c=1&k=kurz")!), "signature characters are checked")
         XCTAssertNil(AdPostLink(URL(string: "panel://suite-events")!))
     }
     func testCache() {
