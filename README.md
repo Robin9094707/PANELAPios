@@ -1,4 +1,12 @@
-## Aktuelles Update: Panel 4.6.0 / Admin Suite 10.3.0 / SentinelBridge 1.6.0
+## Aktuelles Update: Panel 4.7.0 / Admin Suite 10.4.0
+
+**Discord-Werbeplaner** in App und Webpanel: Zweitaccount verknüpfen (Token verschlüsselt auf dem Server), Werbetexte mit
+Discord-Formatierung, Formatierungsleiste und Vorschau, alle Discord-Server des Accounts mit Kanälen, Schreibrechten und
+Slowmode, bis zu vier Kanäle pro Server mit eigenem Text und Timer. Posts kommen immer etwas nach dem Intervall, nie davor;
+Slowmode, gelöschte Posts, fehlende Rechte und Captcha werden erkannt (Bark, Auto-Pause). Timer überleben Neustarts.
+[Update 4.7.0](UPDATE-4.7.0.md) · [Suite 10.4.0](Companion/AdminSuite/UPDATE-10.4.0.md).
+
+## Panel 4.6.0 / Admin Suite 10.3.0 / SentinelBridge 1.6.0
 
 **Studio, Welten-Trimmer & Steckbrief** in App und Webpanel: Discord-Status und Scoreboard mit Vorlagen und Live-Vorschau
 (Standard = bisheriger Stand), Welten-Trimmer mit Sicherheitskopie, Integritätsprüfung und Hänger-Wächter, durchsuchbarer

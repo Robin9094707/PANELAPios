@@ -137,7 +137,10 @@ struct SuiteHubCommunicationSection: View {
             if api.features.contains("scoreboard-designer-v1") {
                 NavigationLink { SuiteScoreboardDesignerView(suite: api) } label: { Label("Scoreboard gestalten", systemImage: "list.bullet.rectangle.fill") }.disabled(!api.can("data.scoreboard")).accessibilityIdentifier("suite-scoreboard")
             }
-        } header: { Text("Kommunikation & Studio") } footer: { Text("Discord-Status und Scoreboard mit Vorlagen und Live-Vorschau bearbeiten – gespeichert wird erst nach deiner Bestätigung.") }
+            if api.features.contains("discord-ads-v1") {
+                NavigationLink { SuiteDiscordAdsView(suite: api) } label: { Label("Discord-Werbung planen", systemImage: "megaphone.fill") }.disabled(!api.can("data.discord-ads")).accessibilityIdentifier("suite-discord-ads")
+            }
+        } header: { Text("Kommunikation & Studio") } footer: { Text("Discord-Status und Scoreboard mit Vorlagen und Live-Vorschau bearbeiten, Werbung in erlaubten Discord-Kanälen mit eigenem Timer planen.") }
     }
 }
 

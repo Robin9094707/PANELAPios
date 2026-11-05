@@ -310,6 +310,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     }
     AppApiManager appApi;
     SuiteEventCenter appEvents;
+    /** 10.4.0: Discord advertising planner (linked user account, texts, per-channel timers). */
+    volatile DiscordAds discordAds;
+    private volatile int adsOnline, adsMax = 50;
     AdminActivityLog adminLog;
     StaffChat staffChat;
     SuitePolicies suitePolicies;
@@ -505,6 +508,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         try { suitePolicies=new SuitePolicies(this); if(altDetection.ipExclusions.needsRepair())altDetection.repairIps("Update 9.1.2",null); } catch(Exception e){throw new IllegalStateException("Suite-Richtlinien/IP-Reparatur konnten nicht geladen werden",e);}
         survivalGuard = new SurvivalGuard(this); survivalGuard.start();
         try { appApi = new AppApiManager(this); appApi.reload(); } catch (Exception error) { getLogger().warning("Optionale App-API bleibt aus: " + error.getClass().getSimpleName()); }
+        if (getConfig().getBoolean("discord-ads.enabled", true)) startDiscordAds();
         getLogger().info("Simplex Admin Suite v" + VERSION + " wurde geladen. Bedrock-Forms: " + bedrockMenus.status());
         if(getConfig().getBoolean("startup.console-animation",true)) {
             String[] frames={"[■■□□□□] Simplex Admin Suite · Daten erhalten", "[■■■■□□] Discord · Konten · Statistiken", "[■■■■■■] Bereit · Java & Bedrock · v"+VERSION};
@@ -513,6 +517,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     }
 
     public void onDisable() {
+        if (discordAds != null) { try { discordAds.stop(); } catch (Throwable error) { getLogger().warning("Discord-Werbeplaner konnte nicht sauber beendet werden: " + error.getClass().getSimpleName()); } }
         if (appApi != null) appApi.stop();
         if (adminLog != null) adminLog.stop();
         EmergencyRestartNotice.stopped(this);
@@ -7512,6 +7517,23 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     Object appStaffTask(String actor, Map<String,Object> v) { if (adminQuality == null) throw new IllegalArgumentException("Staff-Aufgaben nicht verfügbar"); long id; try { id = Long.parseLong(String.valueOf(v.getOrDefault("id", "0")).isBlank() ? "0" : String.valueOf(v.getOrDefault("id", "0"))); } catch (NumberFormatException e) { throw new IllegalArgumentException("Aufgaben-ID ungültig"); } long due; try { due = Long.parseLong(String.valueOf(v.getOrDefault("dueAt", "0")).isBlank() ? "0" : String.valueOf(v.getOrDefault("dueAt", "0"))); } catch (NumberFormatException e) { due = 0; } return adminQuality.appTask(actor, String.valueOf(v.getOrDefault("operation", "")), id, String.valueOf(v.getOrDefault("title", "")), String.valueOf(v.getOrDefault("details", "")), String.valueOf(v.getOrDefault("priority", "")), due); }
     void staffMirror(String author, String text) { if (staffWorkspace != null) staffWorkspace.mirror(author, text); }
     List<Map<String,Object>> appNameplates() { return qualityOfLife == null ? List.of() : qualityOfLife.names.report(); }
+    /** 10.4.0: starts the Discord advertising planner; a failure never affects any other feature. */
+    private void startDiscordAds() {
+        try {
+            discordAds = new DiscordAds(getDataFolder().toPath().resolve("discord-ads"), new DiscordAds.Hooks() {
+                @Override public void notify(String title, String body, boolean pause) {
+                    SuiteEventCenter events = appEvents; AppApiManager api = appApi;
+                    if (events == null || api == null) return;
+                    try { events.direct("discord-ads", title, body, owner -> api.diagnosticsNotifiable(owner, "discord-ads")); } catch (RuntimeException ignored) { }
+                }
+                @Override public void audit(String actor, String action, String detail) { try { Bukkit.getScheduler().runTask(SimplexAdminSuite.this, () -> suiteAudit(actor, action, detail)); } catch (RuntimeException ignored) { } }
+                @Override public Map<String, String> placeholders() { return Map.of("{online}", Integer.toString(adsOnline), "{max}", Integer.toString(adsMax)); }
+                @Override public void warn(String message) { getLogger().warning(message); }
+            }, DiscordAds.API, System::currentTimeMillis, new SecureRandom());
+            discordAds.start();
+            Bukkit.getScheduler().runTaskTimer(this, () -> { adsOnline = Bukkit.getOnlinePlayers().size(); adsMax = serverMaxPlayers(); }, 20L, 600L);
+        } catch (Throwable error) { discordAds = null; getLogger().warning("Discord-Werbeplaner nicht verfügbar: " + error.getClass().getSimpleName() + "; alle anderen Funktionen laufen weiter."); }
+    }
     void suiteAudit(String actor, String action, String detail) { if (audit != null) audit.log(actor == null ? "System" : actor, null, action, detail); }
     String executeConfirmedAiAction(Player admin, String action, UUID targetUuid, String duration, long amount, String reason) {
         if (admin == null || targetUuid == null) return "KI-Aktion wurde wegen ungültiger Bestätigungsdaten abgebrochen.";

@@ -1,5 +1,44 @@
 [
   {
+    "version": "10.4.0",
+    "app": "4.7.0",
+    "date": "2026-11-04",
+    "title": "Discord-Werbeplaner",
+    "intro": "Werbetexte mit Discord-Formatierung und Vorschau gestalten und mit einem verknüpften Zweitaccount automatisch in erlaubten Werbekanälen posten – jeder Kanal mit eigenem Timer, serverseitig und neustartfest. Neue Rechte sind in keiner Rollenvorlage enthalten.",
+    "items": [
+      {
+        "icon": "link",
+        "title": "Discord-Account verknüpfen",
+        "text": "Zweitaccount per Token verbinden, prüfen, Token erneuern oder abmelden. Der Token liegt nur verschlüsselt auf dem Server und wird nie angezeigt."
+      },
+      {
+        "icon": "edit",
+        "title": "Werbetexte mit Vorschau",
+        "text": "Benennen, bearbeiten, löschen und kopieren – mit Formatierungsleiste (fett, kursiv, Überschriften, Zitate, Listen, Spoiler, Links, Emojis) und Vorschau im Discord-Look. Drei Simplex-Vorlagen sind dabei."
+      },
+      {
+        "icon": "send",
+        "title": "Kanäle mit eigenem Timer",
+        "text": "Alle Server des Accounts sehen, bis zu vier Kanäle pro Server wählen (einstellbar), jeweils mit eigenem Text und Intervall. Vor dem Planen kommt eine Warnung, ob Werbung dort wirklich erlaubt ist."
+      },
+      {
+        "icon": "clock",
+        "title": "Nie zu früh",
+        "text": "Jeder Post kommt etwas nach dem eingestellten Intervall (24 h → etwa 24,1–24,5 h), nie davor. Slowmode wird erkannt und eingehalten, eigene frühere Posts verschieben den nächsten."
+      },
+      {
+        "icon": "alert",
+        "title": "Fehler erkennen",
+        "text": "Fehlende Rechte, Captcha, abgemeldeter Token oder von Timer-Bots gelöschte Posts werden erkannt – mit Bark-Hinweis und automatischer Pause nach mehreren Fehlern."
+      },
+      {
+        "icon": "refresh",
+        "title": "Neustartfest",
+        "text": "Timer liegen als feste Zeitpunkte auf dem Server; ein Neustart setzt nichts zurück, verpasste Posts werden kurz danach nachgeholt."
+      }
+    ]
+  },
+  {
     "version": "10.3.0",
     "app": "4.6.0",
     "date": "2026-11-04",
