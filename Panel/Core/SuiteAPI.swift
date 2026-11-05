@@ -88,11 +88,11 @@ enum SuiteDevice {
     private(set) var web: JSON = .null
     private var token: String
     private let session: URLSession
-    init(_ connection: SuiteConnection, token: String? = nil, session: URLSession? = nil, demo: Bool = false) throws {
+    init(_ connection: SuiteConnection, token: String? = nil, session: URLSession? = nil, demo: Bool = false, timeout: TimeInterval = 110) throws {
         self.demo = demo
         self.connection = connection; self.token = try token ?? Vault.read(connection.id)
         let url = try Self.endpoint(connection.endpoint)
-        let config = URLSessionConfiguration.ephemeral; config.timeoutIntervalForRequest = 110; config.urlCache = nil
+        let config = URLSessionConfiguration.ephemeral; config.timeoutIntervalForRequest = timeout; config.urlCache = nil
         let validatedPin = try Self.pin(connection.fingerprint)
         self.session = session ?? URLSession(configuration: config, delegate: SuiteTransport(pin: validatedPin, host: url.host ?? ""), delegateQueue: nil)
     }

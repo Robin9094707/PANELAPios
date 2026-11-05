@@ -45,6 +45,9 @@ struct SuiteToolDirectoryView: View {
                     if tools.isEmpty && matches.isEmpty { ContentUnavailableView.search(text: selectedQuery) }
                 }
                 NavigationLink { SuiteShortcutHelpView() } label: { Label("Kurzbefehle & Home-Bildschirm", systemImage: "square.stack.3d.up.fill").frame(maxWidth: .infinity, alignment: .leading).card() }.buttonStyle(.plain)
+                if suite.connection.panel.hasPrefix("suite-direct:") {
+                    NavigationLink { SuiteDirectDashboard(connection: suite.connection) } label: { Label("Gespeicherten Zugang verwalten", systemImage: "key.horizontal.fill").frame(maxWidth: .infinity, alignment: .leading).card() }.buttonStyle(.plain)
+                }
             }.padding(embedded ? 0 : 20).frame(maxWidth: 1000).frame(maxWidth: .infinity)
     }
     @ViewBuilder func toolGroup(_ title: String, tools: [SuiteTool]) -> some View {

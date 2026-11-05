@@ -52,7 +52,7 @@ struct SuiteAdvertisingPlaceQuery: EntityStringQuery {
         var result: [SuiteAdvertisingPlace] = []
         for connection in SuiteConnections.shared.values where connectionIDs == nil || connectionIDs!.contains(connection.id.uuidString) {
             do {
-                let api = try SuiteAPI(connection); _ = try await api.health()
+                let api = try SuiteAPI(connection, timeout: 12); _ = try await api.health()
                 guard api.features.contains("ad-hub-v1"), api.can("data.discord-ads") else { continue }
                 let data = try await api.request("ad-hub")
                 result += data["places"].array.map { SuiteAdvertisingPlace(id: connection.id.uuidString + "|" + $0["id"].string, name: $0["name"].string + " · " + connection.endpoint) }
@@ -68,7 +68,7 @@ struct OpenSuiteToolIntent: AppIntent {
     static var openAppWhenRun = true
     @Parameter(title: "Werkzeug", default: .overview) var tool: SuiteShortcutTool
     @Parameter(title: "Server") var server: SuiteShortcutServer?
-    static var parameterSummary: some ParameterSummary { Summary("\(.$tool) öffnen") { \.$server } }
+    static var parameterSummary: some ParameterSummary { Summary("\(\.$tool) öffnen") { \.$server } }
     @MainActor func perform() async throws -> some IntentResult {
         SuiteNavigationInbox.shared.request = SuiteLaunchRequest(tool: SuiteTool(rawValue: tool.rawValue) ?? .overview, connection: server.flatMap { UUID(uuidString: $0.id) })
         return .result()
@@ -87,7 +87,7 @@ struct PrepareAdvertisingIntent: AppIntent {
     static var description = IntentDescription("Öffnet Simplex Panel, kopiert den aktuellen Werbetext und öffnet den gewählten Ort. Pausen, Rechte und Intervalle gelten weiterhin. Du fügst den Text selbst ein.")
     static var openAppWhenRun = true
     @Parameter(title: "Werbe-Ort") var place: SuiteAdvertisingPlace
-    static var parameterSummary: some ParameterSummary { Summary("Werbung für \(.$place) vorbereiten") }
+    static var parameterSummary: some ParameterSummary { Summary("Werbung für \(\.$place) vorbereiten") }
     @MainActor func perform() async throws -> some IntentResult {
         guard let (connection, placeID) = place.target else { throw PanelError(message: "Werbe-Ort bitte neu auswählen.") }
         SuiteNavigationInbox.shared.request = SuiteLaunchRequest(tool: .advertising, connection: connection, place: placeID, prepareAd: true)

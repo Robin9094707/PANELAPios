@@ -54,10 +54,10 @@ struct SuiteHistoriesView: View {
                 }
             }
         }.panelScreen().navigationTitle("Verläufe verwalten").task { await load() }.refreshable { await load() }.errorAlert($error)
-            .confirmationDialog("Sicherung wiederherstellen?", isPresented: Binding(get: { restoring != nil }, set: { if !$0 { restoring = nil } })) {
-                Button("Wiederherstellen") { if let backup = restoring { Task { await restore(backup) } } }
+            .confirmationDialog("Sicherung wiederherstellen?", isPresented: Binding(get: { restoring != nil }, set: { if !$0 { restoring = nil } }), presenting: restoring) { backup in
+                Button("Wiederherstellen") { Task { await restore(backup) } }
                 Button("Abbrechen", role: .cancel) { restoring = nil }
-            } message: { Text("Gesicherte Einträge werden ergänzt. Bestehende Einträge werden nicht überschrieben. Bei zu wenig Platz wird nichts geändert.") }
+            } message: { _ in Text("Gesicherte Einträge werden ergänzt. Bestehende Einträge werden nicht überschrieben. Bei zu wenig Platz wird nichts geändert.") }
     }
     func load() async {
         do { data = try await suite.request("histories") }
@@ -120,10 +120,10 @@ struct SuiteHistoryEntriesView: View {
         }.panelScreen().navigationTitle(title).searchable(text: $query, prompt: "Im gesamten Verlauf suchen")
             .task(id: query) { do { try await Task.sleep(for: .milliseconds(250)); await load() } catch { } }
             .refreshable { await load() }.errorAlert($error)
-            .confirmationDialog("\(plan?["count"].int ?? 0) Einträge löschen?", isPresented: Binding(get: { plan != nil }, set: { if !$0 { plan = nil } })) {
-                Button("Sichern & löschen", role: .destructive) { if let plan { Task { await apply(plan) } } }
+            .confirmationDialog("\(plan?["count"].int ?? 0) Einträge löschen?", isPresented: Binding(get: { plan != nil }, set: { if !$0 { plan = nil } }), presenting: plan) { prepared in
+                Button("Sichern & löschen", role: .destructive) { Task { await apply(prepared) } }
                 Button("Abbrechen", role: .cancel) { plan = nil }
-            } message: { Text("Die bestätigten Einträge werden für alle App- und Web-Nutzer entfernt. Eine Sicherung wird zuerst erstellt und kann unter „Verläufe verwalten“ wiederhergestellt werden.") }
+            } message: { _ in Text("Die bestätigten Einträge werden für alle App- und Web-Nutzer entfernt. Eine Sicherung wird zuerst erstellt und kann unter „Verläufe verwalten“ wiederhergestellt werden.") }
             .alert(notice ?? "", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) { Button("OK") { notice = nil } }
     }
     func load(more: Bool = false) async {

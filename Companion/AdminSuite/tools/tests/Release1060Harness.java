@@ -28,6 +28,9 @@ public final class Release1060Harness {
         check(Boolean.TRUE.equals(overview.get("canManage")) && Release1050Harness.l(overview.get("kinds")).size() == 5, "owner gets the five available histories");
         Map<String, Object> plan = post(c,b,"/v1/histories/prepare",owner,Map.of("kind","chat","ids",List.of("1")));
         String token = String.valueOf(plan.get("token"));
+        api.security.users.save("historyother", "history-other-password", Set.of("*"), true);
+        String other = Release1020Harness.login(c,b,"historyother","history-other-password");
+        check(Release1020Harness.call(c,b,"/v1/histories/apply",other,Map.of("token",token)).statusCode() == 409, "a different full user cannot consume the owner's confirmation");
         check(items(get(c,b,"/v1/histories/entries?kind=chat",owner)).size() == 2, "prepare never mutates");
         plugin.appChat.record("", "Test", "concurrent message", "app");
         Map<String, Object> applied = post(c,b,"/v1/histories/apply",owner,Map.of("token",token)); String backup = String.valueOf(applied.get("backup"));
@@ -50,6 +53,13 @@ public final class Release1060Harness {
         check(!epoch.equals(((Map<?,?>)plugin.appChat.read(0)).get("epoch")), "active chats are invalidated after deletion");
         AppChat disk = new AppChat(); disk.attach(folder.resolve("public-chat.properties"));
         check(disk.historySnapshot().size() == 1 && "4".equals(disk.historySnapshot().get(0).get("id")), "deletion is persisted before returning"); disk.stop();
+        Map<String,Object> blockedPlan = post(c,b,"/v1/histories/prepare",owner,Map.of("kind","chat","all",true));
+        Path backups = folder.resolve("history-backups"), held = folder.resolve("history-backups-held");
+        Files.move(backups, held); Files.writeString(backups,"fixture blocks backup directory");
+        try {
+            check(Release1020Harness.call(c,b,"/v1/histories/apply",owner,Map.of("token",blockedPlan.get("token"))).statusCode() == 503, "failed backup rejects deletion");
+            check(plugin.appChat.historySnapshot().size() == 1, "failed backup preserves the live history");
+        } finally { Files.delete(backups); Files.move(held,backups); }
         List<Map<String,Object>> places = Release1050Harness.l(plugin.adHub.overview().get("places"));
         Map<String,Object> adPlan = post(c,b,"/v1/histories/prepare",owner,Map.of("kind","advertising","all",true));
         post(c,b,"/v1/histories/apply",owner,Map.of("token",adPlan.get("token")));

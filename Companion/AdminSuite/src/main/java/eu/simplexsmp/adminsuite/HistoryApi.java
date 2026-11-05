@@ -90,8 +90,10 @@ final class HistoryApi {
                     for (Map<String, Object> row : store.snapshot()) { if (plan.ids().contains(id(row))) removed.add(row); else keep.add(row); }
                     if (removed.isEmpty()) throw new AppApiManager.ApiError(409, "Einträge wurden bereits entfernt.");
                     // A failed backup prevents deletion. The exact confirmed IDs preserve concurrent new entries.
-                    backup = archive(kind.id(), removed, key.label());
-                    store.replace(keep);
+                    try { backup = archive(kind.id(), removed, key.label()); }
+                    catch (IOException e) { throw new AppApiManager.ApiError(503, "Sicherung konnte nicht erstellt werden. Es wurde nichts gelöscht. Bitte Speicherplatz und Serverordner prüfen."); }
+                    try { store.replace(keep); }
+                    catch (IOException e) { throw new AppApiManager.ApiError(503, "Verlauf konnte nicht gespeichert werden. Sicherung: " + backup + ". Bitte neu laden und Serverordner prüfen."); }
                 }
                 audit(api, key, "Verlauf bereinigt", kind.title() + ": " + removed.size() + " · Sicherung " + backup);
                 result = SimplexAdminSuite.appMap("ok", true, "removed", removed.size(), "backup", backup, "title", "Verlauf bereinigt – Sicherung erstellt");

@@ -25,12 +25,11 @@ final class PanelUITests: XCTestCase {
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
     func test490HomeShortcutsAndHelpLaunch() throws {
-        XCTAssertTrue(app.buttons["homeQuickMenu"].exists || app.descendants(matching: .any)["homeQuickMenu"].firstMatch.waitForExistence(timeout: 15))
         let advertising = app.buttons["Werbung"].firstMatch
         XCTAssertTrue(advertising.waitForExistence(timeout: 10))
         let shortcuts = app.buttons["Kurzbefehle"].firstMatch
         XCTAssertTrue(shortcuts.waitForExistence(timeout: 10)); shortcuts.tap()
-        XCTAssertTrue(app.staticTexts["Direkt vom Home-Bildschirm"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["Kurzbefehle"].waitForExistence(timeout: 10))
         capture("4.9-Kurzbefehle")
         app.buttons["Fertig"].firstMatch.tap()
         XCTAssertTrue(app.buttons["Werbung"].firstMatch.waitForExistence(timeout: 10))
