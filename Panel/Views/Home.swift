@@ -14,6 +14,7 @@ struct HomeView: View {
     @State private var adHub = false
     @State private var search = ""
     @ObservedObject private var suiteNavigation = SuiteNavigationInbox.shared
+    @State private var suiteRequest: SuiteLaunchRequest?
     @State private var shortcutHelp = false
     @State private var editLayout = false
     @State private var iconRevision = 0
@@ -70,7 +71,8 @@ struct HomeView: View {
                 .navigationDestination(for: Server.self) { server in if let api = store.api { ServerView(api: api, server: server).id("\(store.selected?.uuidString ?? "demo")-\(server.id)") } }
                 .sheet(isPresented: $editLayout) { DashboardEditor(scope: .home, layoutKey: layoutKey).environmentObject(workspace) }
                 .sheet(isPresented: $quickHub) { SuiteWorkspaceLauncher(request: SuiteLaunchRequest()) }
-                .sheet(item: $suiteNavigation.request) { SuiteWorkspaceLauncher(request: $0).id($0.id) }
+                .sheet(item: $suiteRequest) { SuiteWorkspaceLauncher(request: $0).id($0.id) }
+                .task(id: suiteNavigation.request?.id) { await receiveSuiteShortcut() }
                 .sheet(isPresented: $shortcutHelp) { NavigationStack { SuiteShortcutHelpView().toolbar { Button("Fertig") { shortcutHelp = false } } } }
                 .sheet(isPresented: $redeemSetup) { SuiteSetupRedeemView().environmentObject(store) }
                 .sheet(item: $setupInbox.link) { link in SuiteSetupRedeemView(initial: link).environmentObject(store) }
@@ -85,6 +87,18 @@ struct HomeView: View {
                 .onOpenURL { url in if url.host == "setup" { _ = setupInbox.open(url); return }; if url.host == "suite-events" || url.host == "suite-diagnostics" { suiteEvents = true }; if url.host == "suite-tickets" { suiteTickets = true }; if url.host == "suite-ad-hub" { adHub = true }; if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
                 .task(id: store.api.map { ObjectIdentifier($0) }) { await store.refresh(); await store.pollPresence() }
         }
+    }
+    /// Wait for an existing sheet to close before presenting a shortcut. Pending links survive app locking.
+    func receiveSuiteShortcut() async {
+        guard let request = suiteNavigation.request else { return }
+        suiteRequest = nil
+        add = false; directSuite = false; settings = false; transfers = false; widgets = false
+        suiteEvents = false; suiteTickets = false; adHub = false; editLayout = false
+        quickHub = false; redeemSetup = false; shortcutHelp = false; setupInbox.link = nil
+        do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+        guard suiteNavigation.request?.id == request.id else { return }
+        suiteRequest = request
+        suiteNavigation.request = nil
     }
     func isBedrockOnly(_ server: Server) -> Bool {
         let container = server.data["container"]["image"].string.lowercased()

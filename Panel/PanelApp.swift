@@ -14,6 +14,7 @@ import SwiftUI
     @AppStorage("theme.launchAnimation") private var launchAnimation = true
     @State private var launching = !ProcessInfo.processInfo.arguments.contains("--demo")
     @StateObject private var adPosts = AdPostInbox.shared
+    @ObservedObject private var suiteNavigation = SuiteNavigationInbox.shared
     var body: some Scene {
         WindowGroup {
             Group {
@@ -28,6 +29,7 @@ import SwiftUI
                 .task(id: store.locked) { presentWhatsNewIfNeeded() }
                 .privacySensitive()
                 .onOpenURL { url in if SuiteNavigationInbox.shared.open(url) { return }; if adPosts.open(url) { return }; _ = SuiteSetupInbox.shared.open(url) }
+                .onChange(of: suiteNavigation.request?.id) { _, id in if id != nil { whatsNew = nil; adPosts.prompt = nil } }
                 // 4.8.0 Werbe-Zentrale: a Bark tap copies the ad and opens the place; this sheet only appears when asked or offline.
                 .sheet(item: $adPosts.prompt) { AdPostPromptView(prompt: $0) }
                 .overlay { if launching && launchAnimation { LaunchAnimationView(visible: $launching).transition(.opacity).zIndex(10) } }
@@ -40,7 +42,7 @@ import SwiftUI
     }
     /// Shown once per updated version after unlocking; fresh installs and UI tests skip it.
     func presentWhatsNewIfNeeded() {
-        guard !store.locked, whatsNew == nil else { return }
+        guard !store.locked, whatsNew == nil, suiteNavigation.request == nil else { return }
         let arguments = ProcessInfo.processInfo.arguments, current = WhatsNew.current
         if arguments.contains("--whats-new") { whatsNew = WhatsNew.release(for: current); return }
         if arguments.contains("--demo") { return }

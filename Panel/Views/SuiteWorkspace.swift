@@ -102,10 +102,7 @@ struct SuiteToolDestination: View {
             case .staffChat: SuiteStaffChatView(suite: suite)
             case .tasks: SuiteStaffTasksView(suite: suite)
             case .diagnostics: SuiteDiagnosticsView(suite: suite)
-            case .lagMap: SuiteLagMapView(suite: suite)
-            case .spark: SuiteSparkView(suite: suite)
-            case .crashes: SuiteCrashesView(suite: suite)
-            case .console: SuiteDiagnosticsConsoleView(suite: suite)
+            case .lagMap, .spark, .crashes, .console: SuiteDiagnosticsDestination(suite: suite, tool: tool)
             case .operations: SuiteOperationsView(suite: suite, actions: actions)
             case .worldTrim: SuiteWorldTrimView(suite: suite)
             case .discordStatus: SuiteDiscordStatusDesignerView(suite: suite)
@@ -146,6 +143,35 @@ struct SuiteToolDestination: View {
             case .dependencies: SuiteDependencyView(suite: suite)
             }
         }
+    }
+}
+
+/// Diagnostic tools use the same capabilities returned by the server as the existing diagnostics hub.
+struct SuiteDiagnosticsDestination: View {
+    let suite: SuiteAPI
+    let tool: SuiteTool
+    @State private var data: JSON = .null
+    @State private var error: String?
+    var body: some View {
+        Group {
+            if data == .null {
+                List {
+                    if let error { Text(error).foregroundStyle(.secondary); Button("Erneut laden") { Task { await load() } } }
+                    else { ProgressView("Diagnose verbinden …") }
+                }.panelScreen()
+            } else {
+                switch tool {
+                case .lagMap: SuiteLagMapView(suite: suite, canRun: data["canRun"].bool, aiAvailable: data["ai"]["available"].bool)
+                case .spark: SuiteSparkView(suite: suite, canRun: data["canRun"].bool, canManage: data["canManage"].bool, aiAvailable: data["ai"]["available"].bool)
+                case .crashes: SuiteCrashesView(suite: suite, canRun: data["canRun"].bool, aiAvailable: data["ai"]["available"].bool)
+                default: SuiteDiagnosticsConsoleView(suite: suite, canRun: data["canRun"].bool, aiAvailable: data["ai"]["available"].bool)
+                }
+            }
+        }.task { await load() }
+    }
+    func load() async {
+        do { data = try await suite.request("diagnostics"); error = nil }
+        catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
     }
 }
 
