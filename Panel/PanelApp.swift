@@ -27,7 +27,7 @@ import SwiftUI
                 .sheet(item: $whatsNew, onDismiss: { whatsNewSeen = WhatsNew.current }) { WhatsNewView(release: $0).presentationDetents([.large]) }
                 .task(id: store.locked) { presentWhatsNewIfNeeded() }
                 .privacySensitive()
-                .onOpenURL { url in if adPosts.open(url) { return }; _ = SuiteSetupInbox.shared.open(url) }
+                .onOpenURL { url in if SuiteNavigationInbox.shared.open(url) { return }; if adPosts.open(url) { return }; _ = SuiteSetupInbox.shared.open(url) }
                 // 4.8.0 Werbe-Zentrale: a Bark tap copies the ad and opens the place; this sheet only appears when asked or offline.
                 .sheet(item: $adPosts.prompt) { AdPostPromptView(prompt: $0) }
                 .overlay { if launching && launchAnimation { LaunchAnimationView(visible: $launching).transition(.opacity).zIndex(10) } }

@@ -343,7 +343,7 @@
   function clock(ms) { return new Date(Number(ms)).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }); }
   function chatPage(opts) {
     return async function (param, query, alive) {
-      var cursor = 0, me = "", msgs = h("div", { class: "msgs", role: "log", "aria-live": "polite" }), seen = {}, last = null;
+      var cursor = 0, epoch = "", me = "", msgs = h("div", { class: "msgs", role: "log", "aria-live": "polite" }), seen = {}, last = null;
       var text = h("textarea", { class: "input", rows: 1, placeholder: opts.canSend() ? "Nachricht an " + opts.title + " …" : "Keine Berechtigung zum Senden", disabled: !opts.canSend(), "aria-label": "Nachricht" });
       function grow() { text.style.height = "auto"; text.style.height = Math.min(160, text.scrollHeight + 2) + "px"; }
       text.addEventListener("input", grow);
@@ -360,7 +360,11 @@
         last = { author: author, source: m.source, at: at };
       }
       async function poll() {
-        var r = await S.api(opts.data, { query: { after: cursor } }); if (!alive()) return;
+        var r = await S.api(opts.data, { query: { after: cursor, epoch: epoch } }); if (!alive()) return;
+        if (r.epoch && epoch !== r.epoch) { S.clear(msgs); seen = {}; last = null; cursor = 0; epoch = r.epoch;
+          r = await S.api(opts.data, { query: { after: 0, epoch: epoch } });
+          if (!alive()) return;
+        }
         if (r.you) me = r.you;
         var stick = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 80;
         if (msgs.querySelector(".empty") && (r.items || []).length) S.clear(msgs);

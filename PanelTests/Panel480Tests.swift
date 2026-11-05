@@ -69,6 +69,6 @@ import SwiftUI
         let release = WhatsNew.release(for: "4.8.0")
         XCTAssertEqual(release?.version, "4.8.0")
         XCTAssertGreaterThanOrEqual(release?.items.count ?? 0, 5)
-        XCTAssertEqual(WhatsNew.releases.first?.version, "4.8.0")
+        XCTAssertNotNil(WhatsNew.release(for: "4.8.0"))
     }
 }

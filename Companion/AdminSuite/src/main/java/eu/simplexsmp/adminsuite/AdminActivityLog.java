@@ -28,7 +28,7 @@ final class AdminActivityLog {
     private volatile Set<String> staffCache = Set.of();
     private volatile long staffCachedAt;
     private final ExecutorService writer = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(512), r -> { Thread t = new Thread(r, "Simplex-Admin-Log"); t.setDaemon(true); return t; }, new ThreadPoolExecutor.DiscardOldestPolicy());
-    private long sequence;
+    private long sequence, persistedThrough;
 
     AdminActivityLog(SimplexAdminSuite plugin) {
         this.plugin = plugin;
@@ -43,6 +43,8 @@ final class AdminActivityLog {
         try {
             if (Files.exists(readFile)) try (Reader in = Files.newBufferedReader(readFile, StandardCharsets.UTF_8)) { read.load(in); }
             if (Files.exists(filterFile)) try (Reader in = Files.newBufferedReader(filterFile, StandardCharsets.UTF_8)) { filters.load(in); }
+            Path serial = file.resolveSibling("sequence.properties");
+            if (Files.exists(serial)) { Properties p = new Properties(); try (Reader in = Files.newBufferedReader(serial)) { p.load(in); }; sequence = number(p.getProperty("sequence")); }
             if (!Files.exists(file)) return;
             List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
             for (String line : lines.subList(Math.max(0, lines.size() - LIMIT), lines.size())) {
@@ -246,6 +248,8 @@ final class AdminActivityLog {
     }
 
     private synchronized void append(String line) {
+        long entryId = number(AppApiManager.object(DiscordBotManager.Json.parse(line)).get("id"));
+        if (entryId <= persistedThrough || rows.stream().noneMatch(r -> number(r.get("id")) == entryId)) return;
         try {
             Files.createDirectories(file.getParent());
             if (Files.exists(file) && Files.size(file) > MAX_FILE) {
@@ -332,6 +336,20 @@ final class AdminActivityLog {
         AtomicState.save(readFile, next, "Simplex admin log read markers per app viewer");
         read.clear(); read.putAll(next);
         return SimplexAdminSuite.appMap("ok", true, "title", "Als gelesen markiert", "description", admin == null || admin.isBlank() ? "Alle Admin-Protokolle sind gelesen." : "Protokoll gelesen.");
+    }
+
+    synchronized List<Map<String, Object>> historySnapshot() { return HistoryApi.copies(rows); }
+    synchronized void historyReplace(List<Map<String, Object>> items) throws IOException {
+        Files.createDirectories(file.getParent());
+        Properties serial = new Properties(); serial.setProperty("sequence", Long.toString(sequence));
+        AtomicState.save(file.resolveSibling("sequence.properties"), serial, "Monotonic admin log cursor (10.6.0)");
+        Path temp = Files.createTempFile(file.getParent(), "activity", ".tmp");
+        try {
+            Files.write(temp, items.stream().map(DiscordBotManager.Json::stringify).toList(), StandardCharsets.UTF_8);
+            try { Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
+            catch (AtomicMoveNotSupportedException e) { Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING); }
+        } finally { Files.deleteIfExists(temp); }
+        rows.clear(); rows.addAll(HistoryApi.copies(items)); persistedThrough = sequence;
     }
 
     void stop() { writer.shutdown(); try { writer.awaitTermination(3, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } }

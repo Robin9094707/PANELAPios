@@ -114,6 +114,13 @@ final class SuiteEventCenter {
         Properties out=new Properties();events.forEach((id,row)->out.setProperty(id,DiscordBotManager.Json.stringify(row)));AtomicState.save(eventsFile,out,"Simplex event ledger v1");
         Properties next=new Properties();next.putAll(subscriptions);boolean changed=false;for(String key:subscriptions.stringPropertyNames())if(key.startsWith("alarm.")||key.startsWith("ack.")){String[] parts=key.split("\\.",4);if(parts.length>=3&&!events.containsKey(parts[2])){next.remove(key);changed=true;}}if(changed){AtomicState.save(subscriptionsFile,next,"Private Bark subscriptions and alarms");subscriptions.clear();subscriptions.putAll(next);}
     }
+    synchronized List<Map<String, Object>> historySnapshot() { return HistoryApi.copies(events.values()); }
+    synchronized void historyReplace(List<Map<String, Object>> items) throws IOException {
+        Map<String, Map<String, Object>> old = new LinkedHashMap<>(events);
+        events.clear(); for (Map<String, Object> row : items) events.put(HistoryApi.id(row), new LinkedHashMap<>(row));
+        try { persist(); } catch (IOException e) { events.clear(); events.putAll(old); throw e; }
+    }
+
     synchronized Object data(String query,int offset) {
         List<Map<String,Object>> rows=new ArrayList<>(events.values());Collections.reverse(rows);
         String q=query.toLowerCase(Locale.ROOT);rows.removeIf(r->!q.isBlank()&&!DiscordBotManager.Json.stringify(r).toLowerCase(Locale.ROOT).contains(q));

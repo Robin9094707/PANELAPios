@@ -47,6 +47,16 @@ final class AppChat {
         int i=0;for(Map<String,Object> row:rows)p.setProperty("row."+(i++),DiscordBotManager.Json.stringify(row));
         try{AtomicState.save(file,p,"Simplex public app chat history (last "+LIMIT+" public messages)");}catch(IOException e){Bukkit.getLogger().warning("App-Chatverlauf konnte nicht gespeichert werden.");}
     }
+    synchronized List<Map<String, Object>> historySnapshot() { return HistoryApi.copies(rows); }
+    synchronized void historyReplace(List<Map<String, Object>> items) throws IOException {
+        if (file == null) throw new IOException("Chat history not attached");
+        String nextEpoch = UUID.randomUUID().toString();
+        Properties p = new Properties(); p.setProperty("schema", "1"); p.setProperty("sequence", Long.toString(sequence)); p.setProperty("epoch", nextEpoch);
+        int i = 0; for (Map<String,Object> row : items) p.setProperty("row." + i++, DiscordBotManager.Json.stringify(row));
+        AtomicState.save(file, p, "Simplex public app chat history");
+        rows.clear(); rows.addAll(HistoryApi.copies(items)); epoch = nextEpoch;
+    }
+
     static String validateName(String name){if(!name.matches("[\\p{L}\\p{N} _.-]{1,32}"))throw new IllegalArgumentException("Anzeigename: 1–32 Buchstaben, Zahlen, Leerzeichen, Punkt, _ oder -");return name;}
     static String validateMessage(String text){if(text.isBlank()||text.length()>500||text.codePoints().anyMatch(c->Character.isISOControl(c)||c==0x00a7))throw new IllegalArgumentException("Nachricht: 1–500 Zeichen ohne Steuer- oder Formatcodes");return text;}
     Object send(SimplexAdminSuite plugin,String actor,String name,String message){

@@ -345,7 +345,9 @@
   P["ad-hub"] = async function (param, query, alive) {
     if (!S.can("data.discord-ads")) { S.mount(S.lockedPage("Werbe-Zentrale gesperrt", "data.discord-ads")); return; }
     var data = await api(); if (!alive()) return;
-    var filter = "all";
+    var filter = "all", search = query.get("q") || "";
+    var finder = S.searchBox("Werbe-Orte, Texte & Verlauf suchen …", function (q) { search = q; paint(); }, search);
+    function match(text) { return !search || (S.workspaceMatches ? S.workspaceMatches(search, text) : String(text).toLowerCase().indexOf(search.toLowerCase()) >= 0); }
     function rerender(next) { if (next) data = next; if (alive()) paint(); }
     async function act(b) { var r = await api(b); if (r.notice) S.toast(r.notice); rerender(r.overview); }
     function snoozeMenu(pl) {
@@ -378,7 +380,7 @@
       return h("div", {}, row, hist);
     }
     function placesCard() {
-      var list = data.places.filter(function (pl) { return filter === "all" || pl.platform === filter; });
+      var list = data.places.filter(function (pl) { return (filter === "all" || pl.platform === filter) && match(pl.name + " " + pl.link + " " + pl.platform + " " + pl.note); });
       var due = list.filter(function (pl) { return pl.state === "due"; }), rest = list.filter(function (pl) { return pl.state !== "due"; });
       var used = {}; data.places.forEach(function (pl) { used[pl.platform] = (used[pl.platform] || 0) + 1; });
       var chips = [["all", "Alle (" + data.places.length + ")"]].concat((data.platforms || []).filter(function (x) { return used[x.id]; }).map(function (x) { return [x.id, x.label + " (" + used[x.id] + ")"]; }));
@@ -391,7 +393,7 @@
     }
     function textsCard() {
       var list = h("div", { class: "list" });
-      data.texts.forEach(function (t) {
+      data.texts.filter(function (t) { return match(t.name + " " + t.content); }).forEach(function (t) {
         list.appendChild(h("div", { class: "item" }, h("div", { class: "meta" }, h("b", { text: t.name }), h("small", { text: t.formatLabel + " · " + t.length + " Zeichen" + (t.usedBy.length ? " · " + t.usedBy.length + "× verwendet" : " · nicht verwendet") + (t.preset ? " · Vorlage" : " · " + S.ago(t.updatedAt)) })),
           h("div", { class: "side" },
             S.btn("", { icon: "eye", size: "sm icon", title: "Vorschau", onClick: function () { var pf = { discord: "discord", markdown: "reddit", bbcode: "planetminecraft", whatsapp: "whatsapp", unicode: "facebook", plain: "other" }[t.format]; S.modal(t.name, h("div", { class: "stack" }, preview(t.content, t.format, pf, "werbung"), h("div", { class: "row" }, S.btn("Text kopieren", { icon: "copy", size: "sm", onClick: function () { return S.copy(t.content, "Werbetext"); } }))), [], { wide: true, icon: "eye" }); } }),
@@ -416,7 +418,7 @@
     }
     function logCard() {
       var list = h("div", { class: "list" });
-      (data.log || []).slice(0, 25).forEach(function (e) {
+      (data.log || []).filter(function (e) { return match(e.text); }).slice(0, 40).forEach(function (e) {
         var k = KIND[e.kind] || [e.kind, ""];
         list.appendChild(h("div", { class: "item" }, S.badge(k[0], k[1]), h("div", { class: "meta" }, h("small", { text: S.date(e.time) }), h("p", { style: { marginTop: 0 }, text: e.text }))));
       });
@@ -435,6 +437,7 @@
         data.problem ? S.notice("Erinnerungen melden einen Fehler: " + data.problem + " – Serverprotokoll prüfen.", "warn") : null,
         h("div", { class: "grid kpis" }, kpi("Jetzt fällig", st.due, "bell", st.due ? "r" : "g"), kpi("Aktive Orte", st.active, "send", "g"), kpi("Geworben (24 h)", st.posts24h, "check", ""), kpi("Geworben (7 T)", st.posts7d, "chart", "v"),
           kpi("Nächste Erinnerung", st.nextDueAt ? until(st.nextDueAt) : "–", "clock", "v", st.nextDueAt ? S.date(st.nextDueAt) : null)),
+        finder,
         placesCard(),
         h("div", { class: "grid two" }, textsCard(), h("div", { class: "stack" }, settingsCard(), logCard())),
         h("small", { class: "muted", text: "Es wird nie automatisch gepostet. Halte dich an die Regeln der jeweiligen Server und Gruppen – zu häufiges Posten kann zum Ausschluss führen." })));

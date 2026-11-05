@@ -72,6 +72,10 @@ struct SuiteDirectDashboard: View {
         List {
             Section { Label(health["name"].string.isEmpty ? connection.endpoint : health["name"].string, systemImage: "server.rack"); Text("Admin Suite " + health["version"].string).font(.caption).foregroundStyle(.secondary) }
             if let suite {
+                Section("Schnellzugriffe") {
+                    NavigationLink { SuiteToolDirectoryView(suite: suite, actions: actions) } label: { Label("Alle Werkzeuge & Einstellungen", systemImage: "square.grid.2x2.fill") }
+                    if suite.features.contains("ad-hub-v1") { NavigationLink { SuiteAdHubView(suite: suite) } label: { Label("Werbe-Zentrale", systemImage: "megaphone.fill") }.disabled(!suite.can("data.discord-ads")) }
+                }
                 Section("Verwaltung") {
                     NavigationLink { SuiteUpgradeView(suite: suite) } label: { Label("Zugänge & Serverregeln", systemImage: "person.badge.key.fill") }
                     NavigationLink { SuiteTicketsView(suite: suite) } label: { Label("Tickets", systemImage: "ticket.fill") }.disabled(!suite.can("data.tickets"))
@@ -101,8 +105,11 @@ struct SuiteDirectEvents: View {
     @StateObject private var model: SuiteUpgradeModel
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteUpgradeModel(suite)) }
     var body: some View {
-        List(model.data["items"].array, id: \.["id"].string) { row in
+        List {
+            if suite.features.contains("history-management-v1") { SuiteHistoryLink(suite: suite, kind: "events", title: "Serverereignisse") }
+            ForEach(model.data["items"].array, id: \.["id"].string) { row in
             VStack(alignment: .leading, spacing: 6) { Text(row["title"].string).font(.headline); Text(row["body"].string).font(.subheadline); if suite.can("action.events.ack") { NavigationLink("Alarm bestätigen") { SuiteActionView(suite: suite, action: .make("events.ack", "Alarm bestätigen"), preset: ["id": row["id"]]) } } }
+        }
         }.panelScreen().navigationTitle("Serverereignisse").task { await model.load("events") }.refreshable { await model.load("events") }.errorAlert($model.error)
     }
 }

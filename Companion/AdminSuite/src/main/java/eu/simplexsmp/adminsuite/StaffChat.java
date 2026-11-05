@@ -23,6 +23,7 @@ final class StaffChat {
     private final Map<String, String> members = new LinkedHashMap<>();
     private final Properties hook = new Properties();
     private long sequence;
+    private String historyEpoch = UUID.randomUUID().toString();
     volatile String lastError = "";
 
     StaffChat(SimplexAdminSuite plugin) {
@@ -53,6 +54,15 @@ final class StaffChat {
         i = 0; for (var e : members.entrySet()) { if (i >= 200) break; p.setProperty("member." + (i++), e.getKey() + "|" + e.getValue()); }
         try { AtomicState.save(file, p, "Simplex staff chat (Discord staff channel, app and in-game staff messages)"); AppApiSecurity.protect(file); }
         catch (IOException e) { plugin.getLogger().warning("Staff-Chat konnte nicht gespeichert werden: " + e.getMessage()); }
+    }
+
+    synchronized List<Map<String, Object>> historySnapshot() { return HistoryApi.copies(rows); }
+    synchronized void historyReplace(List<Map<String, Object>> items) throws IOException {
+        Properties p = new Properties(); p.setProperty("schema", "1"); p.setProperty("sequence", Long.toString(sequence));
+        int i = 0; for (Map<String,Object> row : items) p.setProperty("row." + i++, DiscordBotManager.Json.stringify(row));
+        i = 0; for (var e : members.entrySet()) { if (i >= 200) break; p.setProperty("member." + i++, e.getKey() + "|" + e.getValue()); }
+        AtomicState.save(file, p, "Simplex staff chat; attachments retained for history recovery"); AppApiSecurity.protect(file);
+        rows.clear(); rows.addAll(HistoryApi.copies(items)); historyEpoch = UUID.randomUUID().toString();
     }
 
     String channel() { return plugin.getConfig().getString("staff-chat.channel-id", "").trim(); }
@@ -92,12 +102,15 @@ final class StaffChat {
     }
     Path attachmentFile(String id) { if (!id.matches("[a-f0-9]{32}")) throw new IllegalArgumentException("Anhang-ID ungültig"); return files.resolve(id); }
 
+    synchronized Object read(long after, String knownEpoch) {
+        return read(!knownEpoch.equals(historyEpoch) ? 0 : after);
+    }
     synchronized Object read(long after) {
         List<Map<String, Object>> items = rows.stream().filter(r -> AdminActivityLog.number(r.get("id")) > after).toList();
         List<Map<String, Object>> people = new ArrayList<>();
         for (var e : members.entrySet()) people.add(SimplexAdminSuite.appMap("id", e.getKey(), "name", e.getValue()));
         people.sort(Comparator.comparing(m -> String.valueOf(m.get("name")), String.CASE_INSENSITIVE_ORDER));
-        return SimplexAdminSuite.appMap("items", items, "cursor", sequence, "members", people, "channel", channel(), "discord", discordEnabled(), "limit", LIMIT, "maxFile", MAX_FILE, "lastError", lastError, "ownerName", plugin.getConfig().getString("app-api.owner-name", ""));
+        return SimplexAdminSuite.appMap("items", items, "cursor", sequence, "epoch", historyEpoch, "members", people, "channel", channel(), "discord", discordEnabled(), "limit", LIMIT, "maxFile", MAX_FILE, "lastError", lastError, "ownerName", plugin.getConfig().getString("app-api.owner-name", ""));
     }
 
     /** Known Discord staff: authors seen in the staff channel plus linked accounts of in-game staff. */
