@@ -13,6 +13,7 @@ import SwiftUI
     @State private var whatsNew: WhatsNewRelease?
     @AppStorage("theme.launchAnimation") private var launchAnimation = true
     @State private var launching = !ProcessInfo.processInfo.arguments.contains("--demo")
+    @StateObject private var adPosts = AdPostInbox.shared
     var body: some Scene {
         WindowGroup {
             Group {
@@ -26,7 +27,9 @@ import SwiftUI
                 .sheet(item: $whatsNew, onDismiss: { whatsNewSeen = WhatsNew.current }) { WhatsNewView(release: $0).presentationDetents([.large]) }
                 .task(id: store.locked) { presentWhatsNewIfNeeded() }
                 .privacySensitive()
-                .onOpenURL { url in _ = SuiteSetupInbox.shared.open(url) }
+                .onOpenURL { url in if adPosts.open(url) { return }; _ = SuiteSetupInbox.shared.open(url) }
+                // 4.8.0 Werbe-Zentrale: a Bark tap copies the ad and opens the place; this sheet only appears when asked or offline.
+                .sheet(item: $adPosts.prompt) { AdPostPromptView(prompt: $0) }
                 .overlay { if launching && launchAnimation { LaunchAnimationView(visible: $launching).transition(.opacity).zIndex(10) } }
                 .overlay { if scenePhase == .background { PanelBackground().overlay { Image(systemName: "server.rack").font(.system(size: 60)).foregroundStyle(.teal) } } }
                 .onChange(of: scenePhase, initial: true) { _, phase in

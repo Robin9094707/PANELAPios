@@ -1,10 +1,16 @@
-## Aktuelles Update: Panel 4.7.0 / Admin Suite 10.4.0
+## Aktuelles Update: Panel 4.8.0 / Admin Suite 10.5.0
 
-**Discord-Werbeplaner** in App und Webpanel: Zweitaccount verknüpfen (Token verschlüsselt auf dem Server), Werbetexte mit
-Discord-Formatierung, Formatierungsleiste und Vorschau, alle Discord-Server des Accounts mit Kanälen, Schreibrechten und
-Slowmode, bis zu vier Kanäle pro Server mit eigenem Text und Timer. Posts kommen immer etwas nach dem Intervall, nie davor;
-Slowmode, gelöschte Posts, fehlende Rechte und Captcha werden erkannt (Bark, Auto-Pause). Timer überleben Neustarts.
-[Update 4.7.0](UPDATE-4.7.0.md) · [Suite 10.4.0](Companion/AdminSuite/UPDATE-10.4.0.md).
+**Werbe-Zentrale** statt Self-Bot: Werbe-Orte (Discord-Kanal-Link, Reddit, Planet Minecraft, Facebook-Gruppen, Telegram,
+WhatsApp, X, Serverlisten) mit Link, passend formatiertem Text und Intervall. Ist ein Ort wieder dran, kommt eine
+Bark-Erinnerung – Tippen kopiert den Text in die iOS-Zwischenablage und öffnet den Kanal direkt in der Discord-App bzw. die
+Seite; danach startet der Timer leicht über dem Intervall neu (6 Std → ~6,1 Std). Snooze, Wiederholung, Rückgängig,
+Vorschau je Plattform (Discord, Reddit, BBCode, WhatsApp, Facebook-Unicode) und Umwandeln. Der Discord-Token-Login ist
+komplett entfernt; alte Texte und Kanäle wurden übernommen. Webpanel: automatischer Leistungsmodus für schwache Rechner.
+[Update 4.8.0](UPDATE-4.8.0.md) · [Suite 10.5.0](Companion/AdminSuite/UPDATE-10.5.0.md).
+
+## Panel 4.7.0 / Admin Suite 10.4.0
+
+Discord-Werbeplaner – in 4.8.0 / 10.5.0 durch die Werbe-Zentrale ersetzt. [Update 4.7.0](UPDATE-4.7.0.md) · [Suite 10.4.0](Companion/AdminSuite/UPDATE-10.4.0.md).
 
 ## Panel 4.6.0 / Admin Suite 10.3.0 / SentinelBridge 1.6.0
 
