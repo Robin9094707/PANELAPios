@@ -8,6 +8,7 @@ struct SuiteToolDirectoryView: View {
     var panel: PanelAPI? = nil
     var server: Server? = nil
     var live: LiveServer? = nil
+    var badges: [SuiteTool: Int] = [:]
     var query = ""
     var embedded = false
     @State private var search = ""
@@ -26,14 +27,17 @@ struct SuiteToolDirectoryView: View {
     var directoryContent: some View {
             LazyVStack(alignment: .leading, spacing: 18) {
                 if selectedQuery.isEmpty {
+                    if !embedded {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Admin Suite", systemImage: "shield.lefthalf.filled").font(.title2.bold())
                         Text(suite.connection.endpoint).font(.caption).foregroundStyle(.secondary)
                         Text("Schnellzugriffe lange drücken, um Favoriten anzupassen.").font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).card()
+                    }
                     toolGroup("Schnellzugriffe", tools: tools.filter { favorites.split(separator: ",").contains(Substring($0.rawValue)) && allowed($0) })
                 }
                 ForEach(groups, id: \.self) { group in toolGroup(group, tools: tools.filter { $0.group == group }) }
+                if selectedQuery.isEmpty { SuitePinnedActionsView(suite: suite, actions: actions) }
                 if !selectedQuery.isEmpty {
                     let matches = actions.filter { SuiteSearch.matches(selectedQuery, in: $0.title + " " + $0.id + " " + $0.group) }
                     if !matches.isEmpty {
@@ -56,7 +60,7 @@ struct SuiteToolDirectoryView: View {
                 Text(title).font(.headline)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
                     ForEach(tools) { tool in
-                        SuiteToolTile(title: tool.title, symbol: tool.symbol, tint: tool == .advertising ? .orange : Color.panelAccent, identifier: "suiteTool-" + tool.id) {
+                        SuiteToolTile(title: tool.title, symbol: tool.symbol, tint: tool == .advertising ? .orange : Color.panelAccent, badge: badges[tool] ?? 0, identifier: "suiteTool-" + tool.id) {
                             SuiteToolDestination(suite: suite, tool: tool, actions: actions, panel: panel, server: server, live: live)
                         }.disabled(!allowed(tool)).contextMenu {
                             Button(favorites.split(separator: ",").contains(Substring(tool.rawValue)) ? "Favorit entfernen" : "Als Favorit merken", systemImage: "star") { toggle(tool) }
@@ -141,6 +145,17 @@ struct SuiteToolDestination: View {
             case .ticketSettings: SuiteTicketSettingsView(suite: suite)
             case .online: SuiteOnlineSettingsView(suite: suite)
             case .dependencies: SuiteDependencyView(suite: suite)
+            case .chat: SuiteLiveChatView(suite: suite)
+            case .restart: SuiteRestartView(suite: suite)
+            case .pairing:
+                if let panel, let server { SuiteHubView(panel: panel, server: server) }
+                else if suite.connection.panel.hasPrefix("suite-direct:") { SuiteDirectDashboard(connection: suite.connection) }
+                else {
+                    List { Section("Gespeicherte Verbindung") {
+                        Text(suite.connection.endpoint).textSelection(.enabled)
+                        Text("Wähle auf der Startseite das zugehörige Hosting-Panel und öffne beim Server „Verwalten → Admin Suite“, um die Kopplung zu ändern.").foregroundStyle(.secondary)
+                    } }.panelScreen().navigationTitle("Kopplung")
+                }
             }
         }
     }
@@ -252,16 +267,25 @@ struct SuiteWorkspaceLauncher: View {
 struct SuiteWorkspaceConnectionView: View {
     let connection: SuiteConnection
     var request = SuiteLaunchRequest()
+    @EnvironmentObject private var store: AppStore
     @State private var suite: SuiteAPI?
     @State private var actions: [SuiteAction] = []
     @State private var error: String?
     @State private var login = false
     var body: some View {
         Group {
-            if let suite { SuiteToolDestination(suite: suite, tool: request.tool, actions: actions, place: request.place, prepareAd: request.prepareAd) }
+            if let suite {
+                let panel = store.api?.base.absoluteString == connection.panel ? store.api : nil
+                let server = panel == nil ? nil : store.servers.first { $0.id == connection.server }
+                SuiteToolDestination(suite: suite, tool: request.tool, actions: actions, panel: panel, server: server, place: request.place, prepareAd: request.prepareAd)
+            }
             else {
                 List {
-                    if let error { Label(error, systemImage: "exclamationmark.circle"); Button("Erneut versuchen") { Task { await load() } }; Button("Erneut anmelden") { login = true } }
+                    if let error {
+                        Label(error, systemImage: "exclamationmark.circle"); Button("Erneut versuchen") { Task { await load() } }
+                        if connection.panel.hasPrefix("suite-direct:") { Button("Erneut anmelden") { login = true } }
+                        else { Text("Bei abgelaufenem Schlüssel die Suite-Kopplung im zugehörigen Server prüfen.").font(.caption).foregroundStyle(.secondary) }
+                    }
                     else { ProgressView("Admin Suite verbinden …") }
                 }.panelScreen()
             }

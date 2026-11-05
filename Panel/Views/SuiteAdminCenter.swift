@@ -213,7 +213,7 @@ struct SuiteAdminCenterView: View {
         }.buttonStyle(.plain)
     }
     func tools(_ suite: SuiteAPI) -> some View {
-        SuiteToolDirectoryView(suite: suite, actions: model.actions, panel: model.panel, server: model.server, live: live, query: toolSearch, embedded: true)
+        SuiteToolDirectoryView(suite: suite, actions: model.actions, panel: model.panel, server: model.server, live: live, badges: [.adminLog: adminLogUnread, .tickets: dashboard["tickets"]["open"].int], query: toolSearch, embedded: true)
     }
     @ViewBuilder func activity(_ suite: SuiteAPI) -> some View {
         let events = dashboard["events"].array, reports = dashboard["reports"].array

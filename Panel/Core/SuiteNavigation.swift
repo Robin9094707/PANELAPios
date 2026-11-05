@@ -8,6 +8,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
     case discordStatus, scoreboard, discord, luckperms, lands, locks, commands
     case management, team, appSettings, settings, access, account, bark, quiet, memory, links, crossplay, functions
     case reports, bans, vpn, alts, ultrabans, statistics, menu, ticketSettings, online, dependencies
+    case chat, restart, pairing
     var id: String { rawValue }
     var title: String { metadata.0 }
     var symbol: String { metadata.1 }
@@ -61,6 +62,9 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .ticketSettings: return ("Ticket-Einstellungen", "ticket.fill", "Einstellungen & Zugänge", "data.ticket-settings", "tickets-v1")
         case .online: return ("Beitrittshinweise", "person.badge.plus", "Einstellungen & Zugänge", "data.online-settings", "online-notifications-v1")
         case .dependencies: return ("Plugin-Bibliotheken", "shippingbox.fill", "Server & Diagnose", "data.management", "")
+        case .chat: return ("Serverchat", "bubble.left.and.bubble.right.fill", "Kommunikation & Studio", "data.chat", "public-chat-v1")
+        case .restart: return ("Neustart planen", "arrow.clockwise.circle.fill", "Server & Diagnose", "data.operations", "restart-v1")
+        case .pairing: return ("Kopplung & Verbindung", "key.horizontal.fill", "Einstellungen & Zugänge", "", "")
         }
     }
     func matches(_ query: String) -> Bool {
