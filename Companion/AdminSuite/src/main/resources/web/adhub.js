@@ -113,6 +113,7 @@
   }
   function toDiscord(text, format) {
     var s = String(text || "");
+    if (format === "discord") return s;
     if (format === "bbcode") return bbToDiscord(s);
     if (format === "markdown") return s.replace(/>!(.+?)!</g, "||$1||").replace(/\^\(([^)\n]*)\)/g, "-# $1").replace(/ {2,}\n/g, "\n");
     if (format === "whatsapp") return s.replace(/(^|[^\w*])\*(?=\S)([^*\n]*?\S)\*(?![\w*])/g, "$1**$2**").replace(/(^|[^\w_])_(?=\S)([^_\n]*?\S)_(?![\w_])/g, "$1*$2*").replace(/(^|[^\w~])~(?=\S)([^~\n]*?\S)~(?![\w~])/g, "$1~~$2~~");
