@@ -34,6 +34,46 @@ final class PanelUITests: XCTestCase {
         app.buttons["Fertig"].firstMatch.tap()
         XCTAssertTrue(app.buttons["Werbung"].firstMatch.waitForExistence(timeout: 10))
     }
+    func test491SpecificServerShortcutsAndSelectablePicker() throws {
+        app.terminate(); app.launchArguments += ["--demo-suite-shortcuts", "--demo-suite-schema-failure"]; app.launch()
+        let first = "49100000-0000-0000-0000-000000000001", second = "49100000-0000-0000-0000-000000000002"
+        let advertising = app.buttons["suite-quick-" + first + "-advertising"]
+        XCTAssertTrue(advertising.waitForExistence(timeout: 15)); capture("4.9.1-Server-Schnellzugriffe"); advertising.tap()
+        XCTAssertTrue(app.staticTexts["suiteTargetName"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["suiteTargetName"].label, "Simplex SMP")
+        XCTAssertFalse(app.navigationBars["Admin Suite wählen"].exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Nur ansehen")).firstMatch.waitForExistence(timeout: 10))
+        capture("4.9.1-Direkte-Werbung"); app.buttons["Fertig"].firstMatch.tap()
+        let overview = app.buttons["suite-quick-" + second + "-overview"]
+        for _ in 0..<3 { if overview.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(overview.waitForExistence(timeout: 10)); overview.tap()
+        XCTAssertTrue(app.staticTexts["suiteSchemaNotice"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["suiteTargetName"].label, "Simplex Test")
+        capture("4.9.1-Schema-Ausfall-ohne-Blockade"); app.buttons["Fertig"].firstMatch.tap()
+        app.buttons["openQuickHub"].tap()
+        let choose = app.buttons["suite-choose-" + first]
+        XCTAssertTrue(choose.waitForExistence(timeout: 10)); choose.tap()
+        XCTAssertTrue(app.staticTexts["suiteTargetName"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["suiteTargetName"].label, "Simplex SMP")
+        XCTAssertFalse(app.navigationBars["Admin Suite wählen"].exists)
+    }
+    func test491FailedServerCanRetryWithoutBlockingOtherServers() throws {
+        app.terminate(); app.launchArguments += ["--demo-suite-shortcuts", "--demo-suite-fail-second"]; app.launch()
+        let first = "49100000-0000-0000-0000-000000000001", second = "49100000-0000-0000-0000-000000000002"
+        let broken = app.buttons["suite-quick-" + second + "-overview"]
+        for _ in 0..<3 { if broken.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(broken.waitForExistence(timeout: 15)); broken.tap()
+        XCTAssertTrue(app.buttons["suiteConnectionRetry"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any)["suiteConnectionProgress"].exists)
+        app.buttons["suiteConnectionRetry"].tap()
+        XCTAssertTrue(app.buttons["suiteConnectionRetry"].waitForExistence(timeout: 10))
+        capture("4.9.1-Fehler-statt-Endlosladen"); app.buttons["Fertig"].firstMatch.tap()
+        let working = app.buttons["suite-quick-" + first + "-advertising"]
+        for _ in 0..<3 { if working.isHittable { break }; app.swipeDown() }
+        XCTAssertTrue(working.waitForExistence(timeout: 10)); working.tap()
+        XCTAssertTrue(app.staticTexts["suiteTargetName"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["suiteTargetName"].label, "Simplex SMP")
+    }
     func testDemoDashboardConsoleFilesBackupsAndManagement() throws {
         executionTimeAllowance = 300
         let server = app.buttons["server-simplex1"]

@@ -22,6 +22,12 @@ enum SuiteDemo {
     static let player = "00000000-0000-0000-0000-000000000001"
     static func field(_ name: String, _ label: String) -> JSON { .object(["name": .string(name), "description": .string(label), "type": .number(3), "required": .bool(true)]) }
     static func response(_ path: String, query: [String: String]) -> JSON {
+        if SuiteShortcutDemo.enabled && path == "health" {
+            return .object(["apiVersion": .number(1), "serverId": .string("synthetic-suite"), "version": .string("10.6.0"), "scope": .string("full"), "features": .array(["ad-hub-v1", "overview", "tickets-v1", "public-chat-v1"].map(JSON.string))])
+        }
+        if SuiteShortcutDemo.enabled && path == "ad-hub" {
+            return .object(["serverId": .string("synthetic-suite"), "places": .array([]), "texts": .array([]), "log": .array([]), "canPost": .bool(false), "canManage": .bool(false)])
+        }
         if let value = operations[path] { return value }
         switch path {
         case "health": return .object(["apiVersion": .number(1), "serverId": .string("synthetic-suite"), "version": .string("9.3.0"), "features": .array([.string("overview"),.string("admin-roles-v3"),.string("public-chat-v1"),.string("restart-v1"),.string("admin-dashboard-v1"),.string("players-filters-v3"),.string("profile-v3")]), "scope": .string("full")])

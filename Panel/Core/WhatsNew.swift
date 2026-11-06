@@ -18,6 +18,12 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "4.9.1", title: "Dein Server. Ein Tipp.", summary: "Feste Server-Schnellzugriffe und zuverlässiges Verbinden – ohne endloses Laden.", items: [
+            WhatsNewItem(symbol: "bolt.fill", title: "Direkt zum richtigen Server", detail: "Jeder gespeicherte Suite-Zugang hat eigene Kacheln für Admin Suite, Werbung, Spieler und Tickets. Ein Tipp öffnet genau diesen Server ohne zusätzliche Auswahl."),
+            WhatsNewItem(symbol: "slider.horizontal.3", title: "Schnellzugriffe anpassen", detail: "Server benennen, Werkzeuge je Server auswählen und einen Standard für allgemeine Zugriffe festlegen. Die bisherigen Kopplungen und Zugangsdaten bleiben erhalten."),
+            WhatsNewItem(symbol: "wifi.exclamationmark", title: "Kein endloses Verbinden", detail: "Kurzes Zeitlimit auch bei gepinnten Zertifikaten, Abbrechen und Wiederholen. Ein Ausfall der zusätzlichen Funktionsliste blockiert die übrigen Werkzeuge nicht mehr."),
+            WhatsNewItem(symbol: "square.stack.3d.up.fill", title: "Kurzbefehle mit Serverzuordnung", detail: "Auch „Werbeverwaltung öffnen“ kann einen festen Server erhalten. Gespeicherte Werbe-Orte werden ohne lange Netzabfrage aufgelöst; Rechte und Intervalle werden weiterhin in der App geprüft.")
+        ]),
         WhatsNewRelease(version: "4.9.0", title: "Alles schneller erreichen", summary: "Mehr Schnellzugriffe, iOS-Kurzbefehle und alle Admin-Werkzeuge an einem durchsuchbaren Ort – im vertrauten Design.", items: [
             WhatsNewItem(symbol: "square.grid.2x2.fill", title: "Direkt auf der Startseite", detail: "Admin Suite, Werbung, Tickets, Diagnose, Admin-Log, Verläufe und Staff-Chat sind sofort erreichbar – auch ohne Hosting-Panel. Bei mehreren Zugängen kannst du einen Standard wählen."),
             WhatsNewItem(symbol: "megaphone.fill", title: "Werbung per Kurzbefehl", detail: "Die Werbeverwaltung oder einen bestimmten Werbe-Ort vom Home-Bildschirm öffnen. „Werbung vorbereiten“ kopiert den aktuellen Text und öffnet den Ort; Pausen, Intervalle und Rechte bleiben gültig."),

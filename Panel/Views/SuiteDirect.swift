@@ -97,7 +97,17 @@ struct SuiteDirectDashboard: View {
             .sheet(isPresented: $login, onDismiss: { Task { await load() } }) { SuiteDirectLoginView(existing: connection) }
             .confirmationDialog("Lokalen Zugang entfernen?", isPresented: $remove) { Button("Entfernen", role: .destructive) { SuiteConnections.shared.remove(connection); dismiss() } }
     }
-    func load() async { do { let current = SuiteConnections.shared.values.first { $0.id == connection.id } ?? connection; let api = try SuiteAPI(current); health = try await api.health(); actions = try await api.request("schema")["actions"].array.map { SuiteAction(data: $0) }; suite = api; error = nil } catch { suite = nil; self.error = error.localizedDescription } }
+    func load() async {
+        do {
+            let current = SuiteConnections.shared.values.first { $0.id == connection.id } ?? connection
+            let api = try SuiteAPI(current)
+            health = try await SuiteNavigationDeadline.run(seconds: 12) { try await api.health(timeout: 12) }
+            try Task.checkCancellation(); suite = api; error = nil
+            if let schema = try? await SuiteNavigationDeadline.run(seconds: 8, operation: { try await api.request("schema", timeout: 8) }) {
+                actions = schema["actions"].array.map { SuiteAction(data: $0) }
+            }
+        } catch { suite = nil; self.error = RequestFailure.isCancellation(error) ? "Verbindung abgebrochen. Bitte erneut versuchen." : error.localizedDescription }
+    }
 }
 
 struct SuiteDirectEvents: View {
@@ -116,9 +126,9 @@ struct SuiteDirectEvents: View {
 struct SuiteDirectInbox: View {
     let connection: SuiteConnection
     let tickets: Bool
-    @State private var suite: SuiteAPI?
-    @State private var error: String?
     var body: some View {
-        Group { if let suite { if tickets { SuiteTicketsView(suite: suite) } else { SuiteDirectEvents(suite: suite) } } else { ProgressView("Verbinden …") } }.task { do { let api = try SuiteAPI(connection); _ = try await api.health(); suite = api } catch { self.error = error.localizedDescription } }.errorAlert($error)
+        SuiteConnectionLoader(connection: connection) { suite in
+            if tickets { SuiteTicketsView(suite: suite) } else { SuiteDirectEvents(suite: suite) }
+        }
     }
 }

@@ -168,7 +168,7 @@ struct SuiteDiagnosticsDestination: View {
     @State private var data: JSON = .null
     @State private var error: String?
     var body: some View {
-        Group {
+        ZStack {
             if data == .null {
                 List {
                     if let error { Text(error).foregroundStyle(.secondary); Button("Erneut laden") { Task { await load() } } }
@@ -185,8 +185,8 @@ struct SuiteDiagnosticsDestination: View {
         }.task { await load() }
     }
     func load() async {
-        do { data = try await suite.request("diagnostics"); error = nil }
-        catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+        do { data = try await SuiteNavigationDeadline.run(seconds: 12) { try await suite.request("diagnostics", timeout: 12) }; error = nil }
+        catch { self.error = RequestFailure.isCancellation(error) ? "Verbindung abgebrochen. Bitte erneut laden." : error.localizedDescription }
     }
 }
 
@@ -232,32 +232,44 @@ struct SuiteStandaloneRecordsView: View {
 /// Launching a named shortcut never silently picks a different server when its connection was removed.
 struct SuiteWorkspaceLauncher: View {
     let request: SuiteLaunchRequest
+    @EnvironmentObject private var store: AppStore
     @ObservedObject private var connections = SuiteConnections.shared
-    @AppStorage("suite.preferredConnection.v1") private var preferred = ""
+    @ObservedObject private var preferences = SuiteQuickAccess.shared
+    @State private var chosen: UUID?
+    @State private var choosing = false
     @Environment(\.dismiss) private var dismiss
     var selected: SuiteConnection? {
         if let id = request.connection { return connections.values.first { $0.id == id } }
-        if let value = connections.values.first(where: { $0.id.uuidString == preferred }) { return value }
+        if choosing { return nil }
+        if let chosen { return connections.values.first { $0.id == chosen } }
+        if let id = preferences.preferred, let record = connections.values.first(where: { $0.id == id }) { return record }
         return connections.values.count == 1 ? connections.values.first : nil
     }
     var body: some View {
         NavigationStack {
             Group {
-                if let record = selected { SuiteWorkspaceConnectionView(connection: record, request: request) }
-                else if request.connection != nil { ContentUnavailableView("Zugang nicht mehr vorhanden", systemImage: "key.slash", description: Text("Bitte den Kurzbefehl mit einem aktuellen Zugang neu einrichten.")) }
-                else {
+                if let record = selected {
+                    SuiteWorkspaceConnectionView(connection: record, request: request).id(record.id)
+                } else if request.connection != nil || chosen != nil && !choosing {
+                    ContentUnavailableView("Zugang nicht mehr vorhanden", systemImage: "key.slash", description: Text("Bitte den Kurzbefehl mit einem aktuellen Zugang neu einrichten."))
+                } else {
                     List {
                         if connections.values.isEmpty { ContentUnavailableView("Keine Admin Suite verbunden", systemImage: "shield.slash", description: Text("Auf der Startseite einen Setup-Link einlösen oder mit einem Suite-Benutzer anmelden.")) }
                         ForEach(connections.values) { record in
-                            NavigationLink { SuiteWorkspaceConnectionView(connection: record, request: request) } label: { Label(record.endpoint, systemImage: "server.rack") }
-                                .contextMenu { Button("Als Standard für Schnellzugriffe", systemImage: "star") { preferred = record.id.uuidString } }
+                            Button {
+                                chosen = record.id; choosing = false
+                            } label: {
+                                HStack { Label(connections.name(record, store: store), systemImage: "server.rack"); Spacer(); Image(systemName: "chevron.right").font(.caption) }
+                                Text(record.endpoint).font(.caption).foregroundStyle(.secondary)
+                            }.accessibilityIdentifier("suite-choose-" + record.id.uuidString)
                         }
+                        Section { Text("Die Server-Kacheln auf der Startseite öffnen das gewünschte Werkzeug ohne diese Auswahl. Unter „Server-Schnellzugriffe → Anpassen“ kannst du zusätzlich einen Standardserver festlegen.").font(.caption).foregroundStyle(.secondary) }
                     }.panelScreen().navigationTitle("Admin Suite wählen")
                 }
             }.toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
                 if selected != nil && request.connection == nil && connections.values.count > 1 {
-                    ToolbarItem(placement: .topBarLeading) { Menu("Server", systemImage: "server.rack") { ForEach(connections.values) { record in Button(record.endpoint) { preferred = record.id.uuidString } } } }
+                    ToolbarItem(placement: .topBarLeading) { Button("Server wechseln", systemImage: "server.rack") { choosing = true; chosen = nil } }
                 }
             }
         }
@@ -268,38 +280,47 @@ struct SuiteWorkspaceConnectionView: View {
     let connection: SuiteConnection
     var request = SuiteLaunchRequest()
     @EnvironmentObject private var store: AppStore
-    @State private var suite: SuiteAPI?
-    @State private var actions: [SuiteAction] = []
-    @State private var error: String?
+    @ObservedObject private var connections = SuiteConnections.shared
+    @StateObject private var loader = SuiteWorkspaceLoadModel()
     @State private var login = false
+    var title: String { connections.name(connection, store: store) }
     var body: some View {
-        Group {
-            if let suite {
+        ZStack {
+            if let suite = loader.api {
                 let panel = store.api?.base.absoluteString == connection.panel ? store.api : nil
                 let server = panel == nil ? nil : store.servers.first { $0.id == connection.server }
-                SuiteToolDestination(suite: suite, tool: request.tool, actions: actions, panel: panel, server: server, place: request.place, prepareAd: request.prepareAd)
-            }
-            else {
-                List {
-                    if let error {
-                        Label(error, systemImage: "exclamationmark.circle"); Button("Erneut versuchen") { Task { await load() } }
-                        if connection.panel.hasPrefix("suite-direct:") { Button("Erneut anmelden") { login = true } }
-                        else { Text("Bei abgelaufenem Schlüssel die Suite-Kopplung im zugehörigen Server prüfen.").font(.caption).foregroundStyle(.secondary) }
+                VStack(spacing: 0) {
+                    if let notice = loader.notice {
+                        VStack(alignment: .leading, spacing: 6) { Text(notice).font(.caption).accessibilityIdentifier("suiteSchemaNotice"); Button("Zusätzliche Funktionen neu laden") { Task { await loader.reloadSchema() } }.font(.caption) }.padding(12)
                     }
-                    else { ProgressView("Admin Suite verbinden …") }
+                    SuiteToolDestination(suite: suite, tool: request.tool, actions: loader.actions, panel: panel, server: server, place: request.place, prepareAd: request.prepareAd)
+                }
+            } else {
+                List {
+                    Section(title) {
+                        if loader.loading {
+                            ProgressView("Admin Suite verbinden …").accessibilityIdentifier("suiteConnectionProgress")
+                            Button("Verbindung abbrechen", role: .cancel) { loader.cancel() }
+                            Text("Der Verbindungsaufbau wird nach höchstens 12 Sekunden beendet.").font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Label(loader.error ?? "Verbindung noch nicht hergestellt.", systemImage: "wifi.exclamationmark").accessibilityIdentifier("suiteConnectionError")
+                            Button("Erneut versuchen") { Task { await load() } }.accessibilityIdentifier("suiteConnectionRetry")
+                            if connection.panel.hasPrefix("suite-direct:") { Button("Erneut anmelden") { login = true } }
+                            else { Text("Bei abgelaufenem Schlüssel die Suite-Kopplung im zugehörigen Server prüfen.").font(.caption).foregroundStyle(.secondary) }
+                        }
+                        Text(connection.endpoint).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
                 }.panelScreen()
             }
-        }.id(connection.id).task(id: connection.id) { await load() }
-            .sheet(isPresented: $login, onDismiss: { Task { await load() } }) { SuiteDirectLoginView(existing: connection) }
+        }
+        .toolbar { ToolbarItem(placement: .principal) { Text(title).font(.headline).lineLimit(1).accessibilityIdentifier("suiteTargetName") } }
+        .task(id: connection.id) { await load() }
+        .onDisappear { loader.cancel() }
+        .sheet(isPresented: $login, onDismiss: { Task { await load() } }) { SuiteDirectLoginView(existing: connection) }
     }
     func load() async {
-        suite = nil; error = nil
-        do {
-            let current = SuiteConnections.shared.values.first { $0.id == connection.id } ?? connection
-            let api = try SuiteAPI(current); _ = try await api.health()
-            actions = try await api.request("schema")["actions"].array.map { SuiteAction(data: $0) }
-            suite = api
-        } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+        let current = connections.values.first { $0.id == connection.id } ?? connection
+        await loader.load(current, tool: request.tool)
     }
 }
 

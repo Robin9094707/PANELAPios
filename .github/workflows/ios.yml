@@ -53,8 +53,11 @@ jobs:
         if: steps.validation.outputs.reuse != 'true'
         run: |
           set -o pipefail
-          # 4.0–4.9: focused, minimal unit tests for the new features keep the whole job around five minutes.
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -only-testing:PanelTests/Panel460Tests -only-testing:PanelTests/Panel480Tests -only-testing:PanelTests/Panel490Tests -only-testing:PanelUITests/PanelUITests/test490HomeShortcutsAndHelpLaunch -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
+          python3 scripts/suite_tls_fixture.py > build/tls-fixture.log 2>&1 &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
+          # Focused regression checks, a real pinned TLS fixture and three short UI navigation checks.
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -only-testing:PanelTests/Panel460Tests -only-testing:PanelTests/Panel480Tests -only-testing:PanelTests/Panel490Tests -only-testing:PanelTests/Panel491Tests -only-testing:PanelTests/PinnedHTTPTests -only-testing:PanelUITests/PanelUITests/test490HomeShortcutsAndHelpLaunch -only-testing:PanelUITests/PanelUITests/test491SpecificServerShortcutsAndSelectablePicker -only-testing:PanelUITests/PanelUITests/test491FailedServerCanRetryWithoutBlockingOtherServers -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -74,6 +77,13 @@ jobs:
           zip -qry "$IPA_FILENAME" Payload
           unzip -t "$IPA_FILENAME"
           shasum -a 256 "$IPA_FILENAME" > SHA256SUMS.txt
+      - name: Upload the IPA as an individual file
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: build/export/*-unsigned.ipa
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
       - name: Extract UI test screenshots
         if: always()
         run: |
@@ -218,6 +228,8 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
+          Simplex Panel 4.9.1 (Build 39): app-only fixes for fixed-server shortcuts, selectable server entries, short pinned HTTPS deadlines, cancellation/retry and optional schema loading. Admin Suite 10.6.0 remains compatible and does not need replacing. See UPDATE-4.9.1.md.
+
           Simplex Panel 4.9.0 / Admin Suite 10.6.0: home shortcuts, a complete searchable Admin tool directory, native iOS Shortcuts for tools and individual advertising places, and app/web history management with confirmation, backup and restore. Existing app identity, credentials, settings and ad timers remain compatible. PR builds upload JAR and IPA artifacts without publishing. See UPDATE-4.9.0.md and Companion/AdminSuite/UPDATE-10.6.0.md for upgrade and rollback.
 
           Simplex Panel 4.8.0 / Admin Suite 10.5.0: Werbe-Zentrale replaces the Discord self-bot planner – the Discord token login and all automatic posting are removed (stored tokens and their key are deleted on the first start; change the alt account password to invalidate the token at Discord too). Advertising places for Discord channels (channel link opens the channel directly in the Discord iOS app), Reddit, Planet Minecraft, Facebook groups, Telegram, WhatsApp, X and server lists, each with link, ad text and interval; when a place is due, a Bark reminder arrives ("ad-reminder", time-sensitive, repeats until posted) – tapping it copies the text into the iOS clipboard and opens the place, and the timer restarts slightly above the interval (6 h → about 6.1 h); snooze from the app, the web panel or the reminder sheet, undo for a mistaken tap; Bark links are HMAC-bound to one place and cycle and work without login. Formats with platform-style previews and one-tap conversion: Discord markdown, Reddit markdown, BBCode (Planet Minecraft, forums), WhatsApp/Telegram, Facebook Unicode bold and plain text; ready-made Simplex texts for Reddit, Planet Minecraft and Facebook. Existing 10.4.0 texts and channels (with their running timers) are migrated without data loss. Web panel: automatic performance mode for weak computers (no blur/animations/shadows, slower refreshes; Appearance → Performance: auto/on/off), request time limits, one retry for reads after network hiccups or 502/503/504, non-overlapping page refreshes, offline banner and last-resort error handling.

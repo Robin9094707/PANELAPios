@@ -22,7 +22,7 @@ struct SuiteShortcutServerQuery: EntityQuery {
         try await suggestedEntities().filter { identifiers.contains($0.id) }
     }
     @MainActor func suggestedEntities() async throws -> [SuiteShortcutServer] {
-        SuiteConnections.shared.values.map { SuiteShortcutServer(id: $0.id.uuidString, name: $0.endpoint + ($0.panel.hasPrefix("suite-direct:") ? " · " + $0.panel.replacingOccurrences(of: "suite-direct:", with: "") : "")) }
+        SuiteConnections.shared.values.map { SuiteShortcutServer(id: $0.id.uuidString, name: SuiteConnections.shared.name($0) + " · " + $0.endpoint) }
     }
 }
 
@@ -41,25 +41,52 @@ struct SuiteAdvertisingPlace: AppEntity {
 }
 struct SuiteAdvertisingPlaceQuery: EntityStringQuery {
     @MainActor func entities(for identifiers: [String]) async throws -> [SuiteAdvertisingPlace] {
-        // Resolve selected identifiers against the live server; deleted places never fall back to cached ads.
-        try await fetch(connectionIDs: Set(identifiers.compactMap { $0.split(separator: "|").first.map(String.init) })).filter { identifiers.contains($0.id) }
-    }
-    @MainActor func suggestedEntities() async throws -> [SuiteAdvertisingPlace] { try await fetch(connectionIDs: nil) }
-    @MainActor func entities(matching string: String) async throws -> [SuiteAdvertisingPlace] {
-        try await fetch(connectionIDs: nil).filter { SuiteSearch.matches(string, in: $0.name) }
-    }
-    @MainActor private func fetch(connectionIDs: Set<String>?) async throws -> [SuiteAdvertisingPlace] {
-        var result: [SuiteAdvertisingPlace] = []
-        for connection in SuiteConnections.shared.values where connectionIDs == nil || connectionIDs!.contains(connection.id.uuidString) {
-            do {
-                let api = try SuiteAPI(connection, timeout: 12); _ = try await api.health()
-                guard api.features.contains("ad-hub-v1"), api.can("data.discord-ads") else { continue }
-                let data = try await api.request("ad-hub")
-                result += data["places"].array.map { SuiteAdvertisingPlace(id: connection.id.uuidString + "|" + $0["id"].string, name: $0["name"].string + " · " + connection.endpoint) }
-            } catch { if RequestFailure.isCancellation(error) { throw error } }
+        // Resolving a previously chosen entity must work immediately, even if its server is offline.
+        // The app still fetches the current ad and checks rights/intervals before doing anything.
+        identifiers.compactMap { id in
+            let value = SuiteAdvertisingPlace(id: id, name: "Werbe-Ort")
+            guard let (connectionID, place) = value.target,
+                  let record = SuiteConnections.shared.values.first(where: { $0.id == connectionID }) else { return nil }
+            let name = AdHubCache.entry(serverId: record.serverIdentity, place: place)?["name"] ?? "Werbe-Ort"
+            return SuiteAdvertisingPlace(id: id, name: name + " · " + SuiteConnections.shared.name(record))
         }
-        return result
     }
+    @MainActor func suggestedEntities() async throws -> [SuiteAdvertisingPlace] { try await fetch() }
+    @MainActor func entities(matching string: String) async throws -> [SuiteAdvertisingPlace] {
+        try await fetch().filter { SuiteSearch.matches(string, in: $0.name) }
+    }
+    @MainActor private func fetch() async throws -> [SuiteAdvertisingPlace] {
+        let records = SuiteConnections.shared.values
+        return try await withThrowingTaskGroup(of: [SuiteAdvertisingPlace].self) { group in
+            var next = 0, output: [SuiteAdvertisingPlace] = []
+            for record in records.prefix(3) {
+                group.addTask { @MainActor in try await one(record) }; next += 1
+            }
+            while let values = try await group.next() {
+                output += values
+                if next < records.count {
+                    let record = records[next]; next += 1
+                    group.addTask { @MainActor in try await one(record) }
+                }
+            }
+            return output.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }
+    }
+    @MainActor private func one(_ record: SuiteConnection) async throws -> [SuiteAdvertisingPlace] {
+        do {
+            let api = try SuiteAPI(record)
+            let data = try await SuiteNavigationDeadline.run(seconds: 6) {
+                _ = try await api.health(timeout: 6)
+                guard api.features.contains("ad-hub-v1"), api.can("data.discord-ads") else { return JSON.null }
+                return try await api.request("ad-hub", timeout: 6)
+            }
+            return data["places"].array.map { SuiteAdvertisingPlace(id: record.id.uuidString + "|" + $0["id"].string, name: $0["name"].string + " · " + SuiteConnections.shared.name(record)) }
+        } catch {
+            if RequestFailure.isCancellation(error) { throw error }
+            return []
+        }
+    }
+
 }
 
 struct OpenSuiteToolIntent: AppIntent {
@@ -70,15 +97,23 @@ struct OpenSuiteToolIntent: AppIntent {
     @Parameter(title: "Server") var server: SuiteShortcutServer?
     static var parameterSummary: some ParameterSummary { Summary("\(\.$tool) öffnen") { \.$server } }
     @MainActor func perform() async throws -> some IntentResult {
-        SuiteNavigationInbox.shared.request = SuiteLaunchRequest(tool: SuiteTool(rawValue: tool.rawValue) ?? .overview, connection: server.flatMap { UUID(uuidString: $0.id) })
+        SuiteNavigationInbox.shared.request = SuiteLaunchRequest(tool: SuiteTool(rawValue: tool.rawValue) ?? .overview, connection: try selectedConnection(server))
         return .result()
     }
 }
+@MainActor private func selectedConnection(_ server: SuiteShortcutServer?) throws -> UUID? {
+    guard let server else { return nil }
+    guard let id = UUID(uuidString: server.id), SuiteConnections.shared.values.contains(where: { $0.id == id }) else { throw PanelError(message: "Dieser Serverzugang ist nicht mehr vorhanden. Bitte den Kurzbefehl neu zuordnen.") }
+    return id
+}
+
 struct OpenAdvertisingHubIntent: AppIntent {
     static var title: LocalizedStringResource = "Werbeverwaltung öffnen"
     static var openAppWhenRun = true
+    @Parameter(title: "Server") var server: SuiteShortcutServer?
+    static var parameterSummary: some ParameterSummary { Summary("Werbeverwaltung öffnen") { \.$server } }
     @MainActor func perform() async throws -> some IntentResult {
-        SuiteNavigationInbox.shared.request = SuiteLaunchRequest(tool: .advertising)
+        SuiteNavigationInbox.shared.request = SuiteLaunchRequest(tool: .advertising, connection: try selectedConnection(server))
         return .result()
     }
 }

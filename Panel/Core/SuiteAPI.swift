@@ -11,12 +11,35 @@ struct SuiteConnection: Codable, Identifiable, Equatable {
     var fingerprint: String
     var serverIdentity: String
     var useForModeration = true
+    var displayName: String? = nil
 }
 @MainActor final class SuiteConnections: ObservableObject {
     static let shared = SuiteConnections()
     @Published private(set) var values: [SuiteConnection]
     private let defaults: UserDefaults
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults; values = (try? JSONDecoder().decode([SuiteConnection].self, from: defaults.data(forKey: "adminSuite.connections.v1") ?? Data())) ?? [] }
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        values = (try? JSONDecoder().decode([SuiteConnection].self, from: defaults.data(forKey: "adminSuite.connections.v1") ?? Data())) ?? []
+        if SuiteShortcutDemo.enabled { values = SuiteShortcutDemo.connections }
+    }
+    func name(_ record: SuiteConnection, store: AppStore? = nil) -> String {
+        if let name = record.displayName, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return name }
+        if let store, store.api?.base.absoluteString == record.panel, let server = store.servers.first(where: { $0.id == record.server }) { return server.name }
+        if record.panel.hasPrefix("suite-direct:") { return record.panel.replacingOccurrences(of: "suite-direct:", with: "") }
+        return URL(string: record.endpoint)?.host ?? "Admin Suite"
+    }
+    func rename(_ record: SuiteConnection, name: String) {
+        guard let index = values.firstIndex(where: { $0.id == record.id }) else { return }
+        let clean = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
+        values[index].displayName = clean.isEmpty ? nil : clean; persist()
+    }
+    func rememberServerNames(panel: String, servers: [Server]) {
+        var changed = false
+        for index in values.indices where values[index].panel == panel && (values[index].displayName ?? "").isEmpty {
+            if let server = servers.first(where: { $0.id == values[index].server }) { values[index].displayName = server.name; changed = true }
+        }
+        if changed && !SuiteShortcutDemo.enabled { persist() }
+    }
     func get(_ api: PanelAPI, _ server: Server) -> SuiteConnection? { guard api.amp == nil else { return nil }; return values.first { $0.panel == api.base.absoluteString && $0.server == server.id } }
     func save(_ record: SuiteConnection, token: String) throws {
         try Vault.save(token, id: record.id)
@@ -88,11 +111,13 @@ enum SuiteDevice {
     private(set) var web: JSON = .null
     private var token: String
     private let session: URLSession
+    private let defaultTimeout: TimeInterval
     init(_ connection: SuiteConnection, token: String? = nil, session: URLSession? = nil, demo: Bool = false, timeout: TimeInterval = 110) throws {
         self.demo = demo
+        defaultTimeout = timeout
         self.connection = connection; self.token = try token ?? Vault.read(connection.id)
         let url = try Self.endpoint(connection.endpoint)
-        let config = URLSessionConfiguration.ephemeral; config.timeoutIntervalForRequest = timeout; config.urlCache = nil
+        let config = URLSessionConfiguration.ephemeral; config.timeoutIntervalForRequest = timeout; config.timeoutIntervalForResource = max(timeout, 120); config.waitsForConnectivity = false; config.urlCache = nil
         let validatedPin = try Self.pin(connection.fingerprint)
         self.session = session ?? URLSession(configuration: config, delegate: SuiteTransport(pin: validatedPin, host: url.host ?? ""), delegateQueue: nil)
     }
@@ -107,9 +132,13 @@ enum SuiteDevice {
         guard value.isEmpty || value.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else { throw PanelError(message: "Der SHA-256-Fingerabdruck muss genau 64 Hex-Zeichen enthalten.") }
         return value
     }
-    func request(_ path: String, method: String = "GET", query: [String: String] = [:], body: JSON? = nil) async throws -> JSON {
-        if demo { guard method == "GET" else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }; return SuiteDemo.response(path, query: query) }
-        let data = try await transfer(path, method: method, query: query, body: try body.map { try JSONEncoder().encode($0) }, contentType: "application/json", limit: 8 * 1024 * 1024)
+    func request(_ path: String, method: String = "GET", query: [String: String] = [:], body: JSON? = nil, timeout: TimeInterval? = nil) async throws -> JSON {
+        if demo {
+            guard method == "GET" else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }
+            if SuiteShortcutDemo.enabled, path == "schema", ProcessInfo.processInfo.arguments.contains("--demo-suite-schema-failure") { throw PanelError(message: "Synthetischer Ausfall der Funktionsliste.") }
+            return SuiteDemo.response(path, query: query)
+        }
+        let data = try await transfer(path, method: method, query: query, body: try body.map { try JSONEncoder().encode($0) }, contentType: "application/json", limit: 8 * 1024 * 1024, timeout: timeout)
         return try JSONDecoder().decode(JSON.self, from: data)
     }
     /// Binary GET (ticket attachments), bounded to 16 MiB.
@@ -122,13 +151,14 @@ enum SuiteDevice {
         guard !demo else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }
         return try JSONDecoder().decode(JSON.self, from: try await transfer(path, method: "POST", query: query, body: data, contentType: contentType, limit: 8 * 1024 * 1024))
     }
-    private func transfer(_ path: String, method: String, query: [String: String], body: Data?, contentType: String?, limit: Int) async throws -> Data {
+    private func transfer(_ path: String, method: String, query: [String: String], body: Data?, contentType: String?, limit: Int, timeout: TimeInterval? = nil) async throws -> Data {
         guard !path.contains(".."), !path.contains("://"), !path.contains("?") else { throw PanelError(message: "Ungültiger Suite-Pfad.") }
         var c = URLComponents(url: try Self.endpoint(connection.endpoint).appendingPathComponent("v1").appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         c.queryItems = query.isEmpty ? nil : query.sorted(by: { $0.key < $1.key }).map { URLQueryItem(name: $0.key, value: $0.value) }
         // "+" is literal in URLComponents but a space for the suite's form decoder.
         c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         var request = URLRequest(url: c.url!); request.httpMethod = method; request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization"); request.setValue("application/json", forHTTPHeaderField: "Accept"); request.setValue(SuiteDevice.header, forHTTPHeaderField: "X-Simplex-Device")
+        request.timeoutInterval = timeout ?? defaultTimeout
         if let body { request.httpBody = body; request.setValue(contentType ?? "application/octet-stream", forHTTPHeaderField: "Content-Type") }
         let data: Data
         let response: URLResponse
@@ -139,6 +169,8 @@ enum SuiteDevice {
         }
         catch let error as URLError {
             if Task.isCancelled || error.code == .cancelled { throw CancellationError() }
+            if error.code == .timedOut { throw PanelError(message: "Zeitlimit beim Verbinden mit der Admin Suite erreicht. Prüfe die Erreichbarkeit und versuche es erneut.") }
+            if [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(error.code) { throw PanelError(message: "Admin Suite ist nicht erreichbar. Prüfe Netzwerk, Serveradresse und Port und versuche es erneut.") }
             if [.serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot, .secureConnectionFailed, .cancelled].contains(error.code) { throw PanelError(message: "HTTPS-Verbindung konnte nicht bestätigt werden. Prüfe Adresse, Port und den SHA-256-Fingerabdruck aus /sas app fingerprint. Ein geändertes Zertifikat wird nicht automatisch akzeptiert.") }
             throw error
         }
@@ -185,8 +217,8 @@ enum SuiteDevice {
         return result
     }
     var sessionToken: String { token }
-    func health() async throws -> JSON {
-        let result = try await request("health")
+    func health(timeout: TimeInterval? = nil) async throws -> JSON {
+        let result = try await request("health", timeout: timeout)
         guard result["apiVersion"].int == 1, !result["serverId"].string.isEmpty else { throw PanelError(message: "Diese Adresse liefert keine kompatible Simplex-Admin-Suite-API.") }
         guard connection.serverIdentity.isEmpty || connection.serverIdentity == result["serverId"].string else { throw PanelError(message: "Die Serveridentität hat sich geändert. Kopplung prüfen und bewusst neu einrichten.") }
         limited = result["limited"].bool

@@ -137,7 +137,9 @@ private final class PinnedHTTPTransfer: @unchecked Sendable {
             }
             let timeout = DispatchWorkItem { [weak self] in self?.finish(.failure(URLError(.timedOut))) }
             self.timeout = timeout
-            self.queue.asyncAfter(deadline: .now() + 115, execute: timeout)
+            let requested = self.request.timeoutInterval
+            let seconds = requested.isFinite && requested > 0 ? requested : 110
+            self.queue.asyncAfter(deadline: .now() + seconds, execute: timeout)
             connection.start(queue: self.queue)
         }
     }

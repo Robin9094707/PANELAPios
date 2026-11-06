@@ -27,4 +27,16 @@ final class PinnedHTTPTests: XCTestCase {
         do { _ = try await client(pin: String(repeating: "0", count: 64)).health(); XCTFail("Wrong pin accepted") } catch { XCTAssertTrue(error.localizedDescription.contains("Fingerabdruck") || error.localizedDescription.contains("fingerabdruck")) }
         do { _ = try await client(pin: pin).request("redirect"); XCTFail("Redirect accepted") } catch { XCTAssertTrue(error.localizedDescription.contains("302")) }
     }
+    @MainActor func testPinnedTransferHonoursShortTimeoutAndCancelsPromptly() async throws {
+        let api = try client(pin: pin), started = Date()
+        do { _ = try await api.request("slow", timeout: 0.25); XCTFail("Pinned request ignored its deadline") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("Zeitlimit"), error.localizedDescription) }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.5)
+        let task = Task { try await api.request("slow", timeout: 10) }
+        try await Task.sleep(for: .milliseconds(100))
+        let cancelled = Date(); task.cancel()
+        do { _ = try await task.value; XCTFail("Cancelled pinned request succeeded") }
+        catch { XCTAssertTrue(RequestFailure.isCancellation(error)) }
+        XCTAssertLessThan(Date().timeIntervalSince(cancelled), 1)
+    }
 }

@@ -794,19 +794,7 @@ struct SuiteAdHubLauncher: View {
 
 struct SuiteAdHubConnectionView: View {
     let connection: SuiteConnection
-    @State private var suite: SuiteAPI?
-    @State private var error: String?
     var body: some View {
-        Group {
-            if let suite { SuiteAdHubView(suite: suite) }
-            else { List { if let error { Text(error).foregroundStyle(.secondary) } else { ProgressView("Verbinden …") } }.panelScreen() }
-        }
-        .task {
-            do {
-                let api = try SuiteAPI(connection); let health = try await api.health()
-                if !health["features"].array.contains(.string("ad-hub-v1")) { error = "Diese Admin Suite hat noch keine Werbe-Zentrale (ab 10.5.0)."; return }
-                suite = api
-            } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
-        }
+        SuiteConnectionLoader(connection: connection) { api in SuiteToolDestination(suite: api, tool: .advertising) }
     }
 }

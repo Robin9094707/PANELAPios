@@ -38,6 +38,6 @@ import XCTest
         let place = SuiteAdvertisingPlace(id: UUID().uuidString + "|test_1", name: "Werbung")
         XCTAssertEqual(place.target?.1, "test_1")
         XCTAssertNil(SuiteAdvertisingPlace(id: "invalid|test", name: "Fehler").target)
-        XCTAssertEqual(WhatsNew.releases.first?.version, "4.9.0")
+        XCTAssertNotNil(WhatsNew.release(for: "4.9.0"))
     }
 }

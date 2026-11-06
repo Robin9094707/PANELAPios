@@ -32,6 +32,7 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    SuiteServerShortcuts(query: search)
                     quickMenu
                     if !search.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
@@ -40,9 +41,6 @@ struct HomeView: View {
                                 Button { suiteNavigation.request = SuiteLaunchRequest(tool: tool) } label: { Label(tool.title, systemImage: tool.symbol) }
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading).card()
-                    }
-                    if !suiteConnections.values.filter({ $0.panel.hasPrefix("suite-direct:") }).isEmpty {
-                        VStack(alignment: .leading, spacing: 12) { Label("Direkte Admin-Suite-Zugänge", systemImage: "lock.shield").font(.headline); ForEach(suiteConnections.values.filter { $0.panel.hasPrefix("suite-direct:") }) { record in NavigationLink { SuiteWorkspaceConnectionView(connection: record) } label: { Label(record.panel.replacingOccurrences(of: "suite-direct:", with: "") + " · " + record.endpoint, systemImage: "server.rack") } } }.card()
                     }
                     if let api = store.api {
                         if api.amp != nil { NavigationLink { AMPApplicationsView(api: api) } label: { Label("Python App Runner & AMP-Anwendungen", systemImage: "terminal.fill").frame(maxWidth: .infinity, alignment: .leading).card() }.buttonStyle(.plain) }
@@ -85,7 +83,12 @@ struct HomeView: View {
                 .sheet(isPresented: $suiteTickets) { NavigationStack { SuiteEventInboxView(tickets: true) } }
                 .sheet(isPresented: $adHub) { SuiteAdHubLauncher() }
                 .onOpenURL { url in if url.host == "setup" { _ = setupInbox.open(url); return }; if url.host == "suite-events" || url.host == "suite-diagnostics" { suiteEvents = true }; if url.host == "suite-tickets" { suiteTickets = true }; if url.host == "suite-ad-hub" { adHub = true }; if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
-                .task(id: store.api.map { ObjectIdentifier($0) }) { await store.refresh(); await store.pollPresence() }
+                .task(id: store.api.map { ObjectIdentifier($0) }) {
+                    await store.refresh()
+                    if let api = store.api { suiteConnections.rememberServerNames(panel: api.base.absoluteString, servers: store.servers) }
+                    await store.pollPresence()
+                }
+                .onChange(of: store.servers) { _, servers in if let api = store.api { suiteConnections.rememberServerNames(panel: api.base.absoluteString, servers: servers) } }
         }
     }
     /// Wait for an existing sheet to close before presenting a shortcut. Pending links survive app locking.
