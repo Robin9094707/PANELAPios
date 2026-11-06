@@ -14,7 +14,7 @@ Dieses Fehlerbehebungs-Update benötigt nur die neue App. Die bereits bereitgest
 
 Die neue unsignierte IPA wie bisher mit derselben App-ID und denselben Signierberechtigungen signieren und als Update installieren. Die vorhandene App nicht vorher löschen. Die JAR bleibt 10.6.0. Bei Bedarf kann die bisherige IPA 4.9.0 mit derselben Signierung wieder installiert werden; diese Korrektur verändert keine Serverdaten.
 
-Die Änderungen bleiben im Pull Request und werden nicht automatisch gemergt oder veröffentlicht.
+Die Änderungen wurden über [Pull Request #24](https://github.com/Robin9094707/PANELAPios/pull/24) nach `main` übernommen. Der GitHub-Actions-Release-Lauf baut und prüft diesen Stand vor der Veröffentlichung. Die fertigen Dateien stehen unter [Release 4.9.1](https://github.com/Robin9094707/PANELAPios/releases/tag/app-v4.9.1); bisherige Releases bleiben für einen Rückwechsel verfügbar.
 
 ## Prüfungen
 

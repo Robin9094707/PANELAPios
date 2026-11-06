@@ -1,4 +1,20 @@
-## Aktuelles Update: Panel 4.8.0 / Admin Suite 10.5.0
+## Aktuelles Update: Panel 4.9.1 / Admin Suite 10.6.0
+
+**Feste Schnellzugriffe je Server** öffnen Admin Suite, Werbung, Spieler und Tickets direkt. Servernamen,
+Werkzeuge und ein Standardserver lassen sich anpassen; auch iOS-Kurzbefehle unterstützen ein festes Serverziel.
+Der Verbindungsaufbau endet nach höchstens zwölf Sekunden mit Wiederholen und Abbrechen. Eine ausgefallene
+zusätzliche Funktionsliste blockiert Werbung und andere native Werkzeuge nicht mehr. Das bestehende Design bleibt erhalten.
+
+Das enthaltene Update 4.9.0 / 10.6.0 ergänzt den durchsuchbaren Admin-Werkzeugkatalog mit Favoriten,
+Kurzbefehle für Werbung sowie die Verlaufsverwaltung in App und Web mit Rechteprüfung, Bestätigung und
+wiederherstellbarer Sicherung. Für das App-Fehlerbehebungsupdate von 4.9.0 genügt die neue IPA;
+eine bereits installierte Admin Suite 10.6.0 muss nicht ersetzt werden. SentinelBridge bleibt bei 1.6.0.
+
+[Release und einzelne Downloads](https://github.com/Robin9094707/PANELAPios/releases/tag/app-v4.9.1) ·
+[App-Update 4.9.1](UPDATE-4.9.1.md) · [Gesamtupdate und Rollback](UPDATE-4.9.0.md) ·
+[Suite 10.6.0](Companion/AdminSuite/UPDATE-10.6.0.md).
+
+## Panel 4.8.0 / Admin Suite 10.5.0
 
 **Werbe-Zentrale** statt Self-Bot: Werbe-Orte (Discord-Kanal-Link, Reddit, Planet Minecraft, Facebook-Gruppen, Telegram,
 WhatsApp, X, Serverlisten) mit Link, passend formatiertem Text und Intervall. Ist ein Ort wieder dran, kommt eine
