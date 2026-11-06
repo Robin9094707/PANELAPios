@@ -19,7 +19,7 @@ Für einen eigenen URL-Kurzbefehl den Link im Kontextmenü des Werbe-Orts kopier
 
 ## Aktualisieren
 
-Dieser Pull Request veröffentlicht **keinen Release** und ändert `main` nicht. Die geprüften Dateien stehen als GitHub-Actions-Artefakte am PR: `Panel-unsigned-IPA` und `SimplexAdminSuite-unsigned-plugin`.
+Das Gesamtupdate wurde mit den App-Fehlerkorrekturen aus 4.9.1 über PR #24 nach `main` übernommen. GitHub Actions prüft und veröffentlicht IPA und JAR unter [Release 4.9.1](https://github.com/Robin9094707/PANELAPios/releases/tag/app-v4.9.1). Die ursprünglichen PR-Builds bleiben zusätzlich als Actions-Artefakte verfügbar.
 
 1. Vor dem Austausch die bisherige JAR und ein vollständiges Backup des Suite-Datenordners aufbewahren.
 2. Server geordnet stoppen, `SimplexAdminSuite-10.5.0.jar` durch **SimplexAdminSuite-10.6.0.jar** ersetzen und starten. Nur eine Suite-JAR im Pluginordner lassen. Das Webpanel wird mit aktualisiert.
@@ -29,7 +29,7 @@ API-Schlüssel, App-Benutzer, TLS-Identität, Sitzungen, Einstellungen, Werbe-Or
 
 ## Zurückgehen
 
-Solange der PR nicht gemergt ist, bleibt die veröffentlichte Version 4.8.0 / 10.5.0 unverändert verfügbar. Für ein vollständiges Rollback den Server stoppen, die alte JAR und bei Bedarf den vor dem Update gesicherten Datenordner zurückspielen; anschließend starten. Die bisherige IPA mit derselben Signierung wieder installieren (manche Signierwerkzeuge verlangen bei einer niedrigeren Versionsnummer einen manuellen Austausch). Die App nicht deinstallieren, damit lokale Zugänge erhalten bleiben. Neue `panel://suite`-Links und iOS-Kurzbefehle setzen 4.9.0 voraus.
+Die zuvor veröffentlichte Version 4.8.0 / 10.5.0 bleibt im bisherigen Release unverändert verfügbar. Für ein vollständiges Rollback den Server stoppen, die alte JAR und bei Bedarf den vor dem Update gesicherten Datenordner zurückspielen; anschließend starten. Die bisherige IPA mit derselben Signierung wieder installieren (manche Signierwerkzeuge verlangen bei einer niedrigeren Versionsnummer einen manuellen Austausch). Die App nicht deinstallieren, damit lokale Zugänge erhalten bleiben. Neue `panel://suite`-Links und iOS-Kurzbefehle setzen 4.9.0 voraus.
 
 Versehentlich gelöschte Verlaufsdaten lassen sich unter **Verläufe verwalten → Sicherungen wiederherstellen** ergänzen. Diese Sicherungen ersetzen kein vollständiges Serverbackup. Eine Wiederherstellung überschreibt keine vorhandenen Einträge und bricht bei Überschreitung des jeweiligen Verlaufslimits ab. Anhänge des Staff-Chats bleiben für die Wiederherstellung lokal erhalten; Nachrichten bei Discord werden nicht gelöscht.
 
