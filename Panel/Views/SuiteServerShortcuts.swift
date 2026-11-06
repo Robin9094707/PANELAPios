@@ -27,31 +27,50 @@ struct SuiteServerShortcuts: View {
         }
     }
     func serverCard(_ record: SuiteConnection) -> some View {
-        let title = connections.name(record, store: store)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label(title, systemImage: "server.rack").font(.headline)
-                if preferences.preferred == record.id { Image(systemName: "star.fill").font(.caption).foregroundStyle(.orange).accessibilityLabel("Standardserver") }
-                Spacer()
-                Button("Admin Suite öffnen", systemImage: "chevron.right") { open(.overview, record) }.labelStyle(.iconOnly).accessibilityLabel(title + " · Admin Suite öffnen")
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            serverHeader(record)
             Text(record.endpoint).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
                 ForEach(preferences.tools(for: record.id)) { tool in
-                    Button { open(tool, record) } label: {
-                        Label(tool == .overview ? "Admin Suite" : tool.title, systemImage: tool.symbol)
-                            .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                            .padding(.horizontal, 10).background((tool == .advertising ? Color.orange : Color.panelAccent).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                    }.buttonStyle(.plain).accessibilityLabel(title + " · " + tool.title)
-                        .accessibilityIdentifier("suite-quick-" + record.id.uuidString + "-" + tool.id)
-                        .contextMenu {
-                            Button("Kurzbefehle-Link kopieren", systemImage: "link") { Clipboard.copy(SuiteLaunchRequest(tool: tool, connection: record.id).url.absoluteString) }
-                            Button("Als Standardserver verwenden", systemImage: "star") { preferences.prefer(record.id) }
-                        }
+                    shortcutButton(tool, record: record)
                 }
             }
-            if preferences.tools(for: record.id).isEmpty { Button("Schnellzugriffe auswählen") { editing = true } }
+            if preferences.tools(for: record.id).isEmpty {
+                Button("Schnellzugriffe auswählen") { editing = true }
+            }
         }.card()
+    }
+    func serverHeader(_ record: SuiteConnection) -> some View {
+        let title = connections.name(record, store: store)
+        return HStack {
+            Label(title, systemImage: "server.rack").font(.headline)
+            if preferences.preferred == record.id {
+                Image(systemName: "star.fill").font(.caption).foregroundStyle(.orange).accessibilityLabel("Standardserver")
+            }
+            Spacer()
+            Button("Admin Suite öffnen", systemImage: "chevron.right") { open(.overview, record) }
+                .labelStyle(.iconOnly).accessibilityLabel(title + " · Admin Suite öffnen")
+        }
+    }
+    func shortcutButton(_ tool: SuiteTool, record: SuiteConnection) -> some View {
+        let title = connections.name(record, store: store)
+        let tint: Color = tool == .advertising ? .orange : .panelAccent
+        return Button { open(tool, record) } label: {
+            Label(tool.title, systemImage: tool.symbol)
+                .font(.subheadline.weight(.medium))
+                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                .padding(.horizontal, 10)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title + " · " + tool.title)
+        .accessibilityIdentifier("suite-quick-" + record.id.uuidString + "-" + tool.id)
+        .contextMenu {
+            Button("Kurzbefehle-Link kopieren", systemImage: "link") {
+                Clipboard.copy(SuiteLaunchRequest(tool: tool, connection: record.id).url.absoluteString)
+            }
+            Button("Als Standardserver verwenden", systemImage: "star") { preferences.prefer(record.id) }
+        }
     }
     func open(_ tool: SuiteTool, _ record: SuiteConnection) {
         navigation.request = preferences.request(tool: tool, connection: record.id, records: connections.values)
