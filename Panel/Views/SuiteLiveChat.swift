@@ -41,6 +41,7 @@ struct SuiteLiveChatView: View {
     var body: some View {
         ScrollViewReader { proxy in
             List {
+                if suite.features.contains("history-management-v1") { Section { SuiteHistoryLink(suite: suite, kind: "chat", title: "Serverchat") } }
                 Section { Text(serverHistory ? "Öffentlicher Serverchat · die letzten 50 Nachrichten aller Spieler, auch aus Discord und der App. Der Verlauf bleibt erhalten, bis du ihn mit dem Papierkorb leerst. Private Nachrichten erscheinen hier nicht." : "Öffentlicher Serverchat · die letzten 50 Nachrichten, die diese App empfangen hat. Mit Admin Suite 9.4.0 liefert der Server den vollständigen Verlauf.").font(.caption).foregroundStyle(.secondary) }
                 Section {
                     if rows.isEmpty { Text(loaded ? "Noch keine Chatnachrichten." : "Chat wird geladen …").foregroundStyle(.secondary) }

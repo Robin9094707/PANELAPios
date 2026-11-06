@@ -18,6 +18,19 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "4.9.1", title: "Dein Server. Ein Tipp.", summary: "Feste Server-Schnellzugriffe und zuverlässiges Verbinden – ohne endloses Laden.", items: [
+            WhatsNewItem(symbol: "bolt.fill", title: "Direkt zum richtigen Server", detail: "Jeder gespeicherte Suite-Zugang hat eigene Kacheln für Admin Suite, Werbung, Spieler und Tickets. Ein Tipp öffnet genau diesen Server ohne zusätzliche Auswahl."),
+            WhatsNewItem(symbol: "slider.horizontal.3", title: "Schnellzugriffe anpassen", detail: "Server benennen, Werkzeuge je Server auswählen und einen Standard für allgemeine Zugriffe festlegen. Die bisherigen Kopplungen und Zugangsdaten bleiben erhalten."),
+            WhatsNewItem(symbol: "wifi.exclamationmark", title: "Kein endloses Verbinden", detail: "Kurzes Zeitlimit auch bei gepinnten Zertifikaten, Abbrechen und Wiederholen. Ein Ausfall der zusätzlichen Funktionsliste blockiert die übrigen Werkzeuge nicht mehr."),
+            WhatsNewItem(symbol: "square.stack.3d.up.fill", title: "Kurzbefehle mit Serverzuordnung", detail: "Auch „Werbeverwaltung öffnen“ kann einen festen Server erhalten. Gespeicherte Werbe-Orte werden ohne lange Netzabfrage aufgelöst; Rechte und Intervalle werden weiterhin in der App geprüft.")
+        ]),
+        WhatsNewRelease(version: "4.9.0", title: "Alles schneller erreichen", summary: "Mehr Schnellzugriffe, iOS-Kurzbefehle und alle Admin-Werkzeuge an einem durchsuchbaren Ort – im vertrauten Design.", items: [
+            WhatsNewItem(symbol: "square.grid.2x2.fill", title: "Direkt auf der Startseite", detail: "Admin Suite, Werbung, Tickets, Diagnose, Admin-Log, Verläufe und Staff-Chat sind sofort erreichbar – auch ohne Hosting-Panel. Bei mehreren Zugängen kannst du einen Standard wählen."),
+            WhatsNewItem(symbol: "megaphone.fill", title: "Werbung per Kurzbefehl", detail: "Die Werbeverwaltung oder einen bestimmten Werbe-Ort vom Home-Bildschirm öffnen. „Werbung vorbereiten“ kopiert den aktuellen Text und öffnet den Ort; Pausen, Intervalle und Rechte bleiben gültig."),
+            WhatsNewItem(symbol: "magnifyingglass", title: "Alle Werkzeuge finden", detail: "Ein gemeinsamer Werkzeugkatalog für Admin-Tab und Direktzugänge, nach Aufgaben gruppiert, mit Favoriten und Suche über Werkzeuge, Einstellungen und weitere Funktionen."),
+            WhatsNewItem(symbol: "archivebox.fill", title: "Verläufe sicher aufräumen", detail: "Admin-Log, Ereignisse, Werbe-Verlauf, Staff-Chat und Serverchat durchsuchen, einzelne oder mehrere Einträge löschen und Verläufe leeren – in App und Web. Vor jeder Löschung entsteht eine wiederherstellbare Sicherung."),
+            WhatsNewItem(symbol: "arrow.uturn.backward", title: "Einfach aktualisieren", detail: "App-Zugänge, Einstellungen und Werbe-Timer bleiben erhalten. Das Webpanel kommt mit der JAR.")
+        ]),
         WhatsNewRelease(version: "4.8.0", title: "Werbe-Zentrale", summary: "Statt automatisch zu posten erinnert dich Bark, wenn du wieder werben darfst. Ein Tipp kopiert den passenden Text und öffnet Discord, Reddit, Planet Minecraft, Facebook & Co. – du musst nur noch einfügen.", items: [
             WhatsNewItem(symbol: "megaphone.fill", title: "Alle Werbe-Orte an einem Platz", detail: "Discord-Kanal-Link, Subreddit, Planet-Minecraft-Seite, Facebook-Gruppe, Telegram, WhatsApp, X oder Serverliste – jeweils mit Werbetext und wie oft du dort posten darfst (z. B. alle 6 Std)."),
             WhatsNewItem(symbol: "bell.badge.fill", title: "Bark-Erinnerung", detail: "Ist ein Ort wieder dran, kommt eine Bark-Mitteilung. Tippen öffnet die App, kopiert den Text in die Zwischenablage und öffnet direkt den Discord-Kanal in der Discord-App bzw. die Seite."),

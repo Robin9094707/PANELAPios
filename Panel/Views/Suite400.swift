@@ -200,6 +200,7 @@ struct SuiteSetupRedeemView: View {
             let reply = try await api.redeem(code: link.code)
             let health = try await api.health()
             record.serverIdentity = health["serverId"].string.isEmpty ? reply["serverId"].string : health["serverId"].string
+            record.displayName = server?.name ?? (link.name.isEmpty ? record.displayName : link.name)
             try SuiteConnections.shared.save(record, token: api.sessionToken)
             if protect { store.biometricLock = true }
             Feedback.success(); finished = true; text = ""
@@ -330,16 +331,15 @@ struct SuiteNameplatesView: View {
 struct SuiteConnectionLoader<Content: View>: View {
     let connection: SuiteConnection
     @ViewBuilder let content: (SuiteAPI) -> Content
-    @State private var suite: SuiteAPI?
-    @State private var error: String?
+    @StateObject private var loader = SuiteWorkspaceLoadModel()
     var body: some View {
-        Group {
-            if let suite { content(suite) }
-            else if let error { ContentUnavailableView("Admin Suite nicht erreichbar", systemImage: "wifi.exclamationmark", description: Text(error)) }
-            else { ProgressView("Verbinden …").frame(maxWidth: .infinity, maxHeight: .infinity) }
-        }.task(id: connection.id) {
-            do { let api = try SuiteAPI(connection); _ = try await api.health(); suite = api } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
-        }
+        ZStack {
+            if let api = loader.api { content(api) }
+            else { List {
+                if loader.loading { ProgressView("Verbinden …"); Button("Abbrechen", role: .cancel) { loader.cancel() } }
+                else { Text(loader.error ?? "Verbindung noch nicht hergestellt."); Button("Erneut versuchen") { Task { await loader.load(connection, tool: .advertising) } } }
+            }.panelScreen() }
+        }.task(id: connection.id) { await loader.load(connection, tool: .advertising) }.onDisappear { loader.cancel() }
     }
 }
 

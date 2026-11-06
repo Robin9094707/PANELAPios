@@ -72,6 +72,10 @@ struct SuiteDirectDashboard: View {
         List {
             Section { Label(health["name"].string.isEmpty ? connection.endpoint : health["name"].string, systemImage: "server.rack"); Text("Admin Suite " + health["version"].string).font(.caption).foregroundStyle(.secondary) }
             if let suite {
+                Section("Schnellzugriffe") {
+                    NavigationLink { SuiteToolDirectoryView(suite: suite, actions: actions) } label: { Label("Alle Werkzeuge & Einstellungen", systemImage: "square.grid.2x2.fill") }
+                    if suite.features.contains("ad-hub-v1") { NavigationLink { SuiteAdHubView(suite: suite) } label: { Label("Werbe-Zentrale", systemImage: "megaphone.fill") }.disabled(!suite.can("data.discord-ads")) }
+                }
                 Section("Verwaltung") {
                     NavigationLink { SuiteUpgradeView(suite: suite) } label: { Label("Zugänge & Serverregeln", systemImage: "person.badge.key.fill") }
                     NavigationLink { SuiteTicketsView(suite: suite) } label: { Label("Tickets", systemImage: "ticket.fill") }.disabled(!suite.can("data.tickets"))
@@ -93,7 +97,17 @@ struct SuiteDirectDashboard: View {
             .sheet(isPresented: $login, onDismiss: { Task { await load() } }) { SuiteDirectLoginView(existing: connection) }
             .confirmationDialog("Lokalen Zugang entfernen?", isPresented: $remove) { Button("Entfernen", role: .destructive) { SuiteConnections.shared.remove(connection); dismiss() } }
     }
-    func load() async { do { let current = SuiteConnections.shared.values.first { $0.id == connection.id } ?? connection; let api = try SuiteAPI(current); health = try await api.health(); actions = try await api.request("schema")["actions"].array.map { SuiteAction(data: $0) }; suite = api; error = nil } catch { suite = nil; self.error = error.localizedDescription } }
+    func load() async {
+        do {
+            let current = SuiteConnections.shared.values.first { $0.id == connection.id } ?? connection
+            let api = try SuiteAPI(current)
+            health = try await SuiteNavigationDeadline.run(seconds: 12) { try await api.health(timeout: 12) }
+            try Task.checkCancellation(); suite = api; error = nil
+            if let schema = try? await SuiteNavigationDeadline.run(seconds: 8, operation: { try await api.request("schema", timeout: 8) }) {
+                actions = schema["actions"].array.map { SuiteAction(data: $0) }
+            }
+        } catch { suite = nil; self.error = RequestFailure.isCancellation(error) ? "Verbindung abgebrochen. Bitte erneut versuchen." : error.localizedDescription }
+    }
 }
 
 struct SuiteDirectEvents: View {
@@ -101,17 +115,20 @@ struct SuiteDirectEvents: View {
     @StateObject private var model: SuiteUpgradeModel
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteUpgradeModel(suite)) }
     var body: some View {
-        List(model.data["items"].array, id: \.["id"].string) { row in
+        List {
+            if suite.features.contains("history-management-v1") { SuiteHistoryLink(suite: suite, kind: "events", title: "Serverereignisse") }
+            ForEach(model.data["items"].array, id: \.["id"].string) { row in
             VStack(alignment: .leading, spacing: 6) { Text(row["title"].string).font(.headline); Text(row["body"].string).font(.subheadline); if suite.can("action.events.ack") { NavigationLink("Alarm bestätigen") { SuiteActionView(suite: suite, action: .make("events.ack", "Alarm bestätigen"), preset: ["id": row["id"]]) } } }
+        }
         }.panelScreen().navigationTitle("Serverereignisse").task { await model.load("events") }.refreshable { await model.load("events") }.errorAlert($model.error)
     }
 }
 struct SuiteDirectInbox: View {
     let connection: SuiteConnection
     let tickets: Bool
-    @State private var suite: SuiteAPI?
-    @State private var error: String?
     var body: some View {
-        Group { if let suite { if tickets { SuiteTicketsView(suite: suite) } else { SuiteDirectEvents(suite: suite) } } else { ProgressView("Verbinden …") } }.task { do { let api = try SuiteAPI(connection); _ = try await api.health(); suite = api } catch { self.error = error.localizedDescription } }.errorAlert($error)
+        SuiteConnectionLoader(connection: connection) { suite in
+            if tickets { SuiteTicketsView(suite: suite) } else { SuiteDirectEvents(suite: suite) }
+        }
     }
 }

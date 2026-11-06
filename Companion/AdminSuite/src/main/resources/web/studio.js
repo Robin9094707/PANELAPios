@@ -329,7 +329,12 @@
     }
     function search() {
       var q = input.value.trim().toLowerCase();
-      results = items.filter(function (it) { return !q || (it.label + " " + it.group).toLowerCase().indexOf(q) >= 0; }).slice(0, 8);
+      results = items.filter(function (it) { return !q || (S.workspaceMatches ? S.workspaceMatches(q, it.label + " " + it.group) : (it.label + " " + it.group).toLowerCase().indexOf(q) >= 0); }).slice(0, 8);
+      if (q) {
+        results.push({ label: "Werkzeuge & Funktionen: " + q, group: "Überall suchen", icon: "grid", href: "#/tools?q=" + encodeURIComponent(q) });
+        if (S.has("ad-hub-v1") && S.can("data.discord-ads")) results.push({ label: "Werbung durchsuchen: " + q, group: "Werbung", icon: "send", href: "#/ad-hub?q=" + encodeURIComponent(q) });
+        if (S.has("history-management-v1")) results.push({ label: "Verläufe durchsuchen", group: "Protokolle & Chat", icon: "list", href: "#/histories" });
+      }
       active = 0; draw();
       clearTimeout(t);
       if (q.length >= 2 && S.can("data.players")) t = setTimeout(async function () {

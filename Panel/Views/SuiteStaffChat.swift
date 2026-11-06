@@ -17,10 +17,11 @@ import UniformTypeIdentifiers
     var you: String { info["you"].string }
     func load(reset: Bool = false) async {
         do {
-            let data = try await suite.data("staff-chat", query: ["after": String(reset ? 0 : cursor)])
+            let data = try await suite.data("staff-chat", query: ["after": String(reset ? 0 : cursor), "epoch": info["epoch"].string])
+            let changed = data["epoch"] != info["epoch"]
             info = data
             let fresh = data["items"].array
-            if reset || cursor == 0 { items = fresh }
+            if reset || cursor == 0 || changed { items = fresh }
             else { let known = Set(items.map { $0["id"].string }); items += fresh.filter { !known.contains($0["id"].string) } }
             if items.count > 400 { items = Array(items.suffix(400)) }
             cursor = data["cursor"].int; error = nil
@@ -104,7 +105,9 @@ struct SuiteStaffChatView: View {
                 .task(id: scenePhase) { await poll(proxy) }
         }
         .navigationTitle("Staff-Chat").navigationBarTitleDisplayMode(.inline).errorAlert($model.error)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Staff-Chat einstellen", systemImage: "gearshape") { settings = true }.disabled(suite.scope != "full") } }
+        .toolbar {
+            if suite.features.contains("history-management-v1") { ToolbarItem(placement: .topBarTrailing) { SuiteHistoryLink(suite: suite, kind: "staff-chat", title: "Staff-Chat") } }
+            ToolbarItem(placement: .topBarTrailing) { Button("Staff-Chat einstellen", systemImage: "gearshape") { settings = true }.disabled(suite.scope != "full") } }
         .sheet(isPresented: $settings, onDismiss: { Task { await model.load(reset: true) } }) { NavigationStack { SuiteStaffChatSettingsView(suite: suite) } }
         .sheet(isPresented: $importing) { filePicker }
         .onChange(of: photos) { _, items in Task { await sendPhotos(items) } }

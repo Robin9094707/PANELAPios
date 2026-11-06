@@ -13,6 +13,9 @@ struct HomeView: View {
     @State private var suiteTickets = false
     @State private var adHub = false
     @State private var search = ""
+    @ObservedObject private var suiteNavigation = SuiteNavigationInbox.shared
+    @State private var suiteRequest: SuiteLaunchRequest?
+    @State private var shortcutHelp = false
     @State private var editLayout = false
     @State private var iconRevision = 0
     @State private var quickHub = false
@@ -29,8 +32,15 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if !suiteConnections.values.filter({ $0.panel.hasPrefix("suite-direct:") }).isEmpty {
-                        VStack(alignment: .leading, spacing: 12) { Label("Direkte Admin-Suite-Zugänge", systemImage: "lock.shield").font(.headline); ForEach(suiteConnections.values.filter { $0.panel.hasPrefix("suite-direct:") }) { record in NavigationLink { SuiteDirectDashboard(connection: record) } label: { Label(record.panel.replacingOccurrences(of: "suite-direct:", with: "") + " · " + record.endpoint, systemImage: "server.rack") } } }.card()
+                    SuiteServerShortcuts(query: search)
+                    quickMenu
+                    if !search.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Werkzeuge & Einstellungen", systemImage: "magnifyingglass").font(.headline)
+                            ForEach(SuiteTool.allCases.filter { $0.matches(search) }) { tool in
+                                Button { suiteNavigation.request = SuiteLaunchRequest(tool: tool) } label: { Label(tool.title, systemImage: tool.symbol) }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading).card()
                     }
                     if let api = store.api {
                         if api.amp != nil { NavigationLink { AMPApplicationsView(api: api) } label: { Label("Python App Runner & AMP-Anwendungen", systemImage: "terminal.fill").frame(maxWidth: .infinity, alignment: .leading).card() }.buttonStyle(.plain) }
@@ -39,7 +49,7 @@ struct HomeView: View {
                     } else { hero; welcome }
                 }.padding(.bottom, 60).padding(22).frame(maxWidth: 1100).frame(maxWidth: .infinity)
             }.panelScreen().navigationTitle("Panel").navigationBarTitleDisplayMode(.inline)
-                .searchable(text: $search, prompt: "Server suchen")
+                .searchable(text: $search, prompt: "Server, Werkzeuge & Einstellungen suchen")
                 .refreshable { iconRevision += 1; await store.refresh(); await store.refreshPresence() }.scrollBounceBehavior(.always)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
@@ -58,7 +68,10 @@ struct HomeView: View {
                 }
                 .navigationDestination(for: Server.self) { server in if let api = store.api { ServerView(api: api, server: server).id("\(store.selected?.uuidString ?? "demo")-\(server.id)") } }
                 .sheet(isPresented: $editLayout) { DashboardEditor(scope: .home, layoutKey: layoutKey).environmentObject(workspace) }
-                .sheet(isPresented: $quickHub) { SuiteQuickHubView().environmentObject(store) }
+                .sheet(isPresented: $quickHub) { SuiteWorkspaceLauncher(request: SuiteLaunchRequest()) }
+                .sheet(item: $suiteRequest) { SuiteWorkspaceLauncher(request: $0).id($0.id) }
+                .task(id: suiteNavigation.request?.id) { await receiveSuiteShortcut() }
+                .sheet(isPresented: $shortcutHelp) { NavigationStack { SuiteShortcutHelpView().toolbar { Button("Fertig") { shortcutHelp = false } } } }
                 .sheet(isPresented: $redeemSetup) { SuiteSetupRedeemView().environmentObject(store) }
                 .sheet(item: $setupInbox.link) { link in SuiteSetupRedeemView(initial: link).environmentObject(store) }
                 .sheet(isPresented: $add) { AddPanelView() }
@@ -70,8 +83,25 @@ struct HomeView: View {
                 .sheet(isPresented: $suiteTickets) { NavigationStack { SuiteEventInboxView(tickets: true) } }
                 .sheet(isPresented: $adHub) { SuiteAdHubLauncher() }
                 .onOpenURL { url in if url.host == "setup" { _ = setupInbox.open(url); return }; if url.host == "suite-events" || url.host == "suite-diagnostics" { suiteEvents = true }; if url.host == "suite-tickets" { suiteTickets = true }; if url.host == "suite-ad-hub" { adHub = true }; if url.host == "transfers" { transfers = true }; if url.host == "widgets" { widgets = true } }
-                .task(id: store.api.map { ObjectIdentifier($0) }) { await store.refresh(); await store.pollPresence() }
+                .task(id: store.api.map { ObjectIdentifier($0) }) {
+                    await store.refresh()
+                    if let api = store.api { suiteConnections.rememberServerNames(panel: api.base.absoluteString, servers: store.servers) }
+                    await store.pollPresence()
+                }
+                .onChange(of: store.servers) { _, servers in if let api = store.api { suiteConnections.rememberServerNames(panel: api.base.absoluteString, servers: servers) } }
         }
+    }
+    /// Wait for an existing sheet to close before presenting a shortcut. Pending links survive app locking.
+    func receiveSuiteShortcut() async {
+        guard let request = suiteNavigation.request else { return }
+        suiteRequest = nil
+        add = false; directSuite = false; settings = false; transfers = false; widgets = false
+        suiteEvents = false; suiteTickets = false; adHub = false; editLayout = false
+        quickHub = false; redeemSetup = false; shortcutHelp = false; setupInbox.link = nil
+        do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+        guard suiteNavigation.request?.id == request.id else { return }
+        suiteRequest = request
+        suiteNavigation.request = nil
     }
     func isBedrockOnly(_ server: Server) -> Bool {
         let container = server.data["container"]["image"].string.lowercased()
@@ -120,7 +150,7 @@ struct HomeView: View {
             TransferDashboardCard { transfers = true }
         case .welcome: hero
         case .suitePulse: SuitePulseCard { quickHub = true }
-        case .quickMenu: quickMenu
+        case .quickMenu: EmptyView() // The quick menu is always visible above the configurable cards.
         case .folders: pinnedFolders(api)
         case .servers: serverList
         case .fleet:
@@ -157,7 +187,14 @@ struct HomeView: View {
     /// 4.0 app menu on the start page: the most used places one tap away.
     var quickMenu: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 10)], spacing: 10) {
-            quickTile("Admin", "shield.lefthalf.filled", Color.panelAccent) { quickHub = true }
+            quickTile("Admin Suite", "shield.lefthalf.filled", Color.panelAccent) { suiteNavigation.request = SuiteLaunchRequest() }
+            quickTile("Werbung", "megaphone.fill", .orange) { suiteNavigation.request = SuiteLaunchRequest(tool: .advertising) }
+            quickTile("Tickets", "ticket.fill", .mint) { suiteNavigation.request = SuiteLaunchRequest(tool: .tickets) }
+            quickTile("Diagnose", "waveform.path.ecg", .green) { suiteNavigation.request = SuiteLaunchRequest(tool: .diagnostics) }
+            quickTile("Admin-Log", "list.bullet.clipboard.fill", .red) { suiteNavigation.request = SuiteLaunchRequest(tool: .adminLog) }
+            quickTile("Verläufe", "archivebox.fill", .indigo) { suiteNavigation.request = SuiteLaunchRequest(tool: .histories) }
+            quickTile("Staff-Chat", "bubble.left.and.text.bubble.right.fill", .teal) { suiteNavigation.request = SuiteLaunchRequest(tool: .staffChat) }
+            quickTile("Kurzbefehle", "square.stack.3d.up.fill", .purple) { shortcutHelp = true }
             quickTile("Übertragungen", "arrow.up.arrow.down.circle.fill", .blue) { transfers = true }
             quickTile("Widgets", "square.grid.2x2.fill", .orange) { widgets = true }
             quickTile("Setup-Link", "link.badge.plus", .indigo) { redeemSetup = true }

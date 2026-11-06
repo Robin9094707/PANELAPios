@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Loopback-only synthetic TLS endpoint for iOS transport tests. No real server data."""
-import http.server, ssl, json
+import http.server, ssl, json, time
 from pathlib import Path
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version='HTTP/1.1'
@@ -8,6 +8,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.headers.get('Authorization')!='Bearer synthetic-tls-token':
             self.reply(401,{'message':'Synthetic key missing'});return
         if self.path=='/v1/health':self.reply(200,{'serverId':'synthetic-tls-server','apiVersion':1,'scope':'read','version':'8.3.0'})
+        elif self.path=='/v1/slow':time.sleep(2);self.reply(200,{'synthetic':True})
         elif self.path=='/v1/redirect':self.reply(302,{'message':'Must never follow'},location='https://never-contact.example.invalid/steal')
         else:self.reply(404,{'message':'Synthetic route missing'})
     def reply(self,status,data,location=None):

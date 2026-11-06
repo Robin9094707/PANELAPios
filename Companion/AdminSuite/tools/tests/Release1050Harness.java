@@ -285,6 +285,7 @@ public final class Release1050Harness {
             check(Release1020Harness.call(client, base, "/v1/ad-hub", watcher, Map.of("operation", "place.snooze", "id", place, "minutes", 60)).statusCode() == 200, "and snooze");
             check(Release1020Harness.call(client, base, "/v1/ad-hub", watcher, Map.of("operation", "settings.save", "repeatMinutes", 0)).statusCode() == 403, "settings need the manage right");
             check(Release1020Harness.call(client, base, "/v1/ad-hub", owner, Map.of("operation", "explode")).statusCode() == 400, "unknown operation");
+            Release1060Harness.run(client, base, plugin, api, owner, watcher, viewer);
             plugin.adHub.stop();
             plugin.adHub = null;
             check(Release1020Harness.call(client, base, "/v1/ad-hub", owner, null).statusCode() == 503, "clear 503 when the Werbe-Zentrale is off");

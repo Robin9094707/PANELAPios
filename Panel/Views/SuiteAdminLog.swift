@@ -65,6 +65,7 @@ struct SuiteAdminLogView: View {
     }
     var body: some View {
         List {
+            if suite.features.contains("history-management-v1") { Section { SuiteHistoryLink(suite: suite, kind: "admin-log", title: "Admin-Log") } }
             Section {
                 HStack(spacing: 14) {
                     ZStack { Circle().fill(LinearGradient(colors: [Color.panelAccent, Color.panelSecondary], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 48, height: 48); Image(systemName: "list.bullet.clipboard.fill").font(.title3).foregroundStyle(.white) }

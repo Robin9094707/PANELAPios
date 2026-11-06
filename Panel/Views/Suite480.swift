@@ -316,6 +316,11 @@ struct AdHubItem: Identifiable { let id: String; let json: JSON }
 
 struct SuiteAdHubView: View {
     let suite: SuiteAPI
+    var initialPlace: String? = nil
+    var prepareOnOpen = false
+    @State private var handledInitialPlace = false
+    @State private var search = ""
+    @State private var posting = false
     @State private var data: JSON = .null
     @State private var error: String?
     @State private var notice: String?
@@ -327,7 +332,7 @@ struct SuiteAdHubView: View {
     @State private var filter = "all"
     private var canManage: Bool { data["canManage"].bool }
     private var canPost: Bool { data["canPost"].bool }
-    private var places: [JSON] { data["places"].array.filter { filter == "all" || $0["platform"].string == filter } }
+    private var places: [JSON] { data["places"].array.filter { (filter == "all" || $0["platform"].string == filter) && SuiteSearch.matches(search, in: $0["name"].string + " " + $0["platform"].string + " " + $0["link"].string + " " + $0["note"].string) } }
     var body: some View {
         List {
             if data == .null { Section { ProgressView("Werbe-Zentrale laden …") } }
@@ -345,6 +350,7 @@ struct SuiteAdHubView: View {
         }
         .panelScreen()
         .navigationTitle("Werbe-Zentrale")
+        .searchable(text: $search, prompt: "Werbe-Orte, Texte & Verlauf suchen")
         .toolbar { if canManage { ToolbarItem(placement: .topBarTrailing) { Button { newPlace = true } label: { Label("Werbe-Ort hinzufügen", systemImage: "plus") } } } }
         .task { await load() }
         .task { while !Task.isCancelled { try? await Task.sleep(for: .seconds(30)); if !Task.isCancelled && editing == nil && !newPlace && editingText == nil && !newText { await load() } } }
@@ -410,6 +416,8 @@ struct SuiteAdHubView: View {
             Menu { ForEach([(15, "15 Min"), (30, "30 Min"), (60, "1 Std"), (180, "3 Std"), (360, "6 Std"), (1440, "1 Tag")], id: \.0) { item in Button(item.1) { Task { await run(["operation": .string("place.snooze"), "id": place["id"], "minutes": .number(Double(item.0))]) } } } } label: { Label("Später erinnern", systemImage: "clock.arrow.circlepath") }
             if place["undoable"].bool { Button { Task { await run(["operation": .string("place.undo"), "id": place["id"]]) } } label: { Label("Letztes „Geworben“ zurücknehmen", systemImage: "arrow.uturn.backward") } }
         }
+        Button { Clipboard.copy(SuiteLaunchRequest(tool: .advertising, connection: suite.connection.id, place: place["id"].string, prepareAd: true).url.absoluteString) } label: { Label("Kurzbefehle-Link: Werbung vorbereiten", systemImage: "link.badge.plus") }
+        Button { Clipboard.copy(SuiteLaunchRequest(tool: .advertising, connection: suite.connection.id, place: place["id"].string).url.absoluteString) } label: { Label("Kurzbefehle-Link: Ort verwalten", systemImage: "link") }
         Button { if let url = URL(string: place["link"].string) { UIApplication.shared.open(url) } } label: { Label("Nur öffnen", systemImage: "safari") }
         Button { Clipboard.copy(place["link"].string) } label: { Label("Link kopieren", systemImage: "link") }
         if canManage {
@@ -422,7 +430,7 @@ struct SuiteAdHubView: View {
     }
     private var textsSection: some View {
         Section {
-            ForEach(data["texts"].array, id: \.["id"].string) { text in
+            ForEach(data["texts"].array.filter { SuiteSearch.matches(search, in: $0["name"].string + " " + $0["content"].string) }, id: \.["id"].string) { text in
                 Button { if canManage { editingText = AdHubItem(id: text["id"].string, json: text) } else { Clipboard.copy(text["content"].string) } } label: { SuiteAdHubTextRow(text: text) }
                     .contextMenu {
                         Button { Clipboard.copy(text["content"].string) } label: { Label("Text kopieren", systemImage: "doc.on.doc") }
@@ -434,8 +442,9 @@ struct SuiteAdHubView: View {
     }
     private var logSection: some View {
         Section("Verlauf") {
+            if suite.features.contains("history-management-v1") { SuiteHistoryLink(suite: suite, kind: "advertising", title: "Werbe-Verlauf") }
             if data["log"].array.isEmpty { Text("Noch nichts passiert.").foregroundStyle(.secondary) }
-            ForEach(Array(data["log"].array.prefix(15).enumerated()), id: \.offset) { item in
+            ForEach(Array(data["log"].array.filter { SuiteSearch.matches(search, in: $0["text"].string) }.prefix(40).enumerated()), id: \.offset) { item in
                 VStack(alignment: .leading, spacing: 2) { Text(item.element["text"].string).font(.subheadline); Text(AdsFormat.date(item.element["time"].double)).font(.caption2).foregroundStyle(.secondary) }
             }
         }
@@ -446,7 +455,15 @@ struct SuiteAdHubView: View {
         AdHubCache.store(overview, serverId: overview["serverId"].string)
     }
     private func load() async {
-        do { apply(try await suite.request("ad-hub")) }
+        do {
+            apply(try await suite.request("ad-hub"))
+            if let initialPlace, !handledInitialPlace {
+                handledInitialPlace = true
+                guard let place = data["places"].array.first(where: { $0["id"].string == initialPlace }) else { error = "Dieser Werbe-Ort wurde gelöscht oder ist nicht verfügbar."; return }
+                if prepareOnOpen { await post(place, force: false) }
+                else { search = place["name"].string }
+            }
+        }
         catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
     }
     private func run(_ body: [String: JSON]) async {
@@ -458,6 +475,10 @@ struct SuiteAdHubView: View {
         } catch { self.error = error.localizedDescription }
     }
     private func post(_ place: JSON, force: Bool) async {
+        guard !posting else { return }
+        guard canPost else { error = "Für diesen Werbe-Ort fehlt der Schreibzugriff."; return }
+        guard place["enabled"].bool else { error = "Dieser Werbe-Ort ist pausiert. Bitte zuerst fortsetzen."; return }
+        posting = true; defer { posting = false }
         do {
             let result = try await suite.post("ad-hub", ["operation": .string("place.post"), "id": place["id"], "force": .bool(force)])
             apply(result["overview"])
@@ -768,37 +789,12 @@ struct SuiteAdHubTextEditor: View {
 // MARK: - Launcher for panel://suite-ad-hub (Bark link without a signed place)
 
 struct SuiteAdHubLauncher: View {
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            List {
-                let connections = SuiteConnections.shared.values
-                if connections.isEmpty { Text("Noch keine Admin Suite verbunden.").foregroundStyle(.secondary) }
-                ForEach(connections) { record in
-                    NavigationLink { SuiteAdHubConnectionView(connection: record) } label: { Label(record.panel.hasPrefix("suite-direct:") ? record.panel.replacingOccurrences(of: "suite-direct:", with: "") + " · " + record.endpoint : record.endpoint, systemImage: "megaphone.fill") }
-                }
-            }
-            .panelScreen().navigationTitle("Werbe-Zentrale")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
-        }
-    }
+    var body: some View { SuiteWorkspaceLauncher(request: SuiteLaunchRequest(tool: .advertising)) }
 }
 
 struct SuiteAdHubConnectionView: View {
     let connection: SuiteConnection
-    @State private var suite: SuiteAPI?
-    @State private var error: String?
     var body: some View {
-        Group {
-            if let suite { SuiteAdHubView(suite: suite) }
-            else { List { if let error { Text(error).foregroundStyle(.secondary) } else { ProgressView("Verbinden …") } }.panelScreen() }
-        }
-        .task {
-            do {
-                let api = try SuiteAPI(connection); let health = try await api.health()
-                if !health["features"].array.contains(.string("ad-hub-v1")) { error = "Diese Admin Suite hat noch keine Werbe-Zentrale (ab 10.5.0)."; return }
-                suite = api
-            } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
-        }
+        SuiteConnectionLoader(connection: connection) { api in SuiteToolDestination(suite: api, tool: .advertising) }
     }
 }

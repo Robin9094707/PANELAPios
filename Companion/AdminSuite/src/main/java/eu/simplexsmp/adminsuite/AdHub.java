@@ -245,7 +245,7 @@ final class AdHub {
             for (Object h : list(m.get("history"))) if (h instanceof Map<?, ?>) p.history.add(map(h));
             if (!p.id.isEmpty()) places.put(p.id, p);
         }
-        for (Object o : list(root.get("log"))) if (o instanceof Map<?, ?>) log.addLast(map(o));
+        for (Object o : list(root.get("log"))) if (o instanceof Map<?, ?>) { Map<String,Object> row = new LinkedHashMap<>(map(o)); row.putIfAbsent("id", java.util.UUID.randomUUID().toString()); log.addLast(row); }
         migration = map(root.get("migration"));
         // A crash between migration and cleanup would leave the old token file behind: finish the cleanup now.
         if (legacy != null) cleanLegacy(legacy);
@@ -700,8 +700,15 @@ final class AdHub {
         while (p.history.size() > HISTORY) p.history.remove(p.history.size() - 1);
     }
 
+    synchronized List<Map<String, Object>> historySnapshot() { return HistoryApi.copies(log); }
+    synchronized void historyReplace(List<Map<String, Object>> items) throws IOException {
+        List<Map<String, Object>> old = HistoryApi.copies(log);
+        log.clear(); items.stream().sorted(Comparator.comparingLong(HistoryApi::time).reversed()).forEach(r -> log.addLast(new LinkedHashMap<>(r)));
+        try { persist(); } catch (IOException e) { log.clear(); log.addAll(old); throw e; }
+    }
+
     private void log(String kind, String text) {
-        log.addFirst(SimplexAdminSuite.appMap("time", clock.getAsLong(), "kind", kind, "text", clip(text, 300)));
+        log.addFirst(SimplexAdminSuite.appMap("id", java.util.UUID.randomUUID().toString(), "time", clock.getAsLong(), "kind", kind, "text", clip(text, 300)));
         while (log.size() > LOG) log.removeLast();
     }
 

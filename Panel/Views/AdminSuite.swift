@@ -25,10 +25,10 @@ import SwiftUI
             let client: SuiteAPI
             if let existing = api, existing.connection == record, !force { client = existing }
             else { client = try SuiteAPI(record, token: panel.demo ? "" : nil, demo: panel.demo) }
-            let status = try await client.health()
+            let status = try await SuiteNavigationDeadline.run(seconds: 12) { try await client.health(timeout: 12) }
             try Task.checkCancellation()
             if api !== client || actions.isEmpty {
-                actions = try await client.request("schema")["actions"].array.map { SuiteAction(data: $0) }
+                actions = (try? await SuiteNavigationDeadline.run(seconds: 8) { try await client.request("schema", timeout: 8) })?["actions"].array.map { SuiteAction(data: $0) } ?? []
             }
             try Task.checkCancellation()
             health = status; api = client; error = nil; loadedAt = Date()
@@ -183,7 +183,7 @@ struct SuiteConnectionView: View {
         do {
             let url = try SuiteAPI.endpoint(endpoint); let pin = try SuiteAPI.pin(fingerprint)
             guard passwordLogin || ((token.hasPrefix("sas_") || token.hasPrefix("sasu_")) && token.count <= 160 && !token.contains(where: \.isWhitespace)) else { throw PanelError(message: "Gib den mit /sas app create erzeugten App-Schlüssel ein.") }
-            var record = SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: url.absoluteString, fingerprint: pin, serverIdentity: "")
+            var record = SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: url.absoluteString, fingerprint: pin, serverIdentity: "", displayName: server.name)
             if let existing { record.id = existing.id; record.useForModeration = existing.useForModeration }
             let api = try SuiteAPI(record, token: passwordLogin ? "" : token)
             if passwordLogin {
@@ -206,7 +206,7 @@ struct SuiteConnectionView: View {
         busy = true; defer { busy = false }
         do {
             let url = try SuiteAPI.endpoint(endpoint)
-            var record = SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: url.absoluteString, fingerprint: "", serverIdentity: "")
+            var record = SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: url.absoluteString, fingerprint: "", serverIdentity: "", displayName: server.name)
             if let existing { record.id = existing.id; record.useForModeration = existing.useForModeration }
             let api = try SuiteAPI(record, token: "")
             try await finish(api, record, try await api.exchange(code: code))
