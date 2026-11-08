@@ -1576,6 +1576,21 @@ final class OpenAiIntegration implements Listener {
     throw new IllegalStateException("KI-Anfrage fehlgeschlagen.");
   }
 
+  String assistantTranscribe(byte[] audio,String extension) throws Exception {
+    String model=plugin.getConfig().getString(AiAdmin.ROOT+"transcription-model","gpt-transcribe");
+    if(model==null||!model.matches("[A-Za-z0-9._-]{1,100}"))throw new IllegalArgumentException("Ungültiges Transkriptionsmodell.");
+    String boundary="Simplex"+UUID.randomUUID().toString().replace("-","");
+    String type=extension.equals("webm")?"audio/webm":"audio/mp4";
+    String before="--"+boundary+"\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n"+model
+        +"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"file\"; filename=\"recording."+extension
+        +"\"\r\nContent-Type: "+type+"\r\n\r\n";
+    HttpRequest.BodyPublisher body=HttpRequest.BodyPublishers.concat(
+        HttpRequest.BodyPublishers.ofString(before),HttpRequest.BodyPublishers.ofByteArray(audio),
+        HttpRequest.BodyPublishers.ofString("\r\n--"+boundary+"--\r\n"));
+    String response=post("/v1/audio/transcriptions",body,"multipart/form-data; boundary="+boundary,Duration.ofSeconds(55));
+    return AiAdmin.text(AppApiManager.object(DiscordBotManager.Json.parse(response)),"text");
+  }
+
   static boolean reasoningModel(String model) {
     return model != null
         && model.toLowerCase(Locale.ROOT).matches("(?:gpt-[56](?:[.-].*)?|o[1-4](?:-.*)?)");
@@ -1661,6 +1676,10 @@ final class OpenAiIntegration implements Listener {
   }
 
   private String post(String path, String payload, Duration timeout) throws Exception {
+    return post(path,HttpRequest.BodyPublishers.ofString(payload,StandardCharsets.UTF_8),"application/json",timeout);
+  }
+
+  private String post(String path,HttpRequest.BodyPublisher payload,String type,Duration timeout) throws Exception {
     String key = normalizeApiKey(apiKey);
     String validation = apiKeyValidationError(key);
     if (!validation.isEmpty())
@@ -1669,15 +1688,14 @@ final class OpenAiIntegration implements Listener {
         HttpRequest.newBuilder(URI.create("https://api.openai.com" + path))
             .timeout(timeout)
             .header("Authorization", "Bearer " + key)
-            .header("Content-Type", "application/json")
+            .header("Content-Type", type)
             .header("User-Agent", "SimplexAdminSuite/7.15.1");
     String organization =
         optionalHeaderValue(plugin.getConfig().getString("openai.organization-id", ""));
     String project = optionalHeaderValue(plugin.getConfig().getString("openai.project-id", ""));
     if (!organization.isBlank()) builder.header("OpenAI-Organization", organization);
     if (!project.isBlank()) builder.header("OpenAI-Project", project);
-    HttpRequest request =
-        builder.POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8)).build();
+    HttpRequest request = builder.POST(payload).build();
     HttpResponse<String> response =
         http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
     if (response.statusCode() < 200 || response.statusCode() >= 300) {

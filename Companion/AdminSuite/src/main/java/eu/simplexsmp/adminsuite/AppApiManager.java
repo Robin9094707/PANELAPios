@@ -235,7 +235,7 @@ final class AppApiManager {
                     case "/v1/data/app-settings"->onMain(rev,()->AppSettings.data(plugin));
                     case "/v1/data/staff-tasks"->onMain(rev,()->plugin.appStaffTasks());
                     case "/v1/data/setup-info"->onMain(rev,()->SimplexAdminSuite.appMap("fingerprint",fingerprint,"publicAddress",plugin.getConfig().getString("app-api.public-address",""),"port",plugin.getConfig().getInt("app-api.port",39093),"name",serverName));
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1","admin-log-v1","staff-chat-v1","setup-links-v1","quiet-hours-v1","nameplates-v1","app-settings-v1","staff-tasks-v1","accounts-v2","sessions-v1","mfa-v1","passkeys-v1","web-panel-v1","admin-log-v2","web-push-v1","web-prefs-v1","account-rename-v1","public-name-v1","luckperms-v1","lands-v1","nameplates-v2","access-locks-v1","player-rights-v1","luckperms-v2","changelog-v1","bans-sources-v2","permission-catalog-v2","command-rights-v1","luckperms-v3","live-switches-v1","diagnostics-v1","lag-map-v1","spark-v1","crash-manager-v1","player-connection-v1","command-rights-v2","world-trim-v1","discord-status-designer-v1","scoreboard-designer-v1","player-dossier-v1","bridge-v3","bark-test-v1","ad-hub-v1","history-management-v1","player-nbt-summary-v1","shortcut-preferences-v1","plugin-stage-v2","admin-assistant-v1","diagnostics-v3"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis(),
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1","admin-log-v1","staff-chat-v1","setup-links-v1","quiet-hours-v1","nameplates-v1","app-settings-v1","staff-tasks-v1","accounts-v2","sessions-v1","mfa-v1","passkeys-v1","web-panel-v1","admin-log-v2","web-push-v1","web-prefs-v1","account-rename-v1","public-name-v1","luckperms-v1","lands-v1","nameplates-v2","access-locks-v1","player-rights-v1","luckperms-v2","changelog-v1","bans-sources-v2","permission-catalog-v2","command-rights-v1","luckperms-v3","live-switches-v1","diagnostics-v1","lag-map-v1","spark-v1","crash-manager-v1","player-connection-v1","command-rights-v2","world-trim-v1","discord-status-designer-v1","scoreboard-designer-v1","player-dossier-v1","bridge-v3","bark-test-v1","ad-hub-v1","history-management-v1","player-nbt-summary-v1","shortcut-preferences-v1","plugin-stage-v2",AiAdmin.FEATURE,AiAdmin.CHAT_FEATURE,"diagnostics-v3"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis(),
                         "account",SimplexAdminSuite.appMap("kind",key.id().startsWith("user:")?"user":"key","username",key.id().startsWith("user:")?key.label():"","owner",key.id().startsWith("user:")&&security.users.owner(key.label()),"manager",accounts.manager(key),"mfa",key.id().startsWith("user:")&&security.users.mfa(key.label()),"canMigrate",!key.id().startsWith("user:")&&key.scope().equals("full")&&security.users.ownerName().isEmpty()),"web",SimplexAdminSuite.appMap("domain",accounts.domain(),"url",accounts.webUrl(),"passkeys",!accounts.rpId().isEmpty()));
                     case "/v1/data/access"->{if(!key.scope().equals("full"))throw new ApiError(403,"Benutzerverwaltung benötigt full-Zugriff");yield SimplexAdminSuite.appMap("items",security.users.list(),"catalog",permissionCatalog(),"presets",rolePresets());}
                     case "/v1/data/links"->SimplexAdminSuite.appMap("items",plugin.accountLinks.store.all().stream().map(l->SimplexAdminSuite.appMap("player",l.minecraft().toString(),"name",l.name(),"discord",l.discord(),"linkedAt",l.linkedAt())).toList());
@@ -574,17 +574,24 @@ final class AppApiManager {
         java.util.function.BooleanSupplier owner=()->user?security.users.owner(key.label()):
             key.scope().equals("full")&&key.id().equals(plugin.getConfig().getString(AiAdmin.ROOT+"owner-api-key-id",""));
         return new AiAdmin.Actor(id,key.label(),()->security.valid(key)&&!security.locked(key),owner,
-            right->user&&security.users.allows(key,right),()->key.scope().equals("full"));
+            right->user&&security.users.allows(key,right),()->key.scope().equals("full"),
+            user?id+"-"+security.users.created(key.label()):id);
     }
     private void assistantRoute(HttpExchange x,AppApiSecurity.Key key,String path,String method,long rev)throws Exception{
         AiAdmin ai=plugin.aiAdmin;
         if(ai==null)throw new ApiError(503,"KI-Assistent nicht geladen.");
         AiAdmin.Actor actor=assistantActor(key);
+        if(path.equals("/v1/assistant/transcribe")){
+            if(!method.equals("POST"))throw new ApiError(405,"Methode nicht erlaubt.");
+            String type=String.valueOf(x.getRequestHeaders().getFirst("Content-Type")).split(";")[0].trim().toLowerCase(Locale.ROOT);
+            send(x,200,ai.transcribe(actor,type,x.getRequestBody()));return;
+        }
         Object result;
         if(method.equals("GET")){
             var q=query(x.getRequestURI());
             result=switch(path){
                 case "/v1/assistant/status"->ai.status(actor);
+                case "/v1/assistant/chats"->ai.chats(actor,q.getOrDefault("id",""));
                 case "/v1/assistant/job"->ai.view(actor,q.getOrDefault("id",""));
                 case "/v1/assistant/inbox"->ai.inbox(actor);
                 case "/v1/assistant/limits"->ai.limits(actor,null);
@@ -594,7 +601,8 @@ final class AppApiManager {
             Map<String,Object> in=body(x,8192);
             String id=AiAdmin.text(in,"id");
             result=switch(path){
-                case "/v1/assistant/ask"->Map.of("id",ai.submit(actor,AiAdmin.text(in,"question")),"status","running");
+                case "/v1/assistant/ask"->Map.of("id",ai.submit(actor,AiAdmin.text(in,"question"),AiAdmin.text(in,"chat")),"status","running");
+                case "/v1/assistant/chats"->ai.changeChat(actor,AiAdmin.text(in,"operation"),id,AiAdmin.text(in,"title"),(int)AiAdmin.number(in.get("days")));
                 case "/v1/assistant/choose"->Map.of("id",ai.choose(actor,id,(int)AiAdmin.number(in.get("index"))),"status","running");
                 case "/v1/assistant/summarize"->Map.of("id",ai.summarize(actor,id),"status","running");
                 case "/v1/assistant/approve"->onMain(rev,()->ai.approve(actor,id,Boolean.TRUE.equals(in.get("confirmed")),AiAdmin.text(in,"revision"),AiAdmin.actionIds(in.get("actions"))));

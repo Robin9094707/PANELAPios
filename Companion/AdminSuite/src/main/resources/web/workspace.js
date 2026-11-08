@@ -136,22 +136,163 @@
 
   P.assistant = async function (param, query, alive) {
     var status = await S.api("assistant/status"); if (!alive()) return;
+    var threaded = S.has("admin-assistant-chat-v1"), fromStaff = query && query.get("from") === "staff";
+    var chat = null, chats = [], pending = "", currentJob = "", draft = null, draftUrl = "", recorded = false;
+    var stream = null, recorder = null, recorderTimer = null;
+    var timeline = h("div", { class: "msgs", role: "log", "aria-label": "KI-Chatverlauf" });
+    var chatList = h("select", { class: "input", "aria-label": "KI-Chat auswählen" });
+    var chatControls = h("div", { class: "assistant-chat-controls row wrap" });
+    var audioControls = h("div", { class: "assistant-audio row wrap" });
     var owner = status.owner === true, result = null, busy = false, outcomes = [], selected = new Set(), summary = "";
     var answer = h("div", { class: "stack", "aria-live": "polite" });
     var inbox = h("div", { class: "stack" }), settings = h("div", { class: "stack" });
-    var input = h("textarea", { class: "input", maxlength: 2000, rows: 4, placeholder: "Was soll die KI für diesen Server prüfen?", "aria-label": "Deine Frage" });
-    var send = S.btn("Fragen", { kind: "primary", icon: "send", disabled: !status.available, onClick: function () {
-      var question = input.value.trim(); if (!question || busy) return;
-      return run(async function () { await poll(await S.api("assistant/ask", { body: { question: question } })); });
+    var input = h("textarea", { class: "input", maxlength: 2000, rows: threaded ? 1 : 4, placeholder: threaded ? "Nachricht an die KI …" : "Was soll die KI für diesen Server prüfen?", "aria-label": "Deine Frage" });
+    var send = S.btn(threaded ? "" : "Fragen", { kind: "primary", icon: "send", title: "Nachricht senden", disabled: !status.available, onClick: function () {
+      var question = input.value.trim(); if (!question || question.length > 2000 || busy || recorder) return;
+      return run(async function () {
+        if (threaded && !chat) await createChat();
+        var job = await S.api("assistant/ask", { body: { question: question, chat: chat ? chat.id : "" } });
+        if (!alive()) return;
+        if (input.value.trim() === question) input.value = "";
+        discardAudio();
+        pending = question; renderTimeline();
+        try { await poll(job); }
+        finally { pending = ""; renderTimeline(); }
+      });
     } });
+    input.addEventListener("keydown", function (event) {
+      if (threaded && event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); send.click(); }
+    });
+    input.addEventListener("input", function () {
+      if (!threaded) return;
+      input.style.height = "auto"; input.style.height = Math.min(144, input.scrollHeight + 2) + "px";
+    });
     var usage = h("small", { class: "muted" });
     function updateUsage() { usage.textContent = owner ? "Hauptadmin · ohne Tageslimit" : "Heute genutzt: " + status.used + " / " + status.limit; }
     updateUsage();
     async function run(work) {
       if (busy || !alive()) return;
-      busy = true; send.disabled = true;
+      busy = true; send.disabled = true; chatList.disabled = true;
       try { await work(); } catch (e) { if (alive()) S.toast(e.message, "err"); }
-      finally { if (alive()) { busy = false; send.disabled = !status.available; } }
+      finally {
+        if (alive()) {
+          busy = false; send.disabled = !status.available || !!recorder;
+          if (threaded) drawAudio();
+        }
+      }
+    }
+    function renderTimeline() {
+      if (!threaded || !alive()) return;
+      S.clear(timeline);
+      var rows = chat && chat.items || [];
+      function bubble(text, mine, at, job) {
+        var stamp = at ? new Date(Number(at)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+        var extra = !mine && text && "speechSynthesis" in window ? S.btn("Vorlesen", { size: "sm", onClick: function () {
+          if (window.speechSynthesis.speaking) { window.speechSynthesis.cancel(); return; }
+          var utterance = new SpeechSynthesisUtterance(text);
+          window.speechSynthesis.speak(utterance);
+        } }) : null;
+        var live = !mine && job && job !== currentJob && Date.now() - Number(at) < 20 * 60000;
+        var details = live ? S.btn("Antwortdetails", { size: "sm", onClick: function () {
+          return run(async function () {
+            result = await S.api("assistant/job", { query: { id: job } }); outcomes = result.results || []; summary = "";
+            draw(); answer.scrollIntoView({ block: "nearest" });
+          });
+        } }) : null;
+        return h("div", { class: "msg" + (mine ? " mine" : "") }, h("div", { class: "bubble" },
+          h("div", { class: "by" }, h("span", { text: mine ? "Du" : "Simplex KI" })),
+          h("p", { text: text || "Keine Textantwort" }),
+          h("div", { class: "row wrap" }, h("time", { class: "stamp", text: stamp }), extra, details)));
+      }
+      rows.forEach(function (turn) { timeline.append(bubble(turn.question, true, turn.at), bubble(turn.answer, false, turn.at, turn.job)); });
+      if (pending) timeline.append(bubble(pending, true));
+      if (!rows.length && !pending) timeline.append(S.empty("sparkles", "Dein privater KI-Chat", "Stelle eine Frage oder nimm eine Sprachnachricht auf."));
+      timeline.scrollTop = timeline.scrollHeight;
+    }
+    function chatChange(operation, id, title, days) {
+      return S.api("assistant/chats", { body: { operation: operation, id: id || "", title: title || "", days: days || 0 } });
+    }
+    async function loadChats() {
+      var data = await S.api("assistant/chats"); if (!alive()) return;
+      chats = data.items || [];
+      S.clear(chatList); chatList.append(h("option", { value: "", text: "Chat auswählen …" }));
+      chats.forEach(function (row) { chatList.append(h("option", { value: row.id, text: row.title })); });
+      chatList.value = chat ? chat.id : "";
+    }
+    async function loadChat(id) {
+      var row = await S.api("assistant/chats", { query: { id: id } }); if (!alive()) return;
+      chat = row; chatList.value = row.id; renderTimeline();
+    }
+    function resetChat(keepInput) {
+      chat = null; result = null; currentJob = ""; pending = ""; outcomes = []; summary = "";
+      if (!keepInput) { input.value = ""; discardAudio(); }
+      draw(); renderTimeline();
+    }
+    async function createChat() {
+      var row = await chatChange("create"); if (!alive()) return;
+      resetChat(true); await loadChat(row.id); await loadChats();
+    }
+    chatList.addEventListener("change", function () {
+      var id = chatList.value;
+      if (busy || recorder) { chatList.value = chat ? chat.id : ""; return; }
+      run(async function () { resetChat(false); if (id) await loadChat(id); });
+    });
+    function disposeRecorder() {
+      clearTimeout(recorderTimer); recorderTimer = null;
+      if (stream) stream.getTracks().forEach(function (track) { track.stop(); });
+      stream = null; recorder = null;
+    }
+    function discardAudio() {
+      if (draftUrl) URL.revokeObjectURL(draftUrl);
+      draftUrl = ""; draft = null; recorded = false;
+      if (alive()) drawAudio();
+    }
+    async function record() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) throw new Error("Mikrofonaufnahme braucht HTTPS und einen Browser mit Audioaufnahme.");
+      var format = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find(function (type) { return MediaRecorder.isTypeSupported(type); });
+      if (!format) throw new Error("Der Browser unterstützt kein passendes Audioformat.");
+      var microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!alive()) { microphone.getTracks().forEach(function (track) { track.stop(); }); return; }
+      stream = microphone;
+      try {
+        recorder = new MediaRecorder(stream, { mimeType: format, audioBitsPerSecond: 64000 });
+        var active = recorder, chunks = [];
+        active.ondataavailable = function (event) { if (event.data.size) chunks.push(event.data); };
+        active.onerror = function () { disposeRecorder(); if (alive()) { S.toast("Aufnahme fehlgeschlagen.", "err"); drawAudio(); } };
+        active.onstop = function () {
+          disposeRecorder();
+          if (!alive()) return;
+          var blob = new Blob(chunks, { type: format.split(";")[0] });
+          if (!blob.size || blob.size > 4 * 1024 * 1024) { S.toast("Aufnahme leer oder größer als 4 MiB.", "err"); drawAudio(); return; }
+          draft = blob; draftUrl = URL.createObjectURL(blob); drawAudio();
+        };
+        active.start();
+        recorderTimer = setTimeout(function () { if (active.state === "recording") active.stop(); }, 120000);
+      } catch (error) { disposeRecorder(); throw error; }
+    }
+    function drawAudio() {
+      chatList.disabled = busy || !!recorder;
+      send.disabled = busy || !status.available || !!recorder;
+      S.clear(audioControls);
+      if (recorder) {
+        audioControls.append(h("span", { class: "muted", text: "Aufnahme läuft · max. 2 Minuten" }), S.btn("Stopp", { onClick: function () {
+          if (recorder && recorder.state === "recording") recorder.stop();
+        } }));
+      } else if (draft) {
+        audioControls.append(h("audio", { controls: true, preload: "metadata", src: draftUrl, "aria-label": "Aufnahme anhören" }),
+          S.btn(recorded ? "Transkribiert" : "Transkribieren", { disabled: busy || recorded || !status.available, onClick: function () { return run(async function () {
+            var reply = await S.api("assistant/transcribe", { body: draft, type: draft.type, timeout: 65000 });
+            if (!alive()) return;
+            var value = input.value.trim() ? input.value + "\n" + reply.text : reply.text;
+            if (value.length > 2000) throw new Error("Kürze zuerst den Entwurf, damit der gesprochene Text hineinpasst.");
+            input.value = value; recorded = true; input.focus();
+            status = await S.api("assistant/status", { quiet: true }); if (alive()) updateUsage();
+          }); } }),
+          S.btn("Aufnahme verwerfen", { size: "sm", disabled: busy, onClick: discardAudio }),
+          h("small", { class: "muted", text: "Die Aufnahme wird beim Transkribieren an OpenAI übermittelt." }));
+      } else {
+        audioControls.append(S.btn("Aufnehmen", { size: "sm", icon: "mic", disabled: busy || !status.available, onClick: function () { return run(record); } }));
+      }
     }
     async function poll(job) {
       outcomes = []; summary = "";
@@ -159,7 +300,9 @@
       for (var i = 0; i < 64 && alive(); i++) {
         var row = await S.api("assistant/job", { query: { id: job.id }, quiet: true }); if (!alive()) return;
         if (row.status !== "running") {
-          result = row; draw(); status = await S.api("assistant/status", { quiet: true }); updateUsage();
+          result = row; currentJob = row.id;
+          if (chat) { pending = ""; await loadChat(chat.id); await loadChats(); }
+          draw(); status = await S.api("assistant/status", { quiet: true }); if (alive()) updateUsage();
           if (owner) await loadInbox();
           return;
         }
@@ -185,7 +328,8 @@
       S.clear(answer); selected.clear();
       var r = result; if (!r) return;
       var detail = h("div", { class: "stack" });
-      if (r.answer) detail.appendChild(h("div", { style: { whiteSpace: "pre-wrap" }, text: r.answer }));
+      var alreadyShown = chat && (chat.items || []).some(function (turn) { return turn.job === r.id; });
+      if (r.answer && !alreadyShown) detail.appendChild(h("div", { style: { whiteSpace: "pre-wrap" }, text: r.answer }));
       if (r.sources && r.sources.length) detail.appendChild(h("small", { class: "muted", text: "Datenquellen · " + r.sources.join(", ") }));
       if (r.summary || summary) detail.appendChild(h("details", { open: !!summary }, h("summary", { text: "KI-Kurzfassung" }), h("p", { text: summary || r.summary })));
       if (r.choices && r.choices.length && status.available && r.status === "ready") detail.appendChild(h("div", { class: "row wrap" }, r.choices.map(function (text, index) {
@@ -193,7 +337,7 @@
       })));
       if (r.players) detail.appendChild(h("div", { class: "row wrap" }, r.players.map(function (p) { return h("a", { class: "btn sm", href: "#/player/" + encodeURIComponent(p.id), text: p.name }); })));
       (r.rejected || []).forEach(function (message) { detail.appendChild(S.notice(message, "warn")); });
-      answer.appendChild(S.card("Antwort", { icon: "sparkles" }, detail));
+      if (detail.childNodes.length) answer.appendChild(S.card(alreadyShown ? "Antwortdetails" : "Antwort", { icon: "sparkles" }, detail));
       if ((r.actions || []).length) {
         var approve = S.btn("Auswahl bestätigen", { kind: "danger", disabled: true, onClick: function () { return change("approve"); } });
         var checks = [];
@@ -255,14 +399,49 @@
           await S.api("assistant/limits", { body: { account: account.value, limit: limit.value } }); await loadLimits();
         }); } })));
     }
-    S.title("KI-Assistent", "Gezielt nachsehen und Schreibaktionen zur Freigabe vorlegen");
-    S.mount(h("div", { class: "stack" }, S.card("Serverassistent", { icon: "sparkles" }, h("div", { class: "stack" },
-      status.available ? null : S.notice("KI ist deaktiviert oder der OpenAI-Schlüssel fehlt. Die manuellen Werkzeuge sind erreichbar.", "warn"),
-      input, h("div", { class: "row wrap" }, send, usage),
-      h("div", { class: "row wrap" }, ["Gab es letzte Nacht Vorfälle im Chat?", "Wann waren Admins zuletzt im Vanish?", "Welche Tickets sind offen?"].map(function (example) {
-        return S.btn(example, { size: "sm", onClick: function () { input.value = example; input.focus(); } });
-      })))), answer, owner ? S.card("Offene Freigaben", { icon: "list" }, inbox) : null, owner ? S.card("Tageslimits", { icon: "settings" }, settings) : null));
-    if (owner) await Promise.all([loadInbox(), loadLimits()]);
+    var examples = h("div", { class: "row wrap" }, ["Gab es letzte Nacht Vorfälle im Chat?", "Wann waren Admins zuletzt im Vanish?", "Welche Tickets sind offen?"].map(function (example) {
+      return S.btn(example, { size: "sm", onClick: function () { input.value = example; input.focus(); } });
+    }));
+    S.title("KI-Assistent", threaded ? "Privater Chat für diesen Server" : "Gezielt nachsehen und Schreibaktionen zur Freigabe vorlegen",
+      fromStaff ? h("a", { class: "btn ghost", href: "#/staff-chat", text: "Zum Staff-Chat" }) : null);
+    var availability = status.available ? null : S.notice("KI ist deaktiviert oder der OpenAI-Schlüssel fehlt.", "warn");
+    var chatUI;
+    if (threaded) {
+      chatControls.append(chatList, S.btn("Neuer Chat", { icon: "plus", onClick: function () {
+        if (recorder) return;
+        return run(async function () { resetChat(false); await createChat(); });
+      } }), S.btn("Chat einstellen", { icon: "settings", onClick: function () {
+        if (!chat || recorder) return;
+        return run(async function () {
+          var name = await S.prompt("Chatname", "Name dieses privaten Chats", chat.title, "Weiter");
+          if (name === null || !alive()) return;
+          var days = await S.prompt("Automatisch löschen", "Tage seit letzter Aktivität · 0 (aus), 1, 7 oder 30", String(chat.days), "Speichern");
+          if (days === null || !alive()) return;
+          if (!/^(0|1|7|30)$/.test(days.trim())) throw new Error("Bitte 0, 1, 7 oder 30 eingeben.");
+          var row = await chatChange("update", chat.id, name, Number(days));
+          if (!alive()) return;
+          if (row.expired) resetChat(false); else await loadChat(row.id);
+          await loadChats();
+        });
+      } }), S.btn("Löschen", { icon: "trash", onClick: function () {
+        if (!chat || recorder) return;
+        return run(async function () {
+          if (!(await S.confirm("Privaten Chat löschen?", "Verlauf und offene Vorschläge dieses Chats werden entfernt.", "Löschen", true)) || !alive()) return;
+          await chatChange("delete", chat.id); if (!alive()) return;
+          resetChat(false); await loadChats(); if (owner) await loadInbox();
+        });
+      } }));
+      chatUI = S.card(null, { cls: "pad-0 chat-card" }, chatControls, availability,
+        h("div", { class: "chat assistant-chat" }, timeline, audioControls,
+          h("div", { class: "composer" }, input, send)), h("div", { class: "assistant-chat-footer stack" }, usage, examples));
+      S.onLeave = function () { disposeRecorder(); discardAudio(); if ("speechSynthesis" in window) window.speechSynthesis.cancel(); };
+      drawAudio();
+    } else {
+      chatUI = S.card("Serverassistent", { icon: "sparkles" }, h("div", { class: "stack" }, availability, input, h("div", { class: "row wrap" }, send, usage), examples));
+    }
+    S.mount(h("div", { class: "stack" }, chatUI, answer, owner ? S.card("Offene Freigaben", { icon: "list" }, inbox) : null, owner ? S.card("Tageslimits", { icon: "settings" }, settings) : null));
+    if (threaded) { await loadChats(); if (alive() && chats.length) await loadChat(chats[0].id); else renderTimeline(); }
+    if (owner && alive()) await Promise.all([loadInbox(), loadLimits()]);
   };
 
   var dashboard = P.dashboard;

@@ -29,6 +29,7 @@ final class AppUsers {
     static String derive(String password,String salt){PBEKeySpec spec=new PBEKeySpec(password.toCharArray(),Base64.getDecoder().decode(salt),ITERATIONS,256);try{return Base64.getEncoder().encodeToString(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded());}catch(Exception e){throw new IllegalStateException(e);}finally{spec.clearPassword();}}
     static void checkPassword(String password){if(password==null||password.length()<12||password.length()>256)throw new IllegalArgumentException("Passwort: 12–256 Zeichen");}
     synchronized boolean exists(String name){return state.containsKey("u."+name+".hash");}
+    synchronized String created(String name){return state.getProperty("u."+name+".created","0");}
     synchronized Set<String> permissions(String name){return Set.copyOf(Arrays.asList(state.getProperty("u."+name+".permissions","").split(",")));}
     synchronized boolean enabled(String name){return exists(name)&&Boolean.parseBoolean(state.getProperty("u."+name+".enabled","true"));}
     synchronized boolean owner(String name){return exists(name)&&Boolean.parseBoolean(state.getProperty("u."+name+".owner","false"));}

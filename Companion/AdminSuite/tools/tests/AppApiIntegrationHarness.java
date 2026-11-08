@@ -149,7 +149,10 @@ public final class AppApiIntegrationHarness {
                 Map.of("kind","world","fields",List.of(Map.of("name","world","value","fixture-world"),Map.of("name","field","value","time"),Map.of("name","value","value","12000"))),
                 Map.of("kind","world","fields",List.of(Map.of("name","world","value","fixture-world"),Map.of("name","field","value","time"),Map.of("name","value","value","18000"))),
                 Map.of("kind","restart","fields",List.of(Map.of("name","seconds","value","600")))));
-        },()->true);
+        },()->true,(audio,extension)->{
+            if(audio.length!=16||!extension.equals("m4a"))throw new IllegalArgumentException("Unexpected audio fixture");
+            return "Eine Audiofrage für Simplex";
+        });
         long oldTime=worldTime.get();
         try{
             api.security.users.save("assistant-staff","assistant-fixture-password",Set.of("ai.assistant.use","data.worlds","action.world.update"),true);
@@ -178,6 +181,43 @@ public final class AppApiIntegrationHarness {
             check(AiAdmin.objects(remaining.get("actions"),6).size()==1,"unchecked action remains pending");
             String remainder=json(Map.of("id",id,"confirmed",true,"revision",AiAdmin.text(remaining,"revision"),"actions",List.of(second)));
             check(call("/v1/assistant/approve",full.token(),remainder).statusCode()==200&&worldTime.get()==18000,"remaining action requires its own approval");
+            String path="/v1/assistant/chats";
+            check(call(path,null,null).statusCode()==401,"chat list requires authentication");
+            var created=call(path,staff,json(Map.of("operation","create","title","Privat","days",7)));
+            check(created.statusCode()==200,"staff can start an isolated private chat");
+            String chat=AiAdmin.text(object(DiscordBotManager.Json.parse(created.body())),"id"), chatUrl=path+"?id="+chat;
+            check(call(chatUrl,full.token(),null).statusCode()==404,"owner cannot read other staff conversations");
+            String marker="Unverwechselbarer-Folgekontext";
+            assistantChatAsk(staff,chat,marker);
+            check(call(chatUrl,staff,null).body().contains(marker),"conversation persisted before answer becomes ready");
+            assistantChatAsk(staff,chat,"Und morgen?");
+            check(context.get().contains(marker),"follow-up reuses the same chat context");
+            String secondChat=AiAdmin.text(object(DiscordBotManager.Json.parse(call(path,staff,json(Map.of("operation","create"))).body())),"id");
+            String secondJob=assistantChatAsk(staff,secondChat,"Andere Frage");
+            check(!context.get().contains(marker),"separate chat excludes history from the first");
+            check(call(path,staff,json(Map.of("operation","delete","id",secondChat))).statusCode()==200,"private chat can be deleted");
+            check(call("/v1/assistant/job?id="+secondJob,full.token(),null).statusCode()==404,"deleting a chat cancels open proposals");
+            var store=new AiConversations(plugin.getDataFolder().toPath().resolve("assistant-chats"),plugin.getLogger());
+            var actor=new AiAdmin.Actor("user-assistant-staff","assistant-staff",()->true,()->false,"ai.assistant.use"::equals,()->true,"user-assistant-staff-"+api.security.users.created("assistant-staff"));
+            var hidden=store.open(actor,chat);
+            check(!json(hidden).contains("Fixture")&&json(hidden).contains(marker),"reopened chat persists with answer rights rechecked");
+            check(store.context(actor,chat,new HashSet<>()).isEmpty(),"revoked sources cannot leak via remembered context");
+            Path persisted=plugin.getDataFolder().toPath().resolve("assistant-chats").resolve(AppApiSecurity.hash(actor.storageId())+"-"+chat+".properties");
+            Properties stored=new Properties();try(var reader=Files.newBufferedReader(persisted)){stored.load(reader);}
+            Map<String,Object> oldChat=new LinkedHashMap<>(object(DiscordBotManager.Json.parse(stored.getProperty("chat"))));
+            oldChat.put("at",1L);stored.setProperty("chat",json(oldChat));AtomicState.save(persisted,stored,"expired fixture");
+            store.cleanup();check(!Files.exists(persisted)&&call(chatUrl,staff,null).statusCode()==404,"auto-delete removes expired transcript file");
+            byte[] audio=new byte[16];audio[4]='f';audio[5]='t';audio[6]='y';audio[7]='p';
+            check(transcribe(null,"audio/mp4",audio).statusCode()==401,"anonymous voice upload rejected");
+            check(transcribe(staff,"text/plain",audio).statusCode()==415,"unsupported recording rejected");
+            check(transcribe(staff,"audio/mp4",new byte[16]).statusCode()==400,"corrupt recording rejected");
+            var transcript=transcribe(staff,"audio/mp4",audio);
+            check(transcript.statusCode()==200&&transcript.body().contains("Eine Audiofrage"),"authenticated voice input returns editable transcript through the provider boundary");
+            String orphan=AiAdmin.text(object(DiscordBotManager.Json.parse(call(path,staff,json(Map.of("operation","create"))).body())),"id");
+            api.security.users.delete("assistant-staff");
+            api.security.users.save("assistant-staff","assistant-fixture-password",Set.of("ai.assistant.use"),true);
+            String newStaff=api.security.users.createSession("assistant-staff",System.currentTimeMillis(),3600_000L,Map.of());
+            check(call(path+"?id="+orphan,newStaff,null).statusCode()==404,"a recreated username cannot inherit the old account's chat");
             var audit=Map.<String,Object>of("time",500L,"action","Vanish aktiviert","adminName","Fixture");
             check(AiAdmin.select(List.of(audit),"Vanish",400,600,5,"time","action","adminName").size()==1,"admin log time and names resolve correctly");
             check(AiAdmin.redact("connect 192.168.1.1 with sk-proj-example-secret").equals("connect [IP entfernt] with [Schlüssel entfernt]"),"IP and key redaction");
@@ -197,4 +237,23 @@ public final class AppApiIntegrationHarness {
         }finally{worldTime.set(oldTime);plugin.aiAdmin.stop();plugin.aiAdmin=null;plugin.getConfig().set(AiAdmin.ROOT+"owner-api-key-id",null);}
     }
 
+
+    private static String assistantChatAsk(String token,String chat,String question)throws Exception{
+        var response=call("/v1/assistant/ask",token,json(Map.of("question",question,"chat",chat)));
+        check(response.statusCode()==200,"threaded question accepted");
+        String job=AiAdmin.text(object(DiscordBotManager.Json.parse(response.body())),"id");
+        for(int attempt=0;attempt<40;attempt++){
+            var row=object(DiscordBotManager.Json.parse(call("/v1/assistant/job?id="+job,token,null).body()));
+            if("ready".equals(row.get("status")))return job;
+            if("failed".equals(row.get("status")))break;
+            Thread.sleep(25);
+        }
+        throw new AssertionError("Threaded job did not complete.");
+    }
+    private static HttpResponse<String> transcribe(String token,String type,byte[] audio)throws Exception{
+        var builder=HttpRequest.newBuilder(base.resolve("/v1/assistant/transcribe")).timeout(java.time.Duration.ofSeconds(10))
+            .header("Content-Type",type).POST(HttpRequest.BodyPublishers.ofByteArray(audio));
+        if(token!=null)builder.header("Authorization","Bearer "+token);
+        return client.send(builder.build(),HttpResponse.BodyHandlers.ofString());
+    }
 }

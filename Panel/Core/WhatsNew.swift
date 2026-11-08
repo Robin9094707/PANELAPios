@@ -18,6 +18,11 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.2.0", title: "Dein privater KI-Chat", summary: "Mit Nachrichtenverlauf, Spracheingabe und neuen Moderationsaktionen.", items: [
+            WhatsNewItem(symbol: "bubble.left.and.bubble.right", title: "Mehrere Chats", detail: "Folgefragen im selben Chat stellen, Verläufe umbenennen oder automatisch löschen."),
+            WhatsNewItem(symbol: "mic.fill", title: "Aufnehmen und anhören", detail: "Eine Aufnahme vorhören, transkribieren, den Text bearbeiten und separat abschicken."),
+            WhatsNewItem(symbol: "checkmark.shield", title: "Spielerrechte moderieren", detail: "Rechte- und Befehlssperren prüfen und als Hauptadmin freigeben.")
+        ]),
         WhatsNewRelease(version: "5.1.0", title: "KI-Assistent und Diagnose 3.0", summary: "Serverfragen gezielt beantworten und konkrete Aktionspläne zur Freigabe prüfen.", items: [
             WhatsNewItem(symbol: "sparkles", title: "KI für deinen Server", detail: "Chat, Tickets, Teamaktionen, Spielerprofile und Diagnose aus den passenden Datenquellen lesen."),
             WhatsNewItem(symbol: "checkmark.shield", title: "Freigabe durch den Hauptadmin", detail: "Schreibaktionen werden als feste Liste mit Zielen und Werten vorgelegt. Der Hauptadmin bestätigt den gesamten Plan einmalig."),

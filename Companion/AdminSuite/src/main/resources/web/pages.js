@@ -418,6 +418,8 @@
     canSend: function () { return S.can("staff-chat.send"); }, mine: function (m, me) { return me && m.author === me; },
     send: function (text) { return S.api("staff-chat", { body: { text: text, pings: [] } }); },
     emptyText: "Nachrichten aus dem Spiel (/staffmsg), Discord und der App erscheinen hier.",
+    headerActions: function () { return S.has("admin-assistant-chat-v1") && S.can("ai.assistant.use")
+      ? h("a", { class: "btn", href: "#/assistant?from=staff" }, icon("sparkles"), "Privater KI-Chat") : null; },
     statusRender: function (r) { return [r.discord ? S.badge("Discord verbunden", "ok", "link") : S.badge("Nur App & Spiel", "", "info"), r.lastError ? S.badge("Discord-Fehler", "danger", "alert") : null]; } });
   // Public server chat: the sender name is public in Minecraft – never the login name. Default: public name or "Server".
   function chatSender() { var stored = null; try { stored = sessionStorage.getItem("simplex-chat-name"); } catch (e) { stored = null; } return stored || (S.account && S.account.publicName) || "Server"; }

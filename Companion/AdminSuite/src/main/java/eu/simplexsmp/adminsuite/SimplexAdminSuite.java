@@ -367,6 +367,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         playerData = new PlayerDataManager(this);
         openAi = new OpenAiIntegration(this);
         aiAdmin = new AiAdmin(this);
+        Bukkit.getScheduler().runTaskTimerAsynchronously(this, aiAdmin::cleanupChats, 20L, 1200L);
         try { accountLinks = new AccountLinkManager(this); } catch (java.io.IOException e) { throw new IllegalStateException("Discord-Verknüpfungen konnten nicht sicher geladen werden",e); }
         try {onlineWatches=new OnlineWatchManager(this);onlineWatches.start();Bukkit.getPluginManager().registerEvents(onlineWatches,this);Bukkit.getPluginManager().registerEvents(new WatchInventory(new UUID(0,0),List.of()),this);}catch(java.io.IOException e){throw new IllegalStateException("Online notifications could not be loaded; file preserved",e);}
         memoryGuard=new MemoryRestartGuard(this);memoryGuard.start();
@@ -6962,6 +6963,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(!aiAssistantAvailable())throw new IllegalStateException("KI ist deaktiviert.");
         return openAi.assistantStructured(instructions,input,schema,tokens);
     }
+    String aiTranscribe(byte[] audio,String extension)throws Exception{
+        if(!aiAssistantAvailable())throw new IllegalStateException("KI ist deaktiviert.");
+        return openAi.assistantTranscribe(audio,extension);
+    }
     List<UUID> aiAltTargets(UUID id){
         PlayerProfile source=database.get(id);
         if(source==null||altDetection==null)throw new IllegalArgumentException("Alt-Erkennung oder Spielerprofil fehlt.");
@@ -7005,6 +7010,12 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             case "save-worlds"->discordAdminSave(attributed);
             case "world"->AiAdmin.text(AiAdmin.object(appApiMutation("world.update",new LinkedHashMap<String,Object>(v),attributed)),"description");
             case "player-action"->discordAdminPower("ai-owner",attributed,v.get("player"),v.get("type"),v.getOrDefault("value",""));
+            case "player-lock","player-commands"->{
+                if(accessLocks==null||(kind.equals("player-commands")&&commandRights==null))throw new IllegalStateException("Spielerrechte sind nicht geladen.");
+                Map<String,Object> request=new LinkedHashMap<>(v);
+                Map<String,Object> result=kind.equals("player-lock")?accessLocks.apply(request,attributed):commandRights.apply(request,attributed,null);
+                yield AiAdmin.text(result,"title")+" · "+AiAdmin.text(result,"description");
+            }
             case "player-note"->discordAdminRunSuite("ai-owner",attributed,List.of("notes",v.get("player"),"add",v.get("text")));
             default->throw new IllegalArgumentException("Unbekannte KI-Aktion.");
         };
