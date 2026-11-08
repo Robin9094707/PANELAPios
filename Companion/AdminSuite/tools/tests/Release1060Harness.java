@@ -74,6 +74,7 @@ public final class Release1060Harness {
         plugin.adminLog = new AdminActivityLog(plugin); plugin.adminLog.record("Console",null,"After restart","entry");
         check(plugin.adminLog.historySnapshot().stream().allMatch(r->AdminActivityLog.number(r.get("id"))>serial), "admin log cursor stays monotonic after clearing and restart");
         customization(c,b,plugin,api,owner,viewer);
+        aiWorkspace(c,b,owner,viewer);
         plugin.appChat.stop();
         System.out.println("PASS " + checks + " 10.6.0 history and startup checks");
     }
@@ -109,6 +110,24 @@ public final class Release1060Harness {
         } finally {
             try(var paths=Files.walk(root)){for(Path path:paths.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(path);}
         }
+    }
+
+    private static void aiWorkspace(HttpClient c,URI b,String owner,String viewer)throws Exception{
+        check(Release1020Harness.call(c,b,"/v1/ai-workspace",null,null).statusCode()==401,"AI workspace requires authentication");
+        check(Boolean.TRUE.equals(get(c,b,"/v1/ai-workspace",owner).get("owner")),"owner can review the queue");
+        check(Boolean.FALSE.equals(get(c,b,"/v1/ai-workspace",viewer).get("allowed")),"delegated access is explicitly granted");
+        check(Release1020Harness.call(c,b,"/v1/ai-workspace/approve",viewer,Map.of("id","forged","actions",List.of("fake"))).statusCode()==403,"delegates cannot apply proposals");
+        check(Release1020Harness.call(c,b,"/v1/ai-workspace/approve",owner,Map.of("id","forged","actions",List.of("fake"))).statusCode()==409,"owner cannot approve arbitrary parameters");
+        check(Release1020Harness.call(c,b,"/v1/ai-workspace/ask",owner,Map.of("question","restart")).statusCode()==503,"disabled model cannot draft a restart");
+        long[] night=AiAdminWorkspace.window("last-night",java.time.Instant.parse("2026-11-08T10:00:00Z"));
+        check(night[0]==java.time.Instant.parse("2026-11-07T21:00:00Z").toEpochMilli() && night[1]==java.time.Instant.parse("2026-11-08T05:00:00Z").toEpochMilli(),"night window uses Europe/Berlin");
+        var rows=AiAdminWorkspace.rows(List.of(Map.of("id","one","time",night[0],"detail","Vanish from 192.0.2.1"),Map.of("id","two","time",night[0]-1,"detail","Vanish outside window")),"Vanish",night,"id","time","detail");
+        check(rows.get("matched").equals(1) && !rows.toString().contains("192.0.2.1"),"source filter uses timestamp and masks IP addresses");
+        PacketTrace trace=new PacketTrace();UUID player=UUID.randomUUID();var session=trace.start(player);
+        session.received("private packet payload",1000);session.sent(new byte[8],2000);session.failure(new IllegalStateException("secret failure message"),3000);
+        var packet=trace.take(player,4000);
+        check(packet.get("inbound").equals(1L)&&packet.get("errorAgeMs").equals(1000L)&&packet.get("lastInbound").equals("String"),"packet metadata includes class counts and age");
+        check(!packet.toString().contains("private packet payload")&&!packet.toString().contains("secret failure message")&&trace.take(player,4000).isEmpty(),"packet trace contains no payload and is removed at quit");
     }
 
 }

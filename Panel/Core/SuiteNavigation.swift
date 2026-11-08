@@ -8,7 +8,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
     case discordStatus, scoreboard, discord, luckperms, lands, locks, commands
     case management, team, appSettings, settings, access, account, bark, quiet, memory, links, crossplay, functions
     case reports, bans, vpn, alts, ultrabans, statistics, menu, ticketSettings, online, dependencies
-    case chat, restart, pairing
+    case chat, restart, pairing, ai
     var id: String { rawValue }
     var title: String { metadata.0 }
     var symbol: String { metadata.1 }
@@ -17,6 +17,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
     var feature: String { metadata.4 }
     private var metadata: (String, String, String, String, String) {
         switch self {
+        case .ai: return ("Simplex KI", "sparkles", "Übersicht", "", "")
         case .overview: return ("Admin Suite", "shield.lefthalf.filled", "Übersicht", "", "")
         case .advertising: return ("Werbe-Zentrale", "megaphone.fill", "Kommunikation & Studio", "data.discord-ads", "ad-hub-v1")
         case .players: return ("Spieler", "person.2.fill", "Spieler & Rechte", "data.players", "")

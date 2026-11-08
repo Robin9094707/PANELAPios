@@ -181,6 +181,7 @@ player-data:
 # never in this normal config. OPENAI_API_KEY can be used instead.
 # 10.2.0 Diagnosezentrale (App/Webpanel → Diagnose). Alles läuft auf dem Server; App und Webpanel lesen nur.
 diagnostics:
+  packet-metadata: true
   enabled: true
   # Mehrere Disconnects in kurzer Zeit werden zu einem Vorfall (Bark-Ereignis "disconnect-wave").
   burst:
@@ -220,6 +221,17 @@ openai:
   organization-id: ''
   project-id: ''
   timeout-seconds: 8
+  workspace:
+    enabled: true
+    daily-limit: 15
+    # IDs are app:<username> or discord:<user id>, followed by =0–500.
+    admin-limits: []
+    # Explicitly allow individual Discord delegates for read-only AI searches.
+    discord-users: []
+    # Link a Discord ID to a non-owner app account to share its current permissions.
+    discord-delegates: []
+    discord-owner-id: ''
+    legacy-owner-key-id: ''
   moderation:
     # Context model: enough room for reasoning AND the short final decision.
     context-max-output-tokens: 2048

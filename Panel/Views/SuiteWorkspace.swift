@@ -94,6 +94,7 @@ struct SuiteToolDestination: View {
             ContentUnavailableView("Suite aktualisieren", systemImage: "arrow.down.circle", description: Text("Diese Funktion ist auf dem verbundenen Server noch nicht verfügbar."))
         } else {
             switch tool {
+            case .ai: SuiteAIWorkspace(suite: suite)
             case .overview: SuiteToolDirectoryView(suite: suite, actions: actions, panel: panel, server: server)
             case .advertising: SuiteAdHubView(suite: suite, initialPlace: place, prepareOnOpen: prepareAd)
             case .players:

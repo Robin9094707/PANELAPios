@@ -1,0 +1,10 @@
+# Simplex Panel 5.1.0 und Admin Suite 10.8.0
+
+- **Simplex KI** findet sich in der Werkzeugübersicht der iOS-App, im Webpanel und im Discord-Admin-Slash-Befehl unter `ai ask`. `ai queue` zeigt die offenen Entwürfe. Antworten in Discord sind privat.
+- Konten benötigen `ai.workspace`. Die vorhandenen Lese- und Aktionsrechte gelten zusätzlich. In „KI-Zugang und Limits“ legt der Hauptadmin die Tageslimits fest und kann Discord-IDs den aktiven App-Konten zuordnen. Ein Hauptadmin-Konto hat kein Tageslimit. Ein vorhandener einzelner Vollzugriffsschlüssel kann den Hauptadmin vor der Kontomigration vertreten. Bei mehreren Schlüsseln lässt sich der Hauptadmin-Schlüssel mit `openai.workspace.legacy-owner-key-id` ausdrücklich festlegen.
+- Der Server fragt zuerst die passenden Suchquellen ab und liefert danach zeitlich und mengenmäßig begrenzte Auszüge. OpenAI erhält nur die gewählten Auszüge und das Ergebnisformat. Unter anderem werden Chat, Admin-Protokoll, Tickets, Spielerprofile, Serverstatus, Disconnects, Welten und Pluginlisten unterstützt.
+- Alle KI-Schreibaktionen warten in einem Einmalentwurf auf die Auswahl und Bestätigung des Hauptadmins. Der Server prüft die Rechte beider Konten bei der Freigabe erneut. Alt-Banns zeigen die vorgesehenen Konten und benötigen bei einer geänderten Zuordnung einen neuen Entwurf. Erweiterte Serverbefehle folgen der bestehenden Konsolenfreigabe und stehen dem Hauptadmin zur Verfügung.
+- KI-Neustarts akzeptieren 10 Sekunden bis 24 Stunden. Im Spiel erscheint eine kurze Meldung bei Planung und eine Bossbar in den letzten drei Minuten. Offene Entwürfe und laufende Timer sind an den aktuellen Serverprozess gebunden.
+- Diagnose 3.0 erfasst an unterstützten Paper-Verbindungen Pakettypen, Zähler und Fehlerklassen. Die Anzeigen unterscheiden Beobachtungen vom Grund der Trennung. Bei Bedrock betreffen diese Beobachtungen die Paper-Seite der Weiterleitung.
+
+Die IPA kann zuerst installiert werden und zeigt beim alten Plugin eine Vorschau. Für Live-Funktionen die Admin-Suite-JAR bei gestopptem Server ersetzen. Bestehenden Datenordner und vorhandenen OpenAI-Schlüssel weiterverwenden.

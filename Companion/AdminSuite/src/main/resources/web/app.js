@@ -8,6 +8,7 @@
   var NAV = [
     { group: "Übersicht", items: [
       { id: "dashboard", label: "Dashboard", icon: "home", perm: null },
+      { id: "ai-workspace", label: "Simplex KI", icon: "sparkles", perm: null, feature: "ai-workspace-v1" },
       { id: "tools", label: "Alle Werkzeuge", icon: "grid", perm: null },
       { id: "histories", label: "Verläufe verwalten", icon: "list", perm: null, feature: "history-management-v1" },
       { id: "events", label: "Ereignisse", icon: "bell", perm: "data.events" },

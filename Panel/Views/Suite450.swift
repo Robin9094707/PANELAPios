@@ -519,6 +519,15 @@ struct SuiteDisconnectRow: View {
             }
             Text(row["categoryTitle"].string).font(.caption.weight(.semibold)).foregroundStyle(row["involuntary"].bool ? Color.red : Color.secondary)
             Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            let packet = row["packet"]
+            if !packet["source"].string.isEmpty {
+                DisclosureGroup("Paketdiagnose") {
+                    LabeledContent("Empfangen / gesendet", value: "\(packet["inbound"].int) / \(packet["outbound"].int)")
+                    if !packet["lastInbound"].string.isEmpty { Text("Letzter Eingang · " + packet["lastInbound"].string) }
+                    if !packet["lastOutbound"].string.isEmpty { Text("Letzter Ausgang · " + packet["lastOutbound"].string) }
+                    if !packet["error"].string.isEmpty { Text("Fehlerklasse · " + packet["error"].string) }
+                }.font(.caption)
+            }
         }
     }
 }

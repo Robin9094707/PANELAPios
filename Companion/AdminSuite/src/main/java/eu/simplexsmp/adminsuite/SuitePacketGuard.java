@@ -39,6 +39,7 @@ final class SuitePacketGuard {
             Object handle=p.getClass().getMethod("getHandle").invoke(p);Channel channel=findChannel(handle,0,Collections.newSetFromMap(new IdentityHashMap<>()));
             if(channel==null)throw new IllegalStateException("NMS connection channel unavailable");
             UUID id=p.getUniqueId();channels.put(id,channel);
+            PacketTrace.Session trace=plugin.getConfig().getBoolean("diagnostics.packet-metadata",true)?plugin.packetTrace.start(id):null;
             channel.eventLoop().execute(()->{
                 try{
                     if(!channel.isActive())return;
@@ -46,6 +47,7 @@ final class SuitePacketGuard {
                     if(channel.pipeline().get("packet_handler")==null)throw new IllegalStateException("packet_handler unavailable");
                     channel.pipeline().addBefore("packet_handler",HANDLER,new ChannelDuplexHandler(){
                         @Override public void channelRead(ChannelHandlerContext ctx,Object message)throws Exception{
+                            if(trace!=null)trace.received(message,System.currentTimeMillis());
                             if(probes!=null&&message.getClass().getSimpleName().equals("ServerboundSignUpdatePacket")&&probes.receive(id,message)){ReferenceCountUtil.release(message);return;}
                             super.channelRead(ctx,message);
                         }
@@ -53,7 +55,12 @@ final class SuitePacketGuard {
                             Object filtered=message;
                             if(guardEnabled)try{filtered=filter(message,snapshots.getOrDefault(id,Snapshot.EMPTY));}catch(ReflectiveOperationException|RuntimeException e){warn("Filter "+message.getClass().getSimpleName()+": "+e.getClass().getSimpleName());}
                             if(filtered==null){ReferenceCountUtil.release(message);promise.trySuccess();return;}
+                            if(trace!=null)trace.sent(filtered,System.currentTimeMillis());
                             super.write(ctx,filtered,promise);
+                        }
+                        @Override public void exceptionCaught(ChannelHandlerContext ctx,Throwable cause)throws Exception{
+                            if(trace!=null)trace.failure(cause,System.currentTimeMillis());
+                            super.exceptionCaught(ctx,cause);
                         }
                     });
                 }catch(RuntimeException e){channels.remove(id,channel);warn("Injection: "+e.getMessage());}
@@ -61,7 +68,7 @@ final class SuitePacketGuard {
         }catch(ReflectiveOperationException|RuntimeException e){warn("Connection: "+e.getClass().getSimpleName()+" "+e.getMessage());}
     }
     void quit(Player p){UUID id=p.getUniqueId();snapshots.remove(id);Channel c=channels.remove(id);if(c!=null)c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});}
-    void stop(){for(Channel c:channels.values())c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});channels.clear();snapshots.clear();}
+    void stop(){for(Channel c:channels.values())c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});channels.clear();snapshots.clear();plugin.packetTrace.clear();}
     private void warn(String message){if(warned.add(message))plugin.getLogger().warning("[Packet guard] "+message+". Native Paper hidePlayer remains active; unsupported packet filtering is not claimed.");}
     private static Channel findChannel(Object value,int depth,Set<Object> seen)throws IllegalAccessException{
         if(value instanceof Channel c)return c;if(value==null||depth>5||!seen.add(value))return null;

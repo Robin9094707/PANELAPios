@@ -88,7 +88,7 @@
   };
 
   var shortcutPages = {
-    overview: "tools", advertising: "ad-hub", players: "players", tickets: "tickets",
+    overview: "tools", ai: "ai-workspace", advertising: "ad-hub", players: "players", tickets: "tickets",
     diagnostics: "diagnostics", adminLog: "admin-log", histories: "histories", staffChat: "staff-chat",
     events: "events", statistics: "statistics", chat: "chat", worldTrim: "world-trim",
     discordStatus: "discord-status", scoreboard: "scoreboard", luckperms: "luckperms",

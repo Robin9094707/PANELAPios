@@ -194,6 +194,7 @@ final class AppApiManager {
             if(!rate("key:"+key.id(),180))throw new ApiError(429,"Schlüssel-Anfragelimit erreicht.");
             if(accounts.privateRoute(x,key,requestPath,requestMethod,ip,rev))return;
             if(hub.route(x,key,requestPath,requestMethod,ip,rev))return;
+            if(requestPath.startsWith("/v1/ai-workspace")){aiWorkspace(x,key,requestPath,requestMethod,rev);return;}
             if(plugin.diagnostics!=null&&plugin.diagnostics.route(this,x,key,requestPath,requestMethod,rev))return;
             if(plugin.diagnostics==null&&requestPath.startsWith("/v1/diagnostics"))throw new ApiError(503,"Diagnosezentrale nicht geladen");
             if(studio.route(this,x,key,requestPath,requestMethod,rev))return;
@@ -234,7 +235,7 @@ final class AppApiManager {
                     case "/v1/data/app-settings"->onMain(rev,()->AppSettings.data(plugin));
                     case "/v1/data/staff-tasks"->onMain(rev,()->plugin.appStaffTasks());
                     case "/v1/data/setup-info"->onMain(rev,()->SimplexAdminSuite.appMap("fingerprint",fingerprint,"publicAddress",plugin.getConfig().getString("app-api.public-address",""),"port",plugin.getConfig().getInt("app-api.port",39093),"name",serverName));
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1","admin-log-v1","staff-chat-v1","setup-links-v1","quiet-hours-v1","nameplates-v1","app-settings-v1","staff-tasks-v1","accounts-v2","sessions-v1","mfa-v1","passkeys-v1","web-panel-v1","admin-log-v2","web-push-v1","web-prefs-v1","account-rename-v1","public-name-v1","luckperms-v1","lands-v1","nameplates-v2","access-locks-v1","player-rights-v1","luckperms-v2","changelog-v1","bans-sources-v2","permission-catalog-v2","command-rights-v1","luckperms-v3","live-switches-v1","diagnostics-v1","lag-map-v1","spark-v1","crash-manager-v1","player-connection-v1","command-rights-v2","world-trim-v1","discord-status-designer-v1","scoreboard-designer-v1","player-dossier-v1","bridge-v3","bark-test-v1","ad-hub-v1","history-management-v1","player-nbt-summary-v1","shortcut-preferences-v1","plugin-stage-v2"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis(),
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1","admin-log-v1","staff-chat-v1","setup-links-v1","quiet-hours-v1","nameplates-v1","app-settings-v1","staff-tasks-v1","accounts-v2","sessions-v1","mfa-v1","passkeys-v1","web-panel-v1","admin-log-v2","web-push-v1","web-prefs-v1","account-rename-v1","public-name-v1","luckperms-v1","lands-v1","nameplates-v2","access-locks-v1","player-rights-v1","luckperms-v2","changelog-v1","bans-sources-v2","permission-catalog-v2","command-rights-v1","luckperms-v3","live-switches-v1","diagnostics-v1","lag-map-v1","spark-v1","crash-manager-v1","player-connection-v1","command-rights-v2","world-trim-v1","discord-status-designer-v1","scoreboard-designer-v1","player-dossier-v1","bridge-v3","bark-test-v1","ad-hub-v1","history-management-v1","player-nbt-summary-v1","shortcut-preferences-v1","plugin-stage-v2","ai-workspace-v1","disconnect-packets-v1"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis(),
                         "account",SimplexAdminSuite.appMap("kind",key.id().startsWith("user:")?"user":"key","username",key.id().startsWith("user:")?key.label():"","owner",key.id().startsWith("user:")&&security.users.owner(key.label()),"manager",accounts.manager(key),"mfa",key.id().startsWith("user:")&&security.users.mfa(key.label()),"canMigrate",!key.id().startsWith("user:")&&key.scope().equals("full")&&security.users.ownerName().isEmpty()),"web",SimplexAdminSuite.appMap("domain",accounts.domain(),"url",accounts.webUrl(),"passkeys",!accounts.rpId().isEmpty()));
                     case "/v1/data/access"->{if(!key.scope().equals("full"))throw new ApiError(403,"Benutzerverwaltung benötigt full-Zugriff");yield SimplexAdminSuite.appMap("items",security.users.list(),"catalog",permissionCatalog(),"presets",rolePresets());}
                     case "/v1/data/links"->SimplexAdminSuite.appMap("items",plugin.accountLinks.store.all().stream().map(l->SimplexAdminSuite.appMap("player",l.minecraft().toString(),"name",l.name(),"discord",l.discord(),"linkedAt",l.linkedAt())).toList());
@@ -421,11 +422,10 @@ final class AppApiManager {
                     }else if(req.path.equals("staffchat.update")){String channel=req.text("channel").trim();if(!channel.isEmpty()){DiscordBotManager bot=onMain(rev,()->plugin.discordRelay());if(bot==null)throw new ApiError(503,"Discord-Bot ist nicht geladen");bot.appValidateChannel(channel);}result=onMain(rev,()->{plugin.getConfig().set("staff-chat.channel-id",channel);plugin.saveConfig();plugin.suiteAudit(actor(key).auditName(),"Staff-Chat-Kanal",channel.isEmpty()?"aus":channel);return SimplexAdminSuite.appMap("ok",true,"title",channel.isEmpty()?"Staff-Chat-Sync aus":"Staff-Chat-Kanal gespeichert","description",channel.isEmpty()?"App und Minecraft teilen weiter den Staff-Chat.":"Nachrichten, Bilder, Dateien und Sprachnachrichten werden mit Discord synchronisiert.");});
                     }else if(req.path.equals("memory.update")){result=onMain(rev,()->plugin.memoryGuard.configure(req.values));
                     }else if(req.path.equals("online.update")){plugin.discordRelay().appValidateChannel(req.text("channel"));result=onMain(rev,()->{plugin.getConfig().set("online-notifications.channel-id",req.text("channel"));plugin.saveConfig();return SimplexAdminSuite.appMap("ok",true,"title","Benachrichtigungskanal gespeichert");});
-                    }else if(req.path.equals("ai.ask")){
-                        CompletableFuture<String> future=onMain(rev,()->plugin.discordAdminAiAsk(req.text("question")));String response=future.get(90,TimeUnit.SECONDS);result=SimplexAdminSuite.appMap("ok",true,"title","Simplex KI","description",response);
-                    }else if(req.path.equals("ai.propose")){
-                        CompletableFuture<DiscordAdminController.Request> future=onMain(rev,()->plugin.discordAdminAiProposalAsync(actor(key).auditName(),req.text("request")));var proposed=future.get(90,TimeUnit.SECONDS);
-                        result=SimplexAdminSuite.appMap("ok",true,"title","KI-Vorschlag · noch nicht angewendet","description",onMain(rev,()->controller.confirmationSummary(proposed)),"proposal",SimplexAdminSuite.appMap("path",proposed.path,"values",proposed.values));
+                    }else if(req.path.equals("ai.ask")||req.path.equals("ai.propose")){
+                        boolean draft=req.path.equals("ai.propose");
+                        var reply=workspaceResult(plugin.aiWorkspace.ask(workspaceAccess(key),req.text(draft?"request":"question"),draft));
+                        result=SimplexAdminSuite.appMap("ok",true,"title","Simplex KI","description",reply.get("answer"),"workspace",reply);
                     }else result=onMain(rev,()->{
                         authorize(key,req);
                         if(isCenterAction(req.path)) {
@@ -520,6 +520,7 @@ final class AppApiManager {
     private List<Map<String,Object>> permissionCatalog(){
         List<Map<String,Object>> out=new ArrayList<>();
         out.add(SimplexAdminSuite.appMap("id","*","title","Vollzugriff (einschließlich Benutzerverwaltung)","group","Vollzugriff","explain","Darf alles – wie der Hauptadmin. Nur an Personen vergeben, denen du voll vertraust.","level","critical"));
+        out.add(SimplexAdminSuite.appMap("id","ai.workspace","title","KI-Adminmodus","group","KI","explain","Erlaubt KI-Anfragen im Rahmen der vorhandenen Lese- und Aktionsrechte. Nur der Hauptadmin bestätigt Schreibaktionen.","level","manage"));
         for(var row:actions.values()){String id=String.valueOf(row.get("id"));boolean critical=scope(id).equals("full");
             out.add(SimplexAdminSuite.appMap("id","action."+id,"title",row.get("description"),"group",String.valueOf(row.getOrDefault("group","Weitere")),"explain",(critical?"Kritisch: ":"")+"Darf „"+row.get("description")+"“ ausführen. Vor jeder Änderung erscheint eine Bestätigung.","level",critical?"critical":"change"));}
         out.add(SimplexAdminSuite.appMap("id",HistoryApi.MANAGE,"title","Verläufe löschen und wiederherstellen","group","Verläufe","explain","Benötigt full-Zugriff. Löscht nur bestätigte Einträge, mit Sicherung vor jeder Änderung.","level","critical"));
@@ -569,6 +570,88 @@ final class AppApiManager {
         if(key.startsWith("app-api.")||key.startsWith("admin-security.")||key.startsWith("console.")||ModerationControl.protectedKey(key)||plugin.moderationControl==null||!plugin.moderationControl.configKeys().contains(key))throw new ApiError(403,"Geschützte oder unbekannte Einstellung");
         String current=AppApiSecurity.hash(DiscordBotManager.Json.stringify(plugin.getConfig().get(key)));
         if(!current.equals(req.text("expected")))throw new ApiError(409,"Einstellung wurde zwischenzeitlich geändert. Neu laden und den Wert prüfen.");
+    }
+    AiAdminWorkspace.Access workspaceDiscordAccess(String discordId,String displayName,boolean owner,boolean readOnly,java.util.function.BooleanSupplier active){
+        return new AiAdminWorkspace.Access("discord:"+discordId,displayName,owner,permission->{
+            if(!active.getAsBoolean())return false;
+            if(owner)return true;
+            if(readOnly&&(permission.startsWith("action.")||permission.startsWith("ticket.")))return false;
+            String prefix=discordId+"=";
+            for(String mapping:plugin.getConfig().getStringList("openai.workspace.discord-delegates")){
+                if(!mapping.startsWith(prefix))continue;
+                String account=mapping.substring(prefix.length());
+                if(!security.users.enabled(account)||security.users.owner(account))return false;
+                var rights=security.users.permissions(account);
+                return rights.contains("*")||rights.contains(permission);
+            }
+            return plugin.getConfig().getStringList("openai.workspace.discord-users").contains(discordId)
+                && Set.of("ai.workspace","data.overview","data.players","data.profile").contains(permission);
+        });
+    }
+    private AiAdminWorkspace.Access workspaceAccess(AppApiSecurity.Key key){
+        boolean user=key.id().startsWith("user:");
+        String configured=plugin.getConfig().getString("openai.workspace.legacy-owner-key-id","");
+        boolean owner=user?security.users.owner(key.label()):key.scope().equals("full")&&
+            (!configured.isBlank()?configured.equals(key.id()):security.users.ownerName().isEmpty()&&security.keys().stream().filter(k->k.scope().equals("full")).count()==1);
+        return new AiAdminWorkspace.Access(user?"app:"+key.label():"key:"+key.id(),key.label(),owner,permission->{
+            if(!security.valid(key)||security.locked(key))return false;
+            if(!user)return owner;
+            if(permission.startsWith("action.")&&!AppApiSecurity.permitted(key,scope(permission.substring(7))))return false;
+            return security.users.allows(key,permission);
+        });
+    }
+    private static Map<String,Object> workspaceResult(CompletableFuture<Map<String,Object>> future)throws Exception{
+        try{return future.get(105,TimeUnit.SECONDS);}
+        catch(ExecutionException e){
+            Throwable error=e.getCause();
+            while(error instanceof CompletionException&&error.getCause()!=null)error=error.getCause();
+            if(error instanceof ApiError api)throw api;
+            if(error instanceof IllegalArgumentException invalid)throw invalid;
+            throw new ApiError(503,"KI-Dienst konnte diese Anfrage nicht abschließen.");
+        }catch(TimeoutException e){throw new ApiError(504,"Zeitlimit der KI-Anfrage erreicht.");}
+    }
+    private void aiWorkspace(HttpExchange x,AppApiSecurity.Key key,String path,String method,long rev)throws Exception{
+        var workspace=plugin.aiWorkspace;
+        var access=workspaceAccess(key);
+        if(path.equals("/v1/ai-workspace")&&method.equals("GET")){
+            var state=workspace.state(access);
+            if(access.owner()){
+                state.put("dailyLimit",plugin.getConfig().getInt("openai.workspace.daily-limit",15));
+                state.put("limits",plugin.getConfig().getStringList("openai.workspace.admin-limits"));
+                state.put("discordDelegates",plugin.getConfig().getStringList("openai.workspace.discord-delegates"));
+                state.put("enabled",plugin.getConfig().getBoolean("openai.workspace.enabled",true));
+            }
+            send(x,200,state);return;
+        }
+        if(!workspace.allowed(access))throw new ApiError(403,"KI-Zugriff fehlt.");
+        if(!method.equals("POST"))throw new ApiError(405,"POST erforderlich.");
+        Map<String,Object> input=body(x,8192);
+        String id=AiAdminWorkspace.str(input,"id");
+        Object result=switch(path){
+            case "/v1/ai-workspace/ask" -> workspaceResult(workspace.ask(access,AiAdminWorkspace.str(input,"question"),true));
+            case "/v1/ai-workspace/approve" -> onMain(rev,()->workspace.approve(workspaceAccess(key),id,AiAdminWorkspace.strings(input.get("actions")),controller));
+            case "/v1/ai-workspace/cancel" -> workspace.cancel(access,id);
+            case "/v1/ai-workspace/summarize" -> workspaceResult(workspace.summarize(access,id));
+            case "/v1/ai-workspace/settings" -> onMain(rev,()->{
+                if(!workspaceAccess(key).owner())throw new ApiError(403,"Nur der Hauptadmin kann KI-Limits ändern.");
+                int limit=Integer.parseInt(AiAdminWorkspace.str(input,"dailyLimit"));
+                List<String> limits=AiAdminWorkspace.strings(input.get("limits"));
+                if(limit<0||limit>500||limits.size()>80||limits.stream().anyMatch(v->!v.matches("(?:app|discord):[A-Za-z0-9_.-]{1,45}=[0-9]{1,3}")||Integer.parseInt(v.substring(v.lastIndexOf('=')+1))>500))throw new IllegalArgumentException("Limit 0–500; z. B. app:admin=10.");
+                List<String> delegates=AiAdminWorkspace.strings(input.get("discordDelegates"));
+                if(delegates.size()>80||delegates.stream().anyMatch(v->!v.matches("[0-9]{16,22}=[A-Za-z0-9_.-]{1,45}")||!security.users.enabled(v.substring(v.indexOf('=')+1))||security.users.owner(v.substring(v.indexOf('=')+1))))
+                    throw new IllegalArgumentException("Zuordnung als Discord-ID=aktives App-Konto ohne Hauptadmin-Rechte.");
+                if(delegates.stream().map(v->v.substring(0,v.indexOf('='))).distinct().count()!=delegates.size())throw new IllegalArgumentException("Jede Discord-ID darf nur einmal zugeordnet werden.");
+                plugin.getConfig().set("openai.workspace.discord-delegates",delegates);
+                plugin.getConfig().set("openai.workspace.daily-limit",limit);
+                plugin.getConfig().set("openai.workspace.admin-limits",limits);
+                plugin.getConfig().set("openai.workspace.enabled",Boolean.TRUE.equals(input.get("enabled")));
+                plugin.saveConfig();
+                plugin.expansionAudit(access.name(),null,"KI-Einstellungen geändert","Tageslimit "+limit);
+                return workspace.state(access);
+            });
+            default->throw new ApiError(404,"KI-Endpunkt nicht gefunden.");
+        };
+        send(x,200,result);
     }
     private DiscordAdminController.Actor actor(AppApiSecurity.Key key){return new DiscordAdminController.Actor("app:"+key.id(),"Simplex Panel/"+key.label(),key.scope().equals("full"),"");}
     private void authorize(AppApiSecurity.Key key,DiscordAdminController.Request request){

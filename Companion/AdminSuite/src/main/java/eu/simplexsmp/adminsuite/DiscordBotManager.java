@@ -1594,6 +1594,13 @@ final class DiscordBotManager {
             return;
         }
         DiscordAdminController.Request request = responseContext(DiscordAdminController.parseInteraction(data), true);
+        if(Set.of("ai.ask","ai.propose","ai.queue").contains(request.path)){
+            deferInteraction(id,interactionToken,false);
+            var requester=workspaceActor(actor,access);
+            if(request.path.equals("ai.queue"))showAiQueue(interactionToken,requester);
+            else runAiQuestion(interactionToken,requester,request.text(request.path.equals("ai.ask")?"question":"request"));
+            return;
+        }
         if (adminController.mutation(request) && access != Access.FULL) {
             respondReply(id, interactionToken, DiscordAdminController.Reply.error("Diese Rolle besitzt ausschließlich Lesezugriff."), true);
             return;
@@ -1684,6 +1691,11 @@ final class DiscordBotManager {
         DiscordAdminController.Actor actor = actor(member, user, userId, displayName, channel);
         if (access == Access.NONE) {
             respondReply(id, token, DiscordAdminController.Reply.error("Du bist für die Discord-Administration nicht freigegeben."), true);
+            return;
+        }
+        if(customId.startsWith("sas:ai:")){
+            deferInteraction(id,token,false);
+            handleAiButton(token,workspaceActor(actor,access),customId.substring(7));
             return;
         }
         if (customId.equals("sas:modal:console")) {
@@ -2023,27 +2035,109 @@ final class DiscordBotManager {
         return data;
     }
 
+    private record AiFollowUp(String user,String question,long expires){}
+    private final Map<String,AiFollowUp> aiFollowUps=new java.util.concurrent.ConcurrentHashMap<>();
+
+    private boolean workspaceOwner(String user){
+        String configured=plugin.getConfig().getString("openai.workspace.discord-owner-id","").strip();
+        return !user.isBlank()&&user.equals(configured.isBlank()?guildOwnerId:configured);
+    }
+    private AiAdminWorkspace.Access workspaceActor(DiscordAdminController.Actor actor,Access access){
+        boolean owner=workspaceOwner(actor.id)&&access==Access.FULL;
+        if(plugin.appApi!=null)return plugin.appApi.workspaceDiscordAccess(actor.id,actor.auditName(),owner,access!=Access.FULL,
+            ()->adminEnabled()&&(!owner||workspaceOwner(actor.id))&&
+                (plugin.getConfig().getStringList("discord-bot.admin.allowed-channel-ids").isEmpty()||plugin.getConfig().getStringList("discord-bot.admin.allowed-channel-ids").contains(actor.channelId)));
+        return new AiAdminWorkspace.Access("discord:"+actor.id,actor.auditName(),owner,p->owner&&adminEnabled()&&workspaceOwner(actor.id));
+    }
+    private void runAiQuestion(String token,AiAdminWorkspace.Access requester,String question){
+        plugin.aiWorkspace.ask(requester,question,true).whenComplete((answer,error)->{
+            if(error!=null){editOriginal(token,DiscordAdminController.Reply.error(workspaceError(error)));return;}
+            var components=new ArrayList<Map<String,Object>>();
+            var links=new ArrayList<Object>();
+            for(var link:AiAdminWorkspace.objects(answer.get("players")).stream().limit(4).toList()){
+                String player=AiAdminWorkspace.str(link,"id");
+                if(player.matches("[0-9a-fA-F-]{36}"))links.add(aiButton(2,cleanText(AiAdminWorkspace.str(link,"name"),60),"profile:"+player));
+            }
+            if(!links.isEmpty())components.add(mapOf("type",1,"components",links));
+            aiFollowUps.values().removeIf(f->f.expires()<System.currentTimeMillis());
+            var choices=new ArrayList<Object>();
+            for(String suggestion:AiAdminWorkspace.strings(answer.get("suggestions"))){
+                if(suggestion.isBlank()||aiFollowUps.size()>=100)continue;
+                String id=UUID.randomUUID().toString();
+                aiFollowUps.put(id,new AiFollowUp(requester.id(),suggestion,System.currentTimeMillis()+600_000L));
+                choices.add(aiButton(2,cleanText(suggestion,75),"ask:"+id));
+            }
+            if(!choices.isEmpty())components.add(mapOf("type",1,"components",choices));
+            Map<String,Object> plan=AiAdminWorkspace.object(answer.get("plan"));
+            if(!plan.isEmpty())components.add(mapOf("type",1,"components",List.of(aiButton(1,"Aktionsentwurf prüfen","show:"+plan.get("id")))));
+            String description=AiAdminWorkspace.str(answer,"answer");
+            if(!plan.isEmpty())description+="\n\nEin Entwurf wartet auf die Freigabe des Hauptadmins.";
+            editOriginal(token,new DiscordAdminController.Reply("Simplex KI",truncate(description,3900),0x5865F2,components,"Reviewing an AI answer"));
+        });
+    }
+    private void showAiQueue(String token,AiAdminWorkspace.Access requester){
+        var pending=AiAdminWorkspace.objects(plugin.aiWorkspace.state(requester).get("pending"));
+        var buttons=new ArrayList<Object>();
+        for(var plan:pending.stream().limit(5).toList())buttons.add(aiButton(2,cleanText(AiAdminWorkspace.str(plan,"requester"),70),"show:"+plan.get("id")));
+        editOriginal(token,new DiscordAdminController.Reply("Offene KI-Entwürfe",pending.isEmpty()?"Keine offenen Entwürfe.":pending.size()+" offen. Wähle einen Entwurf zur Prüfung.",0x5865F2,
+            buttons.isEmpty()?List.of():List.of(mapOf("type",1,"components",buttons)),"Reviewing approval queue"));
+    }
+    private Map<String,Object> aiButton(int style,String label,String key){return mapOf("type",2,"style",style,"label",label,"custom_id","sas:ai:"+key);}
+    private void handleAiButton(String token,AiAdminWorkspace.Access requester,String input){
+        String[] parts=input.split(":",3);
+        if(parts.length<2||!plugin.aiWorkspace.allowed(requester)){editOriginal(token,DiscordAdminController.Reply.error("KI-Zugriff fehlt."));return;}
+        String id=parts[1];
+        if(parts[0].equals("ask")){
+            AiFollowUp next=aiFollowUps.get(id);
+            if(next==null||next.expires()<System.currentTimeMillis()||!next.user().equals(requester.id())){editOriginal(token,DiscordAdminController.Reply.error("Auswahl ist abgelaufen."));return;}
+            runAiQuestion(token,requester,next.question());return;
+        }
+        if(parts[0].equals("profile")){
+            if(!requester.allows().test("data.profile")||!id.matches("[0-9a-fA-F-]{36}")){editOriginal(token,DiscordAdminController.Reply.error("Spielerprofil nicht freigegeben."));return;}
+            plugin.runAdminTask(()->editOriginal(token,adminController.execute(new DiscordAdminController.Request("player.info",Map.of("player",id)),
+                new DiscordAdminController.Actor(requester.id(),requester.name(),false,""))));
+            return;
+        }
+        if(parts[0].equals("summary")){
+            plugin.aiWorkspace.summarize(requester,id).whenComplete((out,error)->{
+                if(error!=null)editOriginal(token,DiscordAdminController.Reply.error(workspaceError(error)));
+                else editOriginal(token,new DiscordAdminController.Reply("KI-Zusammenfassung",AiAdminWorkspace.str(out,"summary"),0x5865F2,
+                    List.of(mapOf("type",1,"components",List.of(aiButton(1,"Exakten Entwurf öffnen","show:"+id)))),"Reviewing a proposal summary"));
+            });return;
+        }
+        if(parts[0].equals("approve")&&parts.length==3){
+            plugin.runAdminTask(()->{
+                try{
+                    var result=plugin.aiWorkspace.approve(requester,id,List.of(parts[2]),adminController);
+                    var row=AiAdminWorkspace.objects(result.get("results")).get(0);
+                    editOriginal(token,new DiscordAdminController.Reply("KI-Freigabe",AiAdminWorkspace.str(row,"summary")+"\n"+AiAdminWorkspace.str(row,"message"),
+                        Boolean.TRUE.equals(row.get("ok"))?0x57F287:0xED4245,List.of(mapOf("type",1,"components",List.of(aiButton(2,"Weitere Aktionen prüfen","show:"+id)))),"Reviewed one action"));
+                }catch(RuntimeException e){editOriginal(token,DiscordAdminController.Reply.error(workspaceError(e)));}
+            });return;
+        }
+        if(!parts[0].equals("show"))return;
+        var plan=AiAdminWorkspace.objects(plugin.aiWorkspace.state(requester).get("pending")).stream().filter(p->id.equals(p.get("id"))).findFirst().orElse(Map.of());
+        if(plan.isEmpty()){editOriginal(token,DiscordAdminController.Reply.error("Entwurf abgelaufen oder verarbeitet."));return;}
+        StringBuilder text=new StringBuilder("Entwurf von ").append(plan.get("requester")).append(". Jede Schaltfläche genehmigt genau die zugehörige Aktion.\n");
+        var buttons=new ArrayList<Object>();
+        int i=0;
+        for(var action:AiAdminWorkspace.objects(plan.get("actions")).stream().limit(4).toList()){
+            text.append("\n").append(++i).append(". ").append(AiAdminWorkspace.str(action,"summary"));
+            if(requester.owner())buttons.add(aiButton(4,"Aktion "+i+" freigeben","approve:"+id+":"+action.get("id")));
+        }
+        buttons.add(aiButton(2,"KI-Zusammenfassung","summary:"+id));
+        editOriginal(token,new DiscordAdminController.Reply("KI-Aktionsentwurf",truncate(text.toString(),3900),0xFEE75C,
+            List.of(mapOf("type",1,"components",buttons)),"Reviewing exact action parameters"));
+    }
+    private static String workspaceError(Throwable error){
+        while(error instanceof java.util.concurrent.CompletionException&&error.getCause()!=null)error=error.getCause();
+        return error instanceof AppApiManager.ApiError||error instanceof IllegalArgumentException?cleanText(error.getMessage(),350):"KI-Dienst konnte die Anfrage nicht abschließen.";
+    }
+
     private void executeForInteraction(String token, DiscordAdminController.Request adminRequest, DiscordAdminController.Actor actor) {
         plugin.runAdminTask( () -> {
-            if (adminRequest.path.equals("ai.propose")) {
-                plugin.discordAdminAiProposalAsync(actor.auditName(), adminRequest.text("request")).whenComplete((planned, error) -> plugin.runAdminTask( () -> {
-                    if (error != null || planned == null) {
-                        editOriginal(token, DiscordAdminController.Reply.error("KI-Vorschlag fehlgeschlagen: " + cleanText(error == null ? "unbekannt" : error.getMessage(), 500)));
-                        return;
-                    }
-                    plugin.expansionAudit(actor.auditName(), null, "Discord-KI-Vorschlag erstellt", planned.path);
-                    editOriginalData(token, confirmationData(planned, actor, false));
-                }));
-                return;
-            }
-            if (adminRequest.path.equals("ai.ask")) {
-                plugin.discordAdminAiAsk(adminRequest.text("question")).whenComplete((answer, error) -> plugin.runAdminTask( () -> {
-                    DiscordAdminController.Reply reply = error == null
-                            ? DiscordAdminController.Reply.ok("Simplex KI", answer, "Answering a live Minecraft server question")
-                            : DiscordAdminController.Reply.error("OpenAI-Anfrage fehlgeschlagen: " + cleanText(error.getMessage(), 500));
-                    recordAdminExecution(adminRequest, actor, reply);
-                    editOriginal(token, reply);
-                }));
+            if(Set.of("ai.ask","ai.propose","ai.queue").contains(adminRequest.path)){
+                editOriginal(token,DiscordAdminController.Reply.error("Öffne den privaten KI-Adminmodus mit dem aktuellen Slash-Befehl."));
                 return;
             }
             DiscordAdminController.Reply reply;
@@ -2059,20 +2153,11 @@ final class DiscordBotManager {
 
     private void executeForChannel(String channelId, DiscordAdminController.Request adminRequest, DiscordAdminController.Actor actor) {
         plugin.runAdminTask( () -> {
-            if (adminRequest.path.equals("ai.propose")) {
-                plugin.discordAdminAiProposalAsync(actor.auditName(), adminRequest.text("request")).whenComplete((planned, error) -> plugin.runAdminTask( () -> {
-                    if (error != null || planned == null) {
-                        sendAdminChannelReply(channelId, DiscordAdminController.Reply.error("KI-Vorschlag fehlgeschlagen: " + cleanText(error == null ? "unbekannt" : error.getMessage(), 500)));
-                        return;
-                    }
-                    plugin.expansionAudit(actor.auditName(), null, "Discord-KI-Vorschlag erstellt", planned.path);
-                    sendConfirmationMessage(channelId, planned, actor);
-                }));
+            if(Set.of("ai.ask","ai.propose","ai.queue").contains(adminRequest.path)){
+                sendAdminChannelReply(channelId,DiscordAdminController.Reply.error("Nutze den privaten KI-Slash-Befehl für Serverdaten und Aktionsentwürfe."));
                 return;
             }
-            if (adminRequest.path.equals("ai.ask")) {
-                plugin.discordAdminAiAsk(adminRequest.text("question")).whenComplete((answer, error) -> plugin.runAdminTask( () -> {
-                    DiscordAdminController.Reply reply = error == null
+            DiscordAdminController.Reply reply = error == null
                             ? DiscordAdminController.Reply.ok("Simplex KI", answer, "Answering a live Minecraft server question")
                             : DiscordAdminController.Reply.error("OpenAI-Anfrage fehlgeschlagen: " + cleanText(error.getMessage(), 500));
                     recordAdminExecution(adminRequest, actor, reply);

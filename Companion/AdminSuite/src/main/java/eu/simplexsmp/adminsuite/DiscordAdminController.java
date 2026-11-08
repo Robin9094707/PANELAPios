@@ -321,6 +321,7 @@ final class DiscordAdminController {
                         )),
                         group("ai", "Optionale Simplex-KI", List.of(
                                 sub("status", "KI-Status anzeigen"),
+                                sub("queue", "Offene KI-Entwürfe prüfen"),
                                 sub("ask", "Serverassistenten fragen", string("question", "Frage mit Live-Serverkontext", true, false)),
                                 sub("propose", "Adminaktion vorschlagen", string("request", "Gewünschte Adminaktion", true, false))
                         )),
@@ -416,7 +417,7 @@ final class DiscordAdminController {
         if (request.path.equals("moderation.config") && request.text("action").equals("get")) return false;
         if (request.path.startsWith("menu.")) return false;
         if (Set.of("dashboard", "help", "player.info", "player.alts", "player.live", "player.history",
-                "player.rights", "player.identity", "server.status", "ai.status", "ai.ask", "ai.propose").contains(request.path)) return false;
+                "player.rights", "player.identity", "server.status", "ai.status", "ai.ask", "ai.propose", "ai.queue").contains(request.path)) return false;
         if (request.path.equals("player.notes") && request.text("operation").equals("list")) return false;
         if (request.path.equals("player.points") && request.text("operation").equals("status")) return false;
         if (request.path.equals("player.snapshots") && request.text("operation").equals("list")) return false;

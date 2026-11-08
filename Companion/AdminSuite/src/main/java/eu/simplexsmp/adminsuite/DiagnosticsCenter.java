@@ -347,8 +347,9 @@ final class DiagnosticsCenter implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent e) {
-        if (!enabled()) return;
         Player p = e.getPlayer(); long now = System.currentTimeMillis();
+        Map<String,Object> packet=plugin.packetTrace.take(p.getUniqueId(),now);
+        if (!enabled()) return;
         String[] kick = kicks.remove(p.getUniqueId());
         String quit = ""; try { quit = e.getReason().name(); } catch (Throwable ignored) { }
         String message = kick != null ? kick[1] : "";
@@ -360,7 +361,7 @@ final class DiagnosticsCenter implements Listener {
         String kickCause = kick == null ? "" : kick[0];
         DisconnectAnalyzer.Record r = new DisconnectAnalyzer.Record(UUID.randomUUID().toString().substring(0, 13), now, p.getUniqueId().toString(), p.getName(), platform, quit, kickCause, SparkProfile.clip(message, 300),
             DisconnectAnalyzer.category(quit, kickCause, message), since == null ? 0 : now - since, ping, loc.getWorld() == null ? "" : loc.getWorld().getName(), loc.getBlockX() >> 4, loc.getBlockZ() >> 4,
-            currentTps(), recentMax(5), Math.max(0, Bukkit.getOnlinePlayers().size() - 1));
+            currentTps(), recentMax(5), Math.max(0, Bukkit.getOnlinePlayers().size() - 1),packet);
         synchronized (this) { records.addLast(r); prune(now); }
         dataDirty.set(true);
         scheduleCheck();
@@ -1175,7 +1176,7 @@ final class DiagnosticsCenter implements Listener {
             "count", v.get("count"), "resolved", i.get("resolved"), "hasAi", i.get("ai") != null);
     }
 
-    private synchronized Map<String, Object> disconnects(Map<String, String> q) {
+    synchronized Map<String, Object> disconnects(Map<String, String> q) {
         int limit = Math.max(10, Math.min(500, intOf(q.get("limit"), 150)));
         String category = q.getOrDefault("category", ""), platform = q.getOrDefault("platform", ""), search = q.getOrDefault("q", "").toLowerCase(Locale.ROOT);
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -1184,7 +1185,7 @@ final class DiagnosticsCenter implements Listener {
             DisconnectAnalyzer.Record r = it.next();
             if (!category.isBlank() && !(category.equals("involuntary") ? DisconnectAnalyzer.involuntary(r.category()) : r.category().equals(category))) continue;
             if (!platform.isBlank() && !r.platform().equals(platform)) continue;
-            if (!search.isBlank() && !r.name().toLowerCase(Locale.ROOT).contains(search) && !r.message().toLowerCase(Locale.ROOT).contains(search)) continue;
+            if (!search.isBlank() && !r.name().toLowerCase(Locale.ROOT).contains(search) && !r.message().toLowerCase(Locale.ROOT).contains(search) && !r.packet().toString().toLowerCase(Locale.ROOT).contains(search)) continue;
             rows.add(r.json());
         }
         List<Map<String, Object>> inc = new ArrayList<>(); List<Map<String, Object>> all = new ArrayList<>(incidents.values()); Collections.reverse(all);

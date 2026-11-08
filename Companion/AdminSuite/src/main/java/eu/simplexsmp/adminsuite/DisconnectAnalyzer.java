@@ -15,19 +15,26 @@ final class DisconnectAnalyzer {
 
     /** One player leaving. Coordinates are rounded to chunks; no IP address is ever stored. */
     record Record(String id, long at, String uuid, String name, String platform, String quitReason, String kickCause, String message, String category,
-                  long sessionMs, int ping, String world, int chunkX, int chunkZ, double tps, double msptMax, int online) {
+                  long sessionMs, int ping, String world, int chunkX, int chunkZ, double tps, double msptMax, int online, Map<String,Object> packet) {
+        Record(String id,long at,String uuid,String name,String platform,String quitReason,String kickCause,String message,String category,
+               long sessionMs,int ping,String world,int chunkX,int chunkZ,double tps,double msptMax,int online){
+            this(id,at,uuid,name,platform,quitReason,kickCause,message,category,sessionMs,ping,world,chunkX,chunkZ,tps,msptMax,online,Map.of());
+        }
+        Record {
+            packet = packet==null?Map.of():Map.copyOf(packet);
+        }
         Map<String, Object> json() {
             return SimplexAdminSuite.appMap("id", id, "at", at, "uuid", uuid, "name", name, "platform", platform, "quitReason", quitReason, "kickCause", kickCause, "message", message,
                 "category", category, "categoryTitle", title(category), "involuntary", involuntary(category), "sessionMs", sessionMs, "ping", ping, "world", world, "chunkX", chunkX, "chunkZ", chunkZ,
-                "blockX", chunkX * 16 + 8, "blockZ", chunkZ * 16 + 8, "tps", SparkProfile.round(tps, 2), "msptMax", SparkProfile.round(msptMax, 1), "online", online);
+                "blockX", chunkX * 16 + 8, "blockZ", chunkZ * 16 + 8, "tps", SparkProfile.round(tps, 2), "msptMax", SparkProfile.round(msptMax, 1), "online", online, "packet", packet);
         }
         static Record of(Map<?, ?> m) {
             return new Record(s(m.get("id")), l(m.get("at")), s(m.get("uuid")), s(m.get("name")), s(m.get("platform")), s(m.get("quitReason")), s(m.get("kickCause")), s(m.get("message")), s(m.get("category")),
-                l(m.get("sessionMs")), (int) l(m.get("ping")), s(m.get("world")), (int) l(m.get("chunkX")), (int) l(m.get("chunkZ")), d(m.get("tps")), d(m.get("msptMax")), (int) l(m.get("online")));
+                l(m.get("sessionMs")), (int) l(m.get("ping")), s(m.get("world")), (int) l(m.get("chunkX")), (int) l(m.get("chunkZ")), d(m.get("tps")), d(m.get("msptMax")), (int) l(m.get("online")), AiAdminWorkspace.object(m.get("packet")));
         }
         Record withMessage(String text) {
             String clean = clip(text, 300);
-            return new Record(id, at, uuid, name, platform, quitReason, kickCause, clean, DisconnectAnalyzer.category(quitReason, kickCause, clean), sessionMs, ping, world, chunkX, chunkZ, tps, msptMax, online);
+            return new Record(id, at, uuid, name, platform, quitReason, kickCause, clean, DisconnectAnalyzer.category(quitReason, kickCause, clean), sessionMs, ping, world, chunkX, chunkZ, tps, msptMax, online, packet);
         }
     }
 

@@ -1058,26 +1058,7 @@ final class OpenAiIntegration implements Listener {
   }
 
   private void executeProposal(Player admin, String id) {
-    Proposal proposal = proposals.get(id);
-    if (!validProposal(admin, proposal)) {
-      plugin.menuNotice(admin, plugin.prefix() + "Vorschlag ist abgelaufen oder ungültig.");
-      return;
-    }
-    String result =
-        plugin.executeConfirmedAiAction(
-            admin,
-            proposal.action,
-            proposal.targetUuid,
-            proposal.duration,
-            proposal.amount,
-            proposal.reason);
-    proposals.remove(id);
-    saveProposals();
-    admin.sendMessage(plugin.prefix() + result);
-    plugin.suiteAudit(
-        admin.getName(),
-        "Bestätigte KI-Adminaktion",
-        proposal.action + " -> " + proposal.targetName + " | " + proposal.reason);
+    plugin.menuNotice(admin, plugin.prefix() + "KI-Aktionen im KI-Adminmodus von App, Webpanel oder Discord prüfen.");
   }
 
   private boolean validProposal(Player admin, Proposal proposal) {
@@ -1535,6 +1516,26 @@ final class OpenAiIntegration implements Listener {
    * 10.2.0 diagnostics: one short, bounded analysis with the already configured key and model. The caller supplies a
    * compact, redacted input; nothing is stored at OpenAI (store=false). Falls back when a model rejects reasoning.
    */
+  Map<String,Object> workspaceJson(String instructions,Object input,Map<String,Object> schema,int budget) throws Exception {
+    if (!enabled() || !configured()) throw new IllegalStateException("OpenAI ist nicht verfügbar.");
+    Map<String,Object> payload = new LinkedHashMap<>();
+    payload.put("model",model());
+    payload.put("store",false);
+    payload.put("instructions",instructions);
+    payload.put("input",DiscordBotManager.Json.stringify(input));
+    payload.put("max_output_tokens",budget + (reasoningModel(model()) ? 1400 : 0));
+    payload.put("text",Map.of("format",Map.of("type","json_schema","name","simplex_workspace","strict",true,"schema",schema)));
+    if(reasoningModel(model()))payload.put("reasoning",Map.of("effort","low"));
+    String raw;
+    try{raw=post("/v1/responses",DiscordBotManager.Json.stringify(payload),Duration.ofSeconds(35));}
+    catch(ApiFailure error){
+      if(!payload.containsKey("reasoning")||!error.unsupported("reasoning"))throw error;
+      payload.remove("reasoning");
+      raw=post("/v1/responses",DiscordBotManager.Json.stringify(payload),Duration.ofSeconds(28));
+    }
+    return AppApiManager.object(DiscordBotManager.Json.parse(parseResponseText(raw)));
+  }
+
   String diagnosticsText(String instructions, String input, int maxTokens) throws Exception {
     if (!configured()) throw new IllegalStateException("Kein OpenAI-Schlüssel hinterlegt");
     boolean reasoning = reasoningModel(model());
