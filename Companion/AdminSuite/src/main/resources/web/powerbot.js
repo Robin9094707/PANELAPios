@@ -4,6 +4,7 @@
   var statusNames = { active: "Aktiv", off: "Aus", bypass: "KI pausiert · Chat frei", unconfigured: "API-Schlüssel fehlt · lokale Regeln aktiv" };
   var kindNames = { mute: "AutoMod-Mute", conflict: "Konflikt", help: "Hilferuf", security: "Cheat-Hinweis", outage: "KI pausiert",
     recovery: "KI wieder erreichbar", settings: "Einstellungen geändert", abuse: "Chatnachricht blockiert", advertising: "Werbung blockiert",
+    "keyword-warning": "Stichwortprüfung · Warnung", "keyword-block": "Stichwortprüfung · blockiert",
     warning: "Warnhinweis", reviewed: "Nachträgliche Prüfung", deescalation: "KI hat deeskaliert", "ai-action": "KI-Aktion ausgeführt", "server-event": "Wichtiges Serverereignis" };
   var labels = { enabled: "PowerBot", moderation: "KI-Moderation", whispers: "Flüsternachrichten prüfen", advertising: "Eigenwerbung blockieren",
     "auto-mute": "AutoMod-Mutes", "linked-mutes": "Bestätigte Alt-Konten einschließen", "public-chat": "Öffentliche Chat-KI",
@@ -12,6 +13,7 @@
 
   P.powerbot = async function (id, query, alive) {
     if (!S.has("powerbot-v1") || !S.can("data.powerbot")) { S.mount(S.lockedPage("PowerBot gesperrt", "data.powerbot")); return; }
+    if (id === "keywords") { await keywordRules(alive); return; }
     var filter = query.get("filter") || "important", version = 0, busy = false;
     var options = h("details", {}), head = h("div", {}), rows = h("div", { class: "stack" });
     S.title("PowerBot-Fallzentrale", "Moderation");
@@ -58,7 +60,9 @@
       if (!alive() || request !== version) return;
       head.replaceChildren(h("div", { class: "row wrap" },
         S.badge(statusNames[data.status] || data.status, data.status === "active" ? "ok" : "warn"),
-        S.badge(data.open + " offene Fälle", "accent")));
+        S.badge(data.open + " offene Fälle", "accent"),
+        data.canSettings && S.has("powerbot-keywords-v1") ?
+          h("a", { class: "btn sm", href: "#/powerbot/keywords", text: "Stichwortregeln" }) : null));
       settings(data);
       rows.replaceChildren();
       if (!(data.items || []).length) rows.appendChild(S.card("Keine Einträge", { icon: "check" }));
@@ -83,6 +87,76 @@
     }
     await load();
   };
+
+  async function keywordRules(alive) {
+    if (!S.has("powerbot-keywords-v1") || !S.full() || !S.can("powerbot.settings") || !S.can("powerbot.manage")) {
+      S.mount(S.lockedPage("Stichwortregeln gesperrt", "powerbot.settings")); return;
+    }
+    var data = await S.api("powerbot/keywords");
+    if (!alive()) return;
+    var rules = data.items || [], selected = "", busy = false;
+    var heading = h("b", { text: "Stichwort hinzufügen" });
+    var search = h("input", { type: "search", class: "input", placeholder: "Stichwort oder Regel suchen", "aria-label": "Stichwort oder Regel suchen", onInput: draw });
+    var keyword = h("input", { class: "input", maxLength: 64, required: true, placeholder: "Zum Beispiel SMP", "aria-label": "Stichwort oder Phrase" });
+    var instructions = h("textarea", { class: "input", maxLength: 500, rows: 5, placeholder: "Was soll PowerBot prüfen?", "aria-label": "Eigene Prüfregel" });
+    var list = h("div", { class: "list" });
+    var count = h("small", { class: "muted" });
+    var save = S.btn("Speichern", { kind: "primary", onClick: submit });
+    var reset = S.btn("Neues Stichwort", { onClick: function () { if (!busy) edit(null); } });
+    S.title("Stichwortregeln", "PowerBot", h("a", { class: "btn ghost sm", href: "#/powerbot", text: "Zur Fallzentrale" }));
+    S.mount(h("div", { class: "stack" },
+      S.card("Stichwörter", { icon: "search", sub: "Ganze Wörter und Phrasen lösen eine KI-Prüfung aus." }, search, count, list),
+      S.card(null, { icon: "settings" }, h("div", { class: "stack" }, heading,
+        h("label", { class: "stack" }, "Stichwort oder Phrase", keyword),
+        h("label", { class: "stack" }, "Eigene Prüfregel", instructions),
+        h("small", { class: "muted", text: "Beschreibe, wann PowerBot durchlassen, warnen oder blockieren soll. Leer verwendet die allgemeinen Moderationsregeln." }),
+        h("div", { class: "row wrap" }, save, reset)))));
+    draw();
+
+    function edit(row) {
+      selected = row ? row.id : "";
+      keyword.value = row ? row.keyword : "";
+      instructions.value = row ? row.instructions : "";
+      heading.textContent = row ? "Stichwort bearbeiten" : "Stichwort hinzufügen";
+      keyword.focus();
+    }
+    function draw() {
+      var query = search.value.trim().toLowerCase();
+      var visible = rules.filter(function (row) {
+        return !query || (row.keyword + " " + row.instructions).toLowerCase().includes(query);
+      });
+      count.textContent = visible.length + " von " + rules.length + " Stichwortregeln";
+      list.replaceChildren();
+      if (!visible.length) list.appendChild(S.notice(query ? "Keine Treffer." : "Noch keine Stichwörter."));
+      visible.forEach(function (row) {
+        list.appendChild(h("div", { class: "item row wrap" },
+          h("div", { class: "meta grow" }, h("b", { text: row.keyword }), h("small", { text: row.instructions || "Allgemeine Moderationsregeln" })),
+          S.btn("Bearbeiten", { size: "sm", onClick: function () { if (!busy) edit(row); } }),
+          S.btn("Löschen", { size: "sm", onClick: async function () {
+            if (busy || !await S.confirm("Stichwort löschen?", "Die Regel für „" + row.keyword + "“ wird entfernt.", "Löschen", true)) return;
+            await change({ operation: "delete", id: row.id }, selected === row.id);
+          } })));
+      });
+    }
+    function submit() {
+      if (!keyword.reportValidity() || !keyword.value.trim()) return;
+      return change({ operation: "save", id: selected, keyword: keyword.value, instructions: instructions.value }, true);
+    }
+    async function change(body, clearDraft) {
+      if (busy) return;
+      busy = true;
+      save.disabled = true;
+      try {
+        var result = await S.api("powerbot/keywords", { body: Object.assign({ confirmed: true }, body) });
+        if (!alive()) return;
+        rules = result.items || [];
+        if (clearDraft) edit(null);
+        draw();
+        S.toast("Stichwortregeln aktualisiert.", "ok");
+      } catch (e) { if (alive()) S.toast(e.message, "err"); }
+      finally { busy = false; save.disabled = false; }
+    }
+  }
 
   S.powerBotDigest = async function (alive) {
     if (!S.has("powerbot-v1") || !S.can("data.powerbot")) return null;

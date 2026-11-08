@@ -1,6 +1,8 @@
 package eu.simplexsmp.adminsuite;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.zip.GZIPOutputStream;
 
@@ -12,6 +14,8 @@ final class PowerBotHarness {
         assert !PowerBot.advertising("Join my server play.simplexsmp.eu", "simplexsmp.eu");
         assert !PowerBot.advertising("I got timed out when I tried to join the server on play.example.net", "simplexsmp.eu");
         assert !PowerBot.advertising("Example.net posted an article", "simplexsmp.eu");
+
+        keywords();
 
         OfflineInventory old = new OfflineInventory(inventory());
         assert old.editable();
@@ -28,7 +32,32 @@ final class PowerBotHarness {
         catch (IllegalArgumentException expected) { }
         try { new OfflineInventory(new byte[]{10, 0, 0, 9}); throw new AssertionError("Accepted truncated NBT"); }
         catch (IOException expected) { }
-        System.out.println("PASS PowerBot targeted self-promotion and offline cross-container NBT edits");
+        System.out.println("PASS PowerBot literal keywords, durable deletion, targeted self-promotion and offline cross-container NBT edits");
+    }
+
+    private static void keywords() throws Exception {
+        Path dir = Files.createTempDirectory("powerbot-keyword-test-");
+        Path file = dir.resolve("rules.properties");
+        try {
+            var rules = new PowerBotKeywords(file);
+            assert rules.matches("Wer meinem sMp beitreten will, kann mich privat anschreiben!").size() == 1;
+            assert rules.matches("Willkommen auf SimplexSMP").isEmpty();
+            assert rules.matches("Was ist SMP?").size() == 1;
+            assert rules.matches("ＳＭＰ!").size() == 1;
+            rules.change("save", "", "mein Server", "Prüfe auf Eigenwerbung.");
+            assert rules.matches("Komm auf MEIN   SERVER, ein SMP.").size() == 2;
+            try { rules.change("save", "", "smp", "Doppelt"); throw new AssertionError("Doppeltes Stichwort erlaubt"); }
+            catch (AppApiManager.ApiError expected) { assert expected.code == 409; }
+            rules.change("save", "mein server", "Hallo", "Warne nur bei einer Beleidigung.");
+            assert rules.matches("Mein Server").isEmpty();
+            assert new PowerBotKeywords(file).matches("HALLO!").size() == 1;
+            rules.change("delete", "smp", "", "");
+            rules.change("delete", "hallo", "", "");
+            assert new PowerBotKeywords(file).rows().isEmpty();
+        } finally {
+            Files.deleteIfExists(file);
+            Files.deleteIfExists(dir);
+        }
     }
 
     private static Map<String, Object> slot(OfflineInventory inventory, int slot) {

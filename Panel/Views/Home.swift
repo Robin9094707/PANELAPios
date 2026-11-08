@@ -36,6 +36,7 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     SuiteServerShortcuts(query: search)
+                    if search.isEmpty { SuiteHomeEvents(refresh: iconRevision) }
                     quickMenu
                     if !search.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {

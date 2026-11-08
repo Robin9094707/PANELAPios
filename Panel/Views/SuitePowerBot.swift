@@ -12,9 +12,10 @@ struct SuitePowerBotView: View {
 
     private static let statuses = ["active": "Aktiv", "bypass": "KI pausiert · Chat frei",
                                    "unconfigured": "API-Schlüssel fehlt · lokale Regeln aktiv", "off": "Aus"]
-    private static let kinds = ["mute": "AutoMod-Mute", "conflict": "Konflikt", "help": "Hilferuf",
+    static let kinds = ["mute": "AutoMod-Mute", "conflict": "Konflikt", "help": "Hilferuf",
         "security": "Cheat-Hinweis", "outage": "KI pausiert", "recovery": "KI wieder erreichbar",
         "settings": "Einstellungen geändert", "abuse": "Chatnachricht blockiert", "advertising": "Werbung blockiert",
+        "keyword-warning": "Stichwortprüfung · Warnung", "keyword-block": "Stichwortprüfung · blockiert",
         "warning": "Warnhinweis", "reviewed": "Nachträgliche Prüfung", "deescalation": "KI hat deeskaliert",
         "ai-action": "KI-Aktion ausgeführt", "server-event": "Wichtiges Serverereignis"]
     static let flags: [(String, String)] = [("enabled", "PowerBot"), ("moderation", "KI-Moderation"),
@@ -31,6 +32,11 @@ struct SuitePowerBotView: View {
                 Toggle("Rückblick nach 3 Stunden anzeigen", isOn: $showDigest)
                 if data["canSettings"].bool {
                     Button("AutoMod einstellen", systemImage: "slider.horizontal.3") { settings = true }
+                    if suite.features.contains("powerbot-keywords-v1") {
+                        NavigationLink {
+                            SuitePowerBotKeywordsView(suite: suite)
+                        } label: { Label("Stichwortregeln", systemImage: "text.magnifyingglass") }
+                    }
                 }
             }
             Section {

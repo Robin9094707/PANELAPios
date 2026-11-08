@@ -1,5 +1,16 @@
 [
   {
+    "version": "10.11.1",
+    "app": "5.4.1",
+    "date": "2026-11-08",
+    "title": "PowerBot-Stichwortregeln",
+    "intro": "Eigene Prüfregeln pro Stichwort und aktuelle Ereignisse direkt auf der iPhone-Startseite.",
+    "items": [
+      {"icon": "search", "title": "Stichwörter verwalten", "text": "Wörter und Phrasen hinzufügen, bearbeiten, suchen oder löschen. SMP ist vorgegeben."},
+      {"icon": "bell", "title": "Ereignisse auf der Startseite", "text": "Die fünf neuesten Ereignisse deiner sichtbaren Serververbindungen auf einen Blick."}
+    ]
+  },
+  {
     "version": "10.11.0",
     "app": "5.4.0",
     "date": "2026-11-08",

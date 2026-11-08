@@ -53,6 +53,21 @@ public final class AppApiIntegrationHarness {
             client=HttpClient.newBuilder().sslContext(ssl).connectTimeout(java.time.Duration.ofSeconds(5)).build();base=URI.create("https://127.0.0.1:"+port);
             var read=api.security.issue("Read","read");var full=api.security.issue("Full","full");var manage=api.security.issue("Manage","manage");
             assistant(plugin,api,full,worldTime);
+            try (var bot = new PowerBot(plugin)) {
+                plugin.powerBot = bot;
+                check(call("/v1/powerbot/keywords", read.token(), null).statusCode() == 403, "keyword settings require full scope");
+                var defaults = call("/v1/powerbot/keywords", full.token(), null);
+                check(defaults.statusCode() == 200 && defaults.body().contains("SMP"), "default SMP rule via HTTPS");
+                var save = json(Map.of("operation", "save", "keyword", "Hallo", "instructions", "Prüfe auf Eigenwerbung.", "confirmed", true));
+                check(call("/v1/powerbot/keywords", full.token(), save).body().contains("Hallo"), "persist and return one edited rule");
+                check(call("/v1/powerbot/keywords", full.token(), save).statusCode() == 409, "duplicate rule rejected");
+                bot.important("keyword-block", "", "Testspieler", "Minecraft", "Stichwort: Hallo", false);
+                var feed = call("/v1/home-events", read.token(), null);
+                check(feed.statusCode() == 200 && feed.body().contains("keyword-block") && !feed.body().contains("Stichwort: Hallo"), "compact permission-gated home event feed");
+                check(call("/v1/home-events", null, null).statusCode() == 401, "home events require authentication");
+                check(call("/v1/powerbot/keywords", full.token(), json(Map.of("operation", "delete", "id", "hallo", "confirmed", true))).statusCode() == 200, "delete a rule via HTTPS");
+                plugin.powerBot = null;
+            }
             check(call("/v1/health",null,null).statusCode()==401,"no key denied");check(call("/v1/health","invalid",null).statusCode()==401,"invalid key denied");
             check(call("/v1/database/inspect",read.token(),"{}").statusCode()==403,"read scope cannot create database connections");
             check(call("/v1/database/inspect",full.token(),"{}").statusCode()==400,"scanner validates fields before connecting");

@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 /** Chat decisions, separate reversible sanctions and the staff handoff queue. */
 final class PowerBot implements AutoCloseable {
     static final String FEATURE = "powerbot-v1", VIEW = "data.powerbot", MANAGE = "powerbot.manage", SETTINGS = "powerbot.settings";
+    static final String KEYWORDS_FEATURE = "powerbot-keywords-v1", HOME_FEATURE = "suite-home-events-v1";
     private static final String ROOT = "powerbot.";
     private static final List<String> FLAGS = List.of("enabled", "moderation", "whispers", "advertising", "auto-mute", "linked-mutes",
         "public-chat", "proactive", "discord", "notify-staff", "security-hints", "staff-device-context", "critical-alerts");
@@ -24,6 +25,7 @@ final class PowerBot implements AutoCloseable {
     private static final Pattern DESTINATION = Pattern.compile("(?i)(?<![a-z0-9-])(?:[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?\\.)+[a-z]{2,24}\\b|\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b");
     private final SimplexAdminSuite plugin;
     private final Path file;
+    private final PowerBotKeywords keywords;
     private final LinkedHashMap<String, Entry> entries = new LinkedHashMap<>();
     private final ThreadPoolExecutor reviews = new ThreadPoolExecutor(3, 3, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(12), task -> {
         Thread thread = new Thread(task, "Simplex-PowerBot");
@@ -52,6 +54,7 @@ final class PowerBot implements AutoCloseable {
     PowerBot(SimplexAdminSuite plugin) throws IOException {
         this.plugin = plugin;
         file = plugin.getDataFolder().toPath().resolve("powerbot-actions.json");
+        keywords = new PowerBotKeywords(file.resolveSibling("powerbot-keywords.properties"));
         if (Files.isRegularFile(file)) {
             try {
                 Object data = DiscordBotManager.Json.parse(Files.readString(file));
@@ -161,20 +164,25 @@ final class PowerBot implements AutoCloseable {
         boolean whisper = source.equals("Whisper");
         String sample = clean(text, 450);
         String instructions = policy;
+        var matches = keywords.matches(sample);
+        String matched = matches.isEmpty() ? "" : "Stichwörter: " + String.join(", ", matches.stream().map(rule -> rule.get("keyword")).toList());
         if (onMain) {
             // Commands run on the server tick. Review in the background and apply future mutes without replaying commands.
             try {
                 reviews.execute(() -> {
                     try {
-                        var decision = plugin.openAiIntegration().powerBotReview(sample, instructions, whisper);
+                        var result = plugin.openAiIntegration().powerBotReview(sample, instructions, whisper, matches);
                         if (chatReady()) recovered();
-                        if (!decision.allowed && managed(source) && on("moderation")) {
-                            applyReview(identity, name, source, "reviewed");
+                        var decision = result.decision();
+                        if ((!decision.allowed || decision.warning && !matched.isEmpty()) && managed(source) && on("moderation")) {
+                            if (!decision.allowed && result.moderationFlagged()) applyReview(identity, name, source, "reviewed");
+                            if (!matched.isEmpty()) important("keyword-warning", identity, name, source,
+                                "Nachträglich geprüft · " + matched, false);
                             plugin.runAdminTask(() -> {
                                 Player target = Bukkit.getPlayer(UUID.fromString(identity));
                                 if (target != null) target.sendMessage(plugin.playerText(target,
-                                    "§e[PowerBot] Bitte bleib respektvoll. Weitere bestätigte Verstöße können zu einem Chatmute führen.",
-                                    "§e[PowerBot] Please stay respectful. Further confirmed violations may lead to a chat mute."));
+                                    "§e[PowerBot] Deine Nachricht wurde nachträglich beanstandet. Bitte beachte die Chatregeln.",
+                                    "§e[PowerBot] Your message was flagged after delivery. Please follow the chat rules."));
                             });
                         }
                     } catch (Exception error) { failed(); }
@@ -182,20 +190,23 @@ final class PowerBot implements AutoCloseable {
             } catch (RejectedExecutionException busy) { failed(); }
             return OpenAiIntegration.ChatDecision.allow();
         }
-        Future<OpenAiIntegration.ChatDecision> work = null;
+        Future<OpenAiIntegration.PowerBotDecision> work = null;
         try {
-            work = reviews.submit(() -> plugin.openAiIntegration().powerBotReview(sample, instructions, false));
-            var decision = work.get(6500, TimeUnit.MILLISECONDS);
+            work = reviews.submit(() -> plugin.openAiIntegration().powerBotReview(sample, instructions, false, matches));
+            var result = work.get(6500, TimeUnit.MILLISECONDS);
+            var decision = result.decision();
             if (chatReady()) recovered();
             if (!managed(source) || !on("moderation")) return OpenAiIntegration.ChatDecision.allow();
             if (!decision.allowed) {
-                applyReview(identity, name, source, "abuse");
+                if (result.moderationFlagged()) applyReview(identity, name, source, "abuse");
+                else important("keyword-block", identity, name, source, matched, false);
                 return OpenAiIntegration.ChatDecision.block(german ? "Deine Nachricht wurde wegen eines bestätigten Chatverstoßes zurückgehalten."
                     : "Your message was held for a confirmed chat violation.", "AutoMod: confirmed violation");
             }
             if (decision.warning) {
-                record("warning", identity, name, source, "Kontextprüfung: Hinweis an Spieler", 0, List.of());
-                return OpenAiIntegration.ChatDecision.warn(german ? "Bitte bleib im Chat respektvoll." : "Please keep chat respectful.", "AutoMod warning");
+                if (matched.isEmpty()) record("warning", identity, name, source, "Kontextprüfung: Hinweis an Spieler", 0, List.of());
+                else important("keyword-warning", identity, name, source, matched, false);
+                return OpenAiIntegration.ChatDecision.warn(german ? "Bitte beachte die Chatregeln." : "Please follow the chat rules.", "AutoMod warning");
             }
         } catch (InterruptedException interrupted) {
             if (work != null) work.cancel(true);
@@ -314,7 +325,7 @@ final class PowerBot implements AutoCloseable {
             case "open" -> CASES.contains(row.kind) && !row.resolved;
             case "mutes" -> row.kind.equals("mute");
             case "all" -> true;
-            default -> CASES.contains(row.kind) || Set.of("recovery", "settings", "ai-action", "deescalation", "server-event").contains(row.kind);
+            default -> CASES.contains(row.kind) || Set.of("recovery", "settings", "ai-action", "deescalation", "server-event", "keyword-block").contains(row.kind);
         }).limit(150).map(row -> {
             var view = row.row();
             if (row.player.startsWith("discord:")) view.put("player", "");
@@ -324,7 +335,7 @@ final class PowerBot implements AutoCloseable {
             return view;
         }).toList();
         return SimplexAdminSuite.appMap("items", visible, "at", now, "open", rows.stream().filter(row -> CASES.contains(row.kind) && !row.resolved).count(),
-            "recent", recent.stream().filter(row -> CASES.contains(row.kind) || Set.of("recovery", "ai-action", "deescalation", "server-event").contains(row.kind)).count(), "mutes", recent.stream().filter(row -> row.kind.equals("mute")).count(),
+            "recent", recent.stream().filter(row -> CASES.contains(row.kind) || Set.of("recovery", "ai-action", "deescalation", "server-event", "keyword-block").contains(row.kind)).count(), "mutes", recent.stream().filter(row -> row.kind.equals("mute")).count(),
             "status", !enabled() ? "off" : !configured() ? "unconfigured" : now < bypassUntil ? "bypass" : "active",
             "manage", manage, "canSettings", settings, "flags", flags, "guidelines", settings ? policy : "");
     }
@@ -368,11 +379,59 @@ final class PowerBot implements AutoCloseable {
         return Map.of("ok", true);
     }
 
+    private Map<String, Object> homeEvents(boolean general, boolean moderation) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (general && plugin.appEvents != null) {
+            var log = AppApiManager.object(plugin.appEvents.data("", 0));
+            if (log.get("items") instanceof List<?> rows) for (Object value : rows.stream().limit(5).toList()) {
+                var row = AppApiManager.object(value);
+                result.add(SimplexAdminSuite.appMap("id", "events:" + row.get("id"), "title", row.get("title"),
+                    "at", row.get("time"), "critical", row.get("critical"), "source", "events"));
+            }
+        }
+        if (moderation) synchronized (this) {
+            entries.values().stream()
+                .filter(row -> CASES.contains(row.kind) || Set.of("ai-action", "deescalation", "keyword-block").contains(row.kind))
+                .sorted(Comparator.comparingLong(Entry::at).reversed()).limit(5)
+                .forEach(row -> result.add(SimplexAdminSuite.appMap("id", "powerbot:" + row.id, "kind", row.kind, "at", row.at,
+                    "title", row.name, "critical", Set.of("outage", "mute").contains(row.kind), "source", "powerbot")));
+        }
+        result.sort(Comparator.comparingLong((Map<String, Object> row) -> AiAdmin.number(row.get("at"))).reversed());
+        return Map.of("items", result.stream().limit(5).toList());
+    }
+
     boolean route(AppApiManager api, HttpExchange exchange, AppApiSecurity.Key key, String path, String method, long revision) throws Exception {
-        if (!path.equals("/v1/powerbot")) return false;
+        if (path.equals("/v1/home-events")) {
+            if (!method.equals("GET")) throw new AppApiManager.ApiError(405, "Methode nicht erlaubt");
+            boolean general = api.allows(key, "data.events"), moderation = api.allows(key, VIEW);
+            if (!general && !moderation) throw new AppApiManager.ApiError(403, "Keine Berechtigung für Startseiten-Ereignisse.");
+            AppApiManager.send(exchange, 200, homeEvents(general, moderation));
+            return true;
+        }
+        boolean keywordRoute = path.equals("/v1/powerbot/keywords");
+        if (!keywordRoute && !path.equals("/v1/powerbot")) return false;
         api.requirePermission(key, VIEW);
         boolean manage = api.allows(key, MANAGE) && AppApiSecurity.permitted(key, "manage");
         boolean settings = manage && key.scope().equals("full") && api.allows(key, SETTINGS);
+        if (keywordRoute) {
+            if (!settings) throw new AppApiManager.ApiError(403, "Stichwortregeln benötigen Vollzugriff und Einstellungsrecht.");
+            if (method.equals("GET")) {
+                AppApiManager.send(exchange, 200, Map.of("items", keywords.rows()));
+            } else if (method.equals("POST")) {
+                var body = AppApiManager.body(exchange, 8192);
+                if (!Boolean.TRUE.equals(body.get("confirmed"))) throw new IllegalArgumentException("Bestätigung fehlt");
+                AppApiManager.send(exchange, 200, api.onMain(revision, () -> {
+                    api.requirePermission(key, VIEW);
+                    api.requirePermission(key, MANAGE);
+                    api.requirePermission(key, SETTINGS);
+                    String operation = AiAdmin.text(body, "operation");
+                    String word = keywords.change(operation, AiAdmin.text(body, "id"), AiAdmin.text(body, "keyword"), AiAdmin.text(body, "instructions"));
+                    plugin.suiteAudit(key.label(), operation.equals("delete") ? "PowerBot-Stichwort gelöscht" : "PowerBot-Stichwort gespeichert", clean(word, 64));
+                    return Map.of("items", keywords.rows());
+                }));
+            } else throw new AppApiManager.ApiError(405, "Methode nicht erlaubt");
+            return true;
+        }
         if (method.equals("GET")) {
             var query = AppApiManager.query(exchange.getRequestURI());
             long after = Long.parseLong(query.getOrDefault("after", "0"));

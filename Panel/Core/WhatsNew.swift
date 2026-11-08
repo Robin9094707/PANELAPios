@@ -18,6 +18,10 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.4.1", title: "PowerBot-Stichwörter", summary: "Eigene Chat-Prüfregeln und aktuelle Ereignisse direkt auf der Startseite.", items: [
+            WhatsNewItem(symbol: "text.magnifyingglass", title: "Eigene Stichwortregeln", detail: "Ganze Wörter oder Phrasen hinzufügen und die KI mit einer eigenen Regel prüfen lassen. SMP ist bereits hinterlegt."),
+            WhatsNewItem(symbol: "bell.badge", title: "Aktuelle Ereignisse", detail: "Die neuesten Meldungen verbundener Server stehen direkt auf deiner Startseite.")
+        ]),
         WhatsNewRelease(version: "5.4.0", title: "PowerBot-Fallzentrale", summary: "Chatmoderation, Teamübergabe und ein Rückblick für Simplex.", items: [
             WhatsNewItem(symbol: "shield.lefthalf.filled", title: "Ausgeführte Aktionen sehen", detail: "Blockierungen, Deeskalation und laufende Chatmutes im eigenen Protokoll öffnen."),
             WhatsNewItem(symbol: "person.badge.plus", title: "Fälle im Team übernehmen", detail: "Fälle zuweisen, Spieler öffnen, AutoMod-Mutes widerrufen und Vorgänge abschließen."),
