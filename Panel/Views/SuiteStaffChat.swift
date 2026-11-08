@@ -45,8 +45,11 @@ import UniformTypeIdentifiers
     @Published var elapsed: TimeInterval = 0
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
-    private var url: URL { FileManager.default.temporaryDirectory.appendingPathComponent("sprachnachricht.m4a") }
-    func start() async throws {
+    private let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+    private var starting = false
+    func start(maxDuration: TimeInterval = 300) async throws {
+        guard !starting, !recording else { return }
+        starting = true; defer { starting = false }
         guard await AVAudioApplication.requestRecordPermission() else { throw PanelError(message: "Mikrofonzugriff ist in den iOS-Einstellungen für Simplex Panel deaktiviert.") }
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker])
@@ -54,14 +57,21 @@ import UniformTypeIdentifiers
         try? FileManager.default.removeItem(at: url)
         let settings: [String: Any] = [AVFormatIDKey: Int(kAudioFormatMPEG4AAC), AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1, AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue]
         let recorder = try AVAudioRecorder(url: url, settings: settings)
-        recorder.delegate = self; recorder.record(forDuration: 300); self.recorder = recorder
+        recorder.delegate = self
+        guard recorder.record(forDuration: maxDuration) else {
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            throw PanelError(message: "Mikrofonaufnahme konnte nicht gestartet werden.")
+        }
+        self.recorder = recorder
         recording = true; elapsed = 0
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in Task { @MainActor in self?.elapsed = self?.recorder?.currentTime ?? 0 } }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in Task { @MainActor in
+            if let self, let recorder = self.recorder, recorder.isRecording { self.elapsed = recorder.currentTime }
+         } }
     }
     func stop() -> Data? {
         recorder?.stop(); timer?.invalidate(); timer = nil; recording = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        defer { recorder = nil }
+        defer { recorder = nil; try? FileManager.default.removeItem(at: url) }
         guard elapsed >= 0.6, let data = try? Data(contentsOf: url), !data.isEmpty else { return nil }
         return data
     }
@@ -94,6 +104,7 @@ struct SuiteStaffChatView: View {
     @State private var photos: [PhotosPickerItem] = []
     @State private var importing = false
     @State private var settings = false
+    @State private var showAssistant = false
     @State private var atBottom = true
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteStaffChatModel(suite)) }
     var body: some View {
@@ -106,8 +117,16 @@ struct SuiteStaffChatView: View {
         }
         .navigationTitle("Staff-Chat").navigationBarTitleDisplayMode(.inline).errorAlert($model.error)
         .toolbar {
+            if suite.features.contains("admin-assistant-chat-v1"), suite.can("ai.assistant.use") {
+                ToolbarItem(placement: .topBarTrailing) { Button("Privaten KI-Chat öffnen", systemImage: "sparkles") { showAssistant = true } }
+            }
             if suite.features.contains("history-management-v1") { ToolbarItem(placement: .topBarTrailing) { SuiteHistoryLink(suite: suite, kind: "staff-chat", title: "Staff-Chat") } }
             ToolbarItem(placement: .topBarTrailing) { Button("Staff-Chat einstellen", systemImage: "gearshape") { settings = true }.disabled(suite.scope != "full") } }
+        .sheet(isPresented: $showAssistant) {
+            NavigationStack { SuiteAIAssistantView(suite: suite).toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Staff-Chat") { showAssistant = false } }
+            } }
+        }
         .sheet(isPresented: $settings, onDismiss: { Task { await model.load(reset: true) } }) { NavigationStack { SuiteStaffChatSettingsView(suite: suite) } }
         .sheet(isPresented: $importing) { filePicker }
         .onChange(of: photos) { _, items in Task { await sendPhotos(items) } }

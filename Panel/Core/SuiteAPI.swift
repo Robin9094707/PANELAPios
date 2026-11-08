@@ -147,9 +147,9 @@ enum SuiteDevice {
         return try await transfer(path, method: "GET", query: query, body: nil, contentType: nil, limit: 16 * 1024 * 1024)
     }
     /// Binary POST (ticket attachments) with a JSON reply.
-    func upload(_ path: String, query: [String: String], data: Data, contentType: String) async throws -> JSON {
+    func upload(_ path: String, query: [String: String], data: Data, contentType: String, timeout: TimeInterval? = nil) async throws -> JSON {
         guard !demo else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }
-        return try JSONDecoder().decode(JSON.self, from: try await transfer(path, method: "POST", query: query, body: data, contentType: contentType, limit: 8 * 1024 * 1024))
+        return try JSONDecoder().decode(JSON.self, from: try await transfer(path, method: "POST", query: query, body: data, contentType: contentType, limit: 8 * 1024 * 1024, timeout: timeout))
     }
     private func makeRequest(_ path: String, method: String, query: [String: String], timeout: TimeInterval?) throws -> URLRequest {
         guard !path.contains(".."), !path.contains("://"), !path.contains("?") else { throw PanelError(message: "Ungültiger Suite-Pfad.") }

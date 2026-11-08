@@ -240,6 +240,7 @@ openai:
     cooldown-seconds: 30
     max-output-tokens: 500
   admin-assistant:
+    transcription-model: gpt-transcribe
     enabled: true
     default-daily-limit: 15
     # Legacy API keys need an explicit owner ID. Discord uses the configured guild's actual owner.
