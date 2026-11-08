@@ -2157,14 +2157,6 @@ final class DiscordBotManager {
                 sendAdminChannelReply(channelId,DiscordAdminController.Reply.error("Nutze den privaten KI-Slash-Befehl für Serverdaten und Aktionsentwürfe."));
                 return;
             }
-            DiscordAdminController.Reply reply = error == null
-                            ? DiscordAdminController.Reply.ok("Simplex KI", answer, "Answering a live Minecraft server question")
-                            : DiscordAdminController.Reply.error("OpenAI-Anfrage fehlgeschlagen: " + cleanText(error.getMessage(), 500));
-                    recordAdminExecution(adminRequest, actor, reply);
-                    sendAdminChannelReply(channelId, reply);
-                }));
-                return;
-            }
             DiscordAdminController.Reply reply = adminController.execute(adminRequest, actor);
             recordAdminExecution(adminRequest, actor, reply);
             sendAdminChannelReply(channelId, reply);

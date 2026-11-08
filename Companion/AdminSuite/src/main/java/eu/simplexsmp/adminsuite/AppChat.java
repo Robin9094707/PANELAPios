@@ -5,9 +5,10 @@ import java.util.*;
 import java.util.concurrent.*;
 import org.bukkit.Bukkit;
 import net.kyori.adventure.text.Component;
-/** Public messages only: the last 50 rows survive app and server restarts until staff clear them. */
+/** Public messages only. The chat client receives 50 recent rows; staff can search a bounded archive. */
 final class AppChat {
-    static final int LIMIT=50;
+    static final int LIMIT=50, HISTORY_LIMIT=1500;
+    private static final long HISTORY_AGE=3*24*60*60_000L;
     private final Deque<Map<String,Object>> rows=new ArrayDeque<>();private long sequence;private String epoch=UUID.randomUUID().toString();
     private Path file;private ScheduledExecutorService writer;private boolean writePending;
     /** Loads an existing history; a damaged file is kept aside and never blocks startup. */
@@ -18,19 +19,42 @@ final class AppChat {
         try(Reader in=Files.newBufferedReader(target)){
             Properties p=new Properties();p.load(in);
             sequence=Long.parseLong(p.getProperty("sequence","0"));epoch=p.getProperty("epoch",epoch);
-            for(int i=0;i<LIMIT;i++){String raw=p.getProperty("row."+i);if(raw==null)break;if(DiscordBotManager.Json.parse(raw) instanceof Map<?,?> m){Map<String,Object> row=new LinkedHashMap<>();m.forEach((k,v)->row.put(String.valueOf(k),v));rows.addLast(row);}}
+            loadRows(p,"context.",HISTORY_LIMIT-LIMIT);loadRows(p,"row.",LIMIT);trim();
         }catch(Exception damaged){
             try{Files.move(target,target.resolveSibling(target.getFileName()+".damaged-"+System.currentTimeMillis()));}catch(IOException ignored){}
             rows.clear();
         }
     }
+    private void loadRows(Properties source,String key,int limit){
+        for(int i=0;i<limit;i++){
+            String raw=source.getProperty(key+i);if(raw==null)break;
+            if(DiscordBotManager.Json.parse(raw) instanceof Map<?,?> row)rows.addLast(new LinkedHashMap<>(AppApiManager.object(row)));
+        }
+    }
+    private void trim(){
+        long cutoff=System.currentTimeMillis()-HISTORY_AGE;
+        while(rows.size()>LIMIT){
+            Object at=rows.getFirst().get("at");
+            if(rows.size()<=HISTORY_LIMIT && (!(at instanceof Number n)||n.longValue()>=cutoff))break;
+            rows.removeFirst();
+        }
+    }
+    private static Properties serialize(Collection<Map<String,Object>> items,long sequence,String epoch){
+        Properties p=new Properties();p.setProperty("schema","1");p.setProperty("sequence",Long.toString(sequence));p.setProperty("epoch",epoch);
+        int archive=Math.max(0,items.size()-LIMIT), index=0;
+        for(var row:items){
+            p.setProperty(index<archive?"context."+index:"row."+(index-archive),DiscordBotManager.Json.stringify(row));
+            index++;
+        }
+        return p;
+    }
     synchronized void stop(){if(writer==null)return;writer.shutdownNow();writer=null;writePending=false;persistNow();}
     synchronized void record(String uuid,String name,String text,String source){
         rows.addLast(SimplexAdminSuite.appMap("id",Long.toString(++sequence),"uuid",uuid,"name",name,"text",text,"source",source,"at",System.currentTimeMillis()));
-        while(rows.size()>LIMIT)rows.removeFirst();
+        trim();
         schedule();
     }
-    synchronized Object read(long after){return SimplexAdminSuite.appMap("items",rows.stream().filter(row->Long.parseLong((String)row.get("id"))>after).toList(),"cursor",Long.toString(sequence),"epoch",epoch,"limit",LIMIT);}
+    synchronized Object read(long after){return SimplexAdminSuite.appMap("items",rows.stream().skip(Math.max(0,rows.size()-LIMIT)).filter(row->Long.parseLong((String)row.get("id"))>after).toList(),"cursor",Long.toString(sequence),"epoch",epoch,"limit",LIMIT);}
     /** Removes the shared history; the cursor keeps counting so no client sees reused IDs. */
     synchronized Object clear(SimplexAdminSuite plugin,String actor){
         int removed=rows.size();rows.clear();epoch=UUID.randomUUID().toString();schedule();
@@ -39,22 +63,20 @@ final class AppChat {
     }
     private void schedule(){
         if(writer==null||writePending)return;writePending=true;
-        try{writer.schedule(()->{synchronized(AppChat.this){writePending=false;persistNow();}},2,TimeUnit.SECONDS);}catch(RejectedExecutionException stopped){writePending=false;}
+        try{writer.schedule(()->{synchronized(AppChat.this){writePending=false;persistNow();}},8,TimeUnit.SECONDS);}catch(RejectedExecutionException stopped){writePending=false;}
     }
     private void persistNow(){
         if(file==null)return;
-        Properties p=new Properties();p.setProperty("schema","1");p.setProperty("sequence",Long.toString(sequence));p.setProperty("epoch",epoch);
-        int i=0;for(Map<String,Object> row:rows)p.setProperty("row."+(i++),DiscordBotManager.Json.stringify(row));
-        try{AtomicState.save(file,p,"Simplex public app chat history (last "+LIMIT+" public messages)");}catch(IOException e){Bukkit.getLogger().warning("App-Chatverlauf konnte nicht gespeichert werden.");}
+        trim();
+        try{AtomicState.save(file,serialize(rows,sequence,epoch),"Simplex public chat and bounded search history");}
+        catch(IOException e){Bukkit.getLogger().warning("App-Chatverlauf konnte nicht gespeichert werden.");}
     }
-    synchronized List<Map<String, Object>> historySnapshot() { return HistoryApi.copies(rows); }
+    synchronized List<Map<String, Object>> historySnapshot() { trim(); return HistoryApi.copies(rows); }
     synchronized void historyReplace(List<Map<String, Object>> items) throws IOException {
         if (file == null) throw new IOException("Chat history not attached");
         String nextEpoch = UUID.randomUUID().toString();
-        Properties p = new Properties(); p.setProperty("schema", "1"); p.setProperty("sequence", Long.toString(sequence)); p.setProperty("epoch", nextEpoch);
-        int i = 0; for (Map<String,Object> row : items) p.setProperty("row." + i++, DiscordBotManager.Json.stringify(row));
-        AtomicState.save(file, p, "Simplex public app chat history");
-        rows.clear(); rows.addAll(HistoryApi.copies(items)); epoch = nextEpoch;
+        AtomicState.save(file,serialize(items,sequence,nextEpoch),"Simplex public chat and bounded search history");
+        rows.clear(); rows.addAll(HistoryApi.copies(items)); trim(); epoch = nextEpoch;
     }
 
     static String validateName(String name){if(!name.matches("[\\p{L}\\p{N} _.-]{1,32}"))throw new IllegalArgumentException("Anzeigename: 1–32 Buchstaben, Zahlen, Leerzeichen, Punkt, _ oder -");return name;}

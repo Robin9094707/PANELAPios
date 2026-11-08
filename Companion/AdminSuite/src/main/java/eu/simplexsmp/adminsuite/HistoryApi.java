@@ -15,7 +15,7 @@ final class HistoryApi {
         new Kind("events", "Serverereignisse", "data.events", 2000),
         new Kind("advertising", "Werbe-Verlauf", "data.discord-ads", 200),
         new Kind("staff-chat", "Staff-Chat", "data.staff-chat", 400),
-        new Kind("chat", "Serverchat", "data.chat", 50));
+        new Kind("chat", "Serverchat", "data.chat", AppChat.HISTORY_LIMIT));
     interface Store {
         List<Map<String, Object>> snapshot();
         void replace(List<Map<String, Object>> items) throws IOException;

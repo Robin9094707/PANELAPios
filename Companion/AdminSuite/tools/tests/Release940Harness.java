@@ -25,9 +25,11 @@ public final class Release940Harness {
             AppChat chat=new AppChat();chat.attach(chatFile);for(int i=0;i<70;i++)chat.record("","Player","Message "+i,i%2==0?"player":"discord");chat.stop();
             AppChat reloaded=new AppChat();reloaded.attach(chatFile);Map<?,?> page=(Map<?,?>)reloaded.read(0);List<Map<?,?>> items=(List<Map<?,?>>)page.get("items");
             check(items.size()==AppChat.LIMIT&&AppChat.LIMIT==50,"chat keeps the last 50 messages across restarts");
+            check(reloaded.historySnapshot().size()==70,"older public messages survive in the bounded searchable history");
             check(items.get(items.size()-1).get("text").equals("Message 69")&&page.get("cursor").equals("70"),"newest message and cursor restored");
             String epoch=String.valueOf(page.get("epoch"));reloaded.clear(null,"Harness");
             Map<?,?> cleared=(Map<?,?>)reloaded.read(0);check(((List<?>)cleared.get("items")).isEmpty()&&!epoch.equals(cleared.get("epoch")),"clear empties history and rotates epoch");
+            check(reloaded.historySnapshot().isEmpty(),"clearing chat also clears the searchable archive");
             reloaded.record("","A","after clear","player");check(((Map<?,?>)((List<?>)((Map<?,?>)reloaded.read(70)).get("items")).get(0)).get("id").equals("71"),"IDs continue after clear");reloaded.stop();
             Files.writeString(chatFile,"row.0={broken");AppChat damaged=new AppChat();damaged.attach(chatFile);check(((List<?>)((Map<?,?>)damaged.read(0)).get("items")).isEmpty(),"damaged chat file does not block startup");damaged.stop();
 
