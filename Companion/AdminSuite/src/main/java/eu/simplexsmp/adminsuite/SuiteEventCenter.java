@@ -80,7 +80,7 @@ final class SuiteEventCenter {
         String type = "powerbot-case";
         var row = SimplexAdminSuite.appMap("id", UUID.randomUUID().toString(), "time", System.currentTimeMillis(), "type", type,
             "title", title, "body", body, "critical", critical, "level", "timeSensitive",
-            "direct", true, "webUrl", "/#/powerbot");
+            "direct", true, "url", "panel://suite?tool=powerBot", "webUrl", "/#/powerbot");
         java.util.function.Predicate<String> owners = owner -> plugin.appApi != null && plugin.appApi.diagnosticsNotifiable(owner, type);
         try { worker.execute(() -> {
             try { push(row, null, false, owners); } catch (Exception failure) { deliveryStatus = "PowerBot-Versand fehlgeschlagen"; }

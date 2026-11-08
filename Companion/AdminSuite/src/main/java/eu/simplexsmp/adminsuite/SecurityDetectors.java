@@ -22,14 +22,14 @@ final class SecurityDetectors implements Listener {
         CONCEALMENT("anti-detection","Anti-Detection-Fingerprint",Material.SHIELD),
         AUTOCLICKER("autoclicker","AutoClicker-Muster",Material.IRON_SWORD),
         FREECAM("freecam","Freecam-Verhalten",Material.SPYGLASS),
-        COMBAT_REACH("combat-reach","Kampf-Reichweite",Material.TARGET);
+        COMBAT_REACH("combat-reach","Kampf-Reichweite & Ausrichtung",Material.TARGET);
         final String key,title;final Material icon;
         Detector(String key,String title,Material icon){this.key=key;this.title=title;this.icon=icon;}
     }
     private static final class State {
         final Player player;final long joined=System.currentTimeMillis();
         String brand="",version="";Set<String> channels=Set.of();final Set<String> loaderHistory=new HashSet<>();
-        final Deque<Long> changes=new ArrayDeque<>(),removals=new ArrayDeque<>(),interactions=new ArrayDeque<>(),combatReach=new ArrayDeque<>();
+        final Deque<Long> changes=new ArrayDeque<>(),removals=new ArrayDeque<>(),interactions=new ArrayDeque<>(),combatReach=new ArrayDeque<>(),combatAim=new ArrayDeque<>();
         final Map<Detector,Long> alerts=new EnumMap<>(Detector.class);
         final Set<String> seen=new HashSet<>();
         final List<Double> clicks=new ArrayList<>();
@@ -51,7 +51,7 @@ final class SecurityDetectors implements Listener {
     void reload(){states.clear();for(Player p:Bukkit.getOnlinePlayers())join(p);lagUntil=System.currentTimeMillis()+5000;}
     void stop(){if(timer!=null)timer.cancel();timer=null;states.clear();if(store!=null){store.close();store=null;}}
     private void tick(){long nano=System.nanoTime(),now=System.currentTimeMillis();tickMillis=(nano-previousTick)/1_000_000d;previousTick=nano;
-        if(tickMillis>85||tickMillis<20){lagUntil=now+5000;for(State s:states.values()){s.resetClicks();s.interactions.clear();s.combatReach.clear();}}
+        if(tickMillis>85||tickMillis<20){lagUntil=now+5000;for(State s:states.values()){s.resetClicks();s.interactions.clear();s.combatReach.clear();s.combatAim.clear();}}
         if(++ticks%20==0){double[] values=Bukkit.getTPS();if(values.length>0)tps=values[0];}
         if(ticks%100==0&&(enabled(Detector.FINGERPRINT)||enabled(Detector.CONCEALMENT)))for(State s:List.copyOf(states.values()))network(s);
     }
@@ -68,8 +68,8 @@ final class SecurityDetectors implements Listener {
     @EventHandler(priority=EventPriority.MONITOR)public void join(PlayerJoinEvent e){join(e.getPlayer());}
     private void join(Player p){if(!plugin.isBedrockClient(p))states.put(p.getUniqueId(),new State(p));}
     @EventHandler(priority=EventPriority.MONITOR)public void quit(PlayerQuitEvent e){states.remove(e.getPlayer().getUniqueId());}
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)public void teleport(PlayerTeleportEvent e){State s=states.get(e.getPlayer().getUniqueId());if(s!=null){s.graceUntil=System.currentTimeMillis()+5000;s.resetClicks();s.interactions.clear();s.combatReach.clear();}}
-    @EventHandler(priority=EventPriority.MONITOR)public void respawn(PlayerRespawnEvent e){State s=states.get(e.getPlayer().getUniqueId());if(s!=null){s.graceUntil=System.currentTimeMillis()+5000;s.resetClicks();s.interactions.clear();s.combatReach.clear();}}
+    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)public void teleport(PlayerTeleportEvent e){State s=states.get(e.getPlayer().getUniqueId());if(s!=null){s.graceUntil=System.currentTimeMillis()+5000;s.resetClicks();s.interactions.clear();s.combatReach.clear();s.combatAim.clear();}}
+    @EventHandler(priority=EventPriority.MONITOR)public void respawn(PlayerRespawnEvent e){State s=states.get(e.getPlayer().getUniqueId());if(s!=null){s.graceUntil=System.currentTimeMillis()+5000;s.resetClicks();s.interactions.clear();s.combatReach.clear();s.combatAim.clear();}}
     @EventHandler(priority=EventPriority.MONITOR)public void register(PlayerRegisterChannelEvent e){channelChange(e.getPlayer(),false,e.getChannel());}
     @EventHandler(priority=EventPriority.MONITOR)public void unregister(PlayerUnregisterChannelEvent e){channelChange(e.getPlayer(),true,e.getChannel());}
     private void channelChange(Player p,boolean removal,String channel){State s=state(p);if(s==null||!enabled(Detector.CONCEALMENT))return;long now=System.currentTimeMillis();prune(s.changes,now,10000);prune(s.removals,now,10000);if(!removal&&s.loaderHistory.size()<64&&!SecuritySignals.loaders(List.of(channel)).isEmpty())s.loaderHistory.add(SecuritySignals.safe(channel));if(s.changes.size()<256)s.changes.addLast(now);if(removal&&s.removals.size()<256)s.removals.addLast(now);}
@@ -122,7 +122,10 @@ final class SecurityDetectors implements Listener {
             return;
         }}
         boolean outside = SecuritySignals.outsideReach(distance, range, tolerance);
-        if (attack && enabled(Detector.COMBAT_REACH)) observeCombatReach(s, outside, distance, range, tolerance);
+        if (attack && enabled(Detector.COMBAT_REACH)) {
+            observeCombatReach(s, outside, distance, range, tolerance);
+            observeCombatAim(s, eye, box, distance);
+        }
         if (enabled(Detector.FREECAM)) interaction(s,outside,"ENTITY "+target.getType()+" distance="+round(distance)+" range="+round(range)+" tolerance="+round(tolerance));
     }
     private void observeCombatReach(State state, boolean outside, double distance, double reach, double tolerance) {
@@ -135,6 +138,22 @@ final class SecurityDetectors implements Listener {
             "Vier Treffer außerhalb der erwarteten Reichweite in 10 Sekunden · Distanz " + round(distance)
             + " / Attribut " + round(reach) + " / Toleranz " + round(tolerance)), true);
         state.combatReach.clear();
+    }
+    private void observeCombatAim(State state, Location eye, BoundingBox box, double distance) {
+        if (state.player.getPing() > 90 || distance < 1.4) return;
+        Vector towards = box.getCenter().subtract(eye.toVector());
+        if (towards.lengthSquared() < 1e-6) return;
+        double dot = towards.normalize().dot(eye.getDirection());
+        // Only extreme discrepancies across separate events. Bukkit samples server-side orientation, not the attack packet.
+        long now = System.currentTimeMillis();
+        prune(state.combatAim, now, 10_000);
+        if (dot > -0.5 || !state.combatAim.isEmpty() && now - state.combatAim.getLast() < 350) return;
+        state.combatAim.addLast(now);
+        if (state.combatAim.size() < 4) return;
+        record(state, Detector.COMBAT_REACH, new SecuritySignals.Finding("REPEATED_COMBAT_AIM_MISMATCH",
+            "Vier Treffer mit Ziel deutlich hinter der Blickrichtung in 10 Sekunden · Blickwinkel "
+            + round(Math.toDegrees(Math.acos(Math.max(-1, Math.min(1, dot))))) + "°. Server-Zeitpunkte können abweichen."), true);
+        state.combatAim.clear();
     }
     private boolean eligibleInteraction(State s){return healthy(s)&&s.player.getGameMode()!=GameMode.CREATIVE&&s.player.getGameMode()!=GameMode.SPECTATOR&&!s.player.isInsideVehicle()&&!s.player.isGliding();}
     private double tolerance(Player p){return Math.max(.25,Math.min(2,plugin.getConfig().getDouble(ROOT+"freecam.range-tolerance",.75)))+Math.min(.75,p.getPing()/400d);}

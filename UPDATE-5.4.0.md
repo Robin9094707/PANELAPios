@@ -7,7 +7,7 @@
 - Klare Eigenwerbung mit externer Serveradresse wird lokal zurückgehalten. Bei anderen möglichen Verstößen prüft PowerBot erst ein Moderationssignal und dann den Kontext. Drei bestätigte, zeitlich getrennte Versuche derselben Kategorie in 20 Minuten können einen zehnminütigen AutoMod-Mute auslösen. Er umfasst bestätigte Alt-Konten und blockiert auch den Versand per Discord-Relay für verknüpfte Konten. Manuelle Strafen sind getrennt.
 - Die konfigurierten Minecraft-Flüster- und Antwortbefehle werden unterstützt. Eindeutige Eigenwerbung und aktive Mutes werden sofort geprüft. Die KI-Prüfung läuft nachträglich und kann Warnungen oder einen Mute für weitere Nachrichten auslösen. PowerBot speichert keinen Flüstertext in der Fallzentrale und teilt ihn nicht mit der öffentlichen Chat-KI. Die bereinigte aktuelle Nachricht wird zur Prüfung an den konfigurierten API-Anbieter gesendet.
 - Bei wiederholtem API-Ausfall geht der Chat in einen angekündigten Bypass und prüft die Verbindung später erneut. Lokale Regeln und das Serverchat-Protokoll bleiben aktiv.
-- AutoClicker-Muster und wiederholt auffällige Kampf-Reichweiten sind überprüfbare Java-Hinweise. Sie verwenden kurze Messfenster, Ping, Tickzustand und die Reichweitenattribute. PowerBot verhängt dafür keine Strafe.
+- AutoClicker-Muster und wiederholt auffällige Kampf-Reichweiten oder Blickwinkel sind überprüfbare Java-Hinweise. Sie verwenden kurze Messfenster, Ping, Tickzustand und die Reichweitenattribute. PowerBot verhängt dafür keine Strafe.
 
 ## Fallzentrale in App und Web
 

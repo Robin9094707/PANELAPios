@@ -3,6 +3,7 @@ package eu.simplexsmp.adminsuite;
 import com.sun.net.httpserver.HttpExchange;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.entity.Player;
 
 import java.io.IOException;
@@ -271,7 +272,7 @@ final class PowerBot implements AutoCloseable {
         bypassAnnounced = true;
         plugin.runAdminTask(() -> {
             statusMessage("KI-Moderation pausiert. Erweitertes Protokoll aktiv.", "AI moderation paused. Extended logging active.");
-            important("outage", "", "", "System", "OpenAI antwortete nicht rechtzeitig. Nachrichten werden ohne KI-Prüfung zugestellt.", false);
+            important("outage", "", "", "System", "Die KI-Prüfung war wiederholt nicht erreichbar. Nachrichten werden ohne KI-Prüfung zugestellt.", false);
         });
     }
 
@@ -390,7 +391,8 @@ final class PowerBot implements AutoCloseable {
     }
 
     boolean command(CommandSender sender, String[] args) {
-        if (sender instanceof Player player && (!plugin.adminSessionUsable(player) || !plugin.has(player, "simplexadminsuite.powerbot.manage"))) {
+        if (!(sender instanceof ConsoleCommandSender) && (!(sender instanceof Player player)
+            || !plugin.adminSessionUsable(player) || !plugin.has(player, "simplexadminsuite.powerbot.manage"))) {
             sender.sendMessage("PowerBot: Zugriff fehlt.");
             return true;
         }

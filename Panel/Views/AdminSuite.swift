@@ -78,6 +78,11 @@ struct SuiteHubView: View {
                 }
                 // 4.6.0: grouped by task instead of one long list; every entry from 4.5 is still here.
                 Section("Spieler & Moderation") {
+                    if api.features.contains("powerbot-v1") && api.can("data.powerbot") {
+                        NavigationLink { SuitePowerBotView(suite: api) } label: {
+                            Label("PowerBot-Fallzentrale", systemImage: "shield.lefthalf.filled")
+                        }
+                    }
                     NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions) } label: { Label("Spieler, Geräte & Alt-Accounts", systemImage: "person.2.fill") }
                     NavigationLink { SuiteAltDashboardView(suite: api, panel: panel, server: server, actions: model.actions) } label: { Label("Alt-Account-Dashboard & IP-Regeln", systemImage: "person.2.badge.key.fill") }
                 }
