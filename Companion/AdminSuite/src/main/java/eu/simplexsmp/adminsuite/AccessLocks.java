@@ -740,6 +740,7 @@ final class AccessLocks implements Listener {
             case "right-allow" -> b.append("Recht wieder erlauben: ").append(SimplexAdminSuite.rightName(rightId(text(values, "right"))));
             default -> throw new IllegalArgumentException("Aktion: set, preset, remove, clear, right-block oder right-allow");
         }
+        if (Set.of("set", "preset").contains(op)) b.append("\nErsetzt alte Einzelsperren der betroffenen Bereiche.");
         String reason = text(values, "reason");
         if (!reason.isEmpty()) b.append("\nGrund: ").append(reason);
         b.append("\nDer Spieler wird bei jedem gesperrten Versuch mit Grund und Restzeit informiert.");
@@ -798,6 +799,7 @@ final class AccessLocks implements Listener {
                 String chosen = scope(text(values, "scope"), null);
                 List<String> flags = flagList(text(values, "flags"));
                 for (String f : flags) map.put(f, new Entry(chosen == null ? FLAGS.get(f).defaultScope() : chosen, d == 0 ? 0 : now + d, reason, actor, now));
+                liftClassic(id, right -> flags.contains(COVERED.get(right)), actor);
                 title = "Rechte-Sperre gesetzt";
                 detail = String.join(", ", flags.stream().map(f -> FLAGS.get(f).title()).toList()) + " · " + (d == 0 ? "dauerhaft" : remaining(d, true));
             }
@@ -805,6 +807,7 @@ final class AccessLocks implements Listener {
                 Preset p = PRESETS.get(text(values, "preset"));
                 long d = duration(text(values, "duration"));
                 p.flags().forEach((f, s) -> map.put(f, new Entry(s, d == 0 ? 0 : now + d, reason.isEmpty() ? p.title() : reason, actor, now)));
+                liftClassic(id, right -> COVERED.containsKey(right) && p.flags().containsKey(COVERED.get(right)), actor);
                 title = "Vorlage „" + p.title() + "“ angewendet";
                 detail = p.explain() + " · " + (d == 0 ? "dauerhaft" : remaining(d, true));
             }

@@ -161,16 +161,27 @@ struct SuiteAIAssistantView: View {
         }
     }
 
+    private func formattedAnswer(_ text: String) -> Text {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return Text((try? AttributedString(markdown: text, options: options)) ?? AttributedString(text))
+    }
+
     private func bubble(_ text: String, mine: Bool, at: JSON) -> some View {
         HStack(alignment: .bottom) {
             if mine { Spacer(minLength: 40) }
             VStack(alignment: .leading, spacing: 4) {
                 Text(mine ? "Du" : "Simplex KI").font(.caption.weight(.semibold))
-                Text(text.isEmpty ? "Keine Textantwort" : text).textSelection(.enabled)
+                Group {
+                    if mine { Text(text) }
+                    else { formattedAnswer(text.isEmpty ? "Keine Textantwort" : text) }
+                }
+                .textSelection(.enabled)
+                .environment(\.openURL, OpenURLAction { _ in .discarded })
                 HStack(spacing: 10) {
                     if let date = SuitePlayerPresentation.date(at) { Text(date, format: .dateTime.hour().minute()) }
                     if !mine && !text.isEmpty {
                         Button("Vorlesen", systemImage: "speaker.wave.2") { speak(text) }.buttonStyle(.plain)
+                        CopyButton(text: text, title: "Antwort kopieren")
                     }
                 }.font(.caption2).foregroundStyle(.secondary)
             }
@@ -333,7 +344,9 @@ struct SuiteAIAssistantView: View {
         if result != .null {
             Section("Antwort") {
                 if !result["answer"].string.isEmpty && !turns.contains(where: { $0["job"].string == result["id"].string }) {
-                    Text(result["answer"].string).textSelection(.enabled)
+                    formattedAnswer(result["answer"].string).textSelection(.enabled)
+                        .environment(\.openURL, OpenURLAction { _ in .discarded })
+                    CopyButton(text: result["answer"].string, title: "Antwort kopieren")
                 }
                 if !result["sources"].array.isEmpty {
                     Text("Datenquellen · " + result["sources"].array.map(\.string).joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)

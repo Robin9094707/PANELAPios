@@ -790,6 +790,30 @@ struct SuitePlayerDossierView: View {
     var body: some View {
         List {
             if data == .null { Section { ProgressView("Steckbrief laden …") } }
+            if search.isEmpty && data != .null && suite.features.contains("visual-inventory-v1") {
+                Section("Spielerwerkzeuge") {
+                    if data["online"].bool && suite.can("data.inventory") {
+                        NavigationLink { SuiteVisualInventoryView(suite: suite, player: data["player"].string) } label: {
+                            Label("Live-Inventar & Endertruhe", systemImage: "square.grid.3x3.fill")
+                        }
+                    }
+                    if suite.can("data.devices") {
+                        NavigationLink { SuiteDataListView(suite: suite, kind: "devices", player: player, actions: []) } label: {
+                            Label("Geräteverlauf", systemImage: "desktopcomputer.and.iphone")
+                        }
+                    }
+                    if suite.can("data.access-locks") {
+                        NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: player) } label: {
+                            Label("Rechte & Sperren", systemImage: "lock.shield")
+                        }
+                    }
+                    if suite.can("data.commands") {
+                        NavigationLink { SuiteCommandPlayerView(suite: suite, player: player) } label: {
+                            Label("Befehle", systemImage: "terminal")
+                        }
+                    }
+                }
+            }
             if search.isEmpty { SuiteSavedNBTSection(suite: suite, player: player) }
             ForEach(data["sections"].array, id: \.["id"].string) { section in SuiteDossierSection(section: section, search: search) }
         }

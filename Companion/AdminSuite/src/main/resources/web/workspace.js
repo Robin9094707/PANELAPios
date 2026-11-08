@@ -201,8 +201,9 @@
         } }) : null;
         return h("div", { class: "msg" + (mine ? " mine" : "") }, h("div", { class: "bubble" },
           h("div", { class: "by" }, h("span", { text: mine ? "Du" : "Simplex KI" })),
-          h("p", { text: text || "Keine Textantwort" }),
-          h("div", { class: "row wrap" }, h("time", { class: "stamp", text: stamp }), extra, details)));
+          mine ? h("p", { text: text }) : S.prose(text || "Keine Textantwort"),
+          h("div", { class: "row wrap" }, h("time", { class: "stamp", text: stamp }), extra,
+            !mine && text ? S.btn("Kopieren", { size: "sm", onClick: function () { return S.copy(text, "Antwort"); } }) : null, details)));
       }
       rows.forEach(function (turn) { timeline.append(bubble(turn.question, true, turn.at), bubble(turn.answer, false, turn.at, turn.job)); });
       if (pending) timeline.append(bubble(pending, true));
@@ -329,7 +330,8 @@
       var r = result; if (!r) return;
       var detail = h("div", { class: "stack" });
       var alreadyShown = chat && (chat.items || []).some(function (turn) { return turn.job === r.id; });
-      if (r.answer && !alreadyShown) detail.appendChild(h("div", { style: { whiteSpace: "pre-wrap" }, text: r.answer }));
+      if (r.answer && !alreadyShown) S.add(detail, [S.prose(r.answer),
+        S.btn("Antwort kopieren", { size: "sm", onClick: function () { return S.copy(r.answer, "Antwort"); } })]);
       if (r.sources && r.sources.length) detail.appendChild(h("small", { class: "muted", text: "Datenquellen · " + r.sources.join(", ") }));
       if (r.summary || summary) detail.appendChild(h("details", { open: !!summary }, h("summary", { text: "KI-Kurzfassung" }), h("p", { text: summary || r.summary })));
       if (r.choices && r.choices.length && status.available && r.status === "ready") detail.appendChild(h("div", { class: "row wrap" }, r.choices.map(function (text, index) {
