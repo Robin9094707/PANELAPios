@@ -17,6 +17,8 @@ struct SuiteAIAssistantView: View {
     @State private var confirming = false
     @State private var showSummary = false
     @State private var response: [JSON] = []
+    @State private var selection: Set<String> = []
+    @State private var summaryOverride = ""
 
     private var supported: Bool { suite.features.contains("admin-assistant-v1") }
     private var actions: [JSON] { result["actions"].array }
@@ -63,7 +65,7 @@ struct SuiteAIAssistantView: View {
         .onDisappear { work?.cancel() }
         .errorAlert($error)
         .confirmationDialog("Diesen Aktionsplan verbindlich ausführen?", isPresented: $confirming, titleVisibility: .visible) {
-            Button("\(actions.count) Aktionen bestätigen", role: .destructive) { mutate("approve") }
+            Button("\(selection.count) Aktionen bestätigen", role: .destructive) { mutate("approve") }
         } message: {
             Text("Der Server führt die angezeigten Schritte nacheinander aus. Zu jedem Schritt erscheint ein Ergebnis.")
         }
@@ -76,8 +78,8 @@ struct SuiteAIAssistantView: View {
                 if !result["sources"].array.isEmpty {
                     Text("Datenquellen · " + result["sources"].array.map(\.string).joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
                 }
-                if !result["summary"].string.isEmpty {
-                    DisclosureGroup("KI-Kurzfassung", isExpanded: $showSummary) { Text(result["summary"].string).textSelection(.enabled) }
+                if !result["summary"].string.isEmpty || !summaryOverride.isEmpty {
+                    DisclosureGroup("KI-Kurzfassung", isExpanded: $showSummary) { Text(summaryOverride.isEmpty ? result["summary"].string : summaryOverride).textSelection(.enabled) }
                 }
                 ForEach(Array(result["choices"].array.enumerated()), id: \.offset) { index, value in
                     Button(value.string) { choose(index) }.disabled(!canAsk || !ready)
@@ -94,12 +96,21 @@ struct SuiteAIAssistantView: View {
                 Section("Vorgeschlagene Aktionen") {
                     ForEach(Array(actions.enumerated()), id: \.offset) { index, step in
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("\(index + 1). " + step["title"].string).font(.headline)
+                            if owner && ready {
+                                let id = step["id"].string
+                                Toggle("\(index + 1). " + step["title"].string, isOn: Binding(get: { selection.contains(id) }, set: { enabled in
+                                    if enabled { selection.insert(id) } else { selection.remove(id) }
+                                })).disabled(busy)
+                            } else { Text("\(index + 1). " + step["title"].string).font(.headline) }
                             Text(step["preview"].string).font(.callout).textSelection(.enabled)
                         }
                     }
                     if ready {
-                        if owner { Button("Plan bestätigen", systemImage: "checkmark.shield") { confirming = true }.disabled(busy) }
+                        Button("Mit KI neu zusammenfassen", systemImage: "sparkles") { summarize() }.disabled(!canAsk)
+                        if owner {
+                            Button("Alle offenen Aktionen auswählen") { selection = Set(actions.map { $0["id"].string }) }.disabled(busy)
+                            Button("Auswahl bestätigen", systemImage: "checkmark.shield") { confirming = true }.disabled(busy || selection.isEmpty)
+                        }
                         else { Text("Wartet auf Freigabe durch den Hauptadmin.").font(.caption).foregroundStyle(.secondary) }
                         Button("Plan verwerfen", role: .destructive) { mutate("discard") }.disabled(busy)
                     } else { Text(result["status"].string == "discarded" ? "Plan verworfen." : "Plan verarbeitet.") }
@@ -121,7 +132,7 @@ struct SuiteAIAssistantView: View {
                 if inbox.isEmpty { Text("Keine offenen Pläne.").foregroundStyle(.secondary) }
                 ForEach(inbox, id: \.["id"].string) { plan in
                     Button(plan["author"].string + " · \(plan["count"].int) Aktionen", systemImage: "list.clipboard") {
-                        run { result = try await suite.request("assistant/job", query: ["id": plan["id"].string]); response = [] }
+                        run { result = try await suite.request("assistant/job", query: ["id": plan["id"].string]); response = []; selection = []; summaryOverride = "" }
                     }.disabled(busy)
                 }
             }
@@ -173,7 +184,7 @@ struct SuiteAIAssistantView: View {
         }
     }
     private func poll(_ id: String) async throws {
-        response = []; showSummary = false
+        response = []; showSummary = false; selection = []; summaryOverride = ""
         for _ in 0..<64 {
             let row = try await suite.request("assistant/job", query: ["id": id], timeout: 12)
             if row["status"].string != "running" { result = row; await refresh(); return }
@@ -181,11 +192,26 @@ struct SuiteAIAssistantView: View {
         }
         throw PanelError(message: "Der Server braucht länger. Prüfe später die offenen Freigaben.")
     }
-    private func mutate(_ operation: String) {
+    private func summarize() {
         let id = result["id"].string
         run {
-            let response = try await suite.request("assistant/" + operation, method: "POST", body: .object(["id": .string(id), "confirmed": .bool(operation == "approve")]), timeout: 30)
-            self.response = response["results"].array
+            let job = try await suite.request("assistant/summarize", method: "POST", body: .object(["id": .string(id)]), timeout: 12)
+            for _ in 0..<40 {
+                let row = try await suite.request("assistant/job", query: ["id": job["id"].string], timeout: 12)
+                if row["status"].string != "running" { summaryOverride = row["answer"].string; showSummary = true; await refresh(); return }
+                try await Task.sleep(for: .seconds(2))
+            }
+            throw PanelError(message: "Die Kurzfassung ist noch nicht verfügbar.")
+        }
+    }
+    private func mutate(_ operation: String) {
+        let id = result["id"].string
+        let revision = result["revision"].string
+        let ids = actions.map { $0["id"].string }.filter { selection.contains($0) }
+        run {
+            let body: JSON = .object(["id": .string(id), "confirmed": .bool(operation == "approve"), "revision": .string(revision), "actions": .array(ids.map(JSON.string))])
+            let response = try await suite.request("assistant/" + operation, method: "POST", body: body, timeout: 30)
+            self.response = response["results"].array; selection = []; summaryOverride = ""
             result = try await suite.request("assistant/job", query: ["id": id], timeout: 12)
             await refresh()
         }

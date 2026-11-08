@@ -596,7 +596,8 @@ final class AppApiManager {
             result=switch(path){
                 case "/v1/assistant/ask"->Map.of("id",ai.submit(actor,AiAdmin.text(in,"question")),"status","running");
                 case "/v1/assistant/choose"->Map.of("id",ai.choose(actor,id,(int)AiAdmin.number(in.get("index"))),"status","running");
-                case "/v1/assistant/approve"->onMain(rev,()->ai.approve(actor,id,Boolean.TRUE.equals(in.get("confirmed"))));
+                case "/v1/assistant/summarize"->Map.of("id",ai.summarize(actor,id),"status","running");
+                case "/v1/assistant/approve"->onMain(rev,()->ai.approve(actor,id,Boolean.TRUE.equals(in.get("confirmed")),AiAdmin.text(in,"revision"),AiAdmin.actionIds(in.get("actions"))));
                 case "/v1/assistant/discard"->ai.reject(actor,id);
                 case "/v1/assistant/limits"->onMain(rev,()->ai.limits(actor,in));
                 default->throw new ApiError(404,"KI-Endpunkt fehlt.");

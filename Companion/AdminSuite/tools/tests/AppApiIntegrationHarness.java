@@ -143,9 +143,11 @@ public final class AppApiIntegrationHarness {
         var context=new java.util.concurrent.atomic.AtomicReference<String>("");
         plugin.aiAdmin=new AiAdmin(plugin,(instructions,input,schema,tokens)->{
             if(schema.toString().contains("lookups"))return Map.of("lookups",List.of(Map.of("source","worlds","query","","from",0,"to",0),Map.of("source","chat","query","","from",0,"to",0)));
+            if(!schema.toString().contains("actions"))return Map.of("summary","Nur vorgelegte Schritte.");
             context.set(input);
             return Map.of("answer","Fixture","summary","Setzt die Zeit","choices",List.of(),"actions",List.of(
                 Map.of("kind","world","fields",List.of(Map.of("name","world","value","fixture-world"),Map.of("name","field","value","time"),Map.of("name","value","value","12000"))),
+                Map.of("kind","world","fields",List.of(Map.of("name","world","value","fixture-world"),Map.of("name","field","value","time"),Map.of("name","value","value","18000"))),
                 Map.of("kind","restart","fields",List.of(Map.of("name","seconds","value","600")))));
         },()->true);
         long oldTime=worldTime.get();
@@ -160,14 +162,24 @@ public final class AppApiIntegrationHarness {
             String id=String.valueOf(object(DiscordBotManager.Json.parse(started.body())).get("id"));
             String url="/v1/assistant/job?id="+id;Map<String,Object> result=Map.of();
             for(int i=0;i<40;i++){result=object(DiscordBotManager.Json.parse(call(url,staff,null).body()));if(!"running".equals(result.get("status")))break;Thread.sleep(25);}
-            check("ready".equals(result.get("status")) && AiAdmin.objects(result.get("actions"),10).size()==1,"model cannot propose outside actor action permissions");
+            check("ready".equals(result.get("status")) && AiAdmin.objects(result.get("actions"),10).size()==2,"model cannot propose outside actor action permissions");
             check(worldTime.get()==oldTime&&context.get().contains("fixture-world")&&!context.get().contains("\"source\":\"chat\""),"planning reads only authorized context and does not mutate");
-            String approval=json(Map.of("id",id,"confirmed",true));
+            var actions=AiAdmin.objects(result.get("actions"),6);
+            String first=AiAdmin.text(actions.get(0),"id"),second=AiAdmin.text(actions.get(1),"id");
+            String approval=json(Map.of("id",id,"confirmed",true,"revision",AiAdmin.text(result,"revision"),"actions",List.of(first)));
             check(call("/v1/assistant/approve",staff,approval).statusCode()==403,"staff cannot approve own plan");
             check(call("/v1/assistant/approve",full.token(),json(Map.of("id",id,"confirmed",false))).statusCode()==403,"owner must explicitly confirm");
             check(worldTime.get()==oldTime,"rejected approval leaves world untouched");
-            check(call("/v1/assistant/approve",full.token(),approval).statusCode()==200&&worldTime.get()==12000,"owner-approved immutable plan applies");
-            check(call("/v1/assistant/approve",full.token(),approval).statusCode()==409,"plan cannot be replayed");
+            var summary=call("/v1/assistant/summarize",staff,json(Map.of("id",id)));
+            check(summary.statusCode()==200&&worldTime.get()==oldTime,"summarization cannot apply a plan");
+            check(call("/v1/assistant/approve",full.token(),approval).statusCode()==200&&worldTime.get()==12000,"only selected owner-approved action applies");
+            check(call("/v1/assistant/approve",full.token(),approval).statusCode()==409,"stale plan cannot be replayed");
+            var remaining=object(DiscordBotManager.Json.parse(call(url,full.token(),null).body()));
+            check(AiAdmin.objects(remaining.get("actions"),6).size()==1,"unchecked action remains pending");
+            String remainder=json(Map.of("id",id,"confirmed",true,"revision",AiAdmin.text(remaining,"revision"),"actions",List.of(second)));
+            check(call("/v1/assistant/approve",full.token(),remainder).statusCode()==200&&worldTime.get()==18000,"remaining action requires its own approval");
+            var audit=Map.<String,Object>of("time",500L,"action","Vanish aktiviert","adminName","Fixture");
+            check(AiAdmin.select(List.of(audit),"Vanish",400,600,5,"time","action","adminName").size()==1,"admin log time and names resolve correctly");
             check(AiAdmin.redact("connect 192.168.1.1 with sk-proj-example-secret").equals("connect [IP entfernt] with [Schlüssel entfernt]"),"IP and key redaction");
             Path chatFile=plugin.getDataFolder().toPath().resolve("assistant-chat-fixture.properties");
             AppChat archive=new AppChat();archive.attach(chatFile);

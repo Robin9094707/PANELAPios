@@ -136,7 +136,7 @@
 
   P.assistant = async function (param, query, alive) {
     var status = await S.api("assistant/status"); if (!alive()) return;
-    var owner = status.owner === true, result = null, busy = false, outcomes = [];
+    var owner = status.owner === true, result = null, busy = false, outcomes = [], selected = new Set(), summary = "";
     var answer = h("div", { class: "stack", "aria-live": "polite" });
     var inbox = h("div", { class: "stack" }), settings = h("div", { class: "stack" });
     var input = h("textarea", { class: "input", maxlength: 2000, rows: 4, placeholder: "Was soll die KI für diesen Server prüfen?", "aria-label": "Deine Frage" });
@@ -154,7 +154,7 @@
       finally { if (alive()) { busy = false; send.disabled = !status.available; } }
     }
     async function poll(job) {
-      outcomes = [];
+      outcomes = []; summary = "";
       S.clear(answer); answer.appendChild(S.notice("Antwort und Datenquellen werden geprüft …"));
       for (var i = 0; i < 64 && alive(); i++) {
         var row = await S.api("assistant/job", { query: { id: job.id }, quiet: true }); if (!alive()) return;
@@ -169,24 +169,25 @@
     }
     async function change(operation) {
       if (!result) return;
-      var id = result.id;
+      var id = result.id, revision = result.revision, actions = Array.from(selected);
+      if (operation === "approve" && !actions.length) return;
       if (operation === "approve" && !(await S.confirm("Diesen Aktionsplan verbindlich ausführen?", "Der Server führt die vollständig angezeigten Schritte nacheinander aus.", "Plan bestätigen", true))) return;
       if (!alive() || id !== result.id) return;
       return run(async function () {
-        var response = await S.api("assistant/" + operation, { body: { id: id, confirmed: operation === "approve" } });
-        outcomes = response.results || [];
+        var response = await S.api("assistant/" + operation, { body: { id: id, revision: revision, actions: actions, confirmed: operation === "approve" } });
+        outcomes = response.results || []; summary = "";
         result = await S.api("assistant/job", { query: { id: id } }); draw();
         if (owner) await loadInbox();
       });
     }
     function draw() {
       if (!alive()) return;
-      S.clear(answer);
+      S.clear(answer); selected.clear();
       var r = result; if (!r) return;
       var detail = h("div", { class: "stack" });
       if (r.answer) detail.appendChild(h("div", { style: { whiteSpace: "pre-wrap" }, text: r.answer }));
       if (r.sources && r.sources.length) detail.appendChild(h("small", { class: "muted", text: "Datenquellen · " + r.sources.join(", ") }));
-      if (r.summary) detail.appendChild(h("details", {}, h("summary", { text: "KI-Kurzfassung" }), h("p", { text: r.summary })));
+      if (r.summary || summary) detail.appendChild(h("details", { open: !!summary }, h("summary", { text: "KI-Kurzfassung" }), h("p", { text: summary || r.summary })));
       if (r.choices && r.choices.length && status.available && r.status === "ready") detail.appendChild(h("div", { class: "row wrap" }, r.choices.map(function (text, index) {
         return S.btn(text, { onClick: function () { return run(async function () { await poll(await S.api("assistant/choose", { body: { id: r.id, index: index } })); }); } });
       })));
@@ -194,10 +195,39 @@
       (r.rejected || []).forEach(function (message) { detail.appendChild(S.notice(message, "warn")); });
       answer.appendChild(S.card("Antwort", { icon: "sparkles" }, detail));
       if ((r.actions || []).length) {
-        answer.appendChild(S.card("Vorgeschlagene Aktionen", { icon: "list", sub: r.author || "" }, h("div", { class: "stack" },
-          r.actions.map(function (action, index) { return h("div", { class: "item" }, h("div", { class: "meta" }, h("strong", { text: (index + 1) + ". " + action.title }), h("p", { style: { whiteSpace: "pre-wrap" }, text: action.preview }))); }),
-          r.status === "ready" ? h("div", { class: "row wrap" }, owner ? S.btn("Plan bestätigen", { kind: "danger", onClick: function () { return change("approve"); } }) : h("span", { class: "muted", text: "Wartet auf Freigabe durch den Hauptadmin." }),
-            S.btn("Plan verwerfen", { onClick: function () { return change("discard"); } })) : h("span", { class: "muted", text: r.status === "discarded" ? "Plan verworfen." : "Plan verarbeitet." }))));
+        var approve = S.btn("Auswahl bestätigen", { kind: "danger", disabled: true, onClick: function () { return change("approve"); } });
+        var checks = [];
+        var entries = r.actions.map(function (action, index) {
+          var title = h("strong", { text: (index + 1) + ". " + action.title });
+          if (owner && r.status === "ready") {
+            var check = h("input", { type: "checkbox" });
+            checks.push(check);
+            check.addEventListener("change", function () {
+              if (check.checked) selected.add(action.id); else selected.delete(action.id);
+              approve.disabled = selected.size === 0;
+            });
+            title = h("label", { class: "check" }, check, title);
+          }
+          return h("div", { class: "item" }, h("div", { class: "meta" }, title, h("p", { style: { whiteSpace: "pre-wrap" }, text: action.preview })));
+        });
+        var all = S.btn("Alle auswählen", { onClick: function () {
+          checks.forEach(function (box) { box.checked = true; });
+          r.actions.forEach(function (action) { selected.add(action.id); });
+          approve.disabled = false;
+        } });
+        answer.appendChild(S.card("Vorgeschlagene Aktionen", { icon: "list", sub: r.author || "" }, h("div", { class: "stack" }, entries,
+          r.status === "ready" ? h("div", { class: "row wrap" }, owner ? [all, approve] : h("span", { class: "muted", text: "Wartet auf Freigabe durch den Hauptadmin." }),
+            S.btn("Mit KI neu zusammenfassen", { disabled: !status.available, onClick: function () {
+              return run(async function () {
+                var job = await S.api("assistant/summarize", { body: { id: r.id } });
+                for (var i = 0; i < 40 && alive(); i++) {
+                  var row = await S.api("assistant/job", { query: { id: job.id }, quiet: true });
+                  if (row.status !== "running") { summary = row.answer || ""; draw(); return; }
+                  await new Promise(function (resolve) { setTimeout(resolve, 2000); });
+                }
+              });
+            } }), S.btn("Plan verwerfen", { onClick: function () { return change("discard"); } })) : h("span", { class: "muted", text: r.status === "discarded" ? "Plan verworfen." : "Plan verarbeitet." }))));
+
       }
       if (outcomes.length) answer.appendChild(S.card("Ergebnis der Freigabe", {}, h("div", { class: "stack" }, outcomes.map(function (step) {
         return S.notice(step.title + " · " + step.description, step.ok ? "ok" : "warn");
@@ -209,7 +239,7 @@
       var items = data.items || [];
       inbox.appendChild(items.length ? h("div", { class: "row wrap" }, items.map(function (plan) {
         return S.btn(plan.author + " · " + plan.count + " Aktionen", { onClick: function () {
-          return run(async function () { outcomes = []; result = await S.api("assistant/job", { query: { id: plan.id } }); draw(); });
+          return run(async function () { outcomes = []; summary = ""; result = await S.api("assistant/job", { query: { id: plan.id } }); draw(); });
         } });
       })) : S.notice("Keine offenen Pläne."));
     }

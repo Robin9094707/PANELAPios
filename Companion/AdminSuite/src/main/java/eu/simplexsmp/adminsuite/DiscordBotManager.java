@@ -2100,11 +2100,15 @@ final class DiscordBotManager {
                 case "review"->editOriginal(token,assistantReply(ai.view(user,id),user.canApprove()));
                 case "approve"->{
                     if(!writable)throw new IllegalArgumentException("Schreibzugriff fehlt.");
-                    Map<String,Object> result=ai.approve(user,id,true);
+                    if(parts.length!=5)throw new IllegalArgumentException("Planversion fehlt.");
+                    Map<String,Object> reviewed=ai.view(user,id);
+                    List<String> actions=AiAdmin.objects(reviewed.get("actions"),6).stream().map(v->AiAdmin.text(v,"id")).toList();
+                    Map<String,Object> result=ai.approve(user,id,true,parts[4],actions);
                     StringBuilder lines=new StringBuilder();
                     for(var step:AiAdmin.objects(result.get("results"),6))lines.append(Boolean.TRUE.equals(step.get("ok"))?"✓ ":"✕ ").append(AiAdmin.text(step,"title")).append(" · ").append(AiAdmin.text(step,"description")).append("\n");
                     editOriginal(token,DiscordAdminController.Reply.ok("Ergebnis der Freigabe",AiAdmin.clean(lines.toString(),3700),"Reviewing approved administration"));
                 }
+                case "summary"->assistantWait(token,ai,user,ai.summarize(user,id));
                 case "discard"->{ai.reject(user,id);editOriginal(token,DiscordAdminController.Reply.ok("Plan verworfen","Der Plan wurde geschlossen.","Reviewing assistant proposals"));}
                 case "choose"->{if(parts.length!=5)throw new IllegalArgumentException("Antwortoption fehlt.");assistantWait(token,ai,user,ai.choose(user,id,Integer.parseInt(parts[4])));}
                 case "player"->{
@@ -2149,8 +2153,8 @@ final class DiscordBotManager {
             for(var action:actions)preview.append("\n\n**").append(AiAdmin.text(action,"title")).append("**\n").append(AiAdmin.text(action,"preview"));
             if(preview.length()<=2600){
                 description.append(preview);
-                if(owner&&"ready".equals(value.get("status")))rows.add(mapOf("type",1,"components",List.of(assistantControl(4,"Plan verbindlich bestätigen","approve",id),assistantControl(2,"Verwerfen","discard",id))));
-                else if(!owner)description.append("\n\nZur Freigabe im Hauptadmin-Posteingang.");
+                if(owner&&"ready".equals(value.get("status")))rows.add(mapOf("type",1,"components",List.of(assistantControl(4,"Plan verbindlich bestätigen","approve",id+":"+AiAdmin.text(value,"revision")),assistantControl(2,"Verwerfen","discard",id),assistantControl(2,"KI-Kurzfassung","summary",id))));
+                else if(!owner){description.append("\n\nZur Freigabe im Hauptadmin-Posteingang.");rows.add(mapOf("type",1,"components",List.of(assistantControl(2,"KI-Kurzfassung","summary",id))));}
             }else description.append("\n\nDer vollständige Plan ist in App und Webpanel einsehbar und bestätigbar.");
         }
         if(value.get("choices") instanceof List<?> choices&&!choices.isEmpty()){
