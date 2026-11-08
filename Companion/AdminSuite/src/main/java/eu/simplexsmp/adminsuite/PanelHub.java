@@ -18,7 +18,7 @@ final class PanelHub {
         "staff-chat", "Staff-Chat-Nachrichten", "admin-log", "Admin-Aktionen (nach Admin-Log-Filter)", "emergency-restart", "Notfallneustart",
         "ban-evasion", "Bann-Umgehung", "vpn-kick", "VPN-Kicks", "report", "Spieler-Reports", "overload", "Server überlastet", "client-brand", "Verdächtige Clients",
         "client-check", "Client-Prüfungen", "first-join", "Erster Beitritt", "join", "Jeder Beitritt", "ban", "Banns", "guard", "Schutzsystem", "admin", "Admin-Hinweise",
-        "disconnect-wave", "Disconnect-Wellen & Verbindungsprobleme", "crash", "Serverabsturz erkannt", "lag-spike", "Server-Hänger (Watchdog)", "ad-reminder", "Werbe-Zentrale: Werbung fällig");
+        "disconnect-wave", "Disconnect-Wellen & Verbindungsprobleme", "crash", "Serverabsturz erkannt", "lag-spike", "Server-Hänger (Watchdog)", "ad-reminder", "Werbe-Zentrale: Werbung fällig", "game-day", "Ingame-Tag erreicht", "ai-chat-alert", "Chat-KI: Hilfe oder Streit erkannt");
     private final AppApiManager api;
     private final SimplexAdminSuite plugin;
     private final AppApiSecurity security;
@@ -206,7 +206,7 @@ final class PanelHub {
 
     /** Whether a notification owner may still receive this event type (account enabled and right present). */
     boolean allowed(String owner, String type) {
-        String permission = switch (type) { case "admin-log" -> "data.admin-log"; case "staff-chat" -> "data.staff-chat"; case "disconnect-wave", "crash", "lag-spike" -> "data.diagnostics"; case "discord-ads", "ad-reminder" -> "data.discord-ads"; default -> type.startsWith("ticket") ? "data.tickets" : "data.events"; };
+        String permission = switch (type) { case "admin-log" -> "data.admin-log"; case "staff-chat" -> "data.staff-chat"; case "disconnect-wave", "crash", "lag-spike" -> "data.diagnostics"; case "discord-ads", "ad-reminder" -> "data.discord-ads"; case "game-day" -> "data.server-events"; default -> type.startsWith("ticket") ? "data.tickets" : "data.events"; };
         if (owner.startsWith("user:")) {
             String user; try { user = new String(Base64.getUrlDecoder().decode(owner.substring(5)), StandardCharsets.UTF_8); } catch (IllegalArgumentException e) { return false; }
             if (!security.users.enabled(user)) return false;

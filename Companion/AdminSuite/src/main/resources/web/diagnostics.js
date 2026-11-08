@@ -315,12 +315,72 @@
 
   // ============================================================ console
   async function consoleView(ctx, query) {
+    if (S.has("console-archive-v1")) return archiveView(ctx, query);
     var level = query.get("level") || "", q = query.get("q") || "";
     var d = await api("logs", { query: { level: level, q: q, limit: 300, minutes: 180 } });
     function go(l, s) { var qs = new URLSearchParams(); if (l) qs.set("level", l); if (s) qs.set("q", s); S.go("#/diagnostics/console" + (qs.toString() ? "?" + qs : "")); }
     return h("div", { class: "stack" }, S.card("Konsole (letzte 3 Stunden)", { icon: "terminal", sub: "IP-Adressen sind ausgeblendet · " + (d.tap || "") },
       h("div", { class: "row wrap" }, S.segmented([["", "Alles"], ["WARN", "Warnungen+"], ["ERROR", "Fehler"]], level, function (v) { go(v, q); }), S.searchBox("Suchen (z. B. lost connection, Plugin-Name)", function (v) { go(level, v); }, q)),
       (d.items || []).length ? logList(d.items) : S.empty("terminal", "Keine Zeilen", "Filter anpassen.")),
+      S.card("KI-Einschätzung der Warnungen & Fehler (20 min)", { icon: "sparkles" }, aiBox("logs:", null, ctx.ai, ctx.canRun)));
+  }
+
+  async function archiveView(ctx, query) {
+    var level = query.get("level") || "", term = query.get("q") || "", from = query.get("from") || "", to = query.get("to") || "";
+    var data = await api("console-archive", { query: { level: level, q: term, from: from, to: to } });
+    var rows = h("div", { class: "stack" }), more = null;
+    function rowsFor(items) {
+      return (items || []).slice().reverse().map(function (row) {
+        return h("div", { class: "item row wrap" }, h("div", { class: "grow" },
+          h("b", { text: S.date(row.at) + " · " + row.level + " · " + row.source }),
+          h("pre", { class: "mono small console-text", text: row.text })),
+          data.manage ? S.btn("Löschen", { kind: "ghost", size: "sm", onClick: function () { return change({ operation: "delete", id: row.id }, "Diese Konsolenzeile dauerhaft aus dem Archiv löschen?"); } }) : null);
+      });
+    }
+    async function change(body, prompt) {
+      if (!await S.confirm("Konsolenarchiv", prompt, "Bestätigen", true)) return;
+      try { await api("console-archive", { body: Object.assign(body, { confirmed: true }) }); S.reload(); }
+      catch (e) { S.toast(e.message, "err"); }
+    }
+    function route(changes) {
+      var next = new URLSearchParams(query);
+      Object.keys(changes).forEach(function (key) { if (changes[key]) next.set(key, changes[key]); else next.delete(key); });
+      S.go("#/diagnostics/console" + (next.size ? "?" + next.toString() : ""));
+    }
+    function localInput(value, label) {
+      var input = S.input({ type: "datetime-local", "aria-label": label });
+      if (value) {
+        var date = new Date(Number(value));
+        if (Number.isFinite(date.getTime())) input.value = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      }
+      return input;
+    }
+    var since = localInput(from, "Von"), until = localInput(to, "Bis");
+    var days = S.input({ type: "number", value: data.days, min: 1, max: 365, "aria-label": "Aufbewahrung in Tagen" });
+    S.add(rows, rowsFor(data.items));
+    if (!(data.items || []).length) S.add(rows, S.empty("terminal", "Keine Treffer", "Das Archiv beginnt mit diesem Update."));
+    if (data.next) more = S.btn("Ältere Zeilen laden", { onClick: async function () {
+      more.disabled = true;
+      try {
+        var page = await api("console-archive", { query: { level: level, q: term, from: from, to: to, before: data.next } });
+        data.next = page.next;
+        S.add(rows, rowsFor(page.items));
+        more.hidden = !data.next;
+      } catch (e) { S.toast(e.message, "err"); }
+      finally { more.disabled = false; }
+    } });
+    return h("div", { class: "stack" },
+      S.card("Konsolenarchiv", { icon: "terminal", sub: data.days + " Tage · " + data.tap + " · IPs und erkannte Zugangsdaten maskiert" },
+        h("div", { class: "row wrap" }, S.segmented([["", "Alles"], ["WARN", "Warnungen+"], ["ERROR", "Fehler"]], level, function (v) { route({ level: v }); }),
+          S.searchBox("Stichwort oder Plugin-Name", function (v) { route({ q: v }); }, term)),
+        h("div", { class: "row wrap" }, S.field("Von", since), S.field("Bis", until), S.btn("Zeitraum anwenden", { onClick: function () {
+          route({ from: since.value ? new Date(since.value).getTime() : "", to: until.value ? new Date(until.value).getTime() : "" });
+        } }), S.btn("Zeitraum zurücksetzen", { onClick: function () { route({ from: "", to: "" }); } }), S.btn("Aktualisieren", { onClick: S.reload })),
+        data.dropped ? S.notice("Aufnahmepuffer überlastet. Fehlende Einträge in dieser Sitzung: " + data.dropped, "warn") : null,
+        rows, more),
+      data.manage ? S.card("Archiv verwalten", {}, h("div", { class: "row wrap" }, S.field("Aufbewahrung in Tagen", days),
+        S.btn("Aufbewahrung speichern", { onClick: function () { return change({ operation: "retention", days: Number(days.value) }, "Zeilen außerhalb der neuen Aufbewahrung werden gelöscht."); } }),
+        S.btn("Gesamtes Archiv leeren", { kind: "danger", onClick: function () { return change({ operation: "clear" }, "Alle Archivzeilen dauerhaft löschen? Die Aufzeichnung läuft weiter."); } }))) : null,
       S.card("KI-Einschätzung der Warnungen & Fehler (20 min)", { icon: "sparkles" }, aiBox("logs:", null, ctx.ai, ctx.canRun)));
   }
 

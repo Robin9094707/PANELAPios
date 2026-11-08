@@ -110,6 +110,16 @@ struct OpenSuiteToolIntent: AppIntent {
     return id
 }
 
+struct OpenSuiteAssistantIntent: AppIntent {
+    static var title: LocalizedStringResource = "KI-Assistent öffnen"
+    static var openAppWhenRun = true
+    @Parameter(title: "Server") var server: SuiteShortcutServer?
+    static var parameterSummary: some ParameterSummary { Summary("KI-Assistent öffnen") { \.$server } }
+    @MainActor func perform() async throws -> some IntentResult {
+        SuiteNavigationInbox.shared.request = SuiteLaunchRequest(tool: .assistant, connection: try selectedConnection(server))
+        return .result()
+    }
+}
 struct OpenAdvertisingHubIntent: AppIntent {
     static var title: LocalizedStringResource = "Werbeverwaltung öffnen"
     static var openAppWhenRun = true
@@ -134,6 +144,7 @@ struct PrepareAdvertisingIntent: AppIntent {
 }
 struct SuiteAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: OpenSuiteAssistantIntent(), phrases: ["Öffne den KI-Assistenten in \(.applicationName)"], shortTitle: "KI-Assistent", systemImageName: "sparkles")
         AppShortcut(intent: OpenSuiteToolIntent(), phrases: ["Öffne die Verwaltung in \(.applicationName)"], shortTitle: "Admin Suite", systemImageName: "shield.lefthalf.filled")
         AppShortcut(intent: OpenAdvertisingHubIntent(), phrases: ["Öffne die Werbeverwaltung in \(.applicationName)"], shortTitle: "Werbeverwaltung", systemImageName: "megaphone.fill")
         AppShortcut(intent: PrepareAdvertisingIntent(), phrases: ["Bereite Werbung mit \(.applicationName) vor"], shortTitle: "Werbung vorbereiten", systemImageName: "doc.on.doc.fill")

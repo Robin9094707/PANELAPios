@@ -241,15 +241,27 @@ struct SuitePlayerView: View {
                 } footer: { Text("Identität, Aktivität, Client, Bedrock-Gerät, Netzwerk, Moderation und Verlauf auf einen Blick – durchsuchbar.") }
             }
             SuiteSavedNBTSection(suite: suite, player: player)
+            if suite.can("data.inventory") || suite.can("data.nbt-paths") || suite.can("data.snapshots") {
             Section("Inventar & Speicherstand") {
-                if current["inventoryPreview"] != .null {
-                    LabeledContent("Belegte Inventarplätze", value: current["inventoryPreview"]["occupied"].string + " / 36")
-                    ForEach(current["inventoryPreview"]["items"].array, id: \.["id"].string) { item in Label(item["name"].string + " × " + item["amount"].string, systemImage: "shippingbox.fill").font(.caption).foregroundStyle(.secondary) }
+                if suite.can("data.inventory") {
+                    if suite.features.contains("visual-inventory-v1") {
+                        NavigationLink { SuiteVisualInventoryView(suite: suite, player: current["id"].string) } label: {
+                            Label("Live-Inventar & Endertruhe", systemImage: "square.grid.3x3.fill")
+                        }.disabled(!current["online"].bool)
+                    } else {
+                        NavigationLink { SuiteDataListView(suite: suite, kind: "inventory", player: player, actions: actions) } label: {
+                            Label("Aktuelles Inventar & Endertruhe", systemImage: "square.grid.3x3.fill")
+                        }.disabled(!current["online"].bool)
+                    }
                 }
-                NavigationLink { SuiteDataListView(suite: suite, kind: "inventory", player: player, actions: actions) } label: { Label("Aktuelles Inventar & Endertruhe", systemImage: "square.grid.3x3.fill") }.disabled(!current["online"].bool)
-                NavigationLink { SuiteNBTPathsView(suite: suite, panel: panel, server: server, player: player) } label: { Label("NBT-Editor öffnen", systemImage: "doc.badge.gearshape") }
-                NavigationLink { SuiteSnapshotsView(suite: suite, player: player, actions: actions) } label: { Label("Inventar-Snapshots", systemImage: "archivebox") }
+                if suite.can("data.nbt-paths") {
+                    NavigationLink { SuiteNBTPathsView(suite: suite, panel: panel, server: server, player: player) } label: { Label("NBT-Editor öffnen", systemImage: "doc.badge.gearshape") }
+                }
+                if suite.can("data.snapshots") {
+                    NavigationLink { SuiteSnapshotsView(suite: suite, player: player, actions: actions) } label: { Label("Inventar-Snapshots", systemImage: "archivebox") }
+                }
                 if !current["online"].bool { Text("Offline-Inventar über den NBT-Editor oder einen gespeicherten Snapshot öffnen.").font(.caption).foregroundStyle(.secondary) }
+            }
             }
             if current["logoutLocation"] != .null {
                 Section("Zuletzt ausgeloggt") {

@@ -22,6 +22,7 @@
       { id: "moderation", label: "Moderation", icon: "gavel", perm: "data.reports" }
     ] },
     { group: "Server", items: [
+      { id: "server-events", label: "Event-Modus & Lockdown", icon: "bell", perm: "data.server-events", feature: "server-events-v1" },
       { id: "diagnostics", label: "Diagnose", icon: "activity", perm: "data.diagnostics", feature: "diagnostics-v1", badge: "diagnostics" },
       { id: "statistics", label: "Statistiken", icon: "chart", perm: "data.statistics" },
       { id: "worlds", label: "Welten", icon: "globe", perm: "data.worlds" },

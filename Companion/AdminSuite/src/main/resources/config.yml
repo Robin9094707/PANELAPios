@@ -181,6 +181,7 @@ player-data:
 # never in this normal config. OPENAI_API_KEY can be used instead.
 # 10.2.0 Diagnosezentrale (App/Webpanel → Diagnose). Alles läuft auf dem Server; App und Webpanel lesen nur.
 diagnostics:
+  console-retention-days: 30
   packet-metadata: true
   enabled: true
   # Mehrere Disconnects in kurzer Zeit werden zu einem Vorfall (Bark-Ereignis "disconnect-wave").
@@ -189,6 +190,7 @@ diagnostics:
     min-players: 3
   # Welle: dieser Anteil der Online-Spieler trennt sich innerhalb des Fensters.
   wave:
+    critical-alert: true
     share: 0.35
     window-seconds: 30
   # Ein Spieler mit so vielen unfreiwilligen Trennungen in 10 Minuten gilt als "instabile Verbindung".
@@ -239,7 +241,14 @@ openai:
     default-daily-limit: 5
     cooldown-seconds: 30
     max-output-tokens: 500
+  public-chat:
+    # Sends a short, redacted excerpt of delivered global chat to the configured OpenAI API.
+    enabled: false
+    proactive: false
+    notify-staff: true
   admin-assistant:
+    # Allow opt-in lookup of basic device details by accounts with data.devices.
+    device-context: false
     transcription-model: gpt-transcribe
     enabled: true
     default-daily-limit: 15

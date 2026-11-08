@@ -892,8 +892,14 @@ final class AccessLocks implements Listener {
         if (states != null) states.forEach((right, st) -> {
             String state = st[0] == 0 ? "" : st[1] > 0 ? remaining(st[1] - now, true) : "dauerhaft";
             Map<String, Object> row = SimplexAdminSuite.appMap("id", right, "name", SimplexAdminSuite.rightName(right), "group", rightGroup(right), "blocked", st[0] == 1, "until", st[1], "remaining", state);
-            if (COVERED.containsKey(right)) { if (st[0] == 1) legacy.computeIfAbsent(COVERED.get(right), k -> new ArrayList<>()).add(row); }
-            else rights.add(row);
+            String area = COVERED.get(right);
+            if (area == null) rights.add(row);
+            else if (st[0] == 1) {
+                Entry modern = map.get(area);
+                boolean fullyCovered = modern != null && modern.active(now) && modern.scope().equals("everywhere")
+                    && (modern.until() == 0 || st[1] > 0 && modern.until() >= st[1]);
+                if (!fullyCovered) legacy.computeIfAbsent(area, k -> new ArrayList<>()).add(row);
+            }
         });
         long blockedRights = rights.stream().filter(r -> Boolean.TRUE.equals(r.get("blocked"))).count() + legacy.values().stream().mapToInt(List::size).sum();
         return SimplexAdminSuite.appMap("uuid", id.toString(), "name", name(id), "online", Bukkit.getPlayer(id) != null, "locks", active,

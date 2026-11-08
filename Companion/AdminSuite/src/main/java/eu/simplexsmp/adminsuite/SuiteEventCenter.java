@@ -12,7 +12,7 @@ import org.bukkit.entity.Player;
 
 /** Bounded independent event ledger. Existing punishment/report/profile formats are untouched. */
 final class SuiteEventCenter {
-    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent","ticket-low","ticket-high","emergency-restart","admin-log","staff-chat","disconnect-wave","crash","lag-spike","discord-ads","ad-reminder");
+    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent","ticket-low","ticket-high","emergency-restart","admin-log","staff-chat","disconnect-wave","crash","lag-spike","discord-ads","ad-reminder","game-day","ai-chat-alert");
     static final Set<String> LEVELS = Set.of("active","passive","timeSensitive","critical");
     private final SimplexAdminSuite plugin;
     private final Path eventsFile, subscriptionsFile;
@@ -121,9 +121,12 @@ final class SuiteEventCenter {
         try { persist(); } catch (IOException e) { events.clear(); events.putAll(old); throw e; }
     }
 
-    synchronized Object data(String query,int offset) {
+    synchronized Object data(String query,int offset) { return data(query, offset, ""); }
+    synchronized Object data(String query,int offset,String type) {
         List<Map<String,Object>> rows=new ArrayList<>(events.values());Collections.reverse(rows);
-        String q=query.toLowerCase(Locale.ROOT);rows.removeIf(r->!q.isBlank()&&!DiscordBotManager.Json.stringify(r).toLowerCase(Locale.ROOT).contains(q));
+        String q=query.toLowerCase(Locale.ROOT);
+        rows.removeIf(r -> !type.isBlank() && !type.equals(r.get("type"))
+            || !q.isBlank() && !DiscordBotManager.Json.stringify(r).toLowerCase(Locale.ROOT).contains(q));
         int start=Math.min(Math.max(0,offset),rows.size()),end=Math.min(start+100,rows.size());
         return SimplexAdminSuite.appMap("items",new ArrayList<>(rows.subList(start,end)),"next",end<rows.size()?end:-1,"total",rows.size(),"deliveryStatus",deliveryStatus);
     }
@@ -138,9 +141,17 @@ final class SuiteEventCenter {
         try{persist();}catch(IOException e){events.clear();events.putAll(before);throw e;}
         return SimplexAdminSuite.appMap("ok",true,"title","Protokoll aktualisiert","description","Die Änderung wurde gespeichert. Ursprüngliche Strafen und Reports bleiben erhalten.");
     }
+    private String defaultBarkEvents(String prefix) {
+        Set<String> events = new TreeSet<>(Arrays.asList(subscriptions.getProperty(prefix + "events", "ban-evasion,vpn-kick,overload,client-brand").split(",")));
+        for (String type : List.of("disconnect-wave", "game-day", "ai-chat-alert"))
+            if (!BarkPolicy.rules(subscriptions.getProperty(prefix + "rules", "")).containsKey(type)) events.add(type);
+        events.remove("");
+        return String.join(",", events);
+    }
+
     synchronized Object subscription(String owner) {
         String prefix=owner+".";
-        return SimplexAdminSuite.appMap("enabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"enabled","false")),"configured",!subscriptions.getProperty(prefix+"key","").isBlank(),"events",subscriptions.getProperty(prefix+"events","ban-evasion,vpn-kick,overload,client-brand"),"level",subscriptions.getProperty(prefix+"level","active"),"critical",subscriptions.getProperty(prefix+"critical","critical"),"sound",subscriptions.getProperty(prefix+"sound","minuet"),"criticalSound",subscriptions.getProperty(prefix+"criticalSound","alarm"),"rules",subscriptions.getProperty(prefix+"rules",""),"quietMode",subscriptions.getProperty(prefix+"quietMode","off"),"quietStart",subscriptions.getProperty(prefix+"quietStart","22:00"),"quietEnd",subscriptions.getProperty(prefix+"quietEnd","07:00"),"timezone",subscriptions.getProperty(prefix+"timezone","Europe/Berlin"),"quietKinds",subscriptions.getProperty(prefix+"quietKinds",""),"workEnabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"workEnabled","false")),"workStart",subscriptions.getProperty(prefix+"workStart","08:00"),"workEnd",subscriptions.getProperty(prefix+"workEnd","17:00"),"workDays",subscriptions.getProperty(prefix+"workDays","1,2,3,4,5"),"emergencyEnabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"emergencyEnabled","true")),"emergencyOverride",subscriptions.getProperty(prefix+"emergencyOverride","both"),"sleepActive",BarkPolicy.quiet(subscriptions,prefix,java.time.Instant.now()),"workActive",BarkPolicy.working(subscriptions,prefix,java.time.Instant.now()),"deliveryStatus",deliveryStatus);
+        return SimplexAdminSuite.appMap("enabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"enabled","false")),"configured",!subscriptions.getProperty(prefix+"key","").isBlank(),"events",defaultBarkEvents(prefix),"level",subscriptions.getProperty(prefix+"level","active"),"critical",subscriptions.getProperty(prefix+"critical","critical"),"sound",subscriptions.getProperty(prefix+"sound","minuet"),"criticalSound",subscriptions.getProperty(prefix+"criticalSound","alarm"),"rules",subscriptions.getProperty(prefix+"rules",""),"quietMode",subscriptions.getProperty(prefix+"quietMode","off"),"quietStart",subscriptions.getProperty(prefix+"quietStart","22:00"),"quietEnd",subscriptions.getProperty(prefix+"quietEnd","07:00"),"timezone",subscriptions.getProperty(prefix+"timezone","Europe/Berlin"),"quietKinds",subscriptions.getProperty(prefix+"quietKinds",""),"workEnabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"workEnabled","false")),"workStart",subscriptions.getProperty(prefix+"workStart","08:00"),"workEnd",subscriptions.getProperty(prefix+"workEnd","17:00"),"workDays",subscriptions.getProperty(prefix+"workDays","1,2,3,4,5"),"emergencyEnabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"emergencyEnabled","true")),"emergencyOverride",subscriptions.getProperty(prefix+"emergencyOverride","both"),"sleepActive",BarkPolicy.quiet(subscriptions,prefix,java.time.Instant.now()),"workActive",BarkPolicy.working(subscriptions,prefix,java.time.Instant.now()),"deliveryStatus",deliveryStatus);
     }
     synchronized Object configure(String owner,Map<String,Object> values) throws IOException {
         String prefix=owner+".";Properties next=new Properties();next.putAll(subscriptions);
@@ -191,9 +202,9 @@ final class SuiteEventCenter {
             if(plugin.appApi==null||!plugin.appApi.security.canNotifyOwner(owner))continue;
             String type=String.valueOf(row.get("type"));
             // 10.2.0: diagnostics alarms only reach accounts that may open the diagnostics centre.
-            if(Set.of("disconnect-wave","crash","lag-spike","discord-ads","ad-reminder").contains(type)&&!plugin.appApi.diagnosticsNotifiable(owner,type))continue;String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
+            if(Set.of("disconnect-wave","crash","lag-spike","discord-ads","ad-reminder","game-day","ai-chat-alert").contains(type)&&!plugin.appApi.diagnosticsNotifiable(owner,type))continue;String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
             // Tickets reach every Bark subscriber until the app stores an explicit rule for them.
-            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true))&&!type.equals("emergency-restart")&&!type.equals("discord-ads")&&!type.equals("ad-reminder"))continue;
+            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true))&&!type.equals("emergency-restart")&&!type.equals("discord-ads")&&!type.equals("ad-reminder")&&!Set.of("disconnect-wave","game-day","ai-chat-alert").contains(type))continue;
             boolean critical=Boolean.TRUE.equals(row.get("critical"));String hint=row.get("level") instanceof String h&&LEVELS.contains(h)?h:null;
             String level=rule!=null?rule[1]:hint!=null?hint:copy.getProperty(prefix+(critical?"critical":"level"),"active");
             if(type.equals("emergency-restart")&&rule==null)level="critical";
@@ -203,7 +214,7 @@ final class SuiteEventCenter {
 
             if(repeated){boolean retained;synchronized(this){retained=events.containsKey(String.valueOf(row.get("id")));}if(repeat==0||!retained){acknowledge(owner,String.valueOf(row.get("id")));continue;}}
             long now=System.currentTimeMillis();String rate=prefix+type;
-            if(!type.equals("ad-reminder")&&now-cooldown.getOrDefault(rate,0L)<(type.equals("first-join")||type.startsWith("ticket")||type.equals("discord-ads")?3000:30_000))continue;
+            if(!Set.of("ad-reminder","game-day").contains(type)&&now-cooldown.getOrDefault(rate,0L)<(type.equals("first-join")||type.startsWith("ticket")||type.equals("discord-ads")?3000:30_000))continue;
             cooldown.put(rate,now);
             Map<String,Object> payload=SimplexAdminSuite.appMap("device_key",copy.getProperty(prefix+"key",""),"title",row.get("title"),"body",row.get("body"),"group","Simplex Admin Suite","level",level,"sound",sound,"isArchive",1,"url",type.startsWith("ticket")?"panel://suite-tickets":type.equals("admin-log")?"panel://suite-admin-log":Set.of("disconnect-wave","crash","lag-spike").contains(type)?"panel://suite-diagnostics":row.get("url") instanceof String u&&u.startsWith("panel://")?u:type.equals("ad-reminder")?"panel://suite-ad-hub":"panel://suite-events");
             if(type.equals("ad-reminder")){payload.put("group","Werbe-Zentrale");if(row.get("copy") instanceof String c){payload.put("copy",c);payload.put("autoCopy","1");}}

@@ -62,6 +62,7 @@ final class DiagnosticsCenter implements Listener {
     private final ArrayDeque<Line> lines = new ArrayDeque<>();
     private final AtomicBoolean logDirty = new AtomicBoolean();
     private final ThreadLocal<Boolean> inTap = ThreadLocal.withInitial(() -> false);
+    private final ConsoleArchive consoleArchive;
     private Object appender, rootLogger;
     private volatile String tapStatus = "nicht verbunden";
     private volatile long lastWatchdog, lastOverloadLine;
@@ -113,6 +114,10 @@ final class DiagnosticsCenter implements Listener {
         try { Files.createDirectories(crashFolder); Files.createDirectories(sparkFolder); } catch (IOException e) { plugin.getLogger().warning("Diagnoseordner konnte nicht angelegt werden: " + e.getMessage()); }
         load();
         inspectPreviousRun();
+        ConsoleArchive archive = null;
+        try { archive = new ConsoleArchive(folder, plugin.getConfig().getInt("diagnostics.console-retention-days", 30)); }
+        catch (Exception e) { plugin.getLogger().warning("Konsolenarchiv nicht verfügbar: " + e.getClass().getSimpleName()); }
+        consoleArchive = archive;
         installTap();
     }
 
@@ -133,6 +138,9 @@ final class DiagnosticsCenter implements Listener {
         if (sampleTask != null) sampleTask.cancel();
         if (persistTask != null) persistTask.cancel();
         removeTap();
+        if (consoleArchive != null) try {
+            io.execute(() -> { try { consoleArchive.close(); } catch (Exception ignored) { } });
+        } catch (RejectedExecutionException ignored) { }
         try { writeLiveLog(); persistData(); } catch (Exception e) { plugin.getLogger().warning("Diagnosedaten konnten nicht gesichert werden: " + e.getMessage()); }
         writeHeartbeat(true);
         io.shutdown(); jobs.shutdownNow();
@@ -197,20 +205,27 @@ final class DiagnosticsCenter implements Listener {
             long at = ((Number) m[3].invoke(event)).longValue();
             Throwable thrown = (Throwable) m[4].invoke(event);
             if (thrown != null) {
+                StringWriter trace = new StringWriter();
+                thrown.printStackTrace(new PrintWriter(trace));
+                if (consoleArchive != null) consoleArchive.offer(new Line(at, level, sourceOf(logger, text),
+                    SparkProfile.clip(text + "\n" + trace, 32_768)));
+
                 StringBuilder b = new StringBuilder(text).append(" | ").append(thrown);
                 StackTraceElement[] st = thrown.getStackTrace();
                 for (int i = 0; i < Math.min(4, st.length); i++) b.append(" @ ").append(st[i]);
                 Throwable cause = thrown.getCause(); if (cause != null && cause != thrown) b.append(" | Ursache: ").append(cause);
                 text = b.toString();
             }
-            accept(at, level, logger, text);
+            accept(at, level, logger, text, thrown == null);
         } catch (Throwable ignored) {
             // diagnostics must never disturb logging
         } finally { inTap.set(false); }
     }
 
     /** Package-visible for tests: handles one console line. */
-    void accept(long at, String level, String logger, String raw) {
+    void accept(long at, String level, String logger, String raw) { accept(at, level, logger, raw, true); }
+    private void accept(long at, String level, String logger, String raw, boolean archive) {
+        if (archive && consoleArchive != null) consoleArchive.offer(new Line(at, level, sourceOf(logger, raw), SparkProfile.clip(raw, 32_768)));
         String text = SparkProfile.clip(raw.replaceAll("§[0-9a-fk-orx]", ""), 900);
         String source = sourceOf(logger, text);
         synchronized (lines) { lines.addLast(new Line(at, level, source, text)); while (lines.size() > LOG_LINES) lines.removeFirst(); }
@@ -260,7 +275,7 @@ final class DiagnosticsCenter implements Listener {
         Collections.reverse(out);
         return out;
     }
-    private static int rank(String level) { return switch (level == null ? "" : level.toUpperCase(Locale.ROOT)) { case "FATAL" -> 5; case "ERROR" -> 4; case "WARN", "WARNING" -> 3; case "INFO" -> 2; case "DEBUG" -> 1; default -> 0; }; }
+    static int rank(String level) { return switch (level == null ? "" : level.toUpperCase(Locale.ROOT)) { case "FATAL" -> 5; case "ERROR" -> 4; case "WARN", "WARNING" -> 3; case "INFO" -> 2; case "DEBUG" -> 1; default -> 0; }; }
 
     // ================================================================ sampler
     private void sample() {
@@ -533,10 +548,13 @@ final class DiagnosticsCenter implements Listener {
         if (plugin.appEvents == null) return;
         @SuppressWarnings("unchecked") Map<String, Object> v = (Map<String, Object>) incident.get("verdict");
         String severity = String.valueOf(v.get("severity"));
-        if (severity.equals("info") && !plugin.getConfig().getBoolean("diagnostics.notify-legit", false)) return;
-        String level = severity.equals("critical") ? "critical" : severity.equals("warning") ? "timeSensitive" : "passive";
+        boolean wave = "wave".equals(incident.get("kind")) && !"legit".equals(v.get("verdict"))
+            && plugin.getConfig().getBoolean("diagnostics.wave.critical-alert", true);
+        if (severity.equals("info") && !wave && !plugin.getConfig().getBoolean("diagnostics.notify-legit", false)) return;
+        if (wave && escalated) return; // The initial notification was already critical.
+        String level = (wave || severity.equals("critical")) ? "critical" : severity.equals("warning") ? "timeSensitive" : "passive";
         String steps = v.get("steps") instanceof List<?> l && !l.isEmpty() ? "\n→ " + l.get(0) : "";
-        plugin.appEvents.record("disconnect-wave", null, (escalated ? "Verschärft: " : "") + incident.get("title"), v.get("cause") + steps, severity.equals("critical"), level);
+        plugin.appEvents.record("disconnect-wave", null, (escalated ? "Verschärft: " : "") + incident.get("title"), v.get("cause") + steps, wave || severity.equals("critical"), level);
         incident.put("notified", true);
     }
 
@@ -715,6 +733,9 @@ final class DiagnosticsCenter implements Listener {
     private void persistTick() {
         if (stopping) return;
         persistCounter++;
+        if (consoleArchive != null) try {
+            io.execute(() -> { try { consoleArchive.flush(); } catch (java.sql.SQLException ignored) { } });
+        } catch (RejectedExecutionException ignored) { }
         writeHeartbeat(false);
         if (plugin.getConfig().getBoolean("diagnostics.live-log", true) && logDirty.getAndSet(false)) {
             List<Line> copy = recentLines(0, 500, "", "");
@@ -1068,6 +1089,10 @@ final class DiagnosticsCenter implements Listener {
                     Collections.reverse(rows); yield SimplexAdminSuite.appMap("items", rows, "tap", tapStatus, "sessionStart", sessionStart); }
                 case "/v1/diagnostics/spark" -> spark(q.getOrDefault("code", ""));
                 case "/v1/diagnostics/full" -> lastFull;
+                case "/v1/diagnostics/console-archive" -> {
+                    if (consoleArchive == null) throw new AppApiManager.ApiError(503, "Konsolenarchiv nicht verfügbar");
+                    yield consoleArchive.read(q, tapStatus, allows(api, key, "console.archive.manage") && AppApiSecurity.permitted(key, "manage"));
+                }
                 case "/v1/diagnostics/logs" -> { int limit = Math.max(20, Math.min(500, intOf(q.get("limit"), 200))); long since = System.currentTimeMillis() - Math.max(1, Math.min(1440, intOf(q.get("minutes"), 60))) * 60_000L;
                     yield SimplexAdminSuite.appMap("items", recentLines(since, limit, q.getOrDefault("level", ""), q.getOrDefault("q", "")).stream().map(Line::json).toList(), "tap", tapStatus); }
                 case "/v1/diagnostics/ai" -> { Map<String, Object> job = ai.get(q.getOrDefault("target", "")); yield job == null ? SimplexAdminSuite.appMap("status", "none") : job; }
@@ -1080,6 +1105,20 @@ final class DiagnosticsCenter implements Listener {
         Map<String, Object> body = AppApiManager.body(x, 8192);
         String who = key.id().startsWith("user:") ? key.label() : "Schlüssel " + key.label();
         Object out = switch (path) {
+            case "/v1/diagnostics/console-archive" -> {
+                api.requirePermission(key, "data.diagnostics");
+                api.requirePermission(key, "console.archive.manage");
+                if (!AppApiSecurity.permitted(key, "manage")) throw new AppApiManager.ApiError(403, "Archivverwaltung benötigt manage-Zugriff");
+                if (consoleArchive == null) throw new AppApiManager.ApiError(503, "Konsolenarchiv nicht verfügbar");
+                if (!Boolean.TRUE.equals(body.get("confirmed"))) throw new IllegalArgumentException("Bestätigung fehlt");
+                String operation = String.valueOf(body.get("operation"));
+                int days = intOf(body.get("days"), 0);
+                if (operation.equals("retention")) {
+                    if (days < 1 || days > 365) throw new IllegalArgumentException("Aufbewahrung: 1–365 Tage");
+                    api.onMain(rev, () -> { plugin.getConfig().set("diagnostics.console-retention-days", days); plugin.saveConfig(); return null; });
+                }
+                yield SimplexAdminSuite.appMap("removed", consoleArchive.change(operation, String.valueOf(body.get("id")), days));
+            }
             case "/v1/diagnostics/full" -> {
                 requireRun(api, key);
                 if (!api.rate("diag-full:" + key.id(), 6)) throw new AppApiManager.ApiError(429, "Bitte kurz warten.");

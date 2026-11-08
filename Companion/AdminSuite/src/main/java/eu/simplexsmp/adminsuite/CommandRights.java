@@ -247,7 +247,10 @@ final class CommandRights implements Listener {
         }
         Map<String, Info> out = new TreeMap<>();
         Set<Command> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (Command c : known.values()) {
+        List<Command> candidates = new ArrayList<>(known.values());
+        // Show the command reached by its plain name when multiple plugins register that name.
+        candidates.sort(Comparator.nullsLast(Comparator.comparing((Command c) -> known.get(c.getName().toLowerCase(Locale.ROOT)) != c)));
+        for (Command c : candidates) {
             if (c == null || !seen.add(c)) continue;
             String name = c.getName().toLowerCase(Locale.ROOT);
             if (!name.matches(NAME) || out.containsKey(name)) continue;
@@ -258,7 +261,7 @@ final class CommandRights implements Listener {
                 String n = ns.contains("minecraft") ? "minecraft" : ns.isEmpty() ? "server" : ns.iterator().next();
                 owner = switch (n) { case "minecraft" -> "Minecraft"; case "bukkit" -> "Bukkit"; case "paper" -> "Paper"; case "spigot" -> "Spigot"; case "server" -> "Server"; default -> Character.toUpperCase(n.charAt(0)) + n.substring(1); };
             }
-            List<String> aliases = c.getAliases().stream().map(a -> a.toLowerCase(Locale.ROOT)).filter(a -> !a.equals(name)).distinct().sorted().toList();
+            List<String> aliases = c.getAliases().stream().map(a -> a.toLowerCase(Locale.ROOT)).filter(a -> !a.equals(name) && known.get(a) == c).distinct().sorted().toList();
             String permission = c.getPermission() == null ? "" : c.getPermission();
             if (permission.isEmpty() && owner.equals("Minecraft")) permission = "minecraft.command." + name;
             out.put(name, new Info(name, aliases, owner, kindOf(name, owner), permission, Objects.requireNonNullElse(c.getDescription(), "").trim(), Objects.requireNonNullElse(c.getUsage(), "").trim(), c));

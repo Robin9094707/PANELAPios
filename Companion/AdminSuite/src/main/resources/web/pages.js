@@ -50,6 +50,8 @@
         h("div", { class: "grow" }, h("h2", { style: { margin: 0, fontSize: "22px", letterSpacing: "-0.02em" }, text: "Hallo " + ((S.account && S.account.username) || "") + " 👋" }),
           h("div", { class: "muted small", text: (S.health.name || "Server") + " · Admin Suite " + (S.health.version || "") + (d && d.uptime ? " · läuft seit " + S.dur(d.uptime) : "") })),
         d ? S.badge(Number(d.tps).toFixed(1) + " TPS", d.tps >= 18 ? "ok" : d.tps >= 14 ? "warn" : "danger", "activity") : null,
+        d && d.event ? S.badge("Event · " + d.event, "accent", "bell") : null,
+        d && d.lockdown && d.lockdown !== "off" ? S.badge("Lockdown", "danger", "lock") : null,
         d && d.maintenance && d.maintenance.active ? S.badge("Wartung aktiv", "warn", "alert") : null,
         d && d.restart && d.restart.active ? S.badge("Neustart in " + d.restart.remaining + " s", "danger", "refresh") : null));
       var kpis = h("div", { class: "grid kpis" });
@@ -176,6 +178,8 @@
     var cards = [head];
     // 10.0.0: quick access to rank (LuckPerms) and access locks of this player.
     var quick = h("div", { class: "row wrap" },
+      p.online && S.has("visual-inventory-v1") && S.can("data.inventory") ? h("a", { class: "btn sm primary", href: "#/inventory/" + p.id, text: "Live-Inventar" }) : null,
+      S.has("visual-inventory-v1") && S.can("data.devices") ? h("a", { class: "btn sm", href: "#/player-devices/" + p.id, text: "Geräte" }) : null,
       S.has("access-locks-v1") && S.can("data.access-locks") ? h("a", { class: "btn sm primary", href: "#/access-locks/" + p.id }, icon("lock"), "Rechte & Sperren") : null,
       S.has("luckperms-v1") && S.can("data.luckperms") ? h("a", { class: "btn sm", href: "#/luckperms/player/" + p.id }, icon("key"), "Rang & LuckPerms") : null,
       S.has("command-rights-v1") && S.can("data.commands") ? h("a", { class: "btn sm", href: "#/commands/" + p.id }, icon("terminal"), "Befehle") : null);
@@ -476,16 +480,16 @@
 
   // ============================================================ Events
   P.events = async function (param, query, alive) {
-    var state = { q: "", offset: 0 }, list = h("div", { class: "list" }), more = h("div", { class: "center", style: { padding: "12px" } });
+    var state = { q: "", offset: 0, type: "" }, list = h("div", { class: "list" }), more = h("div", { class: "center", style: { padding: "12px" } });
     var canAck = S.can("action.events.ack"), canDelete = S.can("action.events.delete") && S.full();
     async function load(reset) {
       if (reset) state.offset = 0;
-      var r = await S.api("data/events", { query: { q: state.q, offset: state.offset } }); if (!alive()) return;
+      var r = await S.api("data/events", { query: { q: state.q, type: state.type, offset: state.offset } }); if (!alive()) return;
       if (reset) S.clear(list);
       (r.items || []).forEach(function (e) {
         var acked = e.acknowledged || e.ack || (e.acks && e.acks.length);
         list.appendChild(h("div", { class: "item" }, h("div", { class: "avatar device sm" }, icon(e.critical ? "alert" : "bell")),
-          h("div", { class: "meta" }, h("b", { text: e.title || e.type }), e.body ? h("p", { text: e.body }) : null, h("small", { text: S.date(e.time) + " · " + e.type + (e.note ? " · Notiz: " + e.note : "") })),
+          h("div", { class: "meta" }, h("b", { text: e.title || e.type }), e.body ? h("p", { text: e.body }) : null, e.player && S.can("data.profile") ? h("a", { class: "btn sm ghost", href: "#/player/" + encodeURIComponent(e.player), text: "Spielerprofil" }) : null, h("small", { text: S.date(e.time) + " · " + e.type + (e.note ? " · Notiz: " + e.note : "") })),
           h("div", { class: "side" }, e.critical ? S.badge("Kritisch", "danger") : null,
             canAck && !acked ? S.btn("", { size: "sm icon", icon: "check", title: "Bestätigen", onClick: async function () { await S.runAction("events.ack", { id: String(e.id) }, { skipConfirm: true }); load(true); } }) : null,
             canDelete ? S.btn("", { size: "sm icon", kind: "ghost", icon: "trash", title: "Löschen", onClick: async function () { if (await S.runAction("events.delete", { id: String(e.id) }, { danger: true, title: "Ereignis löschen?" })) load(true); } }) : null)));
@@ -493,8 +497,9 @@
       if (!list.children.length) list.appendChild(S.empty("bell", "Keine Ereignisse"));
       state.offset = r.next; S.clear(more); if (r.next > 0) more.appendChild(S.btn("Mehr laden", { icon: "chevDown", onClick: function () { return load(false); } }));
     }
-    S.title("Ereignisse");
-    S.mount(h("div", { class: "stack" }, h("div", { class: "row" }, S.searchBox("Ereignisse durchsuchen …", function (v) { state.q = v; load(true); })), S.card(null, { cls: "pad-0" }, list, more)));
+    S.title("Benachrichtigungscenter");
+    S.mount(h("div", { class: "stack" }, h("div", { class: "row wrap" }, S.searchBox("Ereignisse durchsuchen …", function (v) { state.q = v; load(true); }),
+      S.has("server-events-v1") ? S.segmented([["", "Alle"], ["game-day", "Ingame-Tage"], ["ai-chat-alert", "Chat-KI"], ["disconnect-wave", "Disconnects"]], "", function (v) { state.type = v; load(true); }) : null), S.card(null, { cls: "pad-0" }, list, more)));
     await load(true);
   };
 

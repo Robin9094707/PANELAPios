@@ -18,6 +18,12 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.3.0", title: "Arts Update", summary: "Live-Inventare, Spieltag-Alarme und die Serverkonsole im Panel.", items: [
+            WhatsNewItem(symbol: "square.grid.3x3.fill", title: "Inventare live öffnen", detail: "Item-Texturen, Hotbar, Ausrüstung und Endertruhe im Spielerprofil. Mit Freigabe lassen sich Stapel direkt tauschen."),
+            WhatsNewItem(symbol: "terminal.fill", title: "Konsole durchsuchbar", detail: "Standardmäßig 30 Tage Archiv mit Datum, Suchbegriffen, Filtern und Löschoptionen."),
+            WhatsNewItem(symbol: "calendar.badge.clock", title: "Event-Modus & Lockdown", detail: "Ingame-Tage für Erinnerungen, Event-Starts und Befehle planen. Bei Bedarf Beitritte einschränken."),
+            WhatsNewItem(symbol: "sparkles", title: "KI mit anklickbaren Gerätedetails", detail: "Optionale Geräteinfos, eigener iOS-Kurzbefehl und zweisprachige Hilfe im Minecraft-Chat.")
+        ]),
         WhatsNewRelease(version: "5.2.0", title: "Dein privater KI-Chat", summary: "Mit Nachrichtenverlauf, Spracheingabe und neuen Moderationsaktionen.", items: [
             WhatsNewItem(symbol: "bubble.left.and.bubble.right", title: "Mehrere Chats", detail: "Folgefragen im selben Chat stellen, Verläufe umbenennen oder automatisch löschen."),
             WhatsNewItem(symbol: "mic.fill", title: "Aufnehmen und anhören", detail: "Eine Aufnahme vorhören, transkribieren, den Text bearbeiten und separat abschicken."),

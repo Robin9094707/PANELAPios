@@ -112,15 +112,67 @@ struct SuiteDirectDashboard: View {
 
 struct SuiteDirectEvents: View {
     let suite: SuiteAPI
-    @StateObject private var model: SuiteUpgradeModel
-    init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteUpgradeModel(suite)) }
+    @State private var items: [JSON] = []
+    @State private var type = ""
+    @State private var query = ""
+    @State private var offset = -1
+    @State private var loading = false
+    @State private var error: String?
+
     var body: some View {
         List {
+            if suite.features.contains("server-events-v1") {
+                Picker("Art", selection: $type) {
+                    Text("Alle").tag("")
+                    Text("Ingame-Tage").tag("game-day")
+                    Text("Chat-KI").tag("ai-chat-alert")
+                    Text("Disconnects").tag("disconnect-wave")
+                }
+            }
             if suite.features.contains("history-management-v1") { SuiteHistoryLink(suite: suite, kind: "events", title: "Serverereignisse") }
-            ForEach(model.data["items"].array, id: \.["id"].string) { row in
-            VStack(alignment: .leading, spacing: 6) { Text(row["title"].string).font(.headline); Text(row["body"].string).font(.subheadline); if suite.can("action.events.ack") { NavigationLink("Alarm bestätigen") { SuiteActionView(suite: suite, action: .make("events.ack", "Alarm bestätigen"), preset: ["id": row["id"]]) } } }
+            if items.isEmpty { Text(loading ? "Hinweise werden geladen …" : "Keine Hinweise.").foregroundStyle(.secondary) }
+            ForEach(items, id: \.["id"].string) { row in
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(row["title"].string, systemImage: row["critical"].bool ? "exclamationmark.triangle.fill" : "bell")
+                        .font(.headline)
+                    if let date = SuitePlayerPresentation.date(row["time"]) {
+                        Text(SuiteGermanTime.text(date)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text(row["body"].string).font(.subheadline).textSelection(.enabled)
+                    if suite.can("data.profile"), suite.features.contains("player-dossier-v1"), !row["player"].string.isEmpty {
+                        NavigationLink("Spielerprofil öffnen") { SuitePlayerDossierView(suite: suite, player: row["player"].string) }
+                    }
+                    if suite.can("action.events.ack") {
+                        NavigationLink("Alarm bestätigen") {
+                            SuiteActionView(suite: suite, action: .make("events.ack", "Alarm bestätigen"), preset: ["id": row["id"]])
+                        }
+                    }
+                }
+            }
+            if offset >= 0 { Button("Mehr laden") { Task { await load(older: true) } }.disabled(loading) }
         }
-        }.panelScreen().navigationTitle("Serverereignisse").task { await model.load("events") }.refreshable { await model.load("events") }.errorAlert($model.error)
+        .panelScreen()
+        .navigationTitle("Benachrichtigungscenter")
+        .searchable(text: $query, prompt: "Hinweise suchen")
+        .task(id: type + "|" + query) {
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            await load()
+        }
+        .refreshable { await load() }
+        .errorAlert($error)
+    }
+
+    private func load(older: Bool = false) async {
+        if older && loading { return }
+        let selectedType = type, search = query
+        loading = true
+        defer { loading = false }
+        do {
+            let data = try await suite.data("events", query: ["type": selectedType, "q": search, "offset": older ? String(offset) : "0"])
+            guard !Task.isCancelled, type == selectedType, query == search else { return }
+            items = older ? items + data["items"].array : data["items"].array
+            offset = data["next"] == .null ? -1 : data["next"].int
+        } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
     }
 }
 struct SuiteDirectInbox: View {

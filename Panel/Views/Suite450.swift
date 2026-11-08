@@ -258,7 +258,7 @@ struct SuiteDiagnosticsLogRow: View {
                 Text(row["level"].string).font(.caption2.weight(.bold)).foregroundStyle(tint)
                 Text(row["source"].string).font(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                Text(Date(timeIntervalSince1970: row["at"].double / 1000).formatted(date: .omitted, time: .standard)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                Text(Date(timeIntervalSince1970: row["at"].double / 1000).formatted(date: .numeric, time: .standard)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             }
             Text(row["text"].string).font(.caption.monospaced()).foregroundStyle(tint == .red ? Color.red : Color.primary).textSelection(.enabled)
         }
@@ -1056,31 +1056,109 @@ struct SuiteDiagnosticsConsoleView: View {
     let canRun: Bool
     let aiAvailable: Bool
     @State private var data: JSON = .null
-    @State private var level = "WARN"
+    @State private var rows: [JSON] = []
+    @State private var next = ""
+    @State private var level = ""
     @State private var search = ""
+    @State private var filterDates = false
+    @State private var start = Date().addingTimeInterval(-7 * 86400)
+    @State private var end = Date()
+    @State private var days = 30
+    @State private var loading = false
+    @State private var pending: [String: JSON]?
     @State private var error: String?
+
+    private var archived: Bool { suite.features.contains("console-archive-v1") }
+    private var filters: String { level + "|" + search + (filterDates ? "|\(start.timeIntervalSince1970)|\(end.timeIntervalSince1970)" : "") }
+
     var body: some View {
         List {
             Section {
-                Picker("Stufe", selection: $level) { Text("Alles").tag(""); Text("Warnungen+").tag("WARN"); Text("Fehler").tag("ERROR") }.pickerStyle(.segmented)
-            } footer: { Text("Letzte 3 Stunden · IP-Adressen sind ausgeblendet · " + data["tap"].string) }
-            Section("KI-Einschätzung der Warnungen (20 min)") { SuiteAIBox(suite: suite, target: "logs:", initial: .null, available: aiAvailable, canRun: canRun) }
-            Section("Zeilen") {
+                Picker("Stufe", selection: $level) {
+                    Text("Alles").tag(""); Text("Warnungen+").tag("WARN"); Text("Fehler").tag("ERROR")
+                }.pickerStyle(.segmented)
+                if archived {
+                    Toggle("Zeitraum filtern", isOn: $filterDates)
+                    if filterDates {
+                        DatePicker("Von", selection: $start)
+                        DatePicker("Bis", selection: $end)
+                    }
+                }
+            } footer: {
+                Text((archived ? data["days"].string + " Tage · IPs und erkannte Zugangsdaten maskiert" : "Letzte 3 Stunden · IP-Adressen maskiert") + " · " + data["tap"].string)
+            }
+            if archived && data["manage"].bool {
+                Section("Archiv verwalten") {
+                    Stepper("Aufbewahrung · \(days) Tage", value: $days, in: 1...365)
+                    Button("Aufbewahrung speichern") { pending = ["operation": .string("retention"), "days": .number(Double(days))] }
+                    Button("Gesamtes Archiv leeren", role: .destructive) { pending = ["operation": .string("clear")] }
+                }
+            }
+            Section("Konsolenzeilen") {
                 if data == .null { ProgressView() }
-                else if data["items"].array.isEmpty { Text("Keine Zeilen.").foregroundStyle(.secondary) }
-                ForEach(Array(data["items"].array.reversed().enumerated()), id: \.offset) { item in SuiteDiagnosticsLogRow(row: item.element) }
+                else if rows.isEmpty { Text("Keine Treffer.").foregroundStyle(.secondary) }
+                if data["dropped"].int > 0 {
+                    Text("Aufnahmepuffer überlastet: \(data["dropped"].int) Zeilen fehlen.").font(.caption).foregroundStyle(.orange)
+                }
+                ForEach(Array(rows.enumerated()), id: \.offset) { item in
+                    SuiteDiagnosticsLogRow(row: item.element)
+                        .swipeActions {
+                            if archived && data["manage"].bool {
+                                Button("Löschen", role: .destructive) { pending = ["operation": .string("delete"), "id": item.element["id"]] }
+                            }
+                        }
+                        .contextMenu {
+                            CopyButton(text: item.element["text"].string, title: "Zeile kopieren")
+                            if archived && data["manage"].bool {
+                                Button("Zeile löschen", role: .destructive) { pending = ["operation": .string("delete"), "id": item.element["id"]] }
+                            }
+                        }
+                }
+                if !next.isEmpty { Button("Ältere Zeilen laden") { Task { await load(older: true) } }.disabled(loading) }
+            }
+            Section("KI-Einschätzung der Warnungen (20 min)") {
+                SuiteAIBox(suite: suite, target: "logs:", initial: .null, available: aiAvailable, canRun: canRun)
             }
         }
         .panelScreen()
-        .navigationTitle("Konsole")
-        .searchable(text: $search, prompt: "z. B. lost connection oder Plugin-Name")
-        .task(id: level + "|" + search) { await load() }
+        .navigationTitle(archived ? "Konsolenarchiv" : "Konsole")
+        .searchable(text: $search, prompt: "Stichwort oder Plugin-Name")
+        .task(id: filters) {
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            await load()
+        }
         .refreshable { await load() }
+        .confirmationDialog("Archiv ändern?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }), titleVisibility: .visible) {
+            if let pending { Button("Bestätigen", role: .destructive) { Task { await change(pending) } } }
+        } message: { Text("Die betroffenen Archivzeilen werden dauerhaft gelöscht. Die Aufzeichnung läuft weiter.") }
         .errorAlert($error)
     }
-    func load() async {
-        do { data = try await suite.request("diagnostics/logs", query: ["level": level, "q": search, "limit": "300", "minutes": "180"]) }
-        catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+
+    private func load(older: Bool = false) async {
+        let currentFilters = filters
+        if older && loading { return }
+        loading = true
+        defer { loading = false }
+        do {
+            var query = ["level": level, "q": search, "limit": "150", "minutes": "180"]
+            if archived && filterDates { query["from"] = String(Int64(start.timeIntervalSince1970 * 1000)); query["to"] = String(Int64(end.timeIntervalSince1970 * 1000)) }
+            if older { query["before"] = next }
+            let response = try await suite.request(archived ? "diagnostics/console-archive" : "diagnostics/logs", query: query)
+            guard !Task.isCancelled, filters == currentFilters else { return }
+            data = response
+            if archived { days = response["days"].int }
+            let page = Array(response["items"].array.reversed())
+            rows = older ? rows + page : page
+            next = response["next"].string
+        } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+    }
+
+    private func change(_ change: [String: JSON]) async {
+        var body = change
+        body["confirmed"] = .bool(true)
+        do { _ = try await suite.post("diagnostics/console-archive", body); await load() }
+        catch { self.error = error.localizedDescription }
+        pending = nil
     }
 }
 

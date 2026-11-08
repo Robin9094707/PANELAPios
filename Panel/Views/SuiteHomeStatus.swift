@@ -9,6 +9,12 @@ struct SuiteHomeStatus: View {
         VStack(alignment: .leading, spacing: 2) {
             if summary != .null {
                 Label("\(summary["online"].int) / \(summary["maxPlayers"].int) Spieler online", systemImage: "person.2.fill").font(.subheadline.bold()).accessibilityIdentifier("home-online-count-" + server.id)
+                if !summary["event"].string.isEmpty {
+                    Label(summary["event"].string, systemImage: "calendar.badge.clock").font(.caption.bold()).foregroundStyle(.tint)
+                }
+                if !summary["lockdown"].string.isEmpty && summary["lockdown"].string != "off" {
+                    Label("Lockdown aktiv", systemImage: "lock.shield.fill").font(.caption).foregroundStyle(.orange)
+                }
                 HStack(spacing: 4) {
                     if summary["scoreboard"] != .null { Text("Tag \(summary["scoreboard"]["mainDays"].string) · \(summary["scoreboard"]["mainWorld"].string)") }
                     if let date = SuitePlayerPresentation.date(summary["at"]) { Text(SuiteGermanTime.text(date)).monospacedDigit() }

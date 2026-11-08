@@ -1,4 +1,12 @@
-## Aktuelles Update – Panel 5.2.0 / Admin Suite 10.9.0
+## Aktuelles Update – Arts Update
+
+Simplex Panel 5.3.0 und Admin Suite 10.10.0 bringen visuelle Live-Inventare, ein durchsuchbares Konsolenarchiv,
+Ingame-Tag-Alarme, Event-Status und Lockdown. Die KI kann mit Freigabe Geräteinfos verlinken und optional im
+öffentlichen Serverchat auf Deutsch und Englisch helfen.
+
+[Update-Anleitung](UPDATE-5.3.0.md) · [Release und Downloads](https://github.com/Robin9094707/PANELAPios/releases/tag/app-v5.3.0)
+
+## Panel 5.2.0 / Admin Suite 10.9.0
 
 Private KI-Chats mit Sprachaufnahme, Transkription und mehreren Verläufen in App und Webpanel.
 Aus dem Staff-Chat lässt sich der Assistent direkt öffnen. Neue Vorschläge für Spielerrechte und

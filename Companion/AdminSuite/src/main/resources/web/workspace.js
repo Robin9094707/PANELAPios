@@ -335,6 +335,9 @@
       if (r.choices && r.choices.length && status.available && r.status === "ready") detail.appendChild(h("div", { class: "row wrap" }, r.choices.map(function (text, index) {
         return S.btn(text, { onClick: function () { return run(async function () { await poll(await S.api("assistant/choose", { body: { id: r.id, index: index } })); }); } });
       })));
+      if (r.devices && S.can("data.devices")) detail.appendChild(h("div", { class: "row wrap" }, r.devices.map(function (device) {
+        return h("a", { class: "btn sm", href: "#/player-devices/" + encodeURIComponent(device.player), text: device.playerName + " · " + device.name });
+      })));
       if (r.players) detail.appendChild(h("div", { class: "row wrap" }, r.players.map(function (p) { return h("a", { class: "btn sm", href: "#/player/" + encodeURIComponent(p.id), text: p.name }); })));
       (r.rejected || []).forEach(function (message) { detail.appendChild(S.notice(message, "warn")); });
       if (detail.childNodes.length) answer.appendChild(S.card(alreadyShown ? "Antwortdetails" : "Antwort", { icon: "sparkles" }, detail));

@@ -344,6 +344,15 @@ struct SuiteAIAssistantView: View {
                 ForEach(Array(result["choices"].array.enumerated()), id: \.offset) { index, value in
                     Button(value.string) { choose(index) }.disabled(!canAsk || !ready)
                 }
+                if suite.can("data.devices") {
+                    ForEach(result["devices"].array, id: \.["player"].string) { device in
+                        NavigationLink {
+                            SuiteDataListView(suite: suite, kind: "devices", player: device["player"].string, actions: [], panel: panel, server: server)
+                        } label: {
+                            Label(device["playerName"].string + " · " + device["name"].string, systemImage: "desktopcomputer.and.iphone")
+                        }
+                    }
+                }
                 ForEach(result["players"].array, id: \.["id"].string) { player in
                     NavigationLink {
                         if let panel, let server { SuitePlayerView(suite: suite, panel: panel, server: server, player: player["id"].string, actions: []) }

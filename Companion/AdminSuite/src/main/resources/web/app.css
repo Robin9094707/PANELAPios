@@ -891,3 +891,13 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
 .assistant-chat-controls select { flex: 1 1 170px; min-width: 0; }
 .assistant-audio { padding: 6px 12px; }
 .assistant-audio audio { width: min(100%, 280px); height: 36px; }
+
+/* Minecraft live inventory */
+.inventory-group h3 { margin: 10px 0 6px; font-size: .82rem; color: var(--muted); }
+.inventory-grid { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; max-width: 540px; }
+.inventory-slot { position: relative; aspect-ratio: 1; min-width: 0; display: grid; place-items: center; border: 1px solid #7779; border-radius: 5px; background: #7772; color: inherit; cursor: pointer; }
+.inventory-slot img { width: 72%; height: 72%; object-fit: cover; object-position: top; image-rendering: pixelated; }
+.inventory-slot small { position: absolute; inset: auto 2px 0 auto; color: white; font-weight: 800; text-shadow: 0 1px 3px black, 0 0 3px black; }
+.inventory-slot.picked, .inventory-slot:focus-visible { outline: 2px solid #55caff; outline-offset: -2px; background: #55caff22; }
+
+.console-text { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }

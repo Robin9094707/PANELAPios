@@ -259,6 +259,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     private OpenAiIntegration openAi;
     /** 10.2.0: live diagnostics, disconnect waves, crash manager, lag map and spark analysis. */
     DiagnosticsCenter diagnostics;
+    LiveInventory liveInventory;
+    ServerEvents serverEvents;
+    PublicChatAssistant publicChatAssistant;
     OpenAiIntegration openAiIntegration() { return openAi; }
     SuiteExpansion expansion;
     AdminAccessManager adminAccess;
@@ -509,6 +512,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         Bukkit.getScheduler().runTaskLater(this, () -> { if (staffChat != null && staffWorkspace != null) staffChat.refreshMembers(staffWorkspace.members().stream().map(m -> m.uuid).toList()); }, 200L);
         try { suitePolicies=new SuitePolicies(this); if(altDetection.ipExclusions.needsRepair())altDetection.repairIps("Update 9.1.2",null); } catch(Exception e){throw new IllegalStateException("Suite-Richtlinien/IP-Reparatur konnten nicht geladen werden",e);}
         survivalGuard = new SurvivalGuard(this); survivalGuard.start();
+        liveInventory = new LiveInventory(this);
+        publicChatAssistant = new PublicChatAssistant(this);
+        try { serverEvents = new ServerEvents(this); } catch (Exception error) { getLogger().warning("Event-Modus konnte nicht geladen werden: " + error.getClass().getSimpleName()); }
         try { appApi = new AppApiManager(this); appApi.reload(); } catch (Exception error) { getLogger().warning("Optionale App-API bleibt aus: " + error.getClass().getSimpleName()); }
         if (getConfig().getBoolean("ad-hub.enabled", getConfig().getBoolean("discord-ads.enabled", true))) startAdHub();
         getLogger().info("Simplex Admin Suite v" + getDescription().getVersion() + " wurde geladen. Bedrock-Forms: " + bedrockMenus.status());
@@ -531,6 +537,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(tickets!=null)tickets.stop();
         Bukkit.getServicesManager().unregisterAll(this);
         if (community != null) community.stop();
+        if (liveInventory != null) liveInventory.close();
+        if (publicChatAssistant != null) publicChatAssistant.close();
         if (diagnostics != null) { try { diagnostics.stop(); } catch (Throwable error) { getLogger().warning("Diagnose konnte nicht sauber beendet werden: " + error.getClass().getSimpleName()); } }
         if (connectionDiagnostics != null) connectionDiagnostics.stop();
         if(database==null)return; // Failed startup: do not rewrite partial plugin data.
@@ -781,6 +789,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             sender.sendMessage(prefix() + "Admin authentication is required before commands can be used.");
             return true;
         }
+        if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length > 0 && args[0].equalsIgnoreCase("event") && serverEvents != null)
+            return serverEvents.command(sender, args);
         if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length > 0 && args[0].equalsIgnoreCase("app")) { if (appApi == null) { sender.sendMessage("App-API nicht geladen; Serverprotokoll prüfen."); return true; } return appApi.command(sender, Arrays.copyOfRange(args, 1, args.length)); }
         if(rootCommand.equals("rechtesperre")) { if (accessLocks == null) sender.sendMessage(prefix() + "Rechte-Sperren nicht geladen."); else accessLocks.command(sender, args); return true; }
         if(rootCommand.equals("shop")) return shop.command(sender,args);
@@ -1932,6 +1942,12 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         return Collections.emptyList();
     }
 
+    boolean publicAiGerman(Player player) { return community != null && community.german(player); }
+    int publicAiOnline() { return (int) Bukkit.getOnlinePlayers().stream().filter(player -> !isPubliclyHidden(player)).count(); }
+    boolean lockdownIpExcluded(java.net.InetAddress address) {
+        return address == null || altDetection != null && altDetection.ipExclusions.contains(address.getHostAddress());
+    }
+
     @EventHandler public void onLogin(PlayerLoginEvent event) {
         Player player = event.getPlayer();
         if (moderationControl != null) moderationControl.clearModel(player.getUniqueId());
@@ -1939,6 +1955,11 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (trimDenial != null) {
             event.disallow(PlayerLoginEvent.Result.KICK_OTHER, playerUiText(player,trimDenial));
             return;
+        }
+        PlayerProfile previous = database.get(player.getUniqueId());
+        if (serverEvents != null && event.getResult() == PlayerLoginEvent.Result.ALLOWED) {
+            serverEvents.login(event, player.hasPlayedBefore() || previous != null && previous.sessionCount > 0);
+            if (event.getResult() != PlayerLoginEvent.Result.ALLOWED) return;
         }
         PlayerProfile profile = database.touch(player);
         ensureConnectionClient(player, profile);
@@ -1958,6 +1979,11 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         } else if (!emergency(player.getUniqueId()) && maintenance.isActive() && !isMaintenanceExempt(player)) {
             event.disallow(PlayerLoginEvent.Result.KICK_OTHER, playerUiText(player,maintenance.kickMessage()));
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void reserveEventLogin(PlayerJoinEvent event) {
+        if (serverEvents != null && event.getPlayer().isOnline()) serverEvents.joined(event.getPlayer());
     }
 
     @EventHandler public void onJoin(PlayerJoinEvent event) {
@@ -2417,11 +2443,14 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void relayFinalChat(AsyncPlayerChatEvent event) {
-        if(!event.isCancelled() && event.getRecipients().size()>=Bukkit.getOnlinePlayers().size())appChat.record(event.getPlayer().getUniqueId().toString(),event.getPlayer().getName(),stripFormatting(event.getMessage()),"player");
+        boolean global = event.getRecipients().size() >= Bukkit.getOnlinePlayers().size();
+        if (global) appChat.record(event.getPlayer().getUniqueId().toString(),event.getPlayer().getName(),stripFormatting(event.getMessage()),"player");
         Player player = event.getPlayer();
         String message = event.getMessage();
         Bukkit.getScheduler().runTask(this, () -> {
-            if (discordBot == null || Bukkit.getPlayer(player.getUniqueId()) != player || isPubliclyHidden(player)) return;
+            if (Bukkit.getPlayer(player.getUniqueId()) != player || isPubliclyHidden(player)) return;
+            if (global && publicChatAssistant != null) publicChatAssistant.accept(player, stripFormatting(message));
+            if (discordBot == null) return;
             discordBot.rememberPlayer(player);
             discordBot.relayMinecraftChat(player.getName(), discordDecoration(player), message);
         });
@@ -8613,7 +8642,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(route.equals("alt-ips"))return altIpsData(q);
         String query=q.getOrDefault("q","").toLowerCase(Locale.ROOT);
         int offset;try{offset=Math.max(0,Integer.parseInt(q.getOrDefault("offset","0")));}catch(Exception e){offset=0;}
-        if(route.equals("events")){if(appEvents==null)throw new IllegalArgumentException("Ereignisprotokoll nicht verfügbar");return appEvents.data(query,offset);}
+        if(route.equals("events")){if(appEvents==null)throw new IllegalArgumentException("Ereignisprotokoll nicht verfügbar");return appEvents.data(query,offset,q.getOrDefault("type",""));}
         if(route.equals("vpn-whitelist")||route.equals("vpn-kicks"))return vpnProtection.appData(route,query,offset);
         if(route.equals("bans"))return moderationOverview.appBans(q.getOrDefault("source","internal"),query,offset);
         if(route.equals("reports")) {
@@ -8627,7 +8656,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(route.equals("worlds"))return appMap("items",Bukkit.getWorlds().stream().map(w->appMap("id",w.getUID().toString(),"name",w.getName(),"environment",w.getEnvironment().name(),"players",w.getPlayers().size(),"chunks",w.getLoadedChunks().length,"time",w.getTime(),"days",w.getFullTime()/24000,"difficulty",w.getDifficulty().name(),"storm",w.hasStorm(),"thunder",w.isThundering(),"pvp",w.getPVP(),"autosave",w.isAutoSave(),"border",w.getWorldBorder().getSize())).toList());
         if(route.equals("overview")){
             Runtime runtime=Runtime.getRuntime();double mspt=-1;try{Object value=Bukkit.class.getMethod("getAverageTickTime").invoke(null);if(value instanceof Number n)mspt=n.doubleValue();}catch(ReflectiveOperationException ignored){}
-            return appMap("at",System.currentTimeMillis(),"tps",discordAdminTps(),"mspt",mspt,"ramUsed",runtime.totalMemory()-runtime.freeMemory(),"ramMax",runtime.maxMemory(),"uptime",System.currentTimeMillis()-suiteBootTime,"online",Bukkit.getOnlinePlayers().size(),"maxPlayers",serverMaxPlayers(),"profiles",database.profiles.size(),"scoreboard",nativeScoreboard==null?null:appMap("mainDays",nativeScoreboard.mainDays(),"secondDays",nativeScoreboard.secondDays(),"mainWorld",getConfig().getString("scoreboard.main-world","world"),"secondWorld",getConfig().getString("scoreboard.second-world.name","survival2")),"timezone","Europe/Berlin","serverTime",java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss z",Locale.GERMANY).withZone(java.time.ZoneId.of("Europe/Berlin")).format(Instant.now()),"worlds",Bukkit.getWorlds().size(),"version",getDescription().getVersion());
+            return appMap("at",System.currentTimeMillis(),"tps",discordAdminTps(),"event",serverEvents==null?"":serverEvents.active(),"lockdown",serverEvents==null?"off":serverEvents.mode(),"mspt",mspt,"ramUsed",runtime.totalMemory()-runtime.freeMemory(),"ramMax",runtime.maxMemory(),"uptime",System.currentTimeMillis()-suiteBootTime,"online",Bukkit.getOnlinePlayers().size(),"maxPlayers",serverMaxPlayers(),"profiles",database.profiles.size(),"scoreboard",nativeScoreboard==null?null:appMap("mainDays",nativeScoreboard.mainDays(),"secondDays",nativeScoreboard.secondDays(),"mainWorld",getConfig().getString("scoreboard.main-world","world"),"secondWorld",getConfig().getString("scoreboard.second-world.name","survival2")),"timezone","Europe/Berlin","serverTime",java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss z",Locale.GERMANY).withZone(java.time.ZoneId.of("Europe/Berlin")).format(Instant.now()),"worlds",Bukkit.getWorlds().size(),"version",getDescription().getVersion());
         }
         if(route.equals("statistics-rows")){
             // One request for the app's statistics page: every profile plus its latest device (Bedrock models, inputs, languages).
@@ -8737,7 +8766,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if(full&&adminAccess!=null){Map<String,Boolean> lp=luckPerms==null?Map.of():luckPerms.permissions.getOrDefault(live.getUniqueId(),Map.of());if(adminAccess.hasAccess(live.getUniqueId(),live,lp))staff.add(appMap("id",live.getUniqueId().toString(),"name",live.getName(),"role",adminAccess.roleLabel(live.getUniqueId()),"operator",live.isOp()));}
         }
         List<Object> events=new ArrayList<>();if(appEvents!=null){Object data=appEvents.data("",0);if(data instanceof Map<?,?> envelope&&envelope.get("items") instanceof List<?> items)for(Object item:items){if(events.size()>=5)break;events.add(item);}}
-        return appMap("at",now,"version",getDescription().getVersion(),"tps",discordAdminTps(),"mspt",mspt,"ramUsed",runtime.totalMemory()-runtime.freeMemory(),"ramMax",runtime.maxMemory(),"uptime",now-suiteBootTime,
+        return appMap("at",now,"version",getDescription().getVersion(),"event",serverEvents==null?"":serverEvents.active(),"lockdown",serverEvents==null?"off":serverEvents.mode(),"tps",discordAdminTps(),"mspt",mspt,"ramUsed",runtime.totalMemory()-runtime.freeMemory(),"ramMax",runtime.maxMemory(),"uptime",now-suiteBootTime,
             "online",Bukkit.getOnlinePlayers().size(),"maxPlayers",serverMaxPlayers(),"profiles",database==null?0:database.profiles.size(),"new24h",new24,"newWeek",newWeek,"active24h",active24,
             "moderation",appMap("openReports",open,"reviewReports",review,"internalBans",bans,"mutes",mutes,"warnedPlayers",warned,"ultrabans",ultra),
             "maintenance",maintenance==null?null:appMap("active",maintenance.isActive(),"reason",maintenance.reason()),

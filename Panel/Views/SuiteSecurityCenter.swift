@@ -228,7 +228,7 @@ struct SuiteBarkSettingsView: View {
     var encodedRules: String { events.map { event in let id=event.0;return [id,selected.contains(id) ? (rules[id] ?? Self.defaultLevel(id, level: level, critical: critical)):"off",sounds[id] ?? (Self.criticalKinds.contains(id) ? criticalSound:sound),repeats.contains(id) ? "120":"0"].joined(separator:":") }.joined(separator:";") }
     @Environment(\.dismiss) private var dismiss
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteSecurityModel(suite)) }
-    static let criticalKinds: Set<String> = ["ban", "ban-evasion", "overload", "ticket-urgent", "crash", "disconnect-wave", "lag-spike"]
+    static let criticalKinds: Set<String> = ["ban", "ban-evasion", "overload", "ticket-urgent", "crash", "disconnect-wave", "lag-spike", "game-day"]
     static let ticketEvents = [("ticket","Tickets · Normal"),("ticket-urgent","Tickets · Notfall")]
     /// Admin Suite 9.5.0 separates low and high tickets; older suites reject these rule types.
     static let priorityTicketEvents = [("ticket-low","Tickets · Niedrig (still)"),("ticket-high","Tickets · Hoch (dringend)")]
@@ -247,6 +247,7 @@ struct SuiteBarkSettingsView: View {
         if suite.features.contains("tickets-v1") { list += Self.ticketEvents }
         if suite.features.contains("tickets-v2") { list += Self.priorityTicketEvents }
         if suite.features.contains("diagnostics-v1") { list += Self.diagnosticsEvents }
+        if suite.features.contains("server-events-v1") { list += [("game-day", "Ingame-Tag erreicht"), ("ai-chat-alert", "Chat-KI: Hilfe oder Streit erkannt")] }
         if suite.features.contains("ad-hub-v1") { list += Self.adsEvents }
         return list
     }

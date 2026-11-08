@@ -1,6 +1,6 @@
 name: SimplexAdminSuite
 main: eu.simplexsmp.adminsuite.SimplexAdminSuite
-version: 10.9.0
+version: 10.10.0
 api-version: '26.2'
 author: RJ
 website: https://simplexsmp.eu
@@ -742,3 +742,10 @@ permissions:
   simplexadminsuite.detectors.bypass:
     description: Exclude this player from optional observational security detectors
     default: false
+
+  simplexadminsuite.events.manage:
+    description: Manage event schedules, status and lockdown with /sas event.
+    default: op
+  simplexadminsuite.lockdown.bypass:
+    description: Join the server during an event lockdown.
+    default: op

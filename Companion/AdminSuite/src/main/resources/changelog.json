@@ -1,5 +1,34 @@
 [
   {
+    "version": "10.10.0",
+    "app": "5.3.0",
+    "date": "2026-11-08",
+    "title": "Arts Update",
+    "intro": "Visuelle Inventare, Spieltag-Planer und durchsuchbares Konsolenarchiv im Panel.",
+    "items": [
+      {
+        "icon": "grid",
+        "title": "Live-Inventare",
+        "text": "Spieler-Inventar und Endertruhe mit Java-Texturen ansehen und mit gesondertem Recht Stapel tauschen."
+      },
+      {
+        "icon": "terminal",
+        "title": "Konsolenarchiv",
+        "text": "Standardmäßig 30 Tage mit Stichwortsuche, Zeitraum und Löschoptionen."
+      },
+      {
+        "icon": "bell",
+        "title": "Ingame-Tag, Event & Lockdown",
+        "text": "Tag-Alarme, Event-Status, geplante Befehle und reversible Beitrittsstufen."
+      },
+      {
+        "icon": "sparkles",
+        "title": "KI mit Geräteinfos und öffentlichem Chat",
+        "text": "Optionale, direkt verlinkte Gerätedaten und deutsch-englische Hilfe im Serverchat."
+      }
+    ]
+  },
+  {
     "version": "10.9.0",
     "app": "5.2.0",
     "date": "2026-11-08",
