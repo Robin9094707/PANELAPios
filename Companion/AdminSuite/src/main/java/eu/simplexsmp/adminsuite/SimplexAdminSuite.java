@@ -129,7 +129,6 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class SimplexAdminSuite extends JavaPlugin implements Listener, CommandExecutor, org.bukkit.command.TabCompleter {
-    private static final String VERSION = "9.7.0";
     private static final int CURRENT_DATA_SCHEMA = 17;
     private static final int DEFAULT_MAX_CHAT_LINES = 100;
     private static final int DEFAULT_MAX_ACTION_LINES = 240;
@@ -512,9 +511,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         survivalGuard = new SurvivalGuard(this); survivalGuard.start();
         try { appApi = new AppApiManager(this); appApi.reload(); } catch (Exception error) { getLogger().warning("Optionale App-API bleibt aus: " + error.getClass().getSimpleName()); }
         if (getConfig().getBoolean("ad-hub.enabled", getConfig().getBoolean("discord-ads.enabled", true))) startAdHub();
-        getLogger().info("Simplex Admin Suite v" + VERSION + " wurde geladen. Bedrock-Forms: " + bedrockMenus.status());
+        getLogger().info("Simplex Admin Suite v" + getDescription().getVersion() + " wurde geladen. Bedrock-Forms: " + bedrockMenus.status());
         if(getConfig().getBoolean("startup.console-animation",true)) {
-            String[] frames={"[■■□□□□] Simplex Admin Suite · Daten erhalten", "[■■■■□□] Discord · Konten · Statistiken", "[■■■■■■] Bereit · Java & Bedrock · v"+VERSION};
+            String[] frames={"[■■□□□□] Simplex Admin Suite · Daten erhalten", "[■■■■□□] Discord · Konten · Statistiken", "[■■■■■■] Bereit · Java & Bedrock · v"+getDescription().getVersion()};
             for(int i=0;i<frames.length;i++){String frame=frames[i];Bukkit.getScheduler().runTaskLater(this,()->getLogger().info(frame),i*5L+1);}
         }
     }
@@ -4762,7 +4761,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             String safeStamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.GERMANY).format(new Date());
             File file = new File(folder, "operations-" + safeStamp + ".txt");
             List<String> lines = new ArrayList<>();
-            lines.add("Simplex Admin Suite " + VERSION + " - Operations Export");
+            lines.add("Simplex Admin Suite " + getDescription().getVersion() + " - Operations Export");
             lines.add("Created: " + stamp());
             lines.add("Created by: " + actor);
             lines.add("");
@@ -6566,7 +6565,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     }
 
     private void sendHelp(CommandSender sender, String label) {
-        sender.sendMessage(color("&8&m----------&r &bSimplex Admin Suite " + VERSION + " &8&m----------"));
+        sender.sendMessage(color("&8&m----------&r &bSimplex Admin Suite " + getDescription().getVersion() + " &8&m----------"));
         sender.sendMessage(color("&7/&f" + label + " &8- &7öffnet automatisch das passende Java-/Bedrock-Menü"));
         sender.sendMessage(color("&7/&f" + label + " qol &8- &7öffnet Aufgaben, Planer, Incidents, Health, Makros und Bulk"));
         sender.sendMessage(color("&7/&f" + label + " spieler <Name> &8- &7Spielerverwaltung"));
@@ -6588,7 +6587,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     }
 
     private String statusText() {
-        return "Version " + VERSION + " | Spielerprofile: " + database.sortedProfiles().size()
+        return "Version " + getDescription().getVersion() + " | Spielerprofile: " + database.sortedProfiles().size()
                 + " | Strafen: " + punishments.providerLabel() + " | Floodgate: " + bedrockMenus.status()
                 + " | Bedrock online: " + bedrockMenus.onlineBedrockCount() + " | Vanish: " + bridge.vanishAvailable()
                 + " | InvSee: " + bridge.invseeAvailable() + " | Wartung: " + maintenance.isActive()
@@ -8770,7 +8769,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             Object[] cached=crossplayLatest.get(id);
             if(cached==null||System.currentTimeMillis()-(Long)cached[0]>600_000L){
                 try{
-                    HttpRequest request=HttpRequest.newBuilder(URI.create("https://download.geysermc.org/v2/projects/"+id+"/versions/latest/builds/latest")).timeout(Duration.ofSeconds(15)).header("User-Agent","SimplexAdminSuite/"+VERSION).header("Accept","application/json").GET().build();
+                    HttpRequest request=HttpRequest.newBuilder(URI.create("https://download.geysermc.org/v2/projects/"+id+"/versions/latest/builds/latest")).timeout(Duration.ofSeconds(15)).header("User-Agent","SimplexAdminSuite/"+getDescription().getVersion()).header("Accept","application/json").GET().build();
                     HttpResponse<String> response=client.send(request,HttpResponse.BodyHandlers.ofString());
                     if(response.statusCode()!=200)throw new IllegalStateException("HTTP "+response.statusCode());
                     if(response.body().length()>4_000_000)throw new IllegalStateException("Antwort zu groß");
@@ -11505,7 +11504,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
         private void openOperationsDiagnostics(Player admin) {
         if (!plugin.adminMenuAllowed(admin, "suite.openoperationsdiagnostics")) return;
-            String content = "§7Version: §f" + VERSION + "\n"
+            String content = "§7Version: §f" + plugin.getDescription().getVersion() + "\n"
                     + "§7Online: §f" + Bukkit.getOnlinePlayers().size() + "\n"
                     + "§7Bedrock online: §f" + onlineBedrockCount() + "\n"
                     + "§7Profile: §f" + plugin.database.sortedProfiles().size() + "\n"
@@ -11525,7 +11524,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         public boolean openStatus(Player admin) {
         if (!plugin.adminMenuAllowed(admin, "suite.openstatus")) return true;
             if (!isBedrock(admin) || !plugin.has(admin, "simplexadminsuite.admin")) return false;
-            String content = "§l§bSimplex Admin Suite " + VERSION + "\n\n"
+            String content = "§l§bSimplex Admin Suite " + plugin.getDescription().getVersion() + "\n\n"
                     + "§7Floodgate-Forms: §aAktiv\n"
                     + "§7Bedrock-Spieler online: §f" + onlineBedrockCount() + "\n"
                     + "§7Suite-Profile: §f" + plugin.database.sortedProfiles().size() + "\n"
@@ -15442,7 +15441,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             }
             targetName = installed.file.getName();
             try {
-                HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(90)).header("User-Agent", "SimplexAdminSuite/" + VERSION).GET().build();
+                HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(90)).header("User-Agent", "SimplexAdminSuite/" + plugin.getDescription().getVersion()).GET().build();
                 File updateDir = new File(plugin.getDataFolder().getParentFile(), "update");
                 Object configuredUpdateFolder = relayReflect(Bukkit.class.getMethod("getServer").invoke(null), "getUpdateFolderFile");
                 if (configuredUpdateFolder instanceof File folder) updateDir = folder;
@@ -16248,7 +16247,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 server.setExecutor(executor);
                 server.createContext("/v1/session", this::handleBridgeRequest);
                 server.createContext("/v1/heartbeat", this::handleBridgeHeartbeat);
-                server.createContext("/v1/health", exchange -> { try { respond(exchange, 200, "SimplexAdminSuite " + VERSION); } catch (Exception ignored) { } finally { try { exchange.close(); } catch (Exception ignored) { } } });
+                server.createContext("/v1/health", exchange -> { try { respond(exchange, 200, "SimplexAdminSuite " + plugin.getDescription().getVersion()); } catch (Exception ignored) { } finally { try { exchange.close(); } catch (Exception ignored) { } } });
                 server.start();
                 bridgeProblem = "wartet auf Geyser-Extension";
                 plugin.getLogger().info("Alt-Bridge hört ausschließlich auf " + bind + ":" + port + ".");

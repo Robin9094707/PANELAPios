@@ -1,5 +1,96 @@
 [
   {
+    "version": "10.9.0",
+    "app": "5.2.0",
+    "date": "2026-11-08",
+    "title": "Privater KI-Chat mit Spracheingabe",
+    "intro": "Der KI-Assistent hat private, getrennte Chats in App und Webpanel. Der Staff-Chat bietet einen direkten Einstieg.",
+    "items": [
+      {
+        "icon": "chat",
+        "title": "Mehrere Chatverläufe",
+        "text": "Folgefragen nutzen den jüngsten Kontext des gewählten Chats. Verläufe lassen sich umbenennen, löschen oder nach 1, 7 oder 30 Tagen Inaktivität automatisch entfernen."
+      },
+      {
+        "icon": "mic",
+        "title": "Sprachaufnahme und Vorlesen",
+        "text": "Aufnahme vorhören, mit gpt-transcribe in Text umwandeln, bearbeiten und separat senden. Antworten lassen sich vorlesen."
+      },
+      {
+        "icon": "shield",
+        "title": "Spielerrechte und Befehle moderieren",
+        "text": "Die KI schlägt Rechte-, Bereichs- und Befehlssperren vor. Der Hauptadmin prüft Ziel, Dauer und die geltende Alt-Vererbung und gibt die Schritte frei."
+      }
+    ]
+  },
+  {
+    "version": "10.8.0",
+    "app": "5.1.0",
+    "date": "2026-11-08",
+    "title": "KI-Assistent und Diagnose 3.0",
+    "intro": "Serverfragen lassen sich in iOS, Web und Discord mit passenden Datenquellen beantworten. Schreibaktionen werden dem Hauptadmin zur Freigabe vorgelegt.",
+    "items": [
+      {
+        "icon": "sparkles",
+        "title": "Gezielte Serverabfragen",
+        "text": "Der Assistent kann Chat, Tickets, Spielerprofile, Teamaktionen und Disconnects mit den Rechten des anfragenden Kontos auswerten."
+      },
+      {
+        "icon": "clock",
+        "title": "Freigegebene Neustarts",
+        "text": "Ein geplanter Neustart wird einmal im Chat angekündigt. In den letzten drei Minuten erscheint eine Bossbar."
+      },
+      {
+        "icon": "activity",
+        "title": "Paketspur bei Disconnects",
+        "text": "Bei vorhandenen Verbindungsdaten zeigt die Diagnose Pakettypen, KeepAlive-Zeiten und Netty-Fehler."
+      }
+    ]
+  },
+  {
+    "version": "10.7.0",
+    "app": "5.0.0",
+    "date": "2026-11-08",
+    "title": "Anpassungs-Update",
+    "intro": "Schnellzugriffe, gespeicherte Spielerdaten und Plugin-Updates sind leichter erreichbar.",
+    "items": [
+      {
+        "icon": "grid",
+        "title": "Kompakte Server-Schnellzugriffe",
+        "text": "Name, Sichtbarkeit und Werkzeugreihenfolge werden pro Suite-Konto zwischen App und Webpanel synchronisiert."
+      },
+      {
+        "icon": "user",
+        "title": "Gespeicherte Spielerdaten im Profil",
+        "text": "Das Profil zeigt NBT-Daten wie ersten Beitritt und Datei-Zeitstempel, soweit die Datei diese Werte enthält."
+      },
+      {
+        "icon": "activity",
+        "title": "Plugin-Updates mit Fortschritt",
+        "text": "Die Suite prüft hochgeladene JAR-Dateien serverseitig und merkt das Update für den nächsten Start vor."
+      }
+    ]
+  },
+  {
+    "version": "10.6.0",
+    "app": "4.9.1",
+    "date": "2026-11-06",
+    "title": "Werkzeuge und Verlaufsverwaltung",
+    "intro": "App und Webpanel bieten einen Werkzeugkatalog sowie eine Verlaufsverwaltung mit Bestätigung und Wiederherstellung.",
+    "items": [
+      {
+        "icon": "grid",
+        "title": "Werkzeuge finden und anheften",
+        "text": "Admin-Werkzeuge sind durchsuchbar und lassen sich als Favoriten speichern."
+      },
+      {
+        "icon": "clock",
+        "title": "Verläufe sichern und aufräumen",
+        "text": "Mit den nötigen Rechten lassen sich Einträge auswählen, nach Bestätigung sichern und löschen und aus Sicherungen wiederherstellen."
+      }
+    ]
+  },
+  {
     "version": "10.5.0",
     "app": "4.8.0",
     "date": "2026-11-05",

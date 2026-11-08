@@ -1,4 +1,12 @@
-## Aktuelles Update: Panel 5.1.0 / Admin Suite 10.8.0
+## Aktuelles Update – Panel 5.2.0 / Admin Suite 10.9.0
+
+Private KI-Chats mit Sprachaufnahme, Transkription und mehreren Verläufen in App und Webpanel.
+Aus dem Staff-Chat lässt sich der Assistent direkt öffnen. Neue Vorschläge für Spielerrechte und
+Befehlssperren werden nach Freigabe durch den Hauptadmin ausgeführt.
+
+[Update-Anleitung](UPDATE-5.2.0.md) · [Release und Downloads](https://github.com/Robin9094707/PANELAPios/releases/tag/app-v5.2.0)
+
+## Panel 5.1.0 / Admin Suite 10.8.0
 
 KI-Assistent mit gezielter Kontextauswahl, Hauptadmin-Freigabe und Diagnose 3.0.
 
