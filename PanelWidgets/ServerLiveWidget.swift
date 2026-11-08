@@ -13,7 +13,7 @@ struct ServerLiveWidget: Widget {
                     Text(context.state.cpu.map { String(format: "%.1f %% CPU", $0) } ?? "CPU –").font(.caption)
                     Text(context.state.memory.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .memory) } ?? "RAM –").font(.caption)
                 }
-                performance(context.state)
+                performance(context.state, stale: context.isStale)
                 freshness(context)
             }.padding().privacySensitive().activityBackgroundTint(Color.black.opacity(0.08)).widgetURL(URL(string: "panel://widgets"))
         } dynamicIsland: { context in
@@ -23,7 +23,7 @@ struct ServerLiveWidget: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack { Label(players(context.state) + " Spieler", systemImage: "person.2.fill"); Spacer(); Text(context.state.cpu.map { String(format: "%.1f %% CPU", $0) } ?? "CPU –") }.font(.subheadline)
-                        performance(context.state); freshness(context)
+                        performance(context.state, stale: context.isStale); freshness(context)
                     }
                 }
             } compactLeading: { Image(systemName: "server.rack").foregroundStyle(.teal) } compactTrailing: { Text(context.isStale ? "–" : context.state.playerLabel).font(.caption).monospacedDigit() } minimal: { Image(systemName: "server.rack").foregroundStyle(.teal) }
@@ -31,12 +31,15 @@ struct ServerLiveWidget: Widget {
         }
     }
     func players(_ state: ServerActivity.ContentState) -> String { state.playerLabel + " / " + (state.maximum.map(String.init) ?? "–") }
-    @ViewBuilder func performance(_ state: ServerActivity.ContentState) -> some View {
+    @ViewBuilder func performance(_ state: ServerActivity.ContentState, stale: Bool) -> some View {
         HStack {
             if let tps = state.tps { Text(String(format: "%.1f TPS", tps)).foregroundStyle(tps >= 19 ? .green : .orange) }
             if let mspt = state.mspt, mspt >= 0 { Text(String(format: "%.1f ms", mspt)) }
             Spacer()
-            if let uptime = state.uptime { Text(Duration.seconds(max(0, uptime)).formatted(.time(pattern: .hourMinuteSecond))) }
+            if let uptime = state.uptime, uptime.isFinite, uptime >= 0, state.state == "running" {
+                if stale { Text(Duration.seconds(uptime).formatted(.time(pattern: .hourMinuteSecond))) }
+                else { Text(state.updated.addingTimeInterval(-uptime), style: .timer) }
+            }
         }.font(.caption).monospacedDigit()
     }
     func freshness(_ context: ActivityViewContext<ServerActivity>) -> some View {

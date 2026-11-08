@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 final class SameOriginRedirect: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
@@ -173,24 +174,27 @@ final class PanelAPI {
         do { signed = try await request("servers/\(server)/files/upload", query: ["directory": directory]).attributes["url"].string }
         catch { throw PanelError(message: "Upload-Freigabe für \(directory): \(error.localizedDescription)") }
         let target = try Self.uploadTarget(signed, directory: directory)
+        let operationKey = "panel-upload|" + base.absoluteString + "|" + server + "|" + directory + "|" + file.lastPathComponent
         let boundary = "Panel-" + UUID().uuidString
         let staging = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: staging.path, contents: nil)
         defer { try? FileManager.default.removeItem(at: staging) }
-        try await Task.detached(priority: .userInitiated) {
+        let checksum = try await Task.detached(priority: .userInitiated) {
+        var digest = SHA256()
         let writer = try FileHandle(forWritingTo: staging)
         let name = file.lastPathComponent.replacingOccurrences(of: "\"", with: "_").replacingOccurrences(of: "\r", with: "_").replacingOccurrences(of: "\n", with: "_")
         try writer.write(contentsOf: Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"files\"; filename=\"\(name)\"\r\nContent-Type: application/octet-stream\r\n\r\n".utf8))
         let reader = try FileHandle(forReadingFrom: file)
         do {
-            while let chunk = try reader.read(upToCount: 1024 * 1024), !chunk.isEmpty { try Task.checkCancellation(); try writer.write(contentsOf: chunk) }
+            while let chunk = try reader.read(upToCount: 1024 * 1024), !chunk.isEmpty { try Task.checkCancellation(); digest.update(data: chunk); try writer.write(contentsOf: chunk) }
             try writer.write(contentsOf: Data("\r\n--\(boundary)--\r\n".utf8))
             try reader.close(); try writer.close()
+            return digest.finalize().map { String(format: "%02x", $0) }.joined()
         } catch { try? reader.close(); try? writer.close(); throw error }
         }.value
         var request = URLRequest(url: target); request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        try await TransferManager.shared.upload(request, body: staging, filename: file.lastPathComponent, context: "\(base.host ?? "Panel") · \(server) · \(directory)")
+        try await TransferManager.shared.upload(request, body: staging, filename: file.lastPathComponent, context: "\(base.host ?? "Panel") · \(server) · \(directory)", operationKey: operationKey + "|" + checksum)
     }
     nonisolated static func uploadTarget(_ signed: String, directory: String) throws -> URL {
         guard var c = URLComponents(string: signed), c.scheme == "https", c.host != nil,

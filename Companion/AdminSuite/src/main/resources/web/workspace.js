@@ -87,15 +87,70 @@
     S.mount(h("div", { class: "stack" }, S.searchBox("Werkzeuge, Einstellungen oder Funktionen …", function (v) { q = v; draw(); }, q), body)); draw();
   };
 
+  var shortcutPages = {
+    overview: "tools", advertising: "ad-hub", players: "players", tickets: "tickets",
+    diagnostics: "diagnostics", adminLog: "admin-log", histories: "histories", staffChat: "staff-chat",
+    events: "events", statistics: "statistics", chat: "chat", worldTrim: "world-trim",
+    discordStatus: "discord-status", scoreboard: "scoreboard", luckperms: "luckperms",
+    lands: "lands", locks: "access-locks", commands: "commands", appSettings: "settings",
+    functions: "functions", menu: "menu", bans: "moderation"
+  };
+  var initialShortcuts = ["overview", "advertising", "players", "tickets"];
+  function shortcutItems() {
+    var items = {};
+    S.nav.forEach(function (group) { group.items.forEach(function (item) { items[item.id] = item; }); });
+    return items;
+  }
+  S.shortcutPreferences = async function () {
+    var prefs = await S.api("shortcut-prefs");
+    var items = shortcutItems();
+    var selected = Array.isArray(prefs.tools) ? prefs.tools.slice() : initialShortcuts.slice();
+    var name = h("input", { class: "input", maxlength: 80, value: prefs.name || "", placeholder: "Servername" });
+    var compact = h("input", { type: "checkbox", checked: prefs.compact !== false });
+    var visible = h("input", { type: "checkbox", checked: prefs.hidden !== true });
+    var order = h("div", { class: "stack" });
+    function draw() {
+      S.clear(order);
+      selected.forEach(function (key, index) {
+        var item = items[shortcutPages[key]]; if (!item || S.denied(item.id)) return;
+        order.appendChild(h("div", { class: "row wrap" }, h("span", { class: "grow", text: item.label }),
+          S.btn("Nach oben", { size: "sm", disabled: index === 0, onClick: function () { selected.splice(index - 1, 0, selected.splice(index, 1)[0]); draw(); } })));
+      });
+    }
+    var options = Object.keys(shortcutPages).filter(function (key) { return items[shortcutPages[key]] && !S.denied(shortcutPages[key]); });
+    var checks = options.map(function (key) {
+      var item = items[shortcutPages[key]], box = h("input", { type: "checkbox", checked: selected.indexOf(key) >= 0 });
+      box.addEventListener("change", function () { selected = selected.filter(function (v) { return v !== key; }); if (box.checked) selected.push(key); draw(); });
+      return h("label", { class: "check" }, box, item.label);
+    });
+    draw();
+    return S.card("Server-Schnellzugriffe", { icon: "grid", sub: "Diese Einstellungen verwendet auch die iOS-App mit demselben Suite-Konto." },
+      h("div", { class: "stack" }, S.field("Servername", name), h("label", { class: "check" }, compact, "Kompakte Ansicht"),
+        h("label", { class: "check" }, visible, "Server in der iOS-App anzeigen"),
+        h("div", { class: "check-grid" }, checks), order,
+        S.btn("Schnellzugriffe speichern", { kind: "primary", onClick: async function () {
+          await S.api("shortcut-prefs", { body: { name: name.value, compact: compact.checked, hidden: !visible.checked, tools: selected } });
+          S.toast("Schnellzugriffe gespeichert");
+        } })));
+  };
+
   var dashboard = P.dashboard;
   P.dashboard = async function (param, query, alive) {
     await dashboard(param, query, alive); if (!alive()) return;
+    var prefs = {};
+    if (S.has("shortcut-preferences-v1")) try { prefs = await S.api("shortcut-prefs", { quiet: true }); } catch (e) { /* use defaults */ }
+    if (!alive()) return;
+    var items = shortcutItems(), selected = Array.isArray(prefs.tools) ? prefs.tools : initialShortcuts;
     // Dashboard refreshes only replace its own mounted content; retain these shortcuts on every render.
     function add() {
       if (!alive() || !S.content || S.content.querySelector(".workspace-shortcuts")) return;
       var shortcuts = h("div", { class: "row wrap workspace-shortcuts" },
-        h("a", { class: "btn primary", href: "#/tools", text: "Admin-Werkzeuge" }), h("a", { class: "btn", href: "#/ad-hub", text: "Werbung" }),
-        h("a", { class: "btn", href: "#/tickets", text: "Tickets" }), h("a", { class: "btn", href: "#/diagnostics", text: "Diagnose" }), historyLink("", "Verläufe"));
+        prefs.name ? h("strong", { text: prefs.name }) : null,
+        selected.map(function (key) {
+          var item = items[shortcutPages[key]]; if (!item || S.denied(item.id)) return null;
+          return h("a", { class: "btn" + (prefs.compact === false ? "" : " sm"), href: "#/" + item.id, text: item.label });
+        }),
+        S.has("shortcut-preferences-v1") ? h("a", { class: "btn ghost sm", href: "#/appearance", text: "Anpassen" }) : null);
       S.content.prepend(shortcuts);
     }
     add(); var observer = new MutationObserver(add); observer.observe(S.content, { childList: true });

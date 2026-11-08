@@ -350,7 +350,7 @@ struct SuiteHubEntry: Identifiable {
     /// Direct Suite accounts first, then suites attached to servers of the selected panel.
     @MainActor static func all(store: AppStore, connections: SuiteConnections) -> [SuiteHubEntry] {
         var out = connections.values.filter { $0.panel.hasPrefix("suite-direct:") }.map { SuiteHubEntry(title: $0.panel.replacingOccurrences(of: "suite-direct:", with: "") + " · Direktzugang", connection: $0) }
-        if let panel = store.api { for server in store.servers { if let record = connections.get(panel, server) { out.append(SuiteHubEntry(title: server.name, connection: record)) } } }
+        if let panel = store.api { for server in store.visibleServers { if let record = connections.get(panel, server) { out.append(SuiteHubEntry(title: server.name, connection: record)) } } }
         return out
     }
 }

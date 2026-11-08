@@ -2,11 +2,14 @@ import AppIntents
 import Foundation
 
 enum SuiteShortcutTool: String, AppEnum {
-    case overview, advertising, tickets, diagnostics, histories, settings
+    case overview, advertising, tickets, diagnostics, histories, settings, players, adminLog, staffChat, statistics, operations, reports, bans, events, tasks, chat, functions
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "Admin-Werkzeug"
     static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .overview: "Admin Suite", .advertising: "Werbe-Zentrale", .tickets: "Tickets",
-        .diagnostics: "Diagnose", .histories: "Verläufe verwalten", .settings: "Suite-Einstellungen"
+        .diagnostics: "Diagnose", .histories: "Verläufe verwalten", .settings: "Suite-Einstellungen",
+        .players: "Spieler", .adminLog: "Admin-Log", .staffChat: "Staff-Chat", .statistics: "Statistiken",
+        .operations: "Serverbetrieb", .reports: "Reports", .bans: "Banns", .events: "Ereignisse",
+        .tasks: "Staff-Aufgaben", .chat: "Serverchat", .functions: "Alle Funktionen"
     ]
 }
 
@@ -22,7 +25,7 @@ struct SuiteShortcutServerQuery: EntityQuery {
         try await suggestedEntities().filter { identifiers.contains($0.id) }
     }
     @MainActor func suggestedEntities() async throws -> [SuiteShortcutServer] {
-        SuiteConnections.shared.values.map { SuiteShortcutServer(id: $0.id.uuidString, name: SuiteConnections.shared.name($0) + " · " + $0.endpoint) }
+        SuiteConnections.shared.values.filter { !SuiteQuickAccess.shared.isHidden($0.id) }.map { SuiteShortcutServer(id: $0.id.uuidString, name: SuiteQuickAccess.shared.name($0) + " · " + $0.endpoint) }
     }
 }
 
@@ -56,7 +59,7 @@ struct SuiteAdvertisingPlaceQuery: EntityStringQuery {
         try await fetch().filter { SuiteSearch.matches(string, in: $0.name) }
     }
     @MainActor private func fetch() async throws -> [SuiteAdvertisingPlace] {
-        let records = SuiteConnections.shared.values
+        let records = SuiteConnections.shared.values.filter { !SuiteQuickAccess.shared.isHidden($0.id) }
         return try await withThrowingTaskGroup(of: [SuiteAdvertisingPlace].self) { group in
             var next = 0, output: [SuiteAdvertisingPlace] = []
             for record in records.prefix(3) {
@@ -103,7 +106,7 @@ struct OpenSuiteToolIntent: AppIntent {
 }
 @MainActor private func selectedConnection(_ server: SuiteShortcutServer?) throws -> UUID? {
     guard let server else { return nil }
-    guard let id = UUID(uuidString: server.id), SuiteConnections.shared.values.contains(where: { $0.id == id }) else { throw PanelError(message: "Dieser Serverzugang ist nicht mehr vorhanden. Bitte den Kurzbefehl neu zuordnen.") }
+    guard let id = UUID(uuidString: server.id), !SuiteQuickAccess.shared.isHidden(id), SuiteConnections.shared.values.contains(where: { $0.id == id }) else { throw PanelError(message: "Dieser Serverzugang ist nicht mehr vorhanden. Bitte den Kurzbefehl neu zuordnen.") }
     return id
 }
 

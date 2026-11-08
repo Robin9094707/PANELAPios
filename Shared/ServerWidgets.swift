@@ -61,6 +61,7 @@ enum WidgetStorage {
             guard record.backgroundRefresh, let data = cacheURL(record.id).flatMap({ try? Data(contentsOf: $0) }) ?? WidgetVault.sharedData(snapshotKey(record.id)), let latest = try? JSONDecoder().decode(WidgetServer.self, from: data), (latest.updated ?? .distantPast) > (record.updated ?? .distantPast) else { return record }
             var merged = record
             merged.state = latest.state; merged.cpu = latest.cpu; merged.memory = latest.memory; merged.disk = latest.disk; merged.uptime = latest.uptime; merged.memoryLimit = latest.memoryLimit
+            merged.maximum = latest.maximum; merged.tps = latest.tps; merged.tpsUpdated = latest.tpsUpdated
             merged.online = latest.online; merged.playerNames = latest.playerNames; merged.playersUpdated = latest.playersUpdated; merged.updated = latest.updated; merged.issue = latest.issue
             return merged
         }

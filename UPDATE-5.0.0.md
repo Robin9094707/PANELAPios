@@ -1,0 +1,8 @@
+# Anpassungs-Update für Simplex Panel 5.0.0 und Admin Suite 10.7.0
+
+- Das Spielerprofil lädt gespeicherte NBT-Werte automatisch, wenn das Konto die Rechte für das Profil und NBT besitzt. Erster Beitritt laut Datei, zuletzt gespielt und Änderungsdatum sind getrennt. Fehlt ein Zeitstempel in der Datei, erscheint ein Strich.
+- Pro Suite-Konto bleiben Name, Sichtbarkeit, kompakte Darstellung und Werkzeugreihenfolge auf dem Server gespeichert. In iOS liegen die Einstellungen auf der Startseite unter „Server-Schnellzugriffe → Anpassen“. Im Webpanel liegen sie unter „Darstellung“. Server ohne Admin Suite können lokal ausgeblendet werden.
+- Bei gekoppelten Servern prüft die Suite die installierte JAR direkt auf dem Server und prüft die hochgeladene Datei vor der Vormerkung. Paper übernimmt das Update beim nächsten Neustart. Aktive identische Dateiübertragungen werden zusammengeführt. Standard-HTTPS-Uploads nutzen die iOS-Hintergrundsession. Uploads mit fest hinterlegtem Zertifikatsfingerabdruck behalten ihre gepinnte Verbindung.
+- Wenn ein Server für direkte Widget-Aktualisierung freigegeben ist, kann iOS seine laufende Live-Aktivität gelegentlich im Hintergrund auffrischen. Der Zeitpunkt hängt von iOS ab. Für durchgehende Aktualisierungen über ActivityKit-Push sind eine APNs-fähige Signatur und ein APNs-Dienst erforderlich. Widgets verwenden App-Gruppe oder gemeinsamen Schlüsselbund. Beim manuellen Beenden kann iOS Hintergrundaufgaben und Transfers abbrechen.
+
+Die IPA wie bisher mit derselben App-ID signieren und als Update installieren. Die bisherige Admin-Suite-JAR bei gestopptem Server durch 10.7.0 ersetzen. Bestehende Datenordner, Zugänge, Zertifikate und Sitzungen weiterverwenden.

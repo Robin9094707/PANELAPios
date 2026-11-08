@@ -238,12 +238,13 @@ struct SuiteWorkspaceLauncher: View {
     @State private var chosen: UUID?
     @State private var choosing = false
     @Environment(\.dismiss) private var dismiss
+    var available: [SuiteConnection] { connections.values.filter { !preferences.isHidden($0.id) } }
     var selected: SuiteConnection? {
-        if let id = request.connection { return connections.values.first { $0.id == id } }
+        if let id = request.connection { return available.first { $0.id == id } }
         if choosing { return nil }
-        if let chosen { return connections.values.first { $0.id == chosen } }
-        if let id = preferences.preferred, let record = connections.values.first(where: { $0.id == id }) { return record }
-        return connections.values.count == 1 ? connections.values.first : nil
+        if let chosen { return available.first { $0.id == chosen } }
+        if let id = preferences.preferred, let record = available.first(where: { $0.id == id }) { return record }
+        return available.count == 1 ? available.first : nil
     }
     var body: some View {
         NavigationStack {
@@ -254,12 +255,12 @@ struct SuiteWorkspaceLauncher: View {
                     ContentUnavailableView("Zugang nicht mehr vorhanden", systemImage: "key.slash", description: Text("Bitte den Kurzbefehl mit einem aktuellen Zugang neu einrichten."))
                 } else {
                     List {
-                        if connections.values.isEmpty { ContentUnavailableView("Keine Admin Suite verbunden", systemImage: "shield.slash", description: Text("Auf der Startseite einen Setup-Link einlösen oder mit einem Suite-Benutzer anmelden.")) }
-                        ForEach(connections.values) { record in
+                        if available.isEmpty { ContentUnavailableView("Keine Admin Suite verbunden", systemImage: "shield.slash", description: Text("Auf der Startseite einen Setup-Link einlösen oder mit einem Suite-Benutzer anmelden.")) }
+                        ForEach(available) { record in
                             Button {
                                 chosen = record.id; choosing = false
                             } label: {
-                                HStack { Label(connections.name(record, store: store), systemImage: "server.rack"); Spacer(); Image(systemName: "chevron.right").font(.caption) }
+                                HStack { Label(preferences.name(record, store: store), systemImage: "server.rack"); Spacer(); Image(systemName: "chevron.right").font(.caption) }
                                 Text(record.endpoint).font(.caption).foregroundStyle(.secondary)
                             }.accessibilityIdentifier("suite-choose-" + record.id.uuidString)
                         }
@@ -268,7 +269,7 @@ struct SuiteWorkspaceLauncher: View {
                 }
             }.toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
-                if selected != nil && request.connection == nil && connections.values.count > 1 {
+                if selected != nil && request.connection == nil && available.count > 1 {
                     ToolbarItem(placement: .topBarLeading) { Button("Server wechseln", systemImage: "server.rack") { choosing = true; chosen = nil } }
                 }
             }

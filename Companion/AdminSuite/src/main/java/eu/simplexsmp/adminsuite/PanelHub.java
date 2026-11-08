@@ -44,6 +44,7 @@ final class PanelHub {
             Map<String, String> query = AppApiManager.query(x.getRequestURI());
             switch (path) {
                 case "/v1/web/prefs" -> AppApiManager.send(x, 200, prefs(owner));
+                case "/v1/shortcut-prefs" -> AppApiManager.send(x, 200, shortcutPrefs(owner));
                 case "/v1/push" -> {
                     WebPush push = api.webPush;
                     List<Map<String, Object>> events = new ArrayList<>();
@@ -118,6 +119,10 @@ final class PanelHub {
         }
         if (!method.equals("POST")) return false;
         switch (path) {
+            case "/v1/shortcut-prefs" -> {
+                if (!api.rate("shortcut-prefs:" + owner, 30)) throw new AppApiManager.ApiError(429, "Bitte kurz warten.");
+                AppApiManager.send(x, 200, saveShortcutPrefs(owner, AppApiManager.body(x, 8192)));
+            }
             case "/v1/web/prefs" -> {
                 if (!api.rate("prefs:" + owner, 30)) throw new AppApiManager.ApiError(429, "Bitte kurz warten.");
                 AppApiManager.send(x, 200, savePrefs(owner, AppApiManager.body(x, 4096)));
@@ -293,16 +298,59 @@ final class PanelHub {
         return SimplexAdminSuite.appMap("ok", true, "prefs", current, "title", "Darstellung gespeichert", "description", "Gilt auf allen Browsern, mit denen du dich anmeldest.");
     }
 
+    synchronized Map<String, Object> shortcutPrefs(String owner) {
+        String stored = prefs.getProperty("shortcuts." + owner, "");
+        if (!stored.isBlank() && DiscordBotManager.Json.parse(stored) instanceof Map<?, ?> value) return AppApiManager.object(value);
+        return new LinkedHashMap<>();
+    }
+
+    synchronized Map<String, Object> saveShortcutPrefs(String owner, Map<String, Object> patch) throws IOException {
+        Map<String, Object> nextValues = new LinkedHashMap<>(shortcutPrefs(owner));
+        for (var entry : patch.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            switch (key) {
+                case "hidden", "compact" -> {
+                    if (!(value instanceof Boolean)) throw new IllegalArgumentException("Ungültiger Schalter: " + key);
+                }
+                case "preferredAt" -> {
+                    if (!(value instanceof Number n) || n.doubleValue() < 0 || n.doubleValue() > 9_000_000_000_000L)
+                        throw new IllegalArgumentException("Ungültiger Standardserver-Zeitstempel");
+                    value = n.longValue();
+                }
+                case "name" -> {
+                    if (!(value instanceof String name) || name.length() > 160 || name.codePoints().anyMatch(Character::isISOControl))
+                        throw new IllegalArgumentException("Servername ungültig");
+                    value = name.strip();
+                }
+                case "tools" -> {
+                    if (!(value instanceof List<?> list) || list.size() > 60 || list.stream().anyMatch(tool -> !(tool instanceof String id) || !id.matches("[a-zA-Z][a-zA-Z0-9-]{0,39}")))
+                        throw new IllegalArgumentException("Schnellzugriffe ungültig");
+                    value = List.copyOf(new LinkedHashSet<>(list));
+                }
+                default -> throw new IllegalArgumentException("Unbekannte Einstellung: " + key);
+            }
+            nextValues.put(key, value);
+        }
+        Properties next = new Properties(); next.putAll(prefs);
+        next.setProperty("shortcuts." + owner, DiscordBotManager.Json.stringify(nextValues));
+        AtomicState.save(prefsFile, next, "Simplex panel preferences per account");
+        prefs.clear(); prefs.putAll(next);
+        return nextValues;
+    }
+
     private synchronized void renamePrefs(String from, String to) throws IOException {
-        String value = prefs.getProperty(from), seen = prefs.getProperty("changelog." + from); if (value == null && seen == null) return;
-        Properties next = new Properties(); next.putAll(prefs); next.remove(from); next.remove("changelog." + from);
+        String value = prefs.getProperty(from), seen = prefs.getProperty("changelog." + from), shortcuts = prefs.getProperty("shortcuts." + from);
+        if (value == null && seen == null && shortcuts == null) return;
+        Properties next = new Properties(); next.putAll(prefs); next.remove(from); next.remove("changelog." + from); next.remove("shortcuts." + from);
         if (value != null) next.setProperty(to, value);
         if (seen != null) next.setProperty("changelog." + to, seen);
+        if (shortcuts != null) next.setProperty("shortcuts." + to, shortcuts);
         AtomicState.save(prefsFile, next, "Simplex web panel appearance per account (9.9.0)"); prefs.clear(); prefs.putAll(next);
     }
     synchronized void removeOwner(String owner) throws IOException {
-        if (!prefs.containsKey(owner) && !prefs.containsKey("changelog." + owner)) return;
-        Properties next = new Properties(); next.putAll(prefs); next.remove(owner); next.remove("changelog." + owner);
+        if (!prefs.containsKey(owner) && !prefs.containsKey("changelog." + owner) && !prefs.containsKey("shortcuts." + owner)) return;
+        Properties next = new Properties(); next.putAll(prefs); next.remove(owner); next.remove("changelog." + owner); next.remove("shortcuts." + owner);
         AtomicState.save(prefsFile, next, "Simplex web panel appearance per account (9.9.0)"); prefs.clear(); prefs.putAll(next);
     }
 }

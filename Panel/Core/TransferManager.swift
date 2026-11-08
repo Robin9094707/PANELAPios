@@ -15,6 +15,7 @@ struct TransferRecord: Identifiable, Codable {
     var updated = Date()
     var issue: String?
     var source: DownloadSource?
+    var operationKey: String?
     var fraction: Double? { total > 0 ? min(1, max(0, Double(completed) / Double(total))) : nil }
     var active: Bool { state == "running" || state == "pausing" || state == "resolving" }
     var title: String {
@@ -42,7 +43,7 @@ struct TransferRecord: Identifiable, Codable {
     private let bridge = TransferDelegate()
     private var session: URLSession!
     private var tasks: [UUID: URLSessionTask] = [:]
-    private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
+    private var waiters: [UUID: [CheckedContinuation<Data, Error>]] = [:]
     private var saved = Date.distantPast
     private var activityUpdate = Date.distantPast
     private var transientDemo = false
@@ -91,6 +92,12 @@ struct TransferRecord: Identifiable, Codable {
         guard let url = URL(string: signed), url.scheme == "https" else { throw PanelError(message: "Keine sichere Download-URL erhalten.") }
         let name = URL(fileURLWithPath: filename).lastPathComponent
         guard !name.isEmpty, name != ".", name != "..", !["resume.data", "body.upload", "request.url"].contains(name) else { throw PanelError(message: "Dieser Dateiname kann nicht lokal gespeichert werden.") }
+        if let existing = records.first(where: { record in
+            guard !record.upload, record.state == "running", record.filename == name, record.context == context else { return false }
+            if let source { return record.source == source }
+            let savedURL = folder(record.id).appendingPathComponent("request.url")
+            return (try? String(contentsOf: savedURL, encoding: .utf8)) == url.absoluteString
+        }) { return existing.id }
         var record = TransferRecord(filename: name, context: context, upload: false)
         record.source = source
         try FileManager.default.createDirectory(at: folder(record.id), withIntermediateDirectories: true)
@@ -101,20 +108,24 @@ struct TransferRecord: Identifiable, Codable {
     /// Provider downloads share the same durable iOS transfer session as panel files.
     func downloadAndWait(_ signed: String, filename: String, context: String) async throws -> URL {
         let id = try download(signed, filename: filename, context: context)
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in waiters[id] = continuation }
+        _ = try await withCheckedThrowingContinuation { waiters[id, default: []].append($0) }
         guard let record = records.first(where: { $0.id == id && $0.state == "completed" }) else { throw PanelError(message: "Download wurde entfernt oder nicht vollständig gespeichert.") }
         return localFile(record)
     }
-    func upload(_ request: URLRequest, body: URL, filename: String, context: String) async throws {
+    @discardableResult func upload(_ request: URLRequest, body: URL, filename: String, context: String, operationKey: String? = nil) async throws -> Data {
+        if let operationKey, let active = records.first(where: { $0.upload && $0.active && $0.operationKey == operationKey }) {
+            return try await withCheckedThrowingContinuation { waiters[active.id, default: []].append($0) }
+        }
         var record = TransferRecord(filename: filename, context: context, upload: true)
         try FileManager.default.createDirectory(at: folder(record.id), withIntermediateDirectories: true)
         let persistent = folder(record.id).appendingPathComponent("body.upload")
-        try FileManager.default.moveItem(at: body, to: persistent)
+        try FileManager.default.copyItem(at: body, to: persistent)
+        record.operationKey = operationKey
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: persistent.path)
         record.total = Int64((try persistent.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0)
         let task = session.uploadTask(with: request, fromFile: persistent)
-        try await withCheckedThrowingContinuation { continuation in
-            waiters[record.id] = continuation; begin(record, task: task)
+        return try await withCheckedThrowingContinuation { continuation in
+            waiters[record.id, default: []].append(continuation); begin(record, task: task)
         }
     }
     private func begin(_ record: TransferRecord, task: URLSessionTask) {
@@ -126,17 +137,17 @@ struct TransferRecord: Identifiable, Codable {
         records[i].completed = max(0, sent); records[i].total = total; records[i].updated = Date()
         persist(); updateActivity(records[i])
     }
-    func finish(_ id: UUID, response: URLResponse?, error: Error?, moved: Bool = false) {
+    func finish(_ id: UUID, response: URLResponse?, error: Error?, data: Data = Data()) {
         guard let i = records.firstIndex(where: { $0.id == id }) else { return }
         // A paused task's cancellation is expected. Resume-data delivery owns this transition.
         if records[i].state == "pausing" || records[i].state == "paused" {
             if error != nil || !FileManager.default.fileExists(atPath: localFile(records[i]).path) { return }
         }
         tasks[id] = nil
-        if records[i].state == "cancelled" { try? FileManager.default.removeItem(at: folder(id).appendingPathComponent("body.upload")); waiters.removeValue(forKey: id)?.resume(throwing: CancellationError()); return }
+        if records[i].state == "cancelled" { try? FileManager.default.removeItem(at: folder(id).appendingPathComponent("body.upload")); completeWaiters(id, with: .failure(CancellationError())); return }
         guard records[i].state != "completed" && records[i].state != "failed" else { return }
         var failure = error
-        if failure == nil, let response { do { try PanelAPI.validate(Data(), response: response) } catch { failure = error } }
+        if failure == nil, let response { do { try PanelAPI.validate(data, response: response) } catch { failure = error } }
         if failure == nil && !records[i].upload && !FileManager.default.fileExists(atPath: localFile(records[i]).path) {
             failure = PanelError(message: "Die Download-Datei konnte nicht gespeichert werden.")
         }
@@ -152,7 +163,10 @@ struct TransferRecord: Identifiable, Codable {
         // Multipart upload bodies are retained only while iOS owns the active task.
         if records[i].upload { try? FileManager.default.removeItem(at: folder(id).appendingPathComponent("body.upload")) }
         persist(force: true); updateActivity(records[i], finish: true)
-        if let waiter = waiters.removeValue(forKey: id) { if let failure { waiter.resume(throwing: failure) } else { waiter.resume() } }
+        if let failure { completeWaiters(id, with: .failure(failure)) } else { completeWaiters(id, with: .success(data)) }
+    }
+    private func completeWaiters(_ id: UUID, with result: Result<Data, Error>) {
+        for waiter in waiters.removeValue(forKey: id) ?? [] { waiter.resume(with: result) }
     }
     func pause(_ record: TransferRecord) {
         guard !record.upload, let task = tasks[record.id] as? URLSessionDownloadTask, let i = records.firstIndex(where: { $0.id == record.id }) else { return }
@@ -162,7 +176,7 @@ struct TransferRecord: Identifiable, Codable {
                 guard let index = self.records.firstIndex(where: { $0.id == record.id }), self.records[index].state == "pausing" else { return }
                 self.tasks[record.id] = nil
                 if let data { do { try data.write(to: self.folder(record.id).appendingPathComponent("resume.data"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) } catch { self.storageError = error.localizedDescription } }
-                self.records[index].state = "paused"; self.persist(force: true); self.updateActivity(self.records[index], finish: true)
+                self.records[index].state = "paused"; self.completeWaiters(record.id, with: .failure(CancellationError())); self.persist(force: true); self.updateActivity(self.records[index], finish: true)
             }
         }
     }
@@ -205,7 +219,7 @@ struct TransferRecord: Identifiable, Codable {
     func cancel(_ record: TransferRecord) {
         guard let i = records.firstIndex(where: { $0.id == record.id }) else { return }
         records[i].state = "cancelled"; tasks[record.id]?.cancel(); tasks[record.id] = nil
-        waiters.removeValue(forKey: record.id)?.resume(throwing: CancellationError())
+        completeWaiters(record.id, with: .failure(CancellationError()))
         persist(force: true); updateActivity(records[i], finish: true)
     }
     func remove(_ record: TransferRecord) {
@@ -218,7 +232,7 @@ struct TransferRecord: Identifiable, Codable {
         for record in removed {
             if record.active { cancel(record) }
             tasks[record.id]?.cancel(); tasks[record.id] = nil
-            waiters.removeValue(forKey: record.id)?.resume(throwing: CancellationError())
+            completeWaiters(record.id, with: .failure(CancellationError()))
             do { if FileManager.default.fileExists(atPath: folder(record.id).path) { try FileManager.default.removeItem(at: folder(record.id)) } }
             catch { storageError = "Lokale Datei konnte nicht entfernt werden: " + error.localizedDescription }
         }
@@ -231,6 +245,7 @@ struct TransferRecord: Identifiable, Codable {
     private func startActivity(_ record: TransferRecord) {
         guard UIApplication.shared.applicationState == .active, ActivityAuthorizationInfo().areActivitiesEnabled,
               UserDefaults.standard.object(forKey: "transferActivities") as? Bool ?? true else { return }
+        activityUpdate = .distantPast
         if let old = activity { Task { await old.end(nil, dismissalPolicy: .immediate) } }
         let state = TransferActivity.ContentState(completed: record.completed, total: record.total, phase: record.title, updated: Date())
         activity = try? Activity.request(attributes: TransferActivity(transferID: record.id.uuidString, filename: record.filename, upload: record.upload), content: ActivityContent(state: state, staleDate: Date().addingTimeInterval(90)), pushType: nil)
@@ -244,9 +259,10 @@ struct TransferRecord: Identifiable, Codable {
     }
 }
 
-private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, URLSessionTaskDelegate {
+private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, URLSessionDataDelegate {
     weak var owner: TransferManager?
     private var downloadErrors: [UUID: Error] = [:]
+    private var responseBodies: [UUID: Data] = [:]
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard let id = downloadTask.taskDescription.flatMap(UUID.init(uuidString:)) else { return }
         Task { @MainActor in owner?.progress(id, sent: totalBytesWritten, total: totalBytesExpectedToWrite) }
@@ -270,16 +286,24 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, URLS
         } catch { downloadErrors[id] = error }
     }
 
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard let id = dataTask.taskDescription.flatMap(UUID.init(uuidString:)) else { return }
+        let remaining = 64 * 1024 - (responseBodies[id]?.count ?? 0)
+        if remaining > 0 { responseBodies[id, default: Data()].append(contentsOf: data.prefix(remaining)) }
+    }
+
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let id = task.taskDescription.flatMap(UUID.init(uuidString:)) else { return }
-        let failure = error ?? downloadErrors.removeValue(forKey: id)
-        Task { @MainActor in owner?.finish(id, response: task.response, error: failure) }
+        let downloadError = downloadErrors.removeValue(forKey: id)
+        let data = responseBodies.removeValue(forKey: id) ?? Data()
+        Task { @MainActor in owner?.finish(id, response: task.response, error: error ?? downloadError, data: data) }
     }
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         Task { @MainActor in owner?.persist(force: true); let completion = owner?.backgroundCompletion; owner?.backgroundCompletion = nil; completion?() }
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        // These requests use signed URLs, never a Client-API bearer token.
+        // Suite uploads must stay at their authenticated origin.
+        guard task.originalRequest?.value(forHTTPHeaderField: "Authorization") == nil else { completionHandler(nil); return }
         guard request.url?.scheme == "https" else { completionHandler(nil); return }
         var unsigned = request; unsigned.setValue(nil, forHTTPHeaderField: "Authorization"); completionHandler(unsigned)
     }

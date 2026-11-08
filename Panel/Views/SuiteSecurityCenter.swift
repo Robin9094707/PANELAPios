@@ -327,10 +327,10 @@ struct SuiteEventInboxView: View {
         List {
             ForEach(SuiteConnections.shared.values.filter { $0.panel.hasPrefix("suite-direct:") }) { record in NavigationLink(record.panel.replacingOccurrences(of: "suite-direct:", with: "") + " · " + record.endpoint) { SuiteDirectInbox(connection: record, tickets: tickets) } }
             if let panel = store.api {
-                ForEach(store.servers.filter { SuiteConnections.shared.get(panel, $0) != nil }) { server in
+                ForEach(store.visibleServers.filter { SuiteConnections.shared.get(panel, $0) != nil }) { server in
                     NavigationLink(server.name) { SuiteEventConnectedView(panel: panel, server: server, tickets: tickets) }
                 }
-                if !store.servers.contains(where: { SuiteConnections.shared.get(panel, $0) != nil }) { Text("Für das ausgewählte Panel ist noch keine Admin Suite verbunden.").foregroundStyle(.secondary) }
+                if !store.visibleServers.contains(where: { SuiteConnections.shared.get(panel, $0) != nil }) { Text("Für das ausgewählte Panel ist noch keine Admin Suite verbunden.").foregroundStyle(.secondary) }
             } else { Text("Öffne deinen gespeicherten Panel-Zugang, um die Serverereignisse anzuzeigen.") }
         }.panelScreen().navigationTitle(tickets ? "Support-Tickets" : "Serverereignisse").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
     }

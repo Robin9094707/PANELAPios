@@ -65,12 +65,15 @@ final class AppPluginFiles {
         return Map.of("items", items, "updateDirectory", publicPath(updateDirectory(false)));
     }
     Map<String,Object> inspect(String name, boolean pending) throws Exception { return inspect(pending ? updateDirectory(false) : plugins, name, true); }
-    private Map<String,Object> inspect(Path folder, String name, boolean hashes) throws Exception {
+    Map<String,Object> identity(String name) throws Exception { return inspect(plugins,name,false,true); }
+    private Map<String,Object> inspect(Path folder, String name, boolean hashes) throws Exception { return inspect(folder,name,hashes,false); }
+    private Map<String,Object> inspect(Path folder, String name, boolean hashes, boolean onlySHA256) throws Exception {
         Path path = file(folder, name);
         var before = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         Map<String,Object> result = descriptor(path);
         result.put("filename", name); result.put("size", before.size()); result.put("modified_at", before.lastModifiedTime().toInstant().toString());
         if (hashes) result.putAll(fingerprints(path));
+        if (onlySHA256) result.put("sha256",hash(path));
         var after = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         if (before.size()!=after.size() || !before.lastModifiedTime().equals(after.lastModifiedTime()) || !Objects.equals(before.fileKey(), after.fileKey())) throw new IOException("Plugin wurde beim Lesen geändert. Neu prüfen.");
         return result;
@@ -110,7 +113,7 @@ final class AppPluginFiles {
     Map<String,Object> prepare(Map<String,Object> values) throws Exception {
         String name=text(values,"filename"), expected=text(values,"expected"), sha=text(values,"sha256"); filename(name);
         if(!name.endsWith(".jar") || !expected.matches("[a-f0-9]{64}") || !sha.matches("[a-f0-9]{64}"))throw new IllegalArgumentException("Aktive JAR und SHA-256-Prüfsummen erforderlich");
-        Map<String,Object> old=inspect(plugins,name,false);old.put("sha256",hash(file(plugins,name)));
+        Map<String,Object> old=identity(name);
         if(!expected.equals(old.get("sha256")))throw new IOException("Installierte JAR wurde geändert. Neu auswählen.");
         if(!text(values,"name").equals(old.get("name")) || !text(values,"main").equals(old.get("main")))throw new IOException("Update gehört nicht zum ausgewählten Plugin");
         if(text(values,"version").equals(old.get("version")) || text(values,"version").isBlank())throw new IOException("Gleiche oder fehlende Update-Version");
@@ -124,28 +127,32 @@ final class AppPluginFiles {
     }
     private static String text(Map<String,Object> values,String key){return String.valueOf(values.getOrDefault(key,""));}
     Map<String,Object> stage(Map<String,Object> values, InputStream input) throws Exception { return stage(values,input,()->{}); }
-    synchronized Map<String,Object> stage(Map<String,Object> values, InputStream input, Runnable authorize) throws Exception {
-        authorize.run();prepare(values); Path folder=updateDirectory(true); String installed=text(values,"filename");
-        // Keep the installed filename so Paper replaces that exact JAR and no duplicate version remains.
-        Path destination=folder.resolve(installed); String wanted=text(values,"sha256");
-        Map<String,Object> existing=status(installed,wanted);if(Boolean.TRUE.equals(existing.get("queued")))return existing;
-        checkPending(folder,installed,text(values,"name"));
+    Map<String,Object> stage(Map<String,Object> values, InputStream input, Runnable authorize) throws Exception {
+        authorize.run();
+        Path folder=updateDirectory(true);String installed=text(values,"filename"),wanted=text(values,"sha256");
+        Map<String,Object> existing=status(installed,wanted);
+        if(Boolean.TRUE.equals(existing.get("queued")))return existing;
         Path temporary=Files.createTempFile(folder,"simplex-update-",".pending");
         try {
-            UpdateJarVerifier.copyLimited(input,temporary,MAX);
-            if(!hash(temporary).equals(wanted))throw new IOException("Upload-Prüfsumme stimmt nicht");
+            MessageDigest digest=MessageDigest.getInstance("SHA-256");
+            UpdateJarVerifier.copyLimited(new DigestInputStream(input,digest),temporary,MAX);
+            if(!HexFormat.of().formatHex(digest.digest()).equals(wanted))throw new IOException("Upload-Prüfsumme stimmt nicht");
             Map<String,Object> next=descriptor(temporary);
             for(String field:List.of("name","main","version"))if(!Objects.equals(next.get(field),values.get(field)))throw new IOException("Hochgeladene Plugin-Identität stimmt nicht: "+field);
             verifyClass(temporary,text(values,"main"));
-            prepare(values);if(!folder.equals(updateDirectory(false)))throw new IOException("Update-Ordner wurde geändert");
-            checkPending(folder,installed,text(values,"name"));
-            authorize.run();
-            // Atomic, exclusive publication: an existing destination is never overwritten.
-            try { Files.createLink(destination,temporary); }
-            catch(UnsupportedOperationException e){Files.move(temporary,destination);}
-            Map<String,Object> result=status(installed,wanted);
-            if(!Boolean.TRUE.equals(result.get("queued")))throw new IOException("Update konnte nach dem Vormerken nicht bestätigt werden");
-            return result;
+            synchronized(this) {
+                authorize.run();
+                if(!folder.equals(updateDirectory(false)))throw new IOException("Update-Ordner wurde geändert");
+                existing=status(installed,wanted);
+                if(Boolean.TRUE.equals(existing.get("queued")))return existing;
+                prepare(values);
+                checkPending(folder,installed,text(values,"name"));
+                Path destination=folder.resolve(installed);
+                // The verified temporary file becomes the pending JAR without overwriting another upload.
+                try { Files.createLink(destination,temporary); }
+                catch(UnsupportedOperationException e){Files.move(temporary,destination);}
+                return Map.of("queued",true,"updateDirectory",publicPath(folder),"filename",installed,"sha256",wanted,"restartRequired",true);
+            }
         }finally{Files.deleteIfExists(temporary);}
     }
     private static void verifyClass(Path path,String main)throws Exception{

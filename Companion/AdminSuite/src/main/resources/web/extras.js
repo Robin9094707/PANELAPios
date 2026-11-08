@@ -184,6 +184,11 @@
   // ============================================================ Page: appearance
   P.appearance = async function (param, query, alive) {
     var r = await S.api("web/prefs"); if (!alive()) return;
+    var shortcuts = null;
+    if (S.has("shortcut-preferences-v1") && S.shortcutPreferences) {
+      try { shortcuts = await S.shortcutPreferences(); } catch (e) { shortcuts = S.notice(e.message, "warn", "alert"); }
+      if (!alive()) return;
+    }
     var p = Object.assign({}, r.prefs);
     async function set(patch) { Object.assign(p, patch); S.applyPrefs(p); try { await S.savePrefs(patch); } catch (e) { S.toast(e.message, "err"); } }
     function seg(key, options) { return S.segmented(options, p[key], function (v) { var o = {}; o[key] = v; set(o); }); }
@@ -211,7 +216,7 @@
     }));
     S.title("Darstellung", "Wird pro Konto auf dem Server gespeichert",
       S.btn("Zurücksetzen", { size: "sm", icon: "refresh", onClick: async function () { if (!(await S.confirm("Darstellung zurücksetzen?", "Alle persönlichen Einstellungen des Webpanels werden auf Standard gesetzt.", "Zurücksetzen"))) return; await S.savePrefs({ reset: true }); S.rebuildShell && S.rebuildShell(); S.reload(); } }));
-    S.mount(h("div", { class: "stack" },
+    S.mount(h("div", { class: "stack" }, shortcuts,
       h("div", { class: "grid two" },
         S.card("Farben", { icon: "sparkles" }, h("div", { class: "stack" }, S.field("Erscheinungsbild", seg("theme", [["auto", "Automatisch"], ["dark", "Dunkel"], ["light", "Hell"]])), S.field("Akzentfarbe", swatches),
           S.field("Hintergrund", seg("background", [["glow", "Mit Farbverlauf"], ["plain", "Schlicht"]])))),
