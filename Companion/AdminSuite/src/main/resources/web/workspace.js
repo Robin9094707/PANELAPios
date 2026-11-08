@@ -172,9 +172,14 @@
     updateUsage();
     async function run(work) {
       if (busy || !alive()) return;
-      busy = true; send.disabled = true;
+      busy = true; send.disabled = true; chatList.disabled = true;
       try { await work(); } catch (e) { if (alive()) S.toast(e.message, "err"); }
-      finally { if (alive()) { busy = false; send.disabled = !status.available; if (threaded) drawAudio(); } }
+      finally {
+        if (alive()) {
+          busy = false; send.disabled = !status.available || !!recorder;
+          if (threaded) drawAudio();
+        }
+      }
     }
     function renderTimeline() {
       if (!threaded || !alive()) return;
@@ -266,6 +271,8 @@
       } catch (error) { disposeRecorder(); throw error; }
     }
     function drawAudio() {
+      chatList.disabled = busy || !!recorder;
+      send.disabled = busy || !status.available || !!recorder;
       S.clear(audioControls);
       if (recorder) {
         audioControls.append(h("span", { class: "muted", text: "Aufnahme läuft · max. 2 Minuten" }), S.btn("Stopp", { onClick: function () {
