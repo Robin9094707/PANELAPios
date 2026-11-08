@@ -52,6 +52,7 @@ public final class AppApiIntegrationHarness {
             System.setProperty("jdk.internal.httpclient.disableHostnameVerification","true");SSLContext ssl=SSLContext.getInstance("TLS");ssl.init(null,new TrustManager[]{new X509TrustManager(){public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}public void checkClientTrusted(X509Certificate[] c,String a){}public void checkServerTrusted(X509Certificate[] c,String a)throws java.security.cert.CertificateException{try{String actual=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(c[0].getEncoded()));if(!actual.equals(pin))throw new java.security.cert.CertificateException("Wrong certificate");}catch(GeneralSecurityException e){throw new java.security.cert.CertificateException(e);}}}},new SecureRandom());
             client=HttpClient.newBuilder().sslContext(ssl).connectTimeout(java.time.Duration.ofSeconds(5)).build();base=URI.create("https://127.0.0.1:"+port);
             var read=api.security.issue("Read","read");var full=api.security.issue("Full","full");var manage=api.security.issue("Manage","manage");
+            assistant(plugin,api,full,worldTime);
             check(call("/v1/health",null,null).statusCode()==401,"no key denied");check(call("/v1/health","invalid",null).statusCode()==401,"invalid key denied");
             check(call("/v1/database/inspect",read.token(),"{}").statusCode()==403,"read scope cannot create database connections");
             check(call("/v1/database/inspect",full.token(),"{}").statusCode()==400,"scanner validates fields before connecting");
@@ -138,4 +139,40 @@ public final class AppApiIntegrationHarness {
             System.out.println("PASS "+checks+" production HTTPS/menu integration checks with synthetic Bukkit services");
         }finally{if(api!=null)api.stop();serverField.set(null,old);try(var stream=Files.walk(dir)){for(Path p:stream.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(p);}}
     }
+    private static void assistant(SimplexAdminSuite plugin,AppApiManager api,AppApiSecurity.Issued full,java.util.concurrent.atomic.AtomicLong worldTime)throws Exception{
+        var context=new java.util.concurrent.atomic.AtomicReference<String>("");
+        plugin.aiAdmin=new AiAdmin(plugin,(instructions,input,schema,tokens)->{
+            if(schema.toString().contains("lookups"))return Map.of("lookups",List.of(Map.of("source","worlds","query","","from",0,"to",0),Map.of("source","chat","query","","from",0,"to",0)));
+            context.set(input);
+            return Map.of("answer","Fixture","summary","Setzt die Zeit","choices",List.of(),"actions",List.of(
+                Map.of("kind","world","fields",List.of(Map.of("name","world","value","fixture-world"),Map.of("name","field","value","time"),Map.of("name","value","value","12000"))),
+                Map.of("kind","restart","fields",List.of(Map.of("name","seconds","value","600")))));
+        },()->true);
+        long oldTime=worldTime.get();
+        try{
+            api.security.users.save("assistant-staff","assistant-fixture-password",Set.of("ai.assistant.use","data.worlds","action.world.update"),true);
+            String staff=api.security.users.createSession("assistant-staff",System.currentTimeMillis(),3600_000L,Map.of());
+            check(call("/v1/assistant/status",null,null).statusCode()==401,"assistant requires authentication");
+            check(call("/v1/assistant/status",full.token(),null).statusCode()==403,"generic full key cannot approve");
+            plugin.getConfig().set(AiAdmin.ROOT+"owner-api-key-id",full.key().id());
+            var started=call("/v1/assistant/ask",staff,json(Map.of("question","Setze die Zeit um")));
+            check(started.statusCode()==200,"authorized staff can submit assistant job");
+            String id=String.valueOf(object(DiscordBotManager.Json.parse(started.body())).get("id"));
+            String url="/v1/assistant/job?id="+id;Map<String,Object> result=Map.of();
+            for(int i=0;i<40;i++){result=object(DiscordBotManager.Json.parse(call(url,staff,null).body()));if(!"running".equals(result.get("status")))break;Thread.sleep(25);}
+            check("ready".equals(result.get("status")) && AiAdmin.objects(result.get("actions"),10).size()==1,"model cannot propose outside actor action permissions");
+            check(worldTime.get()==oldTime&&context.get().contains("fixture-world")&&!context.get().contains("\"source\":\"chat\""),"planning reads only authorized context and does not mutate");
+            String approval=json(Map.of("id",id,"confirmed",true));
+            check(call("/v1/assistant/approve",staff,approval).statusCode()==403,"staff cannot approve own plan");
+            check(call("/v1/assistant/approve",full.token(),json(Map.of("id",id,"confirmed",false))).statusCode()==403,"owner must explicitly confirm");
+            check(worldTime.get()==oldTime,"rejected approval leaves world untouched");
+            check(call("/v1/assistant/approve",full.token(),approval).statusCode()==200&&worldTime.get()==12000,"owner-approved immutable plan applies");
+            check(call("/v1/assistant/approve",full.token(),approval).statusCode()==409,"plan cannot be replayed");
+            check(AiAdmin.redact("connect 192.168.1.1 with sk-proj-example-secret").equals("connect [IP entfernt] with [Schlüssel entfernt]"),"IP and key redaction");
+            PacketTrace trace=new PacketTrace();trace.packet(true,"ServerboundKeepAlivePacket",1000);trace.packet(false,"ClientboundKeepAlivePacket",1500);trace.failure("DecoderException");
+            var meta=trace.snapshot(2000);
+            check(AiAdmin.number(meta.get("keepaliveInAgeMs"))==1000&&"DecoderException".equals(meta.get("exception"))&&AiAdmin.objects(meta.get("recent"),20).size()==2,"packet metadata retains types and keepalive ages");
+        }finally{worldTime.set(oldTime);plugin.aiAdmin.stop();plugin.aiAdmin=null;plugin.getConfig().set(AiAdmin.ROOT+"owner-api-key-id",null);}
+    }
+
 }

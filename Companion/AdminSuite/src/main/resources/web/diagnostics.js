@@ -158,11 +158,18 @@
     catSel.addEventListener("change", function () { go({ category: catSel.value }); });
     var filters = h("div", { class: "row wrap" }, S.searchBox("Spieler oder Meldung", function (v) { go({ q: v }); }, state.q), catSel,
       S.segmented([["", "Alle"], ["java", "Java"], ["bedrock", "Bedrock"]], state.platform, function (v) { go({ platform: v }); }));
-    var table = h("div", { class: "table-wrap" }, h("table", { class: "table" }, h("thead", {}, h("tr", {}, ["Zeit", "Spieler", "Grund", "Meldung", "Ping", "Sitzung", "Ort", "TPS / Tick"].map(function (t) { return h("th", { text: t }); }))),
+    function packetTrace(trace) {
+      if (!trace || !trace.source) return "–";
+      return h("details", {}, h("summary", { text: trace.inbound + " rein / " + trace.outbound + " raus" }),
+        h("p", { text: trace.exception || "Kein Netty-Fehler aufgezeichnet" }),
+        h("p", { text: "Letztes KeepAlive IN / OUT: " + (trace.keepaliveInAgeMs < 0 ? "–" : trace.keepaliveInAgeMs + " ms") + " / " + (trace.keepaliveOutAgeMs < 0 ? "–" : trace.keepaliveOutAgeMs + " ms") }),
+        (trace.recent || []).map(function (packet) { return h("div", { class: "mono tiny", text: packet.direction + " · " + packet.type + " · " + packet.ageMs + " ms" }); }));
+    }
+    var table = h("div", { class: "table-wrap" }, h("table", { class: "table" }, h("thead", {}, h("tr", {}, ["Zeit", "Spieler", "Grund", "Meldung", "Ping", "Sitzung", "Ort", "TPS / Tick", "Paketspur"].map(function (t) { return h("th", { text: t }); }))),
       h("tbody", {}, (d.items || []).map(function (r) {
         return h("tr", {}, h("td", { class: "small", text: S.ago(r.at) }), h("td", {}, h("a", { href: "#/player/" + r.uuid, text: r.name }), " ", S.badge(r.platform === "bedrock" ? "Bedrock" : "Java", r.platform === "bedrock" ? "info" : "")),
           h("td", {}, S.badge(r.categoryTitle, r.involuntary ? "danger" : "")), h("td", { class: "small mono", text: r.message || (r.kickCause ? r.kickCause : "–") }), h("td", { class: "small", text: r.ping >= 0 ? r.ping + " ms" : "–" }),
-          h("td", { class: "small", text: r.sessionMs ? S.dur(r.sessionMs) : "–" }), h("td", { class: "small", text: r.world ? r.world + " " + r.blockX + " / " + r.blockZ : "–" }), h("td", { class: "small", text: fmt(r.tps) + " / " + fmt(r.msptMax, 0) + " ms" }));
+          h("td", { class: "small", text: r.sessionMs ? S.dur(r.sessionMs) : "–" }), h("td", { class: "small", text: r.world ? r.world + " " + r.blockX + " / " + r.blockZ : "–" }), h("td", { class: "small", text: fmt(r.tps) + " / " + fmt(r.msptMax, 0) + " ms" }), h("td", { class: "small" }, packetTrace(r.packetTrace)));
       }))));
     return h("div", { class: "stack" },
       S.card("Vorfälle", { icon: "bell", sub: "Mehrere Disconnects in kurzer Zeit oder viele Spieler gleichzeitig – mit Einschätzung legitim oder Fehler" }, (d.incidents || []).length ? incidentList(d.incidents) : S.empty("check", "Keine Vorfälle", "Bisher keine Disconnect-Welle erkannt.")),

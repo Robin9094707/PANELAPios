@@ -4,7 +4,7 @@ import Combine
 /// One directory for the home screen, Admin tab, direct accounts and Shortcuts.
 enum SuiteTool: String, CaseIterable, Identifiable, Codable {
     case overview, advertising, players, tickets, events, adminLog, histories, staffChat, tasks
-    case diagnostics, lagMap, spark, crashes, console, operations, worldTrim
+    case assistant, diagnostics, lagMap, spark, crashes, console, operations, worldTrim
     case discordStatus, scoreboard, discord, luckperms, lands, locks, commands
     case management, team, appSettings, settings, access, account, bark, quiet, memory, links, crossplay, functions
     case reports, bans, vpn, alts, ultrabans, statistics, menu, ticketSettings, online, dependencies
@@ -26,6 +26,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .histories: return ("Verläufe verwalten", "archivebox.fill", "Verläufe", "", "history-management-v1")
         case .staffChat: return ("Staff-Chat", "bubble.left.and.text.bubble.right.fill", "Kommunikation & Studio", "data.staff-chat", "staff-chat-v1")
         case .tasks: return ("Staff-Aufgaben", "checklist", "Kommunikation & Studio", "data.staff-tasks", "staff-tasks-v1")
+        case .assistant: return ("KI-Assistent", "sparkles", "Server & Diagnose", "", "")
         case .diagnostics: return ("Diagnose", "waveform.path.ecg", "Server & Diagnose", "data.diagnostics", "diagnostics-v1")
         case .lagMap: return ("Lag-Karte", "map.fill", "Server & Diagnose", "data.diagnostics", "lag-map-v1")
         case .spark: return ("Spark-Profiler", "flame.fill", "Server & Diagnose", "data.diagnostics", "spark-v1")

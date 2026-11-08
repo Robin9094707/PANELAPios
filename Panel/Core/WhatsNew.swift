@@ -18,6 +18,11 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.1.0", title: "KI-Assistent und Diagnose 3.0", summary: "Serverfragen gezielt beantworten und konkrete Aktionspläne zur Freigabe prüfen.", items: [
+            WhatsNewItem(symbol: "sparkles", title: "KI für deinen Server", detail: "Chat, Tickets, Teamaktionen, Spielerprofile und Diagnose aus den passenden Datenquellen lesen."),
+            WhatsNewItem(symbol: "checkmark.shield", title: "Freigabe durch den Hauptadmin", detail: "Schreibaktionen werden als feste Liste mit Zielen und Werten vorgelegt. Der Hauptadmin bestätigt den gesamten Plan einmalig."),
+            WhatsNewItem(symbol: "waveform.path.ecg", title: "Diagnose 3.0", detail: "Bei verfügbaren Paper-Verbindungsdaten zeigen Disconnects die letzten Pakettypen, KeepAlive-Zeiten und Netty-Fehler.")
+        ]),
         WhatsNewRelease(version: "5.0.0", title: "Dein Panel, deine Ansicht", summary: "Kompakte Schnellzugriffe, echte NBT-Spielerinfos und schnellere Plugin-Updates.", items: [
             WhatsNewItem(symbol: "slider.horizontal.3", title: "Server-Schnellzugriffe anpassen", detail: "Werkzeuge auswählen und sortieren, Server umbenennen oder ausblenden. Gekoppelte Suite-Konten synchronisieren App und Webpanel."),
             WhatsNewItem(symbol: "doc.text.magnifyingglass", title: "Spielerdatei im Profil", detail: "Ersten Beitritt laut NBT, Datei-Zeitstempel und weitere gespeicherte Werte direkt sehen."),

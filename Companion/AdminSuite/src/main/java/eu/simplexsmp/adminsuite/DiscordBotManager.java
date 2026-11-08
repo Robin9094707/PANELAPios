@@ -1602,6 +1602,9 @@ final class DiscordBotManager {
             respondConfirmation(id, interactionToken, request, actor, false);
             return;
         }
+        if(request.path.startsWith("ai.")){
+            if(access==Access.FULL)assistantDiscordWrites.add(actor.id);else assistantDiscordWrites.remove(actor.id);
+        }
         deferInteraction(id, interactionToken, false);
         executeForInteraction(interactionToken, request, actor);
     }
@@ -1684,6 +1687,12 @@ final class DiscordBotManager {
         DiscordAdminController.Actor actor = actor(member, user, userId, displayName, channel);
         if (access == Access.NONE) {
             respondReply(id, token, DiscordAdminController.Reply.error("Du bist für die Discord-Administration nicht freigegeben."), true);
+            return;
+        }
+        if(customId.startsWith("sas:ai:")){
+            if(access==Access.FULL)assistantDiscordWrites.add(actor.id);else assistantDiscordWrites.remove(actor.id);
+            deferInteraction(id,token,false);
+            plugin.runAdminTask(()->assistantButton(token,customId,actor,access==Access.FULL));
             return;
         }
         if (customId.equals("sas:modal:console")) {
@@ -2025,25 +2034,14 @@ final class DiscordBotManager {
 
     private void executeForInteraction(String token, DiscordAdminController.Request adminRequest, DiscordAdminController.Actor actor) {
         plugin.runAdminTask( () -> {
-            if (adminRequest.path.equals("ai.propose")) {
-                plugin.discordAdminAiProposalAsync(actor.auditName(), adminRequest.text("request")).whenComplete((planned, error) -> plugin.runAdminTask( () -> {
-                    if (error != null || planned == null) {
-                        editOriginal(token, DiscordAdminController.Reply.error("KI-Vorschlag fehlgeschlagen: " + cleanText(error == null ? "unbekannt" : error.getMessage(), 500)));
-                        return;
-                    }
-                    plugin.expansionAudit(actor.auditName(), null, "Discord-KI-Vorschlag erstellt", planned.path);
-                    editOriginalData(token, confirmationData(planned, actor, false));
-                }));
-                return;
-            }
-            if (adminRequest.path.equals("ai.ask")) {
-                plugin.discordAdminAiAsk(adminRequest.text("question")).whenComplete((answer, error) -> plugin.runAdminTask( () -> {
-                    DiscordAdminController.Reply reply = error == null
-                            ? DiscordAdminController.Reply.ok("Simplex KI", answer, "Answering a live Minecraft server question")
-                            : DiscordAdminController.Reply.error("OpenAI-Anfrage fehlgeschlagen: " + cleanText(error.getMessage(), 500));
-                    recordAdminExecution(adminRequest, actor, reply);
-                    editOriginal(token, reply);
-                }));
+            if(Set.of("ai.ask","ai.propose","ai.inbox").contains(adminRequest.path)){
+                try{
+                    AiAdmin ai=plugin.aiAdmin;
+                    if(ai==null)throw new IllegalStateException("KI-Assistent nicht geladen.");
+                    AiAdmin.Actor user=assistantActor(actor);
+                    if(adminRequest.path.equals("ai.inbox"))editOriginal(token,assistantInbox(ai,user));
+                    else assistantWait(token,ai,user,ai.submit(user,adminRequest.text(adminRequest.path.equals("ai.ask")?"question":"request")));
+                }catch(Exception error){editOriginal(token,DiscordAdminController.Reply.error(AiAdmin.clean(error.getMessage(),250)));}
                 return;
             }
             DiscordAdminController.Reply reply;
@@ -2059,31 +2057,107 @@ final class DiscordBotManager {
 
     private void executeForChannel(String channelId, DiscordAdminController.Request adminRequest, DiscordAdminController.Actor actor) {
         plugin.runAdminTask( () -> {
-            if (adminRequest.path.equals("ai.propose")) {
-                plugin.discordAdminAiProposalAsync(actor.auditName(), adminRequest.text("request")).whenComplete((planned, error) -> plugin.runAdminTask( () -> {
-                    if (error != null || planned == null) {
-                        sendAdminChannelReply(channelId, DiscordAdminController.Reply.error("KI-Vorschlag fehlgeschlagen: " + cleanText(error == null ? "unbekannt" : error.getMessage(), 500)));
-                        return;
-                    }
-                    plugin.expansionAudit(actor.auditName(), null, "Discord-KI-Vorschlag erstellt", planned.path);
-                    sendConfirmationMessage(channelId, planned, actor);
-                }));
-                return;
-            }
-            if (adminRequest.path.equals("ai.ask")) {
-                plugin.discordAdminAiAsk(adminRequest.text("question")).whenComplete((answer, error) -> plugin.runAdminTask( () -> {
-                    DiscordAdminController.Reply reply = error == null
-                            ? DiscordAdminController.Reply.ok("Simplex KI", answer, "Answering a live Minecraft server question")
-                            : DiscordAdminController.Reply.error("OpenAI-Anfrage fehlgeschlagen: " + cleanText(error.getMessage(), 500));
-                    recordAdminExecution(adminRequest, actor, reply);
-                    sendAdminChannelReply(channelId, reply);
-                }));
+            if(Set.of("ai.ask","ai.propose","ai.inbox").contains(adminRequest.path)){
+                sendAdminChannelReply(channelId,DiscordAdminController.Reply.ok("KI-Assistent","Verwende /sasadmin ai ask oder /sasadmin ai inbox für eine private Antwort.","Protecting assistant data"));
                 return;
             }
             DiscordAdminController.Reply reply = adminController.execute(adminRequest, actor);
             recordAdminExecution(adminRequest, actor, reply);
             sendAdminChannelReply(channelId, reply);
         });
+    }
+
+    private AiAdmin.Actor assistantActor(DiscordAdminController.Actor actor){
+        String key=AiAdmin.ROOT+"discord-accounts."+actor.id;
+        String username=plugin.getConfig().getString(key,"").trim().toLowerCase(Locale.ROOT);
+        var api=plugin.appApi;
+        java.util.function.BooleanSupplier owner=()->!actor.id.isBlank()&&actor.id.equals(guildOwnerId)&&adminEnabled();
+        java.util.function.BooleanSupplier valid=()->owner.getAsBoolean()||api!=null&&!username.isBlank()&&api.security.users.enabled(username)
+            &&username.equalsIgnoreCase(plugin.getConfig().getString(key,""))&&adminEnabled();
+        // A Discord read role stays read-only even when the linked Suite account can write.
+        return new AiAdmin.Actor(username.isBlank()?"discord-"+actor.id:"user-"+username,actor.auditName(),valid,owner,
+            right->api!=null&&valid.getAsBoolean()&&(api.security.users.permissions(username).contains("*")||api.security.users.permissions(username).contains(right)),
+            owner.getAsBoolean()||assistantDiscordWrites.contains(actor.id));
+    }
+    private final Set<String> assistantDiscordWrites=java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private void assistantWait(String token,AiAdmin ai,AiAdmin.Actor user,String job){
+        ai.completion(user,job).whenComplete((result,error)->plugin.runAdminTask(()->{
+            try{editOriginal(token,assistantReply(ai.view(user,job),user.canApprove()));}
+            catch(Exception e){editOriginal(token,DiscordAdminController.Reply.error(AiAdmin.clean(e.getMessage(),250)));}
+        }));
+    }
+    private void assistantButton(String token,String custom,AiAdmin.Actor source,boolean writable){
+        try{
+            AiAdmin ai=plugin.aiAdmin;if(ai==null)throw new IllegalStateException("KI-Assistent nicht geladen.");
+            AiAdmin.Actor user=assistantActor(source);
+            String[] parts=custom.split(":");
+            if(parts.length<4)throw new IllegalArgumentException("Ungültige KI-Aktion.");
+            String id=parts[3];
+            switch(parts[2]){
+                case "review"->editOriginal(token,assistantReply(ai.view(user,id),user.canApprove()));
+                case "approve"->{
+                    if(!writable)throw new IllegalArgumentException("Schreibzugriff fehlt.");
+                    Map<String,Object> result=ai.approve(user,id,true);
+                    StringBuilder lines=new StringBuilder();
+                    for(var step:AiAdmin.objects(result.get("results"),6))lines.append(Boolean.TRUE.equals(step.get("ok"))?"✓ ":"✕ ").append(AiAdmin.text(step,"title")).append(" · ").append(AiAdmin.text(step,"description")).append("\n");
+                    editOriginal(token,DiscordAdminController.Reply.ok("Ergebnis der Freigabe",AiAdmin.clean(lines.toString(),3700),"Reviewing approved administration"));
+                }
+                case "discard"->{ai.reject(user,id);editOriginal(token,DiscordAdminController.Reply.ok("Plan verworfen","Der Plan wurde geschlossen.","Reviewing assistant proposals"));}
+                case "choose"->{if(parts.length!=5)throw new IllegalArgumentException("Antwortoption fehlt.");assistantWait(token,ai,user,ai.choose(user,id,Integer.parseInt(parts[4])));}
+                case "player"->{
+                    if(!user.can("data.profile")||!user.can(AiAdmin.USE))throw new IllegalArgumentException("Profilrecht fehlt.");
+                    UUID.fromString(id);
+                    // This view deliberately avoids the broader Discord player card and its extra private fields.
+                    Map<String,Object> profile=AiAdmin.object(plugin.appApiData("profile",Map.of("player",id)));
+                    String details="UUID: "+id+"\nStatus: "+(Boolean.TRUE.equals(profile.get("online"))?"Online":"Offline")+"\nClient: "+AiAdmin.text(profile,"client")+"\nVersion: "+AiAdmin.text(profile,"version");
+                    editOriginal(token,DiscordAdminController.Reply.ok(AiAdmin.text(profile,"name"),details,"Reading player profile"));
+                }
+                default->throw new IllegalArgumentException("Unbekanntes KI-Element.");
+            }
+        }catch(Exception e){editOriginal(token,DiscordAdminController.Reply.error(AiAdmin.clean(e.getMessage(),300)));}
+    }
+    private DiscordAdminController.Reply assistantInbox(AiAdmin ai,AiAdmin.Actor user){
+        List<Map<String,Object>> items=AiAdmin.objects(ai.inbox(user).get("items"),15);
+        List<Map<String,Object>> rows=new ArrayList<>();
+        List<Object> buttons=new ArrayList<>();
+        StringBuilder text=new StringBuilder();
+        int n=0;
+        for(Map<String,Object> item:items){
+            n++;text.append(n).append(". ").append(AiAdmin.text(item,"author")).append(" · ").append(item.get("count")).append(" Aktionen\n");
+            buttons.add(assistantControl(2,"Plan "+n,"review",AiAdmin.text(item,"id")));
+            if(buttons.size()==5){rows.add(mapOf("type",1,"components",List.copyOf(buttons)));buttons.clear();}
+        }
+        if(!buttons.isEmpty())rows.add(mapOf("type",1,"components",List.copyOf(buttons)));
+        return new DiscordAdminController.Reply("Offene KI-Freigaben",n==0?"Keine offenen Pläne.":text.toString(),0x5865F2,rows,"Reviewing assistant proposals");
+    }
+    private static Map<String,Object> assistantControl(int style,String label,String action,String suffix){
+        return mapOf("type",2,"style",style,"label",AiAdmin.clean(label,75),"custom_id","sas:ai:"+action+":"+suffix);
+    }
+    private DiscordAdminController.Reply assistantReply(Map<String,Object> value,boolean owner){
+        List<Map<String,Object>> actions=AiAdmin.objects(value.get("actions"),6);
+        String answer=AiAdmin.clean(AiAdmin.text(value,"answer"),actions.isEmpty()?2900:550);
+        String id=AiAdmin.text(value,"id");
+        List<Map<String,Object>> rows=new ArrayList<>();
+        StringBuilder description=new StringBuilder(answer);
+        String summary=AiAdmin.clean(AiAdmin.text(value,"summary"),400);
+        if(!summary.isBlank())description.append("\n\nKurzfassung: ").append(summary);
+        if(!actions.isEmpty()){
+            StringBuilder preview=new StringBuilder();
+            for(var action:actions)preview.append("\n\n**").append(AiAdmin.text(action,"title")).append("**\n").append(AiAdmin.text(action,"preview"));
+            if(preview.length()<=2600){
+                description.append(preview);
+                if(owner&&"ready".equals(value.get("status")))rows.add(mapOf("type",1,"components",List.of(assistantControl(4,"Plan verbindlich bestätigen","approve",id),assistantControl(2,"Verwerfen","discard",id))));
+                else if(!owner)description.append("\n\nZur Freigabe im Hauptadmin-Posteingang.");
+            }else description.append("\n\nDer vollständige Plan ist in App und Webpanel einsehbar und bestätigbar.");
+        }
+        if(value.get("choices") instanceof List<?> choices&&!choices.isEmpty()){
+            List<Object> buttons=new ArrayList<>();
+            for(int i=0;i<Math.min(3,choices.size());i++)buttons.add(assistantControl(1,String.valueOf(choices.get(i)),"choose",id+":"+i));
+            rows.add(mapOf("type",1,"components",buttons));
+        }
+        var players=AiAdmin.objects(value.get("players"),5);
+        if(!players.isEmpty())rows.add(mapOf("type",1,"components",players.stream().map(v->assistantControl(2,AiAdmin.text(v,"name"),"player",AiAdmin.text(v,"id"))).toList()));
+        return new DiscordAdminController.Reply("Simplex KI",AiAdmin.clean(description.toString(),3900),0x5865F2,rows,"Assisting server administration");
     }
 
     private void recordAdminExecution(DiscordAdminController.Request adminRequest, DiscordAdminController.Actor actor,

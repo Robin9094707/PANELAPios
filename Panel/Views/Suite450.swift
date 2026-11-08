@@ -509,6 +509,7 @@ struct SuiteDisconnectRow: View {
         if !row["world"].string.isEmpty { parts.append(row["world"].string + " \(row["blockX"].int) / \(row["blockZ"].int)") }
         return parts.joined(separator: " · ")
     }
+    private var trace: JSON { row["packetTrace"] }
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
@@ -519,6 +520,16 @@ struct SuiteDisconnectRow: View {
             }
             Text(row["categoryTitle"].string).font(.caption.weight(.semibold)).foregroundStyle(row["involuntary"].bool ? Color.red : Color.secondary)
             Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            if !trace["source"].string.isEmpty {
+                DisclosureGroup("Paketspur · \(trace["inbound"].int) rein / \(trace["outbound"].int) raus") {
+                    if !trace["exception"].string.isEmpty { LabeledContent("Netty-Fehler", value: trace["exception"].string) }
+                    LabeledContent("Letztes KeepAlive IN", value: trace["keepaliveInAgeMs"].int < 0 ? "–" : "\(trace["keepaliveInAgeMs"].int) ms zuvor")
+                    LabeledContent("Letztes KeepAlive OUT", value: trace["keepaliveOutAgeMs"].int < 0 ? "–" : "\(trace["keepaliveOutAgeMs"].int) ms zuvor")
+                    ForEach(Array(trace["recent"].array.enumerated()), id: \.offset) { _, packet in
+                        Text(packet["direction"].string + " · " + packet["type"].string + " · " + packet["ageMs"].string + " ms").font(.caption2.monospaced())
+                    }
+                }.font(.caption)
+            }
         }
     }
 }

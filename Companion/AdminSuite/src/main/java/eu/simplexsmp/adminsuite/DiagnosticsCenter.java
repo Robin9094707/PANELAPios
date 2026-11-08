@@ -358,9 +358,13 @@ final class DiagnosticsCenter implements Listener {
         String platform = plugin.isBedrockClient(p) ? "bedrock" : "java";
         int ping = ConnectionDiagnostics.ping(p);
         String kickCause = kick == null ? "" : kick[0];
+        Map<String,Object> trace=plugin.qualityOfLife==null?Map.of():plugin.qualityOfLife.packets.trace(p.getUniqueId(),now);
+        String category=DisconnectAnalyzer.category(quit,kickCause,message);
+        String packetError=AiAdmin.text(trace,"exception").toLowerCase(Locale.ROOT);
+        if(Set.of("OTHER","ERROR","CLIENT_QUIT").contains(category)&&(packetError.contains("decoder")||packetError.contains("encoder")||packetError.contains("frame")))category="PACKET";
         DisconnectAnalyzer.Record r = new DisconnectAnalyzer.Record(UUID.randomUUID().toString().substring(0, 13), now, p.getUniqueId().toString(), p.getName(), platform, quit, kickCause, SparkProfile.clip(message, 300),
-            DisconnectAnalyzer.category(quit, kickCause, message), since == null ? 0 : now - since, ping, loc.getWorld() == null ? "" : loc.getWorld().getName(), loc.getBlockX() >> 4, loc.getBlockZ() >> 4,
-            currentTps(), recentMax(5), Math.max(0, Bukkit.getOnlinePlayers().size() - 1));
+            category, since == null ? 0 : now - since, ping, loc.getWorld() == null ? "" : loc.getWorld().getName(), loc.getBlockX() >> 4, loc.getBlockZ() >> 4,
+            currentTps(), recentMax(5), Math.max(0, Bukkit.getOnlinePlayers().size() - 1),trace);
         synchronized (this) { records.addLast(r); prune(now); }
         dataDirty.set(true);
         scheduleCheck();
@@ -1174,6 +1178,8 @@ final class DiagnosticsCenter implements Listener {
         return SimplexAdminSuite.appMap("id", i.get("id"), "kind", i.get("kind"), "title", i.get("title"), "createdAt", i.get("createdAt"), "firstAt", i.get("firstAt"), "verdict", v.get("verdict"), "severity", v.get("severity"), "cause", v.get("cause"),
             "count", v.get("count"), "resolved", i.get("resolved"), "hasAi", i.get("ai") != null);
     }
+
+    Map<String,Object> assistantDisconnects(String query){return disconnects(Map.of("q",query,"limit","100"));}
 
     private synchronized Map<String, Object> disconnects(Map<String, String> q) {
         int limit = Math.max(10, Math.min(500, intOf(q.get("limit"), 150)));

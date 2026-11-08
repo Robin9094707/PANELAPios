@@ -309,6 +309,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         Bukkit.getScheduler().runTask(this,()->{if(discordBot!=null){discordBot.relayMaintenance(enabled);discordBot.updateNow();}if(discordStatus!=null)discordStatus.updateNow();});
     }
     AppApiManager appApi;
+    AiAdmin aiAdmin;
     SuiteEventCenter appEvents;
     /** 10.4.0: Discord advertising planner (linked user account, texts, per-channel timers). */
     volatile AdHub adHub;
@@ -365,6 +366,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         nativeScoreboard = new NativeScoreboardManager(this);
         playerData = new PlayerDataManager(this);
         openAi = new OpenAiIntegration(this);
+        aiAdmin = new AiAdmin(this);
         try { accountLinks = new AccountLinkManager(this); } catch (java.io.IOException e) { throw new IllegalStateException("Discord-Verknüpfungen konnten nicht sicher geladen werden",e); }
         try {onlineWatches=new OnlineWatchManager(this);onlineWatches.start();Bukkit.getPluginManager().registerEvents(onlineWatches,this);Bukkit.getPluginManager().registerEvents(new WatchInventory(new UUID(0,0),List.of()),this);}catch(java.io.IOException e){throw new IllegalStateException("Online notifications could not be loaded; file preserved",e);}
         memoryGuard=new MemoryRestartGuard(this);memoryGuard.start();
@@ -570,6 +572,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (nativeScoreboard != null) nativeScoreboard.stop();
         if (itemCleanup != null) itemCleanup.stop();
         if (playerData != null) playerData.stop();
+        if (aiAdmin != null) aiAdmin.stop();
         if (openAi != null) openAi.stop();
         if (vpnProtection != null) vpnProtection.stop();
         if (expansion != null) expansion.stop();
@@ -6954,6 +6957,58 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     String discordAdminClientChannels(String query) { return clientSecurity == null ? "Client-Sicherheitsmodul nicht geladen." : clientSecurity.discordChannels(query); }
     String discordAdminClientChannels(UUID uuid) { return discordAdminClientChannels(uuid == null ? "" : uuid.toString()); }
     String discordAdminClientSecurity(String actor, String operation, String player) { return clientSecurity == null ? "Client-Sicherheitsmodul nicht geladen." : clientSecurity.discordSecurity(actor, operation, player); }
+    boolean aiAssistantAvailable(){return openAi!=null&&openAi.enabled()&&openAi.configured()&&getConfig().getBoolean(AiAdmin.ROOT+"enabled",true);}
+    Map<String,Object> aiStructured(String instructions,String input,Map<String,Object> schema,int tokens)throws Exception{
+        if(!aiAssistantAvailable())throw new IllegalStateException("KI ist deaktiviert.");
+        return openAi.assistantStructured(instructions,input,schema,tokens);
+    }
+    List<UUID> aiAltTargets(UUID id){
+        PlayerProfile source=database.get(id);
+        if(source==null||altDetection==null)throw new IllegalArgumentException("Alt-Erkennung oder Spielerprofil fehlt.");
+        List<UUID> result=new ArrayList<>();result.add(id);
+        altDetection.safeLinkedProfiles(source).stream().map(p->p.uuid).filter(x->!x.equals(id)).sorted().forEach(result::add);
+        return List.copyOf(result);
+    }
+    String aiApply(String kind,Map<String,String> v,List<UUID> targets,String actor){
+        if(!Bukkit.isPrimaryThread())throw new IllegalStateException("Serverthread erforderlich.");
+        String attributed=actor+" · KI-Freigabe";
+        return switch(kind){
+            case "restart"->{
+                if(!restartManager.scheduleQuiet(attributed,Integer.parseInt(v.get("seconds")),v.getOrDefault("reason","")))throw new IllegalStateException("Es läuft bereits ein Neustart.");
+                yield "Neustart geplant in "+v.get("seconds")+" Sekunden.";
+            }
+            case "restart-cancel"->{if(!restartManager.cancel(attributed))throw new IllegalStateException("Kein Neustart geplant.");yield "Neustart abgebrochen.";}
+            case "punish"->{
+                String type=v.get("type"),reason=v.getOrDefault("reason",""),duration=v.getOrDefault("duration","");
+                CommandSender sender=discordVirtualSender("ai-owner",attributed,new ArrayList<>());
+                List<String> succeeded=new ArrayList<>(),failed=new ArrayList<>();
+                for(UUID id:targets){
+                    PlayerProfile p=database.get(id);
+                    if(p!=null&&punishments.execute(sender,type,p,p.name,duration,reason))succeeded.add(p.name);else failed.add(p==null?id.toString():p.name);
+                }
+                if(!failed.isEmpty())throw new IllegalStateException("Ausgeführt: "+succeeded+" · fehlgeschlagen: "+failed);
+                yield type+" · "+String.join(", ",succeeded);
+            }
+            case "ticket-action"->{
+                if(tickets==null)throw new IllegalStateException("Ticketsystem nicht geladen.");
+                Map<String,Object> in=appMap("id",v.get("ticket"),"action",v.get("operation"),"text",v.getOrDefault("text",""),"priority",v.getOrDefault("priority","normal"));
+                Object result=tickets.appAction(in,attributed,true);
+                yield AiAdmin.text(AiAdmin.object(result),"title")+" · #"+v.get("ticket");
+            }
+            case "announce"->discordAdminBroadcast(attributed,v.get("text"));
+            case "maintenance"->{
+                if(v.get("mode").equals("on"))maintenance.enable(attributed,v.getOrDefault("reason","Wartung"));else maintenance.disable(attributed);
+                yield "Wartungsmodus "+v.get("mode");
+            }
+            case "chat-toggle"->{serverControls.setGlobalChatEnabled(attributed,v.get("mode").equals("on"));yield "Serverchat "+v.get("mode");}
+            case "slowmode"->discordAdminRunSuite("ai-owner",attributed,List.of("slowmode",v.get("seconds")));
+            case "save-worlds"->discordAdminSave(attributed);
+            case "world"->AiAdmin.text(AiAdmin.object(appApiMutation("world.update",new LinkedHashMap<String,Object>(v),attributed)),"description");
+            case "player-action"->discordAdminPower("ai-owner",attributed,v.get("player"),v.get("type"),v.getOrDefault("value",""));
+            case "player-note"->discordAdminRunSuite("ai-owner",attributed,List.of("notes",v.get("player"),"add",v.get("text")));
+            default->throw new IllegalArgumentException("Unbekannte KI-Aktion.");
+        };
+    }
     String discordAdminAiStatus() { return openAi == null ? "OpenAI-Modul nicht geladen." : openAi.status(); }
     java.util.concurrent.CompletableFuture<String> discordAdminAiAsk(String question) {
         return openAi == null ? java.util.concurrent.CompletableFuture.completedFuture("OpenAI-Modul nicht geladen.")
@@ -14179,6 +14234,39 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         private boolean restartIssued;
         private String reasonDE="",reasonEN="";
         private boolean localized;
+        private long quietDeadline;
+        private org.bukkit.boss.BossBar german, english;
+
+        private synchronized boolean scheduleQuiet(String actor,int seconds,String reason){
+            if(task!=null)return false;
+            initiatedBy=plugin.sanitizeText(actor,80);restartIssued=false;
+            remainingSeconds=seconds;quietDeadline=System.currentTimeMillis()+seconds*1000L;
+            reasonDE=stripFormatting(reason);reasonEN=reasonDE;
+            for(Player p:Bukkit.getOnlinePlayers())p.sendMessage(plugin.playerText(p,
+                "Ein Serverneustart wurde geplant.","A server restart has been scheduled."));
+            plugin.audit.log(initiatedBy,null,"Server-Neustart geplant",seconds+" Sekunden · "+reasonDE);
+            task=Bukkit.getScheduler().runTaskTimer(plugin,this::tick,20L,20L);
+            return true;
+        }
+        private void quietBar(){
+            if(german==null){
+                german=Bukkit.createBossBar("",org.bukkit.boss.BarColor.BLUE,org.bukkit.boss.BarStyle.SOLID);
+                english=Bukkit.createBossBar("",org.bukkit.boss.BarColor.BLUE,org.bukkit.boss.BarStyle.SOLID);
+            }
+            String time=String.format(Locale.ROOT,"%d:%02d",remainingSeconds/60,remainingSeconds%60);
+            german.setTitle("Serverneustart in "+time);english.setTitle("Server restart in "+time);
+            double progress=Math.min(1,remainingSeconds/180.0);german.setProgress(progress);english.setProgress(progress);
+            for(Player p:Bukkit.getOnlinePlayers()){
+                boolean de=plugin.playerText(p,"de","en").equals("de");
+                var shown=de?german:english;var other=de?english:german;
+                if(other.getPlayers().contains(p))other.removePlayer(p);
+                if(!shown.getPlayers().contains(p))shown.addPlayer(p);
+            }
+        }
+        private void clearQuiet(){
+            quietDeadline=0;
+            if(german!=null){german.removeAll();english.removeAll();german=null;english=null;}
+        }
 
         private RestartManager(SimplexAdminSuite plugin) { this.plugin = plugin; }
 
@@ -14213,7 +14301,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             restartIssued = false;
             String cancelledBy = actor == null || actor.isBlank() ? "System" : plugin.sanitizeText(actor, 80);
             for(Player player:Bukkit.getOnlinePlayers()){player.sendMessage(plugin.playerText(player,"§aDer geplante Serverneustart wurde abgebrochen.","§aThe scheduled server restart was cancelled."));player.playSound(player.getLocation(),"block.note_block.chime",0.6f,1.2f);}
-            localized=false;reasonDE="";reasonEN="";
+            clearQuiet();localized=false;reasonDE="";reasonEN="";
             if (plugin.discordBot != null) plugin.discordBot.clearRestarting();
             if (plugin.discordStatus != null) plugin.discordStatus.updateNow();
             plugin.audit.log(cancelledBy, null, "Server-Neustart abgebrochen", "Verbleibend: " + cancelledAt + " Sekunden");
@@ -14225,7 +14313,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             BukkitTask activeTask = task;
             task = null;
             if (activeTask != null) try { activeTask.cancel(); } catch (Throwable ignored) { }
-            remainingSeconds = 0;
+            clearQuiet();remainingSeconds = 0;
             restartIssued = true;
             if (plugin.discordStatus != null) plugin.discordStatus.markRestartingNow();
             if (plugin.discordBot != null) plugin.discordBot.markRestarting(0);
@@ -14239,14 +14327,18 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
         private synchronized void tick() {
             if (task == null) return;
-            remainingSeconds--;
-            if (plugin.discordStatus != null) plugin.discordStatus.markRestartCountdown(remainingSeconds);
-            if (plugin.discordBot != null) plugin.discordBot.markRestarting(remainingSeconds);
+            boolean quiet=quietDeadline>0;
+            if(quiet)remainingSeconds=(int)Math.max(0,(quietDeadline-System.currentTimeMillis()+999)/1000);
+            else remainingSeconds--;
+            if(!quiet||remainingSeconds<=180){
+                if(plugin.discordStatus!=null)plugin.discordStatus.markRestartCountdown(remainingSeconds);
+                if(plugin.discordBot!=null)plugin.discordBot.markRestarting(remainingSeconds);
+            }
             if (remainingSeconds <= 0) {
                 BukkitTask current = task;
                 task = null;
                 try { current.cancel(); } catch (Exception ignored) { }
-                announceNow();
+                if(quiet)clearQuiet();else announceNow();
                 restartIssued = true;
                 if (plugin.discordStatus != null) plugin.discordStatus.markRestartingNow();
                 if (plugin.discordBot != null) plugin.discordBot.markRestarting(0);
@@ -14258,7 +14350,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 }
                 return;
             }
-            announce(remainingSeconds, false);
+            if(quiet){if(remainingSeconds<=180)quietBar();}else announce(remainingSeconds, false);
         }
 
         private void announce(int seconds, boolean initial) {
@@ -14320,7 +14412,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 try { task.cancel(); } catch (Exception ignored) { }
                 task = null;
             }
-            remainingSeconds = 0;
+            clearQuiet();remainingSeconds = 0;
         }
     }
 

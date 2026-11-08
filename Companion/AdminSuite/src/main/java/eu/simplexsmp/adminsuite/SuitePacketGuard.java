@@ -14,6 +14,7 @@ final class SuitePacketGuard {
     private final SimplexAdminSuite plugin;
     private final Map<UUID,Snapshot> snapshots=new ConcurrentHashMap<>();
     private final Map<UUID,Channel> channels=new ConcurrentHashMap<>();
+    private final Map<UUID,PacketTrace> diagnostics=new ConcurrentHashMap<>();
     private final Set<String> warned=ConcurrentHashMap.newKeySet();
     private volatile boolean guardEnabled=true;
     ClientProbeManager probes;
@@ -39,6 +40,8 @@ final class SuitePacketGuard {
             Object handle=p.getClass().getMethod("getHandle").invoke(p);Channel channel=findChannel(handle,0,Collections.newSetFromMap(new IdentityHashMap<>()));
             if(channel==null)throw new IllegalStateException("NMS connection channel unavailable");
             UUID id=p.getUniqueId();channels.put(id,channel);
+            PacketTrace trace=plugin.getConfig().getBoolean("diagnostics.packet-metadata",true)?new PacketTrace():null;
+            if(trace!=null)diagnostics.put(id,trace);
             channel.eventLoop().execute(()->{
                 try{
                     if(!channel.isActive())return;
@@ -46,6 +49,7 @@ final class SuitePacketGuard {
                     if(channel.pipeline().get("packet_handler")==null)throw new IllegalStateException("packet_handler unavailable");
                     channel.pipeline().addBefore("packet_handler",HANDLER,new ChannelDuplexHandler(){
                         @Override public void channelRead(ChannelHandlerContext ctx,Object message)throws Exception{
+                            if(trace!=null)trace.packet(true,message.getClass().getSimpleName(),System.currentTimeMillis());
                             if(probes!=null&&message.getClass().getSimpleName().equals("ServerboundSignUpdatePacket")&&probes.receive(id,message)){ReferenceCountUtil.release(message);return;}
                             super.channelRead(ctx,message);
                         }
@@ -53,15 +57,24 @@ final class SuitePacketGuard {
                             Object filtered=message;
                             if(guardEnabled)try{filtered=filter(message,snapshots.getOrDefault(id,Snapshot.EMPTY));}catch(ReflectiveOperationException|RuntimeException e){warn("Filter "+message.getClass().getSimpleName()+": "+e.getClass().getSimpleName());}
                             if(filtered==null){ReferenceCountUtil.release(message);promise.trySuccess();return;}
+                            if(trace!=null)trace.packet(false,filtered.getClass().getSimpleName(),System.currentTimeMillis());
                             super.write(ctx,filtered,promise);
                         }
+                        @Override public void exceptionCaught(ChannelHandlerContext ctx,Throwable cause)throws Exception{
+                            if(trace!=null)trace.failure(cause.getClass().getSimpleName());
+                            super.exceptionCaught(ctx,cause);
+                        }
                     });
-                }catch(RuntimeException e){channels.remove(id,channel);warn("Injection: "+e.getMessage());}
+                }catch(RuntimeException e){channels.remove(id,channel);if(trace!=null)diagnostics.remove(id,trace);warn("Injection: "+e.getMessage());}
             });
         }catch(ReflectiveOperationException|RuntimeException e){warn("Connection: "+e.getClass().getSimpleName()+" "+e.getMessage());}
     }
-    void quit(Player p){UUID id=p.getUniqueId();snapshots.remove(id);Channel c=channels.remove(id);if(c!=null)c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});}
-    void stop(){for(Channel c:channels.values())c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});channels.clear();snapshots.clear();}
+    Map<String,Object> trace(UUID id,long now){PacketTrace trace=diagnostics.get(id);return trace==null?Map.of():trace.snapshot(now);}
+    void quit(Player p){UUID id=p.getUniqueId();snapshots.remove(id);
+        PacketTrace trace=diagnostics.get(id);
+        if(trace!=null&&plugin.isEnabled())Bukkit.getScheduler().runTaskLater(plugin,()->diagnostics.remove(id,trace),40L);
+Channel c=channels.remove(id);if(c!=null)c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});}
+    void stop(){for(Channel c:channels.values())c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});channels.clear();snapshots.clear();diagnostics.clear();}
     private void warn(String message){if(warned.add(message))plugin.getLogger().warning("[Packet guard] "+message+". Native Paper hidePlayer remains active; unsupported packet filtering is not claimed.");}
     private static Channel findChannel(Object value,int depth,Set<Object> seen)throws IllegalAccessException{
         if(value instanceof Channel c)return c;if(value==null||depth>5||!seen.add(value))return null;
