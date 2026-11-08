@@ -15,9 +15,10 @@ final class AiAdmin {
     static final String USE = "ai.assistant.use";
     private static final long TTL = 20 * 60_000L;
     private static final int CONTEXT = 14_000, MAX_ROWS = 35;
-    record Actor(String id, String name, BooleanSupplier valid, BooleanSupplier owner, Predicate<String> permission, boolean writable) {
+    record Actor(String id, String name, BooleanSupplier valid, BooleanSupplier owner, Predicate<String> permission, BooleanSupplier writeAccess) {
         boolean can(String right) { return valid.getAsBoolean() && (owner.getAsBoolean() || permission.test(right)); }
-        boolean canApprove() { return writable && valid.getAsBoolean() && owner.getAsBoolean(); }
+        boolean writable(){return valid.getAsBoolean()&&writeAccess.getAsBoolean();}
+        boolean canApprove() { return writable() && valid.getAsBoolean() && owner.getAsBoolean(); }
     }
     private record ActionSpec(String title, String right, List<String> fields, String guide) {}
     private record Step(String kind, Map<String,String> fields, List<UUID> targets, String preview) {}
@@ -31,6 +32,7 @@ final class AiAdmin {
         Map.entry("ticket", new Source("data.ticket", "Einzelnes Ticket, ID im query-Feld")),
         Map.entry("profile", new Source("data.profile", "Ein Spieler, exakter Name oder UUID im query-Feld")),
         Map.entry("reports", new Source("data.reports", "Gemeldete Vorfälle, Name oder Stichwort")),
+        Map.entry("events", new Source("data.events", "Moderationsereignisse, Warnungen, Schutz- und Filterereignisse")),
         Map.entry("disconnects", new Source("data.diagnostics", "Disconnects mit Kategorie und Verbindungsdaten")),
         Map.entry("worlds", new Source("data.worlds", "Geladene Welten")),
         Map.entry("plugins", new Source("data.plugins", "Plugin-Namen und Versionen"))
@@ -112,7 +114,7 @@ final class AiAdmin {
     String submit(Actor actor,String question) throws IOException {
         requireUse(actor);
         if(!enabled())throw new AppApiManager.ApiError(503,"KI ist deaktiviert oder der vorhandene OpenAI-Schlüssel fehlt.");
-        String input=clean(question,2000);
+        String input=redact(clean(question,2000));
         if(input.isBlank() || question.length()>2000)throw new IllegalArgumentException("Bitte eine Frage bis 2000 Zeichen eingeben.");
         Job job=new Job(actor,input);
         synchronized(this) {
@@ -131,7 +133,7 @@ final class AiAdmin {
             Map<String,Source> sources=new TreeMap<>();
             SOURCES.forEach((key,value)->{if(author.can(value.right))sources.put(key,value);});
             Map<String,ActionSpec> actions=new TreeMap<>();
-            ACTIONS.forEach((key,value)->{if(author.writable&&author.can(value.right))actions.put(key,value);});
+            ACTIONS.forEach((key,value)->{if(author.writable()&&author.can(value.right))actions.put(key,value);});
             String clock=ZonedDateTime.now(ZoneId.of("Europe/Berlin")).toString();
             Map<String,Object> selection=Map.of();
             if(!sources.isEmpty()){
@@ -181,7 +183,8 @@ final class AiAdmin {
         long to=l.to<=0?now:Math.min(now,Math.max(oldest,l.to));
         long from=l.from<=0?Math.max(oldest,to-12*3_600_000L):Math.max(oldest,Math.min(to,l.from));
         List<Map<String,Object>> rows=switch(l.source){
-            case "chat"->select(plugin.appChat.historySnapshot(),l.query,from,to,MAX_ROWS,"id","at","uuid","name","text");
+            case "chat"->chatRows(plugin.appChat.historySnapshot(),l.query,from,to);
+            case "events"->plugin.appEvents==null?List.of():select(plugin.appEvents.historySnapshot(),l.query,from,to,25,"id","at","player","type","title","summary","detail","critical");
             case "admin-log"->plugin.adminLog==null?List.of():select(plugin.adminLog.historySnapshot(),l.query,from,to,MAX_ROWS,"id","at","adminUuid","name","action","category","detail","target","targetName");
             case "tickets"->take(plugin.tickets.appList(Map.of("q",l.query,"status","all")),20,"id","title","status","priority","category","updated");
             case "ticket"->{Map<String,Object> ticket=object(plugin.tickets.appTicket(ticket(l.query)));yield select(objects(ticket.get("items"),500),"",from,to,20,"id","at","author","role","text");}
@@ -192,7 +195,24 @@ final class AiAdmin {
             case "plugins"->take(plugin.appApiData("plugins",Map.of()),32,"id","name","version","enabled");
             default->List.of(project(object(plugin.appApiData("overview",Map.of())),"at","tps","mspt","online","maxPlayers","uptime","worlds","version"),project(object(plugin.appOperations()),"active","remaining","reasonDE","reasonEN"));
         };
-        return SimplexAdminSuite.appMap("source",l.source,"from",from,"to",to,"rows",rows,"limit",MAX_ROWS);
+        return SimplexAdminSuite.appMap("source",l.source,"from",from,"to",to,"rows",rows,"limit",MAX_ROWS,"coverage",l.source.equals("chat")?"Begrenzter Auszug; bei hoher Aktivität zeitlich verteilt, mit relevanten Hinweisen. Kein Vollprotokoll.":"Begrenzter Auszug.");
+    }
+    private static List<Map<String,Object>> chatRows(List<Map<String,Object>> history,String query,long from,long to){
+        String[] fields={"id","at","uuid","name","text"};
+        if(!query.isBlank())return select(history,query,from,to,MAX_ROWS,fields);
+        List<Map<String,Object>> window=history.stream().filter(row->{long at=number(row.get("at"));return at>=from&&at<=to;}).toList();
+        if(window.size()<=MAX_ROWS)return window.stream().map(row->project(row,fields)).toList();
+        Set<Integer> selected=new TreeSet<>();
+        for(int i=0;i<22;i++)selected.add(i*(window.size()-1)/21);
+        for(int i=window.size()-1;i>=0&&selected.size()<MAX_ROWS;i--){
+            String message=text(window.get(i),"text").toLowerCase(Locale.ROOT);
+            if(message.matches(".*(?:beleidig|idiot|report|bypass|altaccount|ban evasion|cheat|hack|shut up|stfu|halt die klappe|fuck|schlampe|hurensohn).*")){
+                selected.add(i);
+                if(i>0&&selected.size()<MAX_ROWS)selected.add(i-1);
+                if(i+1<window.size()&&selected.size()<MAX_ROWS)selected.add(i+1);
+            }
+        }
+        return selected.stream().map(i->project(window.get(i),fields)).toList();
     }
     private static List<Map<String,Object>> take(Object envelope,int max,String... fields){
         return objects(object(envelope).get("items"),max).stream().map(v->project(v,fields)).toList();
@@ -246,7 +266,7 @@ final class AiAdmin {
     }
     private Step validate(Actor actor,String kind,List<Map<String,Object>> fields){
         ActionSpec spec=ACTIONS.get(kind);
-        if(!actor.writable||!actor.can(spec.right))throw new AppApiManager.ApiError(403,"Aktionsrecht fehlt.");
+        if(!actor.writable()||!actor.can(spec.right))throw new AppApiManager.ApiError(403,"Aktionsrecht fehlt.");
         Map<String,String> values=new LinkedHashMap<>();
         for(Map<String,Object> field:fields){
             String name=text(field,"name"), raw=text(field,"value");
@@ -366,7 +386,7 @@ final class AiAdmin {
         synchronized(this){
             job=job(approver,id);
             if(job.consumed||job.steps.isEmpty())throw new AppApiManager.ApiError(409,"Plan fehlt, wurde verworfen oder bereits verwendet.");
-            if(!job.author.can(USE)||!job.author.writable||job.readRights.stream().anyMatch(right->!job.author.can(right)))throw new AppApiManager.ApiError(403,"Zugriff des Antragstellers wurde entzogen.");
+            if(!job.author.can(USE)||!job.author.writable()||job.readRights.stream().anyMatch(right->!job.author.can(right)))throw new AppApiManager.ApiError(403,"Zugriff des Antragstellers wurde entzogen.");
             for(Step step:job.steps)recheck(job.author,step);
             job.consumed=true;
             job.view=with(job.view,"status","executing");

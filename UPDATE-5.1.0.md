@@ -14,7 +14,7 @@ Die Suite verwendet den bestehenden OpenAI-Schlüssel und das konfigurierte Mode
 
 ## Daten und Diagnose
 
-Die KI wählt aus einer Rechte-gefilterten Quellenliste gezielte Abfragen. Der Server lädt nur begrenzte Zeitfenster, Suchtreffer oder Einzelprofile. Kennwörter und API-Schlüssel sind keine Datenquelle, IPs und erkennbare Tokens werden aus den Auszügen entfernt. Antworten beziehen sich auf die vorhandenen Protokolle und das ausgewählte Zeitfenster.
+Die KI wählt aus einer Rechte-gefilterten Quellenliste gezielte Abfragen. Der Server lädt nur begrenzte Zeitfenster, Suchtreffer oder Einzelprofile. Kennwörter und API-Schlüssel sind keine Datenquelle, IPs und erkennbare Tokens werden aus den Auszügen entfernt. Der öffentliche Chat kann bis zu 2.000 Einträge für Zeitfenster über die letzten 48 Stunden durchsuchen. Bei hoher Aktivität wählt die Suite einen zeitlich verteilten Auszug mit lokalen Moderationshinweisen. Die letzten 50 Nachrichten bleiben das Fenster des Live-Chats. Antworten beziehen sich auf die vorhandenen Protokolle und das ausgewählte Zeitfenster.
 
 Diagnose 3.0 protokolliert bei verfügbaren Paper-Verbindungen Pakettypen, Richtung, KeepAlive-Alter und Netty-Fehler. Es werden keine Paketkörper gespeichert. Der Assistent kann ausgewählte Metadaten zusammen mit dem Disconnect-Verlauf auswerten. Bei Bedrock ist die serverseitig sichtbare, von Geyser übersetzte Verbindung maßgeblich. `diagnostics.packet-metadata: false` deaktiviert die neue Erfassung für neue Verbindungen.
 

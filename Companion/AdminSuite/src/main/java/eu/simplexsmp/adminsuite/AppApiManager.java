@@ -574,7 +574,7 @@ final class AppApiManager {
         java.util.function.BooleanSupplier owner=()->user?security.users.owner(key.label()):
             key.scope().equals("full")&&key.id().equals(plugin.getConfig().getString(AiAdmin.ROOT+"owner-api-key-id",""));
         return new AiAdmin.Actor(id,key.label(),()->security.valid(key)&&!security.locked(key),owner,
-            right->user&&security.users.allows(key,right),key.scope().equals("full"));
+            right->user&&security.users.allows(key,right),()->key.scope().equals("full"));
     }
     private void assistantRoute(HttpExchange x,AppApiSecurity.Key key,String path,String method,long rev)throws Exception{
         AiAdmin ai=plugin.aiAdmin;

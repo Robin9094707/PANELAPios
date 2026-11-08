@@ -1577,6 +1577,7 @@ final class DiscordBotManager {
                 : interaction.get("user") instanceof Map ? (Map<String, Object>) interaction.get("user") : Collections.emptyMap();
         String userId = string(user.get("id"));
         Access access = access(member, userId, interactionChannelId);
+        if(access!=Access.FULL)assistantDiscordWrites.remove(userId);
         if (access == Access.NONE) {
             respondReply(id, interactionToken, DiscordAdminController.Reply.error("Du bist für die Discord-Administration nicht freigegeben."), true);
             return;
@@ -1681,6 +1682,7 @@ final class DiscordBotManager {
         Map<String, Object> user = member.get("user") instanceof Map ? (Map<String, Object>) member.get("user") : Collections.emptyMap();
         String userId = string(user.get("id"));
         Access access = access(member, userId, channel);
+        if(access!=Access.FULL)assistantDiscordWrites.remove(userId);
         String displayName = string(member.get("nick"));
         if (displayName.isBlank()) displayName = string(user.get("global_name"));
         if (displayName.isBlank()) displayName = string(user.get("username"));
@@ -1692,7 +1694,8 @@ final class DiscordBotManager {
         if(customId.startsWith("sas:ai:")){
             if(access==Access.FULL)assistantDiscordWrites.add(actor.id);else assistantDiscordWrites.remove(actor.id);
             deferInteraction(id,token,false);
-            plugin.runAdminTask(()->assistantButton(token,customId,actor,access==Access.FULL));
+            String assistantId=customId;
+            plugin.runAdminTask(()->assistantButton(token,assistantId,actor,access==Access.FULL));
             return;
         }
         if (customId.equals("sas:modal:console")) {
@@ -2077,7 +2080,7 @@ final class DiscordBotManager {
         // A Discord read role stays read-only even when the linked Suite account can write.
         return new AiAdmin.Actor(username.isBlank()?"discord-"+actor.id:"user-"+username,actor.auditName(),valid,owner,
             right->api!=null&&valid.getAsBoolean()&&(api.security.users.permissions(username).contains("*")||api.security.users.permissions(username).contains(right)),
-            owner.getAsBoolean()||assistantDiscordWrites.contains(actor.id));
+            ()->owner.getAsBoolean()||assistantDiscordWrites.contains(actor.id));
     }
     private final Set<String> assistantDiscordWrites=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private void assistantWait(String token,AiAdmin ai,AiAdmin.Actor user,String job){
@@ -2086,7 +2089,7 @@ final class DiscordBotManager {
             catch(Exception e){editOriginal(token,DiscordAdminController.Reply.error(AiAdmin.clean(e.getMessage(),250)));}
         }));
     }
-    private void assistantButton(String token,String custom,AiAdmin.Actor source,boolean writable){
+    private void assistantButton(String token,String custom,DiscordAdminController.Actor source,boolean writable){
         try{
             AiAdmin ai=plugin.aiAdmin;if(ai==null)throw new IllegalStateException("KI-Assistent nicht geladen.");
             AiAdmin.Actor user=assistantActor(source);

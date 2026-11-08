@@ -169,6 +169,16 @@ public final class AppApiIntegrationHarness {
             check(call("/v1/assistant/approve",full.token(),approval).statusCode()==200&&worldTime.get()==12000,"owner-approved immutable plan applies");
             check(call("/v1/assistant/approve",full.token(),approval).statusCode()==409,"plan cannot be replayed");
             check(AiAdmin.redact("connect 192.168.1.1 with sk-proj-example-secret").equals("connect [IP entfernt] with [Schlüssel entfernt]"),"IP and key redaction");
+            Path chatFile=plugin.getDataFolder().toPath().resolve("assistant-chat-fixture.properties");
+            AppChat archive=new AppChat();archive.attach(chatFile);
+            for(int i=0;i<70;i++)archive.record("","Test","Message "+i,"test");
+            check(AiAdmin.objects(AiAdmin.object(archive.read(0)).get("items"),100).size()==50 && archive.historySnapshot().size()==70,"archive grows without changing live-chat window");
+            archive.stop();archive=new AppChat();archive.attach(chatFile);
+            check(archive.historySnapshot().size()==70,"chat archive survives plugin restart");
+            archive.clear(null,"test");archive.stop();
+            archive=new AppChat();archive.attach(chatFile);
+            check(archive.historySnapshot().isEmpty(),"clear removes assistant archive as well");
+            archive.stop();
             PacketTrace trace=new PacketTrace();trace.packet(true,"ServerboundKeepAlivePacket",1000);trace.packet(false,"ClientboundKeepAlivePacket",1500);trace.failure("DecoderException");
             var meta=trace.snapshot(2000);
             check(AiAdmin.number(meta.get("keepaliveInAgeMs"))==1000&&"DecoderException".equals(meta.get("exception"))&&AiAdmin.objects(meta.get("recent"),20).size()==2,"packet metadata retains types and keepalive ages");
