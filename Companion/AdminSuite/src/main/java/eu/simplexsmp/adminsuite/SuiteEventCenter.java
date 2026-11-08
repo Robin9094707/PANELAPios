@@ -12,7 +12,7 @@ import org.bukkit.entity.Player;
 
 /** Bounded independent event ledger. Existing punishment/report/profile formats are untouched. */
 final class SuiteEventCenter {
-    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent","ticket-low","ticket-high","emergency-restart","admin-log","staff-chat","disconnect-wave","crash","lag-spike","discord-ads","ad-reminder","game-day","ai-chat-alert");
+    static final Set<String> TYPES = Set.of("first-join","join","client-brand","client-check","ban","ban-evasion","vpn-kick","report","overload","guard","admin","ticket","ticket-urgent","ticket-low","ticket-high","emergency-restart","admin-log","staff-chat","disconnect-wave","crash","lag-spike","discord-ads","ad-reminder","game-day","ai-chat-alert","powerbot-case");
     static final Set<String> LEVELS = Set.of("active","passive","timeSensitive","critical");
     private final SimplexAdminSuite plugin;
     private final Path eventsFile, subscriptionsFile;
@@ -51,6 +51,11 @@ final class SuiteEventCenter {
     void record(String type, UUID player, String title, String body, boolean critical) { record(type, player, title, body, critical, null); }
     /** levelHint sets the Bark interruption level when the subscriber has no explicit rule for this event type. */
     void record(String type, UUID player, String title, String body, boolean critical, String levelHint) {
+        PowerBot bot = plugin.powerBot;
+        if (bot != null && Set.of("ban", "emergency-restart", "ticket-urgent", "crash", "game-day", "disconnect-wave").contains(type)
+            && (!type.equals("disconnect-wave") || critical)) {
+            bot.important("server-event", player == null ? "" : player.toString(), "", "Server", title, false);
+        }
         Map<String,Object> row;
         synchronized(this) {
             String id=String.format(Locale.ROOT,"%013d-%s",System.currentTimeMillis(),UUID.randomUUID());
@@ -71,6 +76,20 @@ final class SuiteEventCenter {
         Map<String,Object> row=SimplexAdminSuite.appMap("id",String.format(Locale.ROOT,"%013d-direct-%s",System.currentTimeMillis(),UUID.randomUUID()),"time",System.currentTimeMillis(),"type",type,"player","","title",ClientBrands.evidence(title),"body",clip(body,600),"critical",false,"note","","direct",true);
         try{worker.execute(()->{try{push(row,null,false,owners);}catch(Exception e){deliveryStatus="Versand fehlgeschlagen";}webPush(row,owners);});}catch(RejectedExecutionException busy){deliveryStatus="Ereigniswarteschlange ausgelastet";}
     }
+    void powerBotAlert(String title, String body, boolean critical) {
+        String type = "powerbot-case";
+        var row = SimplexAdminSuite.appMap("id", UUID.randomUUID().toString(), "time", System.currentTimeMillis(), "type", type,
+            "title", title, "body", body, "critical", critical, "level", "timeSensitive",
+            "direct", true, "webUrl", "/#/powerbot");
+        java.util.function.Predicate<String> owners = owner -> plugin.appApi != null && plugin.appApi.diagnosticsNotifiable(owner, type);
+        try { worker.execute(() -> {
+            try { push(row, null, false, owners); } catch (Exception failure) { deliveryStatus = "PowerBot-Versand fehlgeschlagen"; }
+            var browser = new LinkedHashMap<>(row);
+            browser.put("critical", false);
+            webPush(browser, owners);
+        }); } catch (RejectedExecutionException busy) { deliveryStatus = "Ereigniswarteschlange ausgelastet"; }
+    }
+
     /**
      * 10.5.0 Werbe-Zentrale: a reminder with its own tap target ({@code appUrl} for Bark, {@code webUrl} for browser
      * push) and the ad text Bark can copy on a long press. Never stored, never repeated by the ledger (the Werbe-Zentrale
@@ -143,7 +162,7 @@ final class SuiteEventCenter {
     }
     private String defaultBarkEvents(String prefix) {
         Set<String> events = new TreeSet<>(Arrays.asList(subscriptions.getProperty(prefix + "events", "ban-evasion,vpn-kick,overload,client-brand").split(",")));
-        for (String type : List.of("disconnect-wave", "game-day", "ai-chat-alert"))
+        for (String type : List.of("disconnect-wave", "game-day", "ai-chat-alert", "powerbot-case"))
             if (!BarkPolicy.rules(subscriptions.getProperty(prefix + "rules", "")).containsKey(type)) events.add(type);
         events.remove("");
         return String.join(",", events);
@@ -202,12 +221,13 @@ final class SuiteEventCenter {
             if(plugin.appApi==null||!plugin.appApi.security.canNotifyOwner(owner))continue;
             String type=String.valueOf(row.get("type"));
             // 10.2.0: diagnostics alarms only reach accounts that may open the diagnostics centre.
-            if(Set.of("disconnect-wave","crash","lag-spike","discord-ads","ad-reminder","game-day","ai-chat-alert").contains(type)&&!plugin.appApi.diagnosticsNotifiable(owner,type))continue;String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
+            if(Set.of("disconnect-wave","crash","lag-spike","discord-ads","ad-reminder","game-day","ai-chat-alert","powerbot-case").contains(type)&&!plugin.appApi.diagnosticsNotifiable(owner,type))continue;String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
             // Tickets reach every Bark subscriber until the app stores an explicit rule for them.
-            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true))&&!type.equals("emergency-restart")&&!type.equals("discord-ads")&&!type.equals("ad-reminder")&&!Set.of("disconnect-wave","game-day","ai-chat-alert").contains(type))continue;
+            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true))&&!type.equals("emergency-restart")&&!type.equals("discord-ads")&&!type.equals("ad-reminder")&&!Set.of("disconnect-wave","game-day","ai-chat-alert","powerbot-case").contains(type))continue;
             boolean critical=Boolean.TRUE.equals(row.get("critical"));String hint=row.get("level") instanceof String h&&LEVELS.contains(h)?h:null;
             String level=rule!=null?rule[1]:hint!=null?hint:copy.getProperty(prefix+(critical?"critical":"level"),"active");
             if(type.equals("emergency-restart")&&rule==null)level="critical";
+            if(type.equals("powerbot-case") && level.equals("critical") && (rule == null || !critical)) level="timeSensitive";
             if(level.equals("off"))continue;
             level=BarkPolicy.decide(copy,prefix,type,level,java.time.Instant.now());if(level==null)continue;
             String sound=rule==null?copy.getProperty(prefix+(critical?"criticalSound":"sound"),"minuet"):rule[2];int repeat=rule==null||Boolean.TRUE.equals(row.get("direct"))?0:Integer.parseInt(rule[3]);

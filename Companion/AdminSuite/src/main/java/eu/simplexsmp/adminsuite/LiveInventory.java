@@ -12,9 +12,11 @@ final class LiveInventory implements AutoCloseable {
     private static final String READ = "data.inventory", EDIT = "inventory.edit", PACK = "inventory.pack";
     private final SimplexAdminSuite plugin;
     private final InventoryTextures textures;
+    private final PlayerNbtAccess playerNbt;
 
     LiveInventory(SimplexAdminSuite plugin) {
         this.plugin = plugin;
+        playerNbt = new PlayerNbtAccess(plugin);
         textures = new InventoryTextures(plugin.getDataFolder().toPath());
     }
 
@@ -63,7 +65,7 @@ final class LiveInventory implements AutoCloseable {
 
     boolean route(AppApiManager api, HttpExchange exchange, AppApiSecurity.Key key, String path, String method, long rev) throws Exception {
         if (!path.equals("/v1/invsee") && !path.equals("/v1/invsee/pack") && !path.equals("/v1/invsee/icons")) return false;
-        api.requirePermission(key, READ);
+        if (!path.endsWith("/icons") || !api.allows(key, "data.snapshot-content")) api.requirePermission(key, READ);
         var query = AppApiManager.query(exchange.getRequestURI());
         Object out;
         if (path.endsWith("/pack") && method.equals("POST")) {
@@ -82,8 +84,17 @@ final class LiveInventory implements AutoCloseable {
         } else if (path.equals("/v1/invsee") && method.equals("GET")) {
             boolean edit = api.allows(key, EDIT) && AppApiSecurity.permitted(key, "manage");
             out = api.onMain(rev, () -> {
-                var snapshot = snapshot(query.getOrDefault("player", ""));
+                String player = query.getOrDefault("player", "");
                 String known = query.getOrDefault("revision", "");
+                if (Boolean.parseBoolean(query.getOrDefault("offline", "false"))) {
+                    OfflineData data = offline(player);
+                    boolean write = edit && key.scope().equals("full") && api.allows(key, "player-nbt.write") && data.inventory.editable();
+                    var view = SimplexAdminSuite.appMap("revision", data.revision(), "textures", textures.generation(),
+                        "editable", write, "pack", false, "offline", true, "unchanged", known.equals(data.revision()));
+                    if (!known.equals(data.revision())) view.put("slots", data.inventory.rows());
+                    return view;
+                }
+                var snapshot = snapshot(player);
                 var base = SimplexAdminSuite.appMap("revision", snapshot.revision, "textures", textures.generation(),
                     "editable", edit, "pack", key.scope().equals("full") && api.allows(key, PACK), "unchanged", known.equals(snapshot.revision));
                 if (!known.equals(snapshot.revision)) base.put("slots", slots(snapshot));
@@ -97,7 +108,17 @@ final class LiveInventory implements AutoCloseable {
             out = api.onMain(rev, () -> {
                 api.requirePermission(key, READ);
                 api.requirePermission(key, EDIT);
-                var snapshot = snapshot(AiAdmin.text(body, "player"));
+                String player = AiAdmin.text(body, "player");
+                if (Boolean.TRUE.equals(body.get("offline"))) {
+                    api.requirePermission(key, "player-nbt.write");
+                    if (!key.scope().equals("full")) throw new AppApiManager.ApiError(403, "Offline-Bearbeitung benötigt Vollzugriff");
+                    OfflineData data = offline(player);
+                    if (!data.revision().equals(body.get("revision"))) throw new AppApiManager.ApiError(409, "Offline-Datei wurde geändert. Bitte neu laden.");
+                    byte[] updated = data.inventory.swap(slot(body.get("from")), slot(body.get("to")));
+                    return playerNbt.write(SimplexAdminSuite.appMap("player", player, "path", data.path, "expected", data.sha,
+                        "data", Base64.getEncoder().encodeToString(updated)), key.label());
+                }
+                var snapshot = snapshot(player);
                 if (!snapshot.revision.equals(body.get("revision"))) throw new AppApiManager.ApiError(409, "Inventar wurde inzwischen geändert. Bitte neu auswählen.");
                 int from = slot(body.get("from")), to = slot(body.get("to"));
                 if (from == to || empty(snapshot.item(from))) throw new IllegalArgumentException("Leerer oder identischer Quellplatz");
@@ -111,6 +132,22 @@ final class LiveInventory implements AutoCloseable {
         } else throw new AppApiManager.ApiError(405, "Methode nicht erlaubt");
         AppApiManager.send(exchange, 200, out);
         return true;
+    }
+
+    private record OfflineData(String path, String sha, OfflineInventory inventory) {
+        String revision() { return "offline-" + sha; }
+    }
+
+    private OfflineData offline(String target) throws Exception {
+        UUID player = UUID.fromString(target);
+        if (Bukkit.getPlayer(player) != null) throw new AppApiManager.ApiError(409, "Spieler ist online. Live-Inventar öffnen.");
+        var files = PlayerNbtLocator.find(java.nio.file.Path.of("."), Bukkit.getWorlds().stream().map(org.bukkit.World::getWorldFolder).toList(), player);
+        if (files.isEmpty()) throw new AppApiManager.ApiError(404, "Keine gespeicherte Spielerdatei vorhanden");
+        if (files.size() != 1) throw new AppApiManager.ApiError(409, "Mehrere Spielerdateien vorhanden. Eindeutige Datei im NBT-Werkzeug wählen.");
+        var path = files.get(0);
+        var saved = AppApiManager.object(playerNbt.read(target, path.id()));
+        byte[] bytes = Base64.getDecoder().decode(AiAdmin.text(saved, "data"));
+        return new OfflineData(path.id(), AiAdmin.text(saved, "sha256"), new OfflineInventory(bytes));
     }
 
     private static int slot(Object value) {

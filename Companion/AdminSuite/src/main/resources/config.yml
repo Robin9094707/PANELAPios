@@ -1214,3 +1214,20 @@ emergency-restart:
 # Old discord-ads data is taken over on the first start; stored Discord tokens are deleted.
 ad-hub:
   enabled: true # false = Werbe-Zentrale off; places, texts and timers stay untouched
+
+# Chat moderation and staff handoff. OpenAI-dependent checks use the Suite's existing protected API key.
+powerbot:
+  enabled: true
+  moderation: true
+  whispers: true
+  advertising: true
+  auto-mute: true
+  linked-mutes: true
+  public-chat: true
+  proactive: true
+  discord: true
+  notify-staff: true
+  security-hints: true
+  staff-device-context: true
+  critical-alerts: false
+  guidelines: ''

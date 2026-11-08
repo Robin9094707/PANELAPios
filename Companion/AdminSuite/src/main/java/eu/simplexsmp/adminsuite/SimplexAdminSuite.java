@@ -260,6 +260,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     /** 10.2.0: live diagnostics, disconnect waves, crash manager, lag map and spark analysis. */
     DiagnosticsCenter diagnostics;
     LiveInventory liveInventory;
+    volatile PowerBot powerBot;
     ServerEvents serverEvents;
     PublicChatAssistant publicChatAssistant;
     OpenAiIntegration openAiIntegration() { return openAi; }
@@ -513,6 +514,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         try { suitePolicies=new SuitePolicies(this); if(altDetection.ipExclusions.needsRepair())altDetection.repairIps("Update 9.1.2",null); } catch(Exception e){throw new IllegalStateException("Suite-Richtlinien/IP-Reparatur konnten nicht geladen werden",e);}
         survivalGuard = new SurvivalGuard(this); survivalGuard.start();
         liveInventory = new LiveInventory(this);
+        try { powerBot = new PowerBot(this); }
+        catch (java.io.IOException error) { getLogger().warning("PowerBot: " + error.getMessage()); }
         publicChatAssistant = new PublicChatAssistant(this);
         try { serverEvents = new ServerEvents(this); } catch (Exception error) { getLogger().warning("Event-Modus konnte nicht geladen werden: " + error.getClass().getSimpleName()); }
         try { appApi = new AppApiManager(this); appApi.reload(); } catch (Exception error) { getLogger().warning("Optionale App-API bleibt aus: " + error.getClass().getSimpleName()); }
@@ -537,6 +540,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(tickets!=null)tickets.stop();
         Bukkit.getServicesManager().unregisterAll(this);
         if (community != null) community.stop();
+        if (powerBot != null) powerBot.close();
         if (liveInventory != null) liveInventory.close();
         if (publicChatAssistant != null) publicChatAssistant.close();
         if (diagnostics != null) { try { diagnostics.stop(); } catch (Throwable error) { getLogger().warning("Diagnose konnte nicht sauber beendet werden: " + error.getClass().getSimpleName()); } }
@@ -647,6 +651,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             temporaryRightsTask = null;
         }
         reloadConfig();
+        if (powerBot != null) powerBot.reload();
         if (appApi != null) appApi.reload();
         if (playerCommands != null) playerCommands.reload();
         if (accessLocks != null) accessLocks.reloadSettings();
@@ -789,6 +794,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             sender.sendMessage(prefix() + "Admin authentication is required before commands can be used.");
             return true;
         }
+        if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length > 0 && args[0].equalsIgnoreCase("powerbot") && powerBot != null)
+            return powerBot.command(sender, args);
         if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length > 0 && args[0].equalsIgnoreCase("event") && serverEvents != null)
             return serverEvents.command(sender, args);
         if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length > 0 && args[0].equalsIgnoreCase("app")) { if (appApi == null) { sender.sendMessage("App-API nicht geladen; Serverprotokoll prüfen."); return true; } return appApi.command(sender, Arrays.copyOfRange(args, 1, args.length)); }
@@ -1767,7 +1774,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         return out;
     }
 
-    private boolean isStaffAccount(UUID uuid) {
+    boolean isStaffAccount(UUID uuid) {
         if (uuid == null) return false;
         Player online = Bukkit.getPlayer(uuid);
         if (online != null && (online.isOp() || has(online, "simplexadminsuite.admin"))) return true;
@@ -1878,7 +1885,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (!has(sender, "simplexadminsuite.admin")) return Collections.emptyList();
         if (moderationControl != null) { List<String> suggestions = moderationControl.complete(sender, args); if (suggestions != null) return suggestions; }
         if (args.length >= 1 && args[0].equalsIgnoreCase("app")) return args.length == 2 ? filter(Arrays.asList("status", "enable", "disable", "reload", "create", "user", "users", "setup", "keys", "revoke", "domain", "fingerprint", "owner-reset", "user-reset", "owner-transfer", "unlock", "recovery", "rename", "user-enable", "user-disable", "user-logout", "public-name"), args[1]) : Collections.emptyList();
-        if (args.length == 1) return filter(Arrays.asList("detectors", "detektoren", "securityhub", "checkwhitelist", "emergency", "restartplan", "geoinfo", "bluemap", "names", "clientcheck", "checkhacks", "checklang", "delivery", "shop", "branding", "connection", "links", "serverstats", "commands", "befehle", "moderationplus", "banmode", "restrict", "deviceblock", "osblock", "adminlog", "chatstyle", "modlog", "suiteconfig", "menü", "items", "checkban", "checkmute", "xraybait", "setdiscord", "adminupdate", "adminrights", "watch", "relay", "vpn", "power", "laginspector", "statusdesign", "fun", "qol", "aufgaben", "planer", "incidents", "health", "makros", "bulk", "timeline", "bedrock", "java", "online", "spieler", "welten", "trimmer", "warps", "regeln", "umfragen", "punkte", "chatfilter", "antispam", "updates", "check", "channels", "clientsecurity", "discordstatus", "status", "steuerung", "chat", "spy", "sicherheit", "stealth", "afk", "startnachrichten", "operations", "leitstelle", "alts", "altlink", "altignore", "altban", "ultraban", "ultraunban", "ultrareset", "slowmode", "commandlock", "commandspy", "duty", "watchlist", "announcement", "diagnostics", "deviceinfo", "devicediagnostics", "export", "wartung", "maintenance", "report", "reports", "staff", "staffmsg", "tp", "tplast", "bring", "freeze", "unfreeze", "heal", "feed", "gamemode", "vanish", "invsee", "homes", "homeadmin", "ban", "tempban", "unban", "mute", "tempmute", "unmute", "kick", "warn", "warnungen", "clearwarnings", "notes", "recht", "suche", "cleardata", "datenloeschen", "snapshot", "password", "app", "reload", "help"), args[0]);
+        if (args.length == 1) return filter(Arrays.asList("powerbot", "detectors", "detektoren", "securityhub", "checkwhitelist", "emergency", "restartplan", "geoinfo", "bluemap", "names", "clientcheck", "checkhacks", "checklang", "delivery", "shop", "branding", "connection", "links", "serverstats", "commands", "befehle", "moderationplus", "banmode", "restrict", "deviceblock", "osblock", "adminlog", "chatstyle", "modlog", "suiteconfig", "menü", "items", "checkban", "checkmute", "xraybait", "setdiscord", "adminupdate", "adminrights", "watch", "relay", "vpn", "power", "laginspector", "statusdesign", "fun", "qol", "aufgaben", "planer", "incidents", "health", "makros", "bulk", "timeline", "bedrock", "java", "online", "spieler", "welten", "trimmer", "warps", "regeln", "umfragen", "punkte", "chatfilter", "antispam", "updates", "check", "channels", "clientsecurity", "discordstatus", "status", "steuerung", "chat", "spy", "sicherheit", "stealth", "afk", "startnachrichten", "operations", "leitstelle", "alts", "altlink", "altignore", "altban", "ultraban", "ultraunban", "ultrareset", "slowmode", "commandlock", "commandspy", "duty", "watchlist", "announcement", "diagnostics", "deviceinfo", "devicediagnostics", "export", "wartung", "maintenance", "report", "reports", "staff", "staffmsg", "tp", "tplast", "bring", "freeze", "unfreeze", "heal", "feed", "gamemode", "vanish", "invsee", "homes", "homeadmin", "ban", "tempban", "unban", "mute", "tempmute", "unmute", "kick", "warn", "warnungen", "clearwarnings", "notes", "recht", "suche", "cleardata", "datenloeschen", "snapshot", "password", "app", "reload", "help"), args[0]);
         String sub = args[0].toLowerCase(Locale.ROOT);
         if (args.length == 2 && Set.of("adminrights","checkban","checkmute","xraybait").contains(sub)) return filter(database.names(), args[1]);
         if (args.length == 2 && sub.equals("watch")) {
@@ -2342,6 +2349,12 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return;
         }
         PlayerProfile profile = database.touch(player);
+        PowerBot automod = powerBot;
+        boolean usePowerBot = automod != null && !automod.bypass(player);
+        if (usePowerBot && serverControls.globalChatEnabled() && !isPubliclyHidden(player)) {
+            var local = automod.preflight(player.getUniqueId().toString(), player.getName(), "Minecraft", stripFormatting(entered), publicAiGerman(player));
+            if (!local.allowed) { event.setCancelled(true); player.sendMessage(prefix() + local.playerMessage); return; }
+        }
         String muteMessage = punishments.activeMuteMessage(profile);
         if (muteMessage != null && !has(player, "simplexadminsuite.admin")) {
             event.setCancelled(true);
@@ -2420,7 +2433,14 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 return;
             }
         }
-        if (openAi != null) {
+        if (automod != null) {
+            if (usePowerBot && !isPubliclyHidden(player)) {
+                OpenAiIntegration.ChatDecision decision = automod.reviewModel(player.getUniqueId().toString(), player.getName(),
+                    "Minecraft", stripFormatting(processedMessage), publicAiGerman(player), Bukkit.isPrimaryThread());
+                if (decision.warning || !decision.allowed) player.sendMessage(prefix() + decision.playerMessage);
+                if (!decision.allowed) { event.setCancelled(true); return; }
+            }
+        } else if (openAi != null) {
             OpenAiIntegration.ChatDecision decision = openAi.reviewChat(player, processedMessage);
             if (decision.warning) player.sendMessage(playerUiText(player, prefix() + (decision.playerMessage.isBlank() ? "Please keep the chat respectful." : decision.playerMessage)));
             if (!decision.allowed) {
@@ -2454,6 +2474,22 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             discordBot.rememberPlayer(player);
             discordBot.relayMinecraftChat(player.getName(), discordDecoration(player), message);
         });
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void observePowerBotDrop(PlayerDropItemEvent event) {
+        if (publicChatAssistant != null && powerBot != null && powerBot.enabled() && !isPubliclyHidden(event.getPlayer()))
+            publicChatAssistant.dropped(event.getPlayer().getUniqueId(), event.getItemDrop().getUniqueId());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void observePowerBotPickup(org.bukkit.event.entity.EntityPickupItemEvent event) {
+        if (event.getEntity() instanceof Player player && publicChatAssistant != null && powerBot != null
+            && powerBot.enabled() && !isPubliclyHidden(player)) {
+            var item = event.getItem().getItemStack();
+            int amount = item.getAmount() - event.getRemaining();
+            if (amount > 0) publicChatAssistant.pickedUp(player.getUniqueId(), event.getItem().getUniqueId(), item.getType().name(), amount);
+        }
     }
 
     @EventHandler public void onDeath(PlayerDeathEvent event) {
@@ -2506,8 +2542,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             database.save(blockedProfile);
             return;
         }
-        adminSpy.spyCommand(player, msg);
-        boolean privateMessage = adminSpy.capturePrivateCommand(player, msg);
+        String whisper = adminSpy.privateText(msg);
+        boolean privateMessage = whisper != null;
         boolean suiteCommand = lower.equals("/sas") || lower.startsWith("/sas ") || lower.equals("/simplexadmin") || lower.startsWith("/simplexadmin ");
         if (profile.isBlocked("commands") && !suiteCommand && !has(player, "simplexadminsuite.admin")) {
             event.setCancelled(true);
@@ -2524,6 +2560,13 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             database.save(profile);
             return;
         }
+        if (privateMessage && powerBot != null && !powerBot.bypass(player) && !isPubliclyHidden(player)) {
+            var decision = powerBot.review(player.getUniqueId().toString(), player.getName(), "Whisper", whisper, publicAiGerman(player), true);
+            if (decision.warning || !decision.allowed) player.sendMessage(prefix() + decision.playerMessage);
+            if (!decision.allowed) { event.setCancelled(true); return; }
+        }
+        adminSpy.spyCommand(player, msg);
+        if (privateMessage) adminSpy.capturePrivateCommand(player, msg);
         profile.addAction(privateMessage ? "Private Nachricht gesendet" : "Befehl genutzt: " + msg);
         database.save(profile);
     }
@@ -6732,6 +6775,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         Bukkit.getScheduler().runTask(this, () -> {
             String formatted = color("&8[&9Discord&8] &7") + safeName + color("&8: &f") + safeText;
             for (Player online : Bukkit.getOnlinePlayers()) online.sendMessage(formatted);
+            if (publicChatAssistant != null && powerBot != null && powerBot.managed("Discord"))
+                publicChatAssistant.acceptDiscord(linked, safeName, safeText);
         });
     }
 
@@ -14620,6 +14665,20 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 recipientProfile.addPrivateMessage("IN ← " + sender.getName() + " [" + commandAlias + "]: " + clean);
                 plugin.database.save(recipientProfile);
             }
+        }
+
+        private String privateText(String command) {
+            if (command == null || !command.startsWith("/")) return null;
+            String[] parts = command.substring(1).strip().split("\\s+", 3);
+            String alias = parts[0].toLowerCase(Locale.ROOT);
+            alias = alias.substring(alias.lastIndexOf(':') + 1);
+            List<String> direct = plugin.getConfig().getStringList("adminspy.private-message-aliases");
+            List<String> replies = plugin.getConfig().getStringList("adminspy.reply-aliases");
+            if ((direct.isEmpty() ? List.of("msg", "tell", "w", "whisper", "message", "pm", "m") : direct).contains(alias))
+                return parts.length == 3 ? parts[2] : null;
+            if ((replies.isEmpty() ? List.of("r", "reply") : replies).contains(alias))
+                return parts.length >= 2 ? command.substring(1).strip().split("\\s+", 2)[1] : null;
+            return null;
         }
 
         private boolean capturePrivateCommand(Player sender, String rawCommand) {

@@ -206,7 +206,7 @@ final class PanelHub {
 
     /** Whether a notification owner may still receive this event type (account enabled and right present). */
     boolean allowed(String owner, String type) {
-        String permission = switch (type) { case "admin-log" -> "data.admin-log"; case "staff-chat" -> "data.staff-chat"; case "disconnect-wave", "crash", "lag-spike" -> "data.diagnostics"; case "discord-ads", "ad-reminder" -> "data.discord-ads"; case "game-day" -> "data.server-events"; default -> type.startsWith("ticket") ? "data.tickets" : "data.events"; };
+        String permission = switch (type) { case "admin-log" -> "data.admin-log"; case "staff-chat" -> "data.staff-chat"; case "disconnect-wave", "crash", "lag-spike" -> "data.diagnostics"; case "discord-ads", "ad-reminder" -> "data.discord-ads"; case "game-day" -> "data.server-events"; case "powerbot-case" -> PowerBot.VIEW; default -> type.startsWith("ticket") ? "data.tickets" : "data.events"; };
         if (owner.startsWith("user:")) {
             String user; try { user = new String(Base64.getUrlDecoder().decode(owner.substring(5)), StandardCharsets.UTF_8); } catch (IllegalArgumentException e) { return false; }
             if (!security.users.enabled(user)) return false;

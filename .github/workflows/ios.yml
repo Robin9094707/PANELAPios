@@ -153,7 +153,7 @@ jobs:
           python3 tools/package-source.py
           cp ../../docs/Simplex-Admin-Recovery.pdf target/
           cd target
-          sha256sum SimplexAdminSuite-10.10.0.jar SimplexAdminSuite-10.10.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-10.11.0.jar SimplexAdminSuite-10.11.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
       - name: Build and test SimplexSentinelBridge (Geyser extension) against the real Geyser API
         working-directory: Companion/SentinelBridge
         run: |
@@ -167,8 +167,8 @@ jobs:
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-10.10.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-10.10.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-10.11.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-10.11.0-source.zip
             Companion/AdminSuite/target/Simplex-Admin-Recovery.pdf
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
@@ -228,6 +228,8 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
+          Simplex Panel 5.4.0 / Admin Suite 10.11.0: PowerBot chat moderation, staff case queue and visual inventory snapshots. See UPDATE-5.4.0.md.
+
           Simplex Panel 5.3.0 / Admin Suite 10.10.0: Arts Update with live inventory grids, a persistent console archive, game-day schedules, reversible lockdown and optional public chat AI. See UPDATE-5.3.0.md.
 
           Simplex Panel 5.2.0 / Admin Suite 10.9.0: private assistant chat history, reviewable voice dictation, staff chat entry point and owner-approved player restrictions. See UPDATE-5.2.0.md.

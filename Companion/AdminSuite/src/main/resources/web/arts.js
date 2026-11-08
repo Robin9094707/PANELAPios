@@ -14,11 +14,12 @@
     if (!S.has("visual-inventory-v1") || !S.can("data.inventory")) {
       S.mount(S.lockedPage("Inventar gesperrt", "data.inventory")); return;
     }
+    var offline = query.get("offline") === "true" && S.has("powerbot-v1");
     var last = "", textureVersion = null, icons = {}, contents = {}, edit = false, pack = false, selected = null, target = null, busy = false;
     var status = h("div", { class: "muted small", role: "status" }), grid = h("div", { class: "stack" }), packArea = h("div", { class: "stack" });
     var apply = S.btn("Anwenden", { kind: "primary", disabled: true, onClick: async function () {
       if (selected == null || target == null || busy) return;
-      var change = { player: id, revision: last, from: selected, to: target, confirmed: true };
+      var change = { player: id, revision: last, offline: offline, from: selected, to: target, confirmed: true };
       busy = true;
       try {
         if (await S.confirm("Inventar ändern", "Diese Slots sofort auf dem Minecraft-Server tauschen?", "Anwenden")) {
@@ -28,8 +29,8 @@
       } catch (e) { fail(e); }
       finally { selected = target = null; busy = false; await update(); }
     } });
-    S.title("Live-Inventar", "Spieler", h("a", { class: "btn ghost sm", href: "#/player/" + encodeURIComponent(id), text: "Zum Profil" }));
-    S.mount(h("div", { class: "stack" }, S.card("Minecraft-Inventar", { icon: "grid", sub: "Live vom Server · aktualisiert alle 2 Sekunden" }, status, grid,
+    S.title(offline ? "Offline-Inventar" : "Live-Inventar", "Spieler", h("a", { class: "btn ghost sm", href: "#/player/" + encodeURIComponent(id), text: "Zum Profil" }));
+    S.mount(h("div", { class: "stack" }, S.card("Minecraft-Inventar", { icon: "grid", sub: offline ? "Gespeicherte Spielerdatei · Sicherung vor jeder Änderung" : "Live vom Server · aktualisiert alle 2 Sekunden" }, status, grid,
       h("div", { class: "row wrap" }, apply, S.btn("Auswahl zurücksetzen", { onClick: function () { selected = target = null; draw(); } }))),
       packArea));
     function draw() {
@@ -81,7 +82,7 @@
       if (!alive() || busy || updating) return;
       updating = true;
       try {
-        var data = await S.api("invsee", { query: { player: id, revision: last }, quiet: true, noRetry: true, timeout: 7000 });
+        var data = await S.api("invsee", { query: { player: id, revision: last, offline: offline }, quiet: true, noRetry: true, timeout: 7000 });
         if (!alive()) return;
         var changed = !data.unchanged, permissionsChanged = edit !== data.editable || pack !== data.pack;
         if (changed && selected != null) { selected = target = null; status.textContent = "Inventar wurde vom Spieler geändert. Bitte neu auswählen."; }
@@ -115,7 +116,7 @@
       } finally { updating = false; }
     }
     await update();
-    if (alive()) S.every(2000, update);
+    if (alive() && !offline) S.every(2000, update);
   };
 
   P["player-devices"] = async function (id, query, alive) {

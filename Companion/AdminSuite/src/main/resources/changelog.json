@@ -1,5 +1,29 @@
 [
   {
+    "version": "10.11.0",
+    "app": "5.4.0",
+    "date": "2026-11-08",
+    "title": "PowerBot-Fallzentrale",
+    "intro": "Ausgeführte KI-Aktionen, wichtige Vorfälle und AutoMod-Mutes an einem Ort.",
+    "items": [
+      {
+        "icon": "shieldCheck",
+        "title": "PowerBot-Fallzentrale",
+        "text": "Fälle übernehmen und aktive AutoMod-Mutes widerrufen."
+      },
+      {
+        "icon": "chat",
+        "title": "Chatmoderation",
+        "text": "Minecraft-Chat und Discord-Relay, separate Flüsterprüfung, Werbeblock und Bypass bei KI-Ausfall."
+      },
+      {
+        "icon": "grid",
+        "title": "Offline-Inventare & Snapshots",
+        "text": "Gespeicherte Inventare mit Texturen ansehen und mit Vollzugriff Stapel tauschen."
+      }
+    ]
+  },
+  {
     "version": "10.10.0",
     "app": "5.3.0",
     "date": "2026-11-08",

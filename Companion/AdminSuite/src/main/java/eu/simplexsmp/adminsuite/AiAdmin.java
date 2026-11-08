@@ -236,7 +236,7 @@ final class AiAdmin {
             job.inheritedRights=Set.copyOf(inheritedRights);
             String questionWithHistory=history.isEmpty()?question:DiscordBotManager.Json.stringify(SimplexAdminSuite.appMap("question",question,"history",history));
             Map<String,Source> sources=new TreeMap<>();
-            SOURCES.forEach((key,value)->{if(author.can(value.right)&&(!key.equals("devices")||plugin.getConfig().getBoolean(ROOT+"device-context",false)))sources.put(key,value);});
+            SOURCES.forEach((key,value)->{if(author.can(value.right)&&(!key.equals("devices")||(plugin.powerBot == null ? plugin.getConfig().getBoolean(ROOT+"device-context",false) : plugin.powerBot.canStaffDeviceContext())))sources.put(key,value);});
             Map<String,ActionSpec> actions=new TreeMap<>();
             ACTIONS.forEach((key,value)->{if(author.writable()&&author.can(value.right))actions.put(key,value);});
             String clock=ZonedDateTime.now(ZoneId.of("Europe/Berlin")).toString();
@@ -591,6 +591,9 @@ final class AiAdmin {
                 recheck(job.author,step);
                 String result=plugin.aiApply(step.kind,step.fields,step.targets,approver.name);
                 results.add(Map.of("title",ACTIONS.get(step.kind).title,"ok",true,"description",clean(result,600)));
+                if (plugin.powerBot != null) plugin.powerBot.important("ai-action",
+                    step.targets.size() == 1 ? step.targets.get(0).toString() : "", approver.name, "Staff-KI",
+                    ACTIONS.get(step.kind).title + " · " + clean(result, 350), false);
             }catch(RuntimeException e){
                 all=false;results.add(Map.of("title",ACTIONS.get(step.kind).title,"ok",false,"description",clean(e.getMessage(),600)));
             }

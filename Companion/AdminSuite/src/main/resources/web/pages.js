@@ -40,6 +40,11 @@
       return Promise.all(tasks);
     }
     var data = await load(); if (!alive()) return;
+    var digest = h("div", { hidden: true });
+    if (S.powerBotDigest) S.powerBotDigest(alive).then(function (summary) {
+      if (summary && alive()) { digest.appendChild(summary); digest.hidden = false; }
+    });
+    if (!alive()) return;
     function render(d, sessions) {
       if (d) {
         samples.online.push(d.online || 0); samples.tps.push(Number(d.tps) || 0); samples.ram.push(d.ramMax ? d.ramUsed / d.ramMax * 100 : 0);
@@ -105,7 +110,7 @@
             h("div", { class: "meta" }, h("b", { text: r.name }), h("small", { text: r.category + " · " + S.ago(r.created) })), S.badge(r.status === "OPEN" ? "Offen" : "In Prüfung", r.status === "OPEN" ? "danger" : "warn"));
         }), { icon: "flag", href: S.can("data.reports") ? "#/moderation" : null, empty: "Keine offenen Reports. 🎉" }));
       } else if (!d) grid.appendChild(S.lockedCard("Ereignisse & Reports", "data.admin-dashboard"));
-      S.mount(h("div", { class: "stack" }, hero, kpis, grid));
+      S.mount(h("div", { class: "stack" }, digest, hero, kpis, grid));
     }
     render(data[0], data[1]);
     S.title("Dashboard", (S.health && S.health.name) || "", S.btn("", { kind: "ghost", size: "sm icon", icon: "refresh", title: "Aktualisieren", onClick: async function () { var n = await load(); if (alive()) render(n[0], n[1]); } }));
@@ -178,7 +183,8 @@
     var cards = [head];
     // 10.0.0: quick access to rank (LuckPerms) and access locks of this player.
     var quick = h("div", { class: "row wrap" },
-      p.online && S.has("visual-inventory-v1") && S.can("data.inventory") ? h("a", { class: "btn sm primary", href: "#/inventory/" + p.id, text: "Live-Inventar" }) : null,
+      S.has("powerbot-v1") && S.can("data.snapshots") && S.can("data.snapshot-content") ? h("a", { class: "btn sm", href: "#/snapshots/" + p.id, text: "Inventar-Snapshots" }) : null,
+      (p.online || S.has("powerbot-v1")) && S.has("visual-inventory-v1") && S.can("data.inventory") ? h("a", { class: "btn sm primary", href: "#/inventory/" + p.id + (p.online ? "" : "?offline=true"), text: p.online ? "Live-Inventar" : "Offline-Inventar" }) : null,
       S.has("visual-inventory-v1") && S.can("data.devices") ? h("a", { class: "btn sm", href: "#/player-devices/" + p.id, text: "Geräte" }) : null,
       S.has("access-locks-v1") && S.can("data.access-locks") ? h("a", { class: "btn sm primary", href: "#/access-locks/" + p.id }, icon("lock"), "Rechte & Sperren") : null,
       S.has("luckperms-v1") && S.can("data.luckperms") ? h("a", { class: "btn sm", href: "#/luckperms/player/" + p.id }, icon("key"), "Rang & LuckPerms") : null,

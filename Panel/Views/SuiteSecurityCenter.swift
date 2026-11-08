@@ -247,6 +247,7 @@ struct SuiteBarkSettingsView: View {
         if suite.features.contains("tickets-v1") { list += Self.ticketEvents }
         if suite.features.contains("tickets-v2") { list += Self.priorityTicketEvents }
         if suite.features.contains("diagnostics-v1") { list += Self.diagnosticsEvents }
+        if suite.features.contains("powerbot-v1") { list.append(("powerbot-case", "PowerBot · Fälle und AutoMod-Mutes")) }
         if suite.features.contains("server-events-v1") { list += [("game-day", "Ingame-Tag erreicht"), ("ai-chat-alert", "Chat-KI: Hilfe oder Streit erkannt")] }
         if suite.features.contains("ad-hub-v1") { list += Self.adsEvents }
         return list

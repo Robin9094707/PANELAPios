@@ -34,6 +34,7 @@ struct SuiteToolDirectoryView: View {
                         Text("Schnellzugriffe lange drücken, um Favoriten anzupassen.").font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).card()
                     }
+                    SuitePowerBotDigest(suite: suite)
                     toolGroup("Schnellzugriffe", tools: tools.filter { favorites.split(separator: ",").contains(Substring($0.rawValue)) && allowed($0) })
                 }
                 ForEach(groups, id: \.self) { group in toolGroup(group, tools: tools.filter { $0.group == group }) }
@@ -105,6 +106,7 @@ struct SuiteToolDestination: View {
             case .histories: SuiteHistoriesView(suite: suite)
             case .staffChat: SuiteStaffChatView(suite: suite)
             case .tasks: SuiteStaffTasksView(suite: suite)
+            case .powerBot: SuitePowerBotView(suite: suite)
             case .serverEvents: SuiteServerEventsView(suite: suite)
             case .assistant: SuiteAIAssistantView(suite: suite, panel: panel, server: server)
             case .diagnostics: SuiteDiagnosticsView(suite: suite)

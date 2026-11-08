@@ -21,14 +21,15 @@ final class SecurityDetectors implements Listener {
         FINGERPRINT("channel-fingerprint","Channel-Fingerprint 2.0",Material.NAME_TAG),
         CONCEALMENT("anti-detection","Anti-Detection-Fingerprint",Material.SHIELD),
         AUTOCLICKER("autoclicker","AutoClicker-Muster",Material.IRON_SWORD),
-        FREECAM("freecam","Freecam-Verhalten",Material.SPYGLASS);
+        FREECAM("freecam","Freecam-Verhalten",Material.SPYGLASS),
+        COMBAT_REACH("combat-reach","Kampf-Reichweite",Material.TARGET);
         final String key,title;final Material icon;
         Detector(String key,String title,Material icon){this.key=key;this.title=title;this.icon=icon;}
     }
     private static final class State {
         final Player player;final long joined=System.currentTimeMillis();
         String brand="",version="";Set<String> channels=Set.of();final Set<String> loaderHistory=new HashSet<>();
-        final Deque<Long> changes=new ArrayDeque<>(),removals=new ArrayDeque<>(),interactions=new ArrayDeque<>();
+        final Deque<Long> changes=new ArrayDeque<>(),removals=new ArrayDeque<>(),interactions=new ArrayDeque<>(),combatReach=new ArrayDeque<>();
         final Map<Detector,Long> alerts=new EnumMap<>(Detector.class);
         final Set<String> seen=new HashSet<>();
         final List<Double> clicks=new ArrayList<>();
@@ -50,19 +51,25 @@ final class SecurityDetectors implements Listener {
     void reload(){states.clear();for(Player p:Bukkit.getOnlinePlayers())join(p);lagUntil=System.currentTimeMillis()+5000;}
     void stop(){if(timer!=null)timer.cancel();timer=null;states.clear();if(store!=null){store.close();store=null;}}
     private void tick(){long nano=System.nanoTime(),now=System.currentTimeMillis();tickMillis=(nano-previousTick)/1_000_000d;previousTick=nano;
-        if(tickMillis>85||tickMillis<20){lagUntil=now+5000;for(State s:states.values()){s.resetClicks();s.interactions.clear();}}
+        if(tickMillis>85||tickMillis<20){lagUntil=now+5000;for(State s:states.values()){s.resetClicks();s.interactions.clear();s.combatReach.clear();}}
         if(++ticks%20==0){double[] values=Bukkit.getTPS();if(values.length>0)tps=values[0];}
         if(ticks%100==0&&(enabled(Detector.FINGERPRINT)||enabled(Detector.CONCEALMENT)))for(State s:List.copyOf(states.values()))network(s);
     }
-    boolean enabled(Detector d){return store!=null&&plugin.getConfig().getBoolean(ROOT+d.key+".enabled",false);}
+    boolean enabled(Detector d) {
+        PowerBot bot = plugin.powerBot;
+        boolean defaultHint = bot != null && bot.enabled() && bot.on("security-hints") && (d == Detector.AUTOCLICKER || d == Detector.COMBAT_REACH);
+        String key = ROOT + d.key + ".enabled";
+        boolean configured = plugin.getConfig().contains(key, true);
+        return store != null && (defaultHint || configured && plugin.getConfig().getBoolean(key));
+    }
     private boolean allowed(Player p){return p!=null&&p.isOnline()&&!plugin.isBedrockClient(p)&&!p.hasPermission("simplexadminsuite.detectors.bypass")&&!(plugin.adminRuntime!=null&&plugin.adminRuntime.passive(p));}
     private State state(Player p){if(!allowed(p))return null;State s=states.get(p.getUniqueId());return s!=null&&s.player==p?s:null;}
     private boolean healthy(State s){long now=System.currentTimeMillis();return now>=lagUntil&&now>=s.graceUntil&&now-s.joined>=Math.max(10,plugin.getConfig().getInt(ROOT+"join-grace-seconds",15))*1000L&&SecuritySignals.healthy(tps,s.player.getPing(),tickMillis);}
     @EventHandler(priority=EventPriority.MONITOR)public void join(PlayerJoinEvent e){join(e.getPlayer());}
     private void join(Player p){if(!plugin.isBedrockClient(p))states.put(p.getUniqueId(),new State(p));}
     @EventHandler(priority=EventPriority.MONITOR)public void quit(PlayerQuitEvent e){states.remove(e.getPlayer().getUniqueId());}
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)public void teleport(PlayerTeleportEvent e){State s=states.get(e.getPlayer().getUniqueId());if(s!=null){s.graceUntil=System.currentTimeMillis()+5000;s.resetClicks();s.interactions.clear();}}
-    @EventHandler(priority=EventPriority.MONITOR)public void respawn(PlayerRespawnEvent e){State s=states.get(e.getPlayer().getUniqueId());if(s!=null){s.graceUntil=System.currentTimeMillis()+5000;s.resetClicks();s.interactions.clear();}}
+    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)public void teleport(PlayerTeleportEvent e){State s=states.get(e.getPlayer().getUniqueId());if(s!=null){s.graceUntil=System.currentTimeMillis()+5000;s.resetClicks();s.interactions.clear();s.combatReach.clear();}}
+    @EventHandler(priority=EventPriority.MONITOR)public void respawn(PlayerRespawnEvent e){State s=states.get(e.getPlayer().getUniqueId());if(s!=null){s.graceUntil=System.currentTimeMillis()+5000;s.resetClicks();s.interactions.clear();s.combatReach.clear();}}
     @EventHandler(priority=EventPriority.MONITOR)public void register(PlayerRegisterChannelEvent e){channelChange(e.getPlayer(),false,e.getChannel());}
     @EventHandler(priority=EventPriority.MONITOR)public void unregister(PlayerUnregisterChannelEvent e){channelChange(e.getPlayer(),true,e.getChannel());}
     private void channelChange(Player p,boolean removal,String channel){State s=state(p);if(s==null||!enabled(Detector.CONCEALMENT))return;long now=System.currentTimeMillis();prune(s.changes,now,10000);prune(s.removals,now,10000);if(!removal&&s.loaderHistory.size()<64&&!SecuritySignals.loaders(List.of(channel)).isEmpty())s.loaderHistory.add(SecuritySignals.safe(channel));if(s.changes.size()<256)s.changes.addLast(now);if(removal&&s.removals.size()<256)s.removals.addLast(now);}
@@ -85,7 +92,7 @@ final class SecurityDetectors implements Listener {
     }
     private void networkFinding(State s,Detector d,SecuritySignals.Finding value){String identity=d.key+":"+value.code()+":"+value.detail();if(s.seen.size()<256&&!s.seen.contains(identity)&&record(s,d,value,true))s.seen.add(identity);}
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)public void mining(BlockDamageEvent e){State s=state(e.getPlayer());if(s!=null){s.miningUntil=System.currentTimeMillis()+4000;s.resetClicks();}}
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)public void attack(EntityDamageByEntityEvent e){if(!(e.getDamager() instanceof Player p))return;State s=state(p);if(s==null)return;s.combatUntil=System.currentTimeMillis()+5000;if(enabled(Detector.FREECAM))entityInteraction(s,e.getEntity(),true);}
+    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)public void attack(EntityDamageByEntityEvent e){if(!(e.getDamager() instanceof Player p))return;State s=state(p);if(s==null)return;s.combatUntil=System.currentTimeMillis()+5000;if(enabled(Detector.FREECAM)||enabled(Detector.COMBAT_REACH))entityInteraction(s,e.getEntity(),true);}
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)public void swing(PlayerAnimationEvent e){if(e.getAnimationType()!=PlayerAnimationType.ARM_SWING||!enabled(Detector.AUTOCLICKER))return;State s=state(e.getPlayer());if(s==null)return;
         long now=System.currentTimeMillis(),nano=System.nanoTime();
         if(!healthy(s)||now<s.miningUntil||s.player.getGameMode()==GameMode.CREATIVE||s.player.getGameMode()==GameMode.SPECTATOR||(plugin.getConfig().getBoolean(ROOT+"autoclicker.combat-only",true)&&now>s.combatUntil)){s.resetClicks();return;}
@@ -114,7 +121,20 @@ final class SecurityDetectors implements Listener {
             // 26.x weapons can add motion-dependent reach. Leave these attacks to Grim/other predictive checks.
             return;
         }}
-        interaction(s,SecuritySignals.outsideReach(distance,range,tolerance),"ENTITY "+target.getType()+" distance="+round(distance)+" range="+round(range)+" tolerance="+round(tolerance));
+        boolean outside = SecuritySignals.outsideReach(distance, range, tolerance);
+        if (attack && enabled(Detector.COMBAT_REACH)) observeCombatReach(s, outside, distance, range, tolerance);
+        if (enabled(Detector.FREECAM)) interaction(s,outside,"ENTITY "+target.getType()+" distance="+round(distance)+" range="+round(range)+" tolerance="+round(tolerance));
+    }
+    private void observeCombatReach(State state, boolean outside, double distance, double reach, double tolerance) {
+        long now = System.currentTimeMillis();
+        prune(state.combatReach, now, 10_000);
+        if (!outside || !state.combatReach.isEmpty() && now - state.combatReach.getLast() < 300) return;
+        state.combatReach.addLast(now);
+        if (state.combatReach.size() < 4) return;
+        record(state, Detector.COMBAT_REACH, new SecuritySignals.Finding("REPEATED_COMBAT_REACH",
+            "Vier Treffer außerhalb der erwarteten Reichweite in 10 Sekunden · Distanz " + round(distance)
+            + " / Attribut " + round(reach) + " / Toleranz " + round(tolerance)), true);
+        state.combatReach.clear();
     }
     private boolean eligibleInteraction(State s){return healthy(s)&&s.player.getGameMode()!=GameMode.CREATIVE&&s.player.getGameMode()!=GameMode.SPECTATOR&&!s.player.isInsideVehicle()&&!s.player.isGliding();}
     private double tolerance(Player p){return Math.max(.25,Math.min(2,plugin.getConfig().getDouble(ROOT+"freecam.range-tolerance",.75)))+Math.min(.75,p.getPing()/400d);}
@@ -145,7 +165,12 @@ final class SecurityDetectors implements Listener {
         store.append(s.player.getUniqueId(),new SecurityEvidenceStore.Entry(now,d.key,finding.code(),finding.detail()+" | ping="+s.player.getPing()+"ms; TPS="+round(tps)));
         if(plugin.getConfig().getBoolean(ROOT+"console-summary",false))plugin.getLogger().info("[Security hint] "+s.player.getName()+" • "+d.title+" • "+finding.code());
         if(notify&&plugin.getConfig().getBoolean(ROOT+"staff-alerts",true))for(Player staff:Bukkit.getOnlinePlayers())if(plugin.has(staff,"simplexadminsuite.clientsecurity.admin")&&plugin.adminSessionUsable(staff))staff.sendMessage(plugin.playerText(staff,"§e[Client-Hinweis] §f","§e[Client hint] §f")+s.player.getName()+" • "+d.title+" • "+finding.code()+plugin.playerText(staff," §7(ungeprüfter Verdacht; /sas detectors)"," §7(unverified hint; /sas detectors)"));
-        if(plugin.securityHub!=null)plugin.securityHub.hint(s.player,d.key,d.title,finding.code()+": "+finding.detail(),d==Detector.AUTOCLICKER||d==Detector.FREECAM);
+        if (plugin.powerBot != null && plugin.powerBot.enabled() && plugin.powerBot.on("security-hints")
+            && (d == Detector.AUTOCLICKER || d == Detector.COMBAT_REACH)) {
+            plugin.powerBot.important("security", s.player.getUniqueId().toString(), s.player.getName(), "Kampf",
+                d.title + " · " + finding.detail(), false);
+        }
+        if(d != Detector.COMBAT_REACH && (d != Detector.AUTOCLICKER || plugin.getConfig().getBoolean(ROOT + d.key + ".enabled", false)) && plugin.securityHub!=null)plugin.securityHub.hint(s.player,d.key,d.title,finding.code()+": "+finding.detail(),d==Detector.AUTOCLICKER||d==Detector.FREECAM);
         return true;
     }
     private boolean admin(Player p){return plugin.has(p,"simplexadminsuite.clientsecurity.admin")&&plugin.adminSessionUsable(p);}
@@ -155,7 +180,7 @@ final class SecurityDetectors implements Listener {
         b.add(AdminUpdateMenu.info(t(p,"Optionale Detektoren","Optional detectors"),t(p,"Alle neuen Checks sind zunächst aus. Hinweise sind kein Cheat-Beweis und führen standardmäßig zu keiner Sanktion. Java-Ziele; Java- und Bedrock-Administration.","New checks start disabled. Hints are not proof of cheating and do not sanction by default. Java targets; Java and Bedrock administration."),Material.SHIELD));
         if(store==null)b.add(AdminUpdateMenu.info(t(p,"Speicher nicht verfügbar","Storage unavailable"),t(p,"Detektoren sind deaktiviert; Serverprotokoll prüfen.","Detectors are disabled; check the server log."),Material.BARRIER));
         for(Detector d:Detector.values())b.add(button(p,d.title,(enabled(d)?"✓ ":"○ ")+t(p,enabled(d)?"An • Klick: ausschalten":"Aus • Klick: einschalten",enabled(d)?"On • Click: disable":"Off • Click: enable"),enabled(d)?Material.LIME_DYE:Material.GRAY_DYE,()->{plugin.getConfig().set(ROOT+d.key+".enabled",!enabled(d));changed(p);home(p);}));
-        for(Detector d:Detector.values()){boolean kick=plugin.getConfig().getBoolean(ROOT+d.key+".kick",false);b.add(button(p,d.title+" • Kick",kick?"An • ausschalten":"Nur protokollieren • einschalten",kick?Material.RED_DYE:Material.GRAY_DYE,()->{plugin.getConfig().set(ROOT+d.key+".kick",!kick);changed(p);home(p);}));}
+        for(Detector d:Detector.values()){if(d==Detector.COMBAT_REACH)continue;boolean kick=plugin.getConfig().getBoolean(ROOT+d.key+".kick",false);b.add(button(p,d.title+" • Kick",kick?"An • ausschalten":"Nur protokollieren • einschalten",kick?Material.RED_DYE:Material.GRAY_DYE,()->{plugin.getConfig().set(ROOT+d.key+".kick",!kick);changed(p);home(p);}));}
         if(plugin.securityHub!=null)b.add(button(p,"Protokolle & Ausnahmen","15-Minuten-Sammlung, Whitelists und private Daten",Material.WRITABLE_BOOK,()->plugin.securityHub.menu(p)));
         b.add(button(p,t(p,"Alle Detektoren ausschalten","Disable all detectors"),"",Material.GRAY_DYE,()->{for(Detector d:Detector.values())plugin.getConfig().set(ROOT+d.key+".enabled",false);changed(p);home(p);}));
         b.add(button(p,t(p,"Empfindlichkeit & Meldungen","Sensitivity & alerts"),t(p,"Grenzen, Bestätigungen und Protokollierung","Thresholds, confirmation and logging"),Material.COMPARATOR,()->settings(p)));

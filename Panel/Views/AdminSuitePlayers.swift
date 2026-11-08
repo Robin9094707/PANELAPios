@@ -245,9 +245,9 @@ struct SuitePlayerView: View {
             Section("Inventar & Speicherstand") {
                 if suite.can("data.inventory") {
                     if suite.features.contains("visual-inventory-v1") {
-                        NavigationLink { SuiteVisualInventoryView(suite: suite, player: current["id"].string) } label: {
-                            Label("Live-Inventar & Endertruhe", systemImage: "square.grid.3x3.fill")
-                        }.disabled(!current["online"].bool)
+                        NavigationLink { SuiteVisualInventoryView(suite: suite, player: current["id"].string, offline: !current["online"].bool) } label: {
+                            Label(current["online"].bool ? "Live-Inventar & Endertruhe" : "Offline-Inventar & Endertruhe", systemImage: "square.grid.3x3.fill")
+                        }.disabled(!current["online"].bool && !suite.features.contains("powerbot-v1"))
                     } else {
                         NavigationLink { SuiteDataListView(suite: suite, kind: "inventory", player: player, actions: actions) } label: {
                             Label("Aktuelles Inventar & Endertruhe", systemImage: "square.grid.3x3.fill")
@@ -260,7 +260,7 @@ struct SuitePlayerView: View {
                 if suite.can("data.snapshots") {
                     NavigationLink { SuiteSnapshotsView(suite: suite, player: player, actions: actions) } label: { Label("Inventar-Snapshots", systemImage: "archivebox") }
                 }
-                if !current["online"].bool { Text("Offline-Inventar über den NBT-Editor oder einen gespeicherten Snapshot öffnen.").font(.caption).foregroundStyle(.secondary) }
+                if !current["online"].bool && !suite.features.contains("powerbot-v1") { Text("Offline-Inventar über den NBT-Editor oder einen gespeicherten Snapshot öffnen.").font(.caption).foregroundStyle(.secondary) }
             }
             }
             if current["logoutLocation"] != .null {
@@ -477,9 +477,57 @@ struct SuiteSnapshotContentView: View {
     let player: String
     let file: String
     @State private var data: JSON = .null
+    @State private var icons: [String: UIImage] = [:]
     @State private var error: String?
-    var body: some View { List { Section { ForEach([("level", "XP-Level"), ("food", "Hunger"), ("health", "Gesundheit"), ("gamemode", "Spielmodus"), ("actor", "Erstellt von")], id: \.0) { key, title in LabeledContent(title, value: data[key].string) } }; ForEach(data["items"].array, id: \.["id"].string) { item in Section { HStack { Image(systemName: "shippingbox.fill").foregroundStyle(Color.panelAccent); Text(cleanConsole(item["name"].string)); Spacer(); Text("×" + item["amount"].string).monospacedDigit() }; LabeledContent(item["container"].string, value: "Slot " + item["slot"].string); ForEach(Array(item["lore"].array.enumerated()), id: \.offset) { _, text in Text(cleanConsole(text.string)).font(.caption) } } } }.panelScreen().navigationTitle("Snapshot-Inhalt").task { await load() }.refreshable { await load() }.errorAlert($error) }
-    func load() async { do { data = try await suite.data("snapshot-content", query: ["player": player, "file": file]) } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
+
+    var body: some View {
+        List {
+            Section {
+                ForEach([("level", "XP-Level"), ("food", "Hunger"), ("health", "Gesundheit"), ("gamemode", "Spielmodus"), ("actor", "Erstellt von")], id: \.0) { key, title in
+                    LabeledContent(title, value: data[key].string)
+                }
+            }
+            ForEach([("inventory", "Inventar"), ("armor", "Rüstung"), ("enderchest", "Endertruhe")], id: \.0) { key, title in
+                let rows = data["items"].array.filter { $0["container"].string == key }
+                Section(title) {
+                    if rows.isEmpty { Text("Leer").foregroundStyle(.secondary) }
+                    ForEach(rows, id: \.["id"].string) { item in
+                        HStack(spacing: 12) {
+                            if let texture = icons[item["type"].string.lowercased()] {
+                                Image(uiImage: texture).resizable().interpolation(.none).scaledToFit().frame(width: 30, height: 30)
+                            } else { Image(systemName: "shippingbox.fill").foregroundStyle(Color.panelAccent).frame(width: 30) }
+                            VStack(alignment: .leading) {
+                                Text(cleanConsole(item["name"].string))
+                                Text("Slot " + item["slot"].string).font(.caption).foregroundStyle(.secondary)
+                                ForEach(Array(item["lore"].array.enumerated()), id: \.offset) { _, text in
+                                    Text(cleanConsole(text.string)).font(.caption)
+                                }
+                            }
+                            Spacer()
+                            Text("×" + item["amount"].string).monospacedDigit()
+                        }
+                    }
+                }
+            }
+        }.panelScreen().navigationTitle("Snapshot-Inhalt").task { await load() }.refreshable { await load() }.errorAlert($error)
+    }
+
+    func load() async {
+        do {
+            let snapshot = try await suite.data("snapshot-content", query: ["player": player, "file": file])
+            data = snapshot
+            let types = Set(snapshot["items"].array.map { $0["type"].string.lowercased() })
+            if suite.features.contains("visual-inventory-v1"), !types.isEmpty, types.count <= 70,
+               let response = try? await suite.request("invsee/icons", query: ["items": types.sorted().joined(separator: ",")]) {
+                icons = response["icons"].object.compactMapValues { value in
+                    guard let bytes = Data(base64Encoded: value.string) else { return nil }
+                    return UIImage(data: bytes)
+                }
+            }
+        } catch {
+            if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription }
+        }
+    }
 }
 struct SuiteNBTPathsView: View {
     let suite: SuiteAPI

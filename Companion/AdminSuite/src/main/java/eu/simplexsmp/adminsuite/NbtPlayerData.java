@@ -44,7 +44,7 @@ final class NbtPlayerData {
         }
     }
 
-    private static Object readPayload(DataInputStream input, int type, int depth, int[] budget) throws IOException {
+    static Object readPayload(DataInputStream input, int type, int depth, int[] budget) throws IOException {
         if(--budget[0]<0)throw new IOException("Zu viele NBT-Tags (Maximum 100.000)");
         if (depth > MAX_DEPTH) throw new IOException("NBT nesting exceeds " + MAX_DEPTH);
         switch (type) {

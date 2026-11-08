@@ -4,7 +4,7 @@ import Combine
 /// One directory for the home screen, Admin tab, direct accounts and Shortcuts.
 enum SuiteTool: String, CaseIterable, Identifiable, Codable {
     case overview, advertising, players, tickets, events, adminLog, histories, staffChat, tasks
-    case assistant, diagnostics, lagMap, spark, crashes, console, operations, worldTrim, serverEvents
+    case assistant, diagnostics, lagMap, spark, crashes, console, operations, worldTrim, serverEvents, powerBot
     case discordStatus, scoreboard, discord, luckperms, lands, locks, commands
     case management, team, appSettings, settings, access, account, bark, quiet, memory, links, crossplay, functions
     case reports, bans, vpn, alts, ultrabans, statistics, menu, ticketSettings, online, dependencies
@@ -32,6 +32,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .spark: return ("Spark-Profiler", "flame.fill", "Server & Diagnose", "data.diagnostics", "spark-v1")
         case .crashes: return ("Abstürze", "bolt.trianglebadge.exclamationmark.fill", "Server & Diagnose", "data.diagnostics", "crash-manager-v1")
         case .console: return ("Diagnose-Konsole", "terminal.fill", "Server & Diagnose", "data.diagnostics", "diagnostics-v1")
+        case .powerBot: return ("PowerBot-Fallzentrale", "shield.lefthalf.filled", "Verläufe", "data.powerbot", "powerbot-v1")
         case .serverEvents: return ("Event-Modus & Lockdown", "calendar.badge.clock", "Server & Diagnose", "data.server-events", "server-events-v1")
         case .operations: return ("Serverbetrieb & Neustart", "arrow.clockwise.circle.fill", "Server & Diagnose", "data.overview", "overview")
         case .worldTrim: return ("Welten-Trimmer", "scissors", "Server & Diagnose", "data.world-trim", "world-trim-v1")

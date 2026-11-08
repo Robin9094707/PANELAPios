@@ -792,9 +792,14 @@ struct SuitePlayerDossierView: View {
             if data == .null { Section { ProgressView("Steckbrief laden …") } }
             if search.isEmpty && data != .null && suite.features.contains("visual-inventory-v1") {
                 Section("Spielerwerkzeuge") {
-                    if data["online"].bool && suite.can("data.inventory") {
-                        NavigationLink { SuiteVisualInventoryView(suite: suite, player: data["player"].string) } label: {
-                            Label("Live-Inventar & Endertruhe", systemImage: "square.grid.3x3.fill")
+                    if (data["online"].bool || suite.features.contains("powerbot-v1")) && suite.can("data.inventory") {
+                        NavigationLink { SuiteVisualInventoryView(suite: suite, player: data["player"].string, offline: !data["online"].bool) } label: {
+                            Label(data["online"].bool ? "Live-Inventar & Endertruhe" : "Offline-Inventar & Endertruhe", systemImage: "square.grid.3x3.fill")
+                        }
+                    }
+                    if suite.can("data.snapshots") && suite.can("data.snapshot-content") {
+                        NavigationLink { SuiteSnapshotsView(suite: suite, player: player, actions: []) } label: {
+                            Label("Inventar-Snapshots", systemImage: "archivebox")
                         }
                     }
                     if suite.can("data.devices") {

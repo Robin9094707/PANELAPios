@@ -18,6 +18,11 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.4.0", title: "PowerBot-Fallzentrale", summary: "Chatmoderation, Teamübergabe und ein Rückblick für Simplex.", items: [
+            WhatsNewItem(symbol: "shield.lefthalf.filled", title: "Ausgeführte Aktionen sehen", detail: "Blockierungen, Deeskalation und laufende Chatmutes im eigenen Protokoll öffnen."),
+            WhatsNewItem(symbol: "person.badge.plus", title: "Fälle im Team übernehmen", detail: "Fälle zuweisen, Spieler öffnen, AutoMod-Mutes widerrufen und Vorgänge abschließen."),
+            WhatsNewItem(symbol: "clock.arrow.circlepath", title: "Rückblick nach der Pause", detail: "Auf Wunsch zeigt ein Banner wichtige Vorfälle seit deinem letzten Besuch.")
+        ]),
         WhatsNewRelease(version: "5.3.0", title: "Arts Update", summary: "Live-Inventare, Spieltag-Alarme und die Serverkonsole im Panel.", items: [
             WhatsNewItem(symbol: "square.grid.3x3.fill", title: "Inventare live öffnen", detail: "Item-Texturen, Hotbar, Ausrüstung und Endertruhe im Spielerprofil. Mit Freigabe lassen sich Stapel direkt tauschen."),
             WhatsNewItem(symbol: "terminal.fill", title: "Konsole durchsuchbar", detail: "Standardmäßig 30 Tage Archiv mit Datum, Suchbegriffen, Filtern und Löschoptionen."),

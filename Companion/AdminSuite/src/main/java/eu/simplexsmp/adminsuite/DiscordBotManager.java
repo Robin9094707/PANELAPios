@@ -421,17 +421,20 @@ final class DiscordBotManager {
         }
         String text=RelayText.fromDiscord(message,plugin.getConfig().getBoolean("discord-bot.relay.attachments",true));
         String name=link==null?originalName:link.name();long receivedAt=System.currentTimeMillis();
-        if(!plugin.discordChatModerationEnabled()){
+        PowerBot automod = plugin.powerBot;
+        boolean usePowerBot = automod != null && automod.managed("Discord");
+        if(!usePowerBot && (automod != null || !plugin.discordChatModerationEnabled())){
             deliverLinkedChat(user,link,name,text,channel,receivedAt);
             return;
         }
         try{relayReviewExecutors[Math.floorMod(user.hashCode(),relayReviewExecutors.length)].execute(()->{
-            if(System.currentTimeMillis()-receivedAt>30000){if(plugin.getConfig().getBoolean("discord-bot.relay-ai.fail-open",true)){deliverLinkedChat(user,link,name,text,channel,System.currentTimeMillis());return;}request("DELETE","/channels/"+channel+"/messages/"+id,null);notifyChatDecision(channel,user,OpenAiIntegration.ChatDecision.block("Your message expired while waiting for moderation. Please try again.","Moderation queue timeout"));return;}
-            OpenAiIntegration.ChatDecision decision=plugin.reviewDiscordChat(name,text);
-            if(!decision.allowed){try{HttpResponse<String> r=featureRequest("DELETE","/channels/"+channel+"/messages/"+id,null);if(r.statusCode()!=204&&r.statusCode()!=404)lastError="Blocked relay deletion HTTP "+r.statusCode();}catch(Exception e){lastError="Blocked relay deletion failed";}notifyChatDecision(channel,user,decision);plugin.runAdminTask(()->plugin.suiteAudit("Discord/"+user,"KI-Discord-Nachricht blockiert",decision.reason));return;}
+            if(System.currentTimeMillis()-receivedAt>30000){if(usePowerBot || plugin.getConfig().getBoolean("discord-bot.relay-ai.fail-open",true)){deliverLinkedChat(user,link,name,text,channel,System.currentTimeMillis());return;}request("DELETE","/channels/"+channel+"/messages/"+id,null);notifyChatDecision(channel,user,OpenAiIntegration.ChatDecision.block("Your message expired while waiting for moderation. Please try again.","Moderation queue timeout"));return;}
+            String identity = link == null ? "discord:" + user : link.minecraft().toString();
+            OpenAiIntegration.ChatDecision decision = usePowerBot ? automod.review(identity, name, "Discord", text, false, false) : plugin.reviewDiscordChat(name,text);
+            if(!decision.allowed){try{HttpResponse<String> r=featureRequest("DELETE","/channels/"+channel+"/messages/"+id,null);if(r.statusCode()!=204&&r.statusCode()!=404)lastError="Blocked relay deletion HTTP "+r.statusCode();}catch(Exception e){lastError="Blocked relay deletion failed";}notifyChatDecision(channel,user,decision);if(!usePowerBot)plugin.runAdminTask(()->plugin.suiteAudit("Discord/"+user,"KI-Discord-Nachricht blockiert",decision.reason));return;}
             deliverLinkedChat(user,link,name,text,channel,receivedAt);
             if(decision.warning)notifyChatDecision(channel,user,decision);
-        });}catch(java.util.concurrent.RejectedExecutionException e){if(plugin.getConfig().getBoolean("discord-bot.relay-ai.fail-open",true)){lastError="Discord AI queue unavailable; message forwarded according to fail-open policy";deliverLinkedChat(user,link,name,text,channel,receivedAt);return;}request("DELETE","/channels/"+channel+"/messages/"+id,null);lastError="Discord relay moderation queue full; message held";featureJob(()->notifyChatDecision(channel,user,OpenAiIntegration.ChatDecision.block("Chat moderation is busy. Please try again in a moment.","Moderation queue full")));}
+        });}catch(java.util.concurrent.RejectedExecutionException e){if(usePowerBot || plugin.getConfig().getBoolean("discord-bot.relay-ai.fail-open",true)){lastError="Discord AI queue unavailable; message forwarded according to fail-open policy";deliverLinkedChat(user,link,name,text,channel,receivedAt);return;}request("DELETE","/channels/"+channel+"/messages/"+id,null);lastError="Discord relay moderation queue full; message held";featureJob(()->notifyChatDecision(channel,user,OpenAiIntegration.ChatDecision.block("Chat moderation is busy. Please try again in a moment.","Moderation queue full")));}
     }
     /** Normal Discord messages cannot be ephemeral; use a DM plus an owner-bound private interaction. */
     private void notifyChatDecision(String channel,String user,OpenAiIntegration.ChatDecision decision){
@@ -2248,6 +2251,10 @@ final class DiscordBotManager {
         final String name;
         final String value;
         FocusedOption(String name, String value) { this.name = name; this.value = value; }
+    }
+
+    void relayPowerBot(String de, String en) {
+        if (canRelay("chat")) sendMessage(relayChannelId(), "**PowerBot** · " + RelayText.discord(de, 250) + "\n" + RelayText.discord(en, 250));
     }
 
     private void sendMessage(String channelId, String content) {

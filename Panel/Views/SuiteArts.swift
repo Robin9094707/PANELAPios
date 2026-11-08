@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct SuiteVisualInventoryView: View {
     let suite: SuiteAPI
     let player: String
+    var offline = false
     @State private var items: [Int: JSON] = [:]
     @State private var icons: [String: UIImage] = [:]
     @State private var requestedIcons: Set<String> = []
@@ -48,17 +49,18 @@ struct SuiteVisualInventoryView: View {
             }
         }
         .panelScreen()
-        .navigationTitle("Live-Inventar")
+        .navigationTitle(offline ? "Offline-Inventar" : "Live-Inventar")
         .task {
             while !Task.isCancelled {
                 await load()
+                if offline { return }
                 do { try await Task.sleep(for: .seconds(2)) } catch { return }
             }
         }
         .refreshable { await load() }
         .confirmationDialog("Inventar ändern?", isPresented: $confirm, titleVisibility: .visible) {
             Button("Slots tauschen") { Task { await apply() } }
-        } message: { Text("Die Änderung wird sofort auf dem Minecraft-Server angewendet.") }
+        } message: { Text(offline ? "Die Spielerdatei wird vor dem Tausch gesichert." : "Die Änderung wird sofort auf dem Minecraft-Server angewendet.") }
         .confirmationDialog("Eigenes Paket entfernen?", isPresented: $reset, titleVisibility: .visible) {
             Button("Entfernen", role: .destructive) { Task { await changePack(nil) } }
         }
@@ -112,7 +114,7 @@ struct SuiteVisualInventoryView: View {
         refreshing = true
         defer { refreshing = false }
         do {
-            let value = try await suite.request("invsee", query: ["player": player, "revision": revision], timeout: 8)
+            let value = try await suite.request("invsee", query: ["player": player, "revision": revision, "offline": offline ? "true" : "false"], timeout: 8)
             guard !Task.isCancelled, !busy else { return }
             canEdit = value["editable"].bool
             canPack = value["pack"].bool
@@ -149,7 +151,7 @@ struct SuiteVisualInventoryView: View {
         busy = true
         do {
             _ = try await suite.post("invsee", ["player": .string(player), "revision": .string(revision),
-                "from": .number(Double(from)), "to": .number(Double(to)), "confirmed": .bool(true)])
+                "offline": .bool(offline), "from": .number(Double(from)), "to": .number(Double(to)), "confirmed": .bool(true)])
         } catch { self.error = error.localizedDescription }
         self.from = nil; self.to = nil; busy = false
         await load()

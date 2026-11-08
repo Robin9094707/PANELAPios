@@ -1,6 +1,6 @@
 name: SimplexAdminSuite
 main: eu.simplexsmp.adminsuite.SimplexAdminSuite
-version: 10.10.0
+version: 10.11.0
 api-version: '26.2'
 author: RJ
 website: https://simplexsmp.eu
@@ -748,4 +748,10 @@ permissions:
     default: op
   simplexadminsuite.lockdown.bypass:
     description: Join the server during an event lockdown.
+    default: op
+  simplexadminsuite.powerbot.manage:
+    description: PowerBot-Fälle im Spiel verwalten.
+    default: op
+  simplexadminsuite.powerbot.bypass:
+    description: PowerBot-Prüfung für diesen Spieler überspringen.
     default: op

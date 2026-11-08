@@ -9,6 +9,7 @@
     { group: "Übersicht", items: [
       { id: "dashboard", label: "Dashboard", icon: "home", perm: null },
       { id: "tools", label: "Alle Werkzeuge", icon: "grid", perm: null },
+      { id: "powerbot", label: "PowerBot-Fallzentrale", icon: "shieldCheck", perm: "data.powerbot", feature: "powerbot-v1" },
       { id: "assistant", label: "KI-Assistent", icon: "sparkles", perm: "ai.assistant.use", feature: "admin-assistant-v1" },
       { id: "histories", label: "Verläufe verwalten", icon: "list", perm: null, feature: "history-management-v1" },
       { id: "events", label: "Ereignisse", icon: "bell", perm: "data.events" },
