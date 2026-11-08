@@ -1560,6 +1560,22 @@ final class OpenAiIntegration implements Listener {
     throw new ResponseFailure("retry-exhausted", "KI-Antwort unvollständig");
   }
 
+  Map<String,Object> assistantStructured(String instructions,String input,Map<String,Object> schema,int budget) throws Exception {
+    if(!configured())throw new IllegalStateException("OpenAI-Schlüssel fehlt.");
+    Map<String,Object> payload=new LinkedHashMap<>();
+    payload.put("model",model());payload.put("store",false);payload.put("instructions",instructions);
+    payload.put("input",input);payload.put("max_output_tokens",budget+1600);
+    payload.put("text",Map.of("format",Map.of("type","json_schema","name","simplex_admin_assistant","strict",true,"schema",schema)));
+    if(reasoningModel(model()))payload.put("reasoning",Map.of("effort","low"));
+    for(int attempt=0;attempt<2;attempt++)try{
+      return AppApiManager.object(DiscordBotManager.Json.parse(parseResponseText(post("/v1/responses",DiscordBotManager.Json.stringify(payload),Duration.ofSeconds(40)))));
+    }catch(ApiFailure e){
+      if(!payload.containsKey("reasoning")||!e.unsupported("reasoning"))throw e;
+      payload.remove("reasoning");
+    }
+    throw new IllegalStateException("KI-Anfrage fehlgeschlagen.");
+  }
+
   static boolean reasoningModel(String model) {
     return model != null
         && model.toLowerCase(Locale.ROOT).matches("(?:gpt-[56](?:[.-].*)?|o[1-4](?:-.*)?)");

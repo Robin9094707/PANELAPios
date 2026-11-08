@@ -1,4 +1,10 @@
-## Aktuelles Update: Panel 5.0.0 / Admin Suite 10.7.0
+## Aktuelles Update: Panel 5.1.0 / Admin Suite 10.8.0
+
+KI-Assistent mit gezielter Kontextauswahl, Hauptadmin-Freigabe und Diagnose 3.0.
+
+[Update-Anleitung](UPDATE-5.1.0.md) · [Releases](https://github.com/Robin9094707/PANELAPios/releases)
+
+## Panel 5.0.0 / Admin Suite 10.7.0
 
 **Anpassungs-Update** mit kompakter, pro Suite-Konto gespeicherter Server-Navigation,
 automatischen NBT-Spielerinfos, Fortschritt bei Plugin-Updates und systemgesteuerter

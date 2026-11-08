@@ -181,6 +181,7 @@ player-data:
 # never in this normal config. OPENAI_API_KEY can be used instead.
 # 10.2.0 Diagnosezentrale (App/Webpanel → Diagnose). Alles läuft auf dem Server; App und Webpanel lesen nur.
 diagnostics:
+  packet-metadata: true
   enabled: true
   # Mehrere Disconnects in kurzer Zeit werden zu einem Vorfall (Bark-Ereignis "disconnect-wave").
   burst:
@@ -238,6 +239,14 @@ openai:
     default-daily-limit: 5
     cooldown-seconds: 30
     max-output-tokens: 500
+  admin-assistant:
+    enabled: true
+    default-daily-limit: 15
+    # Legacy API keys need an explicit owner ID. Discord uses the configured guild's actual owner.
+    owner-api-key-id: ''
+    # Map a Discord user ID to a Suite account to reuse its permissions and daily limit.
+    discord-accounts: {}
+    limits: {}
   admin-actions:
     # The model can only draft an allowlisted proposal. Execution always requires a second,
     # account-bound Java inventory or Bedrock form confirmation within five minutes.

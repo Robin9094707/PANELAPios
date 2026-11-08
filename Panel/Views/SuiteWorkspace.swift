@@ -105,6 +105,7 @@ struct SuiteToolDestination: View {
             case .histories: SuiteHistoriesView(suite: suite)
             case .staffChat: SuiteStaffChatView(suite: suite)
             case .tasks: SuiteStaffTasksView(suite: suite)
+            case .assistant: SuiteAIAssistantView(suite: suite, panel: panel, server: server)
             case .diagnostics: SuiteDiagnosticsView(suite: suite)
             case .lagMap, .spark, .crashes, .console: SuiteDiagnosticsDestination(suite: suite, tool: tool)
             case .operations: SuiteOperationsView(suite: suite, actions: actions)

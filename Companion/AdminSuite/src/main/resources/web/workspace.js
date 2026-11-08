@@ -88,7 +88,7 @@
   };
 
   var shortcutPages = {
-    overview: "tools", advertising: "ad-hub", players: "players", tickets: "tickets",
+    overview: "tools", assistant: "assistant", advertising: "ad-hub", players: "players", tickets: "tickets",
     diagnostics: "diagnostics", adminLog: "admin-log", histories: "histories", staffChat: "staff-chat",
     events: "events", statistics: "statistics", chat: "chat", worldTrim: "world-trim",
     discordStatus: "discord-status", scoreboard: "scoreboard", luckperms: "luckperms",
@@ -132,6 +132,137 @@
           await S.api("shortcut-prefs", { body: { name: name.value, compact: compact.checked, hidden: !visible.checked, tools: selected } });
           S.toast("Schnellzugriffe gespeichert");
         } })));
+  };
+
+  P.assistant = async function (param, query, alive) {
+    var status = await S.api("assistant/status"); if (!alive()) return;
+    var owner = status.owner === true, result = null, busy = false, outcomes = [], selected = new Set(), summary = "";
+    var answer = h("div", { class: "stack", "aria-live": "polite" });
+    var inbox = h("div", { class: "stack" }), settings = h("div", { class: "stack" });
+    var input = h("textarea", { class: "input", maxlength: 2000, rows: 4, placeholder: "Was soll die KI für diesen Server prüfen?", "aria-label": "Deine Frage" });
+    var send = S.btn("Fragen", { kind: "primary", icon: "send", disabled: !status.available, onClick: function () {
+      var question = input.value.trim(); if (!question || busy) return;
+      return run(async function () { await poll(await S.api("assistant/ask", { body: { question: question } })); });
+    } });
+    var usage = h("small", { class: "muted" });
+    function updateUsage() { usage.textContent = owner ? "Hauptadmin · ohne Tageslimit" : "Heute genutzt: " + status.used + " / " + status.limit; }
+    updateUsage();
+    async function run(work) {
+      if (busy || !alive()) return;
+      busy = true; send.disabled = true;
+      try { await work(); } catch (e) { if (alive()) S.toast(e.message, "err"); }
+      finally { if (alive()) { busy = false; send.disabled = !status.available; } }
+    }
+    async function poll(job) {
+      outcomes = []; summary = "";
+      S.clear(answer); answer.appendChild(S.notice("Antwort und Datenquellen werden geprüft …"));
+      for (var i = 0; i < 64 && alive(); i++) {
+        var row = await S.api("assistant/job", { query: { id: job.id }, quiet: true }); if (!alive()) return;
+        if (row.status !== "running") {
+          result = row; draw(); status = await S.api("assistant/status", { quiet: true }); updateUsage();
+          if (owner) await loadInbox();
+          return;
+        }
+        await new Promise(function (resolve) { setTimeout(resolve, 2000); });
+      }
+      if (alive()) throw new Error("Der Server braucht länger. Prüfe später die offenen Freigaben.");
+    }
+    async function change(operation) {
+      if (!result) return;
+      var id = result.id, revision = result.revision, actions = Array.from(selected);
+      if (operation === "approve" && !actions.length) return;
+      if (operation === "approve" && !(await S.confirm("Diesen Aktionsplan verbindlich ausführen?", "Der Server führt die vollständig angezeigten Schritte nacheinander aus.", "Plan bestätigen", true))) return;
+      if (!alive() || id !== result.id) return;
+      return run(async function () {
+        var response = await S.api("assistant/" + operation, { body: { id: id, revision: revision, actions: actions, confirmed: operation === "approve" } });
+        outcomes = response.results || []; summary = "";
+        result = await S.api("assistant/job", { query: { id: id } }); draw();
+        if (owner) await loadInbox();
+      });
+    }
+    function draw() {
+      if (!alive()) return;
+      S.clear(answer); selected.clear();
+      var r = result; if (!r) return;
+      var detail = h("div", { class: "stack" });
+      if (r.answer) detail.appendChild(h("div", { style: { whiteSpace: "pre-wrap" }, text: r.answer }));
+      if (r.sources && r.sources.length) detail.appendChild(h("small", { class: "muted", text: "Datenquellen · " + r.sources.join(", ") }));
+      if (r.summary || summary) detail.appendChild(h("details", { open: !!summary }, h("summary", { text: "KI-Kurzfassung" }), h("p", { text: summary || r.summary })));
+      if (r.choices && r.choices.length && status.available && r.status === "ready") detail.appendChild(h("div", { class: "row wrap" }, r.choices.map(function (text, index) {
+        return S.btn(text, { onClick: function () { return run(async function () { await poll(await S.api("assistant/choose", { body: { id: r.id, index: index } })); }); } });
+      })));
+      if (r.players) detail.appendChild(h("div", { class: "row wrap" }, r.players.map(function (p) { return h("a", { class: "btn sm", href: "#/player/" + encodeURIComponent(p.id), text: p.name }); })));
+      (r.rejected || []).forEach(function (message) { detail.appendChild(S.notice(message, "warn")); });
+      answer.appendChild(S.card("Antwort", { icon: "sparkles" }, detail));
+      if ((r.actions || []).length) {
+        var approve = S.btn("Auswahl bestätigen", { kind: "danger", disabled: true, onClick: function () { return change("approve"); } });
+        var checks = [];
+        var entries = r.actions.map(function (action, index) {
+          var title = h("strong", { text: (index + 1) + ". " + action.title });
+          if (owner && r.status === "ready") {
+            var check = h("input", { type: "checkbox" });
+            checks.push(check);
+            check.addEventListener("change", function () {
+              if (check.checked) selected.add(action.id); else selected.delete(action.id);
+              approve.disabled = selected.size === 0;
+            });
+            title = h("label", { class: "check" }, check, title);
+          }
+          return h("div", { class: "item" }, h("div", { class: "meta" }, title, h("p", { style: { whiteSpace: "pre-wrap" }, text: action.preview })));
+        });
+        var all = S.btn("Alle auswählen", { onClick: function () {
+          checks.forEach(function (box) { box.checked = true; });
+          r.actions.forEach(function (action) { selected.add(action.id); });
+          approve.disabled = false;
+        } });
+        answer.appendChild(S.card("Vorgeschlagene Aktionen", { icon: "list", sub: r.author || "" }, h("div", { class: "stack" }, entries,
+          r.status === "ready" ? h("div", { class: "row wrap" }, owner ? [all, approve] : h("span", { class: "muted", text: "Wartet auf Freigabe durch den Hauptadmin." }),
+            S.btn("Mit KI neu zusammenfassen", { disabled: !status.available, onClick: function () {
+              return run(async function () {
+                var job = await S.api("assistant/summarize", { body: { id: r.id } });
+                for (var i = 0; i < 40 && alive(); i++) {
+                  var row = await S.api("assistant/job", { query: { id: job.id }, quiet: true });
+                  if (row.status !== "running") { summary = row.answer || ""; draw(); return; }
+                  await new Promise(function (resolve) { setTimeout(resolve, 2000); });
+                }
+              });
+            } }), S.btn("Plan verwerfen", { onClick: function () { return change("discard"); } })) : h("span", { class: "muted", text: r.status === "discarded" ? "Plan verworfen." : "Plan verarbeitet." }))));
+
+      }
+      if (outcomes.length) answer.appendChild(S.card("Ergebnis der Freigabe", {}, h("div", { class: "stack" }, outcomes.map(function (step) {
+        return S.notice(step.title + " · " + step.description, step.ok ? "ok" : "warn");
+      }))));
+    }
+    async function loadInbox() {
+      var data = await S.api("assistant/inbox"); if (!alive()) return;
+      S.clear(inbox);
+      var items = data.items || [];
+      inbox.appendChild(items.length ? h("div", { class: "row wrap" }, items.map(function (plan) {
+        return S.btn(plan.author + " · " + plan.count + " Aktionen", { onClick: function () {
+          return run(async function () { outcomes = []; summary = ""; result = await S.api("assistant/job", { query: { id: plan.id } }); draw(); });
+        } });
+      })) : S.notice("Keine offenen Pläne."));
+    }
+    async function loadLimits() {
+      var data = await S.api("assistant/limits"); if (!alive()) return;
+      S.clear(settings);
+      var account = h("input", { class: "input", placeholder: "Suite-Benutzername", maxlength: 64 });
+      var limit = h("input", { class: "input", type: "number", min: 0, max: 500, value: data.default });
+      settings.appendChild(h("small", { class: "muted", text: "Standard: " + data.default + " pro Tag. 0 sperrt neue Anfragen." }));
+      Object.keys(data.accounts || {}).sort().forEach(function (name) { settings.appendChild(S.btn(name + " · " + data.accounts[name], { size: "sm", onClick: function () { account.value = name; limit.value = data.accounts[name]; } })); });
+      settings.appendChild(h("div", { class: "row wrap" }, S.field("Suite-Konto", account), S.field("Tageslimit", limit),
+        S.btn("Limit speichern", { onClick: function () { return run(async function () {
+          await S.api("assistant/limits", { body: { account: account.value, limit: limit.value } }); await loadLimits();
+        }); } })));
+    }
+    S.title("KI-Assistent", "Gezielt nachsehen und Schreibaktionen zur Freigabe vorlegen");
+    S.mount(h("div", { class: "stack" }, S.card("Serverassistent", { icon: "sparkles" }, h("div", { class: "stack" },
+      status.available ? null : S.notice("KI ist deaktiviert oder der OpenAI-Schlüssel fehlt. Die manuellen Werkzeuge sind erreichbar.", "warn"),
+      input, h("div", { class: "row wrap" }, send, usage),
+      h("div", { class: "row wrap" }, ["Gab es letzte Nacht Vorfälle im Chat?", "Wann waren Admins zuletzt im Vanish?", "Welche Tickets sind offen?"].map(function (example) {
+        return S.btn(example, { size: "sm", onClick: function () { input.value = example; input.focus(); } });
+      })))), answer, owner ? S.card("Offene Freigaben", { icon: "list" }, inbox) : null, owner ? S.card("Tageslimits", { icon: "settings" }, settings) : null));
+    if (owner) await Promise.all([loadInbox(), loadLimits()]);
   };
 
   var dashboard = P.dashboard;

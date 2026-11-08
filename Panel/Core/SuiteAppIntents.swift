@@ -2,11 +2,11 @@ import AppIntents
 import Foundation
 
 enum SuiteShortcutTool: String, AppEnum {
-    case overview, advertising, tickets, diagnostics, histories, settings, players, adminLog, staffChat, statistics, operations, reports, bans, events, tasks, chat, functions
+    case overview, advertising, tickets, assistant, diagnostics, histories, settings, players, adminLog, staffChat, statistics, operations, reports, bans, events, tasks, chat, functions
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "Admin-Werkzeug"
     static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .overview: "Admin Suite", .advertising: "Werbe-Zentrale", .tickets: "Tickets",
-        .diagnostics: "Diagnose", .histories: "Verläufe verwalten", .settings: "Suite-Einstellungen",
+        .assistant: "KI-Assistent", .diagnostics: "Diagnose", .histories: "Verläufe verwalten", .settings: "Suite-Einstellungen",
         .players: "Spieler", .adminLog: "Admin-Log", .staffChat: "Staff-Chat", .statistics: "Statistiken",
         .operations: "Serverbetrieb", .reports: "Reports", .bans: "Banns", .events: "Ereignisse",
         .tasks: "Staff-Aufgaben", .chat: "Serverchat", .functions: "Alle Funktionen"
