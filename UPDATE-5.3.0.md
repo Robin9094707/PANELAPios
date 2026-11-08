@@ -37,4 +37,4 @@ Für einen Start mit registriertem Befehl nutzt ein Hauptadmin `/sas event sched
 2. Server neu starten. Den vorhandenen Ordner `plugins/SimplexAdminSuite` behalten.
 3. Die neue `Simplex-Panel-5.3.0-unsigned.ipa` wie bisher signieren und installieren. Das Webpanel kommt mit der Plugin-JAR.
 
-[GitHub-Release](https://github.com/Robin9094707/PANELAPios/releases/tag/app-v5.3.0) · [GitHub Actions](https://github.com/Robin9094707/PANELAPios/actions)
+[GitHub-Actions-Build für Version 5.3.0](https://github.com/Robin9094707/PANELAPios/actions/runs/42476860684)

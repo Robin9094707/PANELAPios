@@ -1,18 +1,22 @@
-## Aktuelles Update – Arts Update
+## Aktuelles Update · Panel 5.4.1 und Admin Suite 10.11.1
 
 Simplex Panel 5.4.1 und Admin Suite 10.11.1 ergänzen durchsuchbare PowerBot-Stichwortregeln und aktuelle Ereignisse direkt auf der iPhone-Startseite.
 
 [Update-Anleitung](UPDATE-5.4.1.md) · [Release und Downloads](https://github.com/Robin9094707/PANELAPios/releases/tag/app-v5.4.1)
 
+## Panel 5.4.0 / Admin Suite 10.11.0
+
 Simplex Panel 5.4.0 und Admin Suite 10.11.0 ergänzen PowerBot für Minecraft und Discord, eine gemeinsame Fallzentrale, einen Rückblick für Admins und visuelle Offline-Inventare.
 
 [PowerBot-Update und Installation](UPDATE-5.4.0.md) · [Release und Downloads](https://github.com/Robin9094707/PANELAPios/releases/tag/app-v5.4.0)
+
+## Panel 5.3.0 / Admin Suite 10.10.0
 
 Simplex Panel 5.3.0 und Admin Suite 10.10.0 bringen visuelle Live-Inventare, ein durchsuchbares Konsolenarchiv,
 Ingame-Tag-Alarme, Event-Status und Lockdown. Die KI kann mit Freigabe Geräteinfos verlinken und optional im
 öffentlichen Serverchat auf Deutsch und Englisch helfen.
 
-[Update-Anleitung](UPDATE-5.3.0.md) · [Release und Downloads](https://github.com/Robin9094707/PANELAPios/releases/tag/app-v5.3.0)
+[Update-Anleitung](UPDATE-5.3.0.md) · [GitHub-Actions-Build](https://github.com/Robin9094707/PANELAPios/actions/runs/42476860684)
 
 ## Panel 5.2.0 / Admin Suite 10.9.0
 
