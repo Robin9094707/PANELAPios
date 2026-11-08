@@ -34,7 +34,7 @@ final class DisconnectAnalyzer {
         }
         Record withMessage(String text) {
             String clean = clip(text, 300);
-            return new Record(id, at, uuid, name, platform, quitReason, kickCause, clean, DisconnectAnalyzer.category(quitReason, kickCause, clean), sessionMs, ping, world, chunkX, chunkZ, tps, msptMax, online, packet);
+            return new Record(id, at, uuid, name, platform, quitReason, kickCause, clean, DisconnectAnalyzer.category(quitReason, kickCause, clean, packet), sessionMs, ping, world, chunkX, chunkZ, tps, msptMax, online, packet);
         }
     }
 
@@ -75,6 +75,17 @@ final class DisconnectAnalyzer {
         if (q.equals("KICKED") || !k.isEmpty() && !k.equals("UNKNOWN")) return "KICK";
         if (q.equals("DISCONNECTED") || m.equals("disconnected") || m.contains("client disconnected") || m.contains("disconnect.quitting") || m.contains("quitting") || m.isBlank()) return "CLIENT_QUIT";
         return "OTHER";
+    }
+
+    static String category(String quitReason,String kickCause,String message,Map<String,Object> packet){
+        String baseline=category(quitReason,kickCause,message);
+        if(!Set.of("CLIENT_QUIT","ERROR","OTHER").contains(baseline)
+            || (message!=null&&!message.isBlank()&&!baseline.equals("ERROR"))
+            || !(packet.get("errorAgeMs") instanceof Number age) || age.longValue()<0 || age.longValue()>3000)return baseline;
+        String error=String.valueOf(packet.getOrDefault("error",""));
+        if(error.matches(".*(?:DecoderException|EncoderException|CorruptedFrameException|TooLongFrameException|CompressionException|InvalidPacketException).*"))return "PACKET";
+        if(error.matches(".*(?:ReadTimeoutException|WriteTimeoutException).*"))return "TIMEOUT";
+        return baseline;
     }
 
     /** True when {@code count} relevant disconnects happened within {@code windowMs} ending at the newest record. */

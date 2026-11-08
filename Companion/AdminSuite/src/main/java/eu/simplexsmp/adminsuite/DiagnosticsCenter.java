@@ -349,18 +349,18 @@ final class DiagnosticsCenter implements Listener {
     public void onQuit(PlayerQuitEvent e) {
         Player p = e.getPlayer(); long now = System.currentTimeMillis();
         Map<String,Object> packet=plugin.packetTrace.take(p.getUniqueId(),now);
-        if (!enabled()) return;
         String[] kick = kicks.remove(p.getUniqueId());
+        Long since = joined.remove(p.getUniqueId());
+        if (!enabled()) return;
         String quit = ""; try { quit = e.getReason().name(); } catch (Throwable ignored) { }
         String message = kick != null ? kick[1] : "";
         synchronized (lostMessages) { String[] lost = lostMessages.remove(p.getName().toLowerCase(Locale.ROOT)); if (lost != null && now - Long.parseLong(lost[1]) < 8000 && message.isBlank()) message = lost[0]; }
-        Long since = joined.remove(p.getUniqueId());
         Location loc = p.getLocation(); if (loc == null) loc = new Location(null, 0, 0, 0);
         String platform = plugin.isBedrockClient(p) ? "bedrock" : "java";
         int ping = ConnectionDiagnostics.ping(p);
         String kickCause = kick == null ? "" : kick[0];
         DisconnectAnalyzer.Record r = new DisconnectAnalyzer.Record(UUID.randomUUID().toString().substring(0, 13), now, p.getUniqueId().toString(), p.getName(), platform, quit, kickCause, SparkProfile.clip(message, 300),
-            DisconnectAnalyzer.category(quit, kickCause, message), since == null ? 0 : now - since, ping, loc.getWorld() == null ? "" : loc.getWorld().getName(), loc.getBlockX() >> 4, loc.getBlockZ() >> 4,
+            DisconnectAnalyzer.category(quit, kickCause, message, packet), since == null ? 0 : now - since, ping, loc.getWorld() == null ? "" : loc.getWorld().getName(), loc.getBlockX() >> 4, loc.getBlockZ() >> 4,
             currentTps(), recentMax(5), Math.max(0, Bukkit.getOnlinePlayers().size() - 1),packet);
         synchronized (this) { records.addLast(r); prune(now); }
         dataDirty.set(true);

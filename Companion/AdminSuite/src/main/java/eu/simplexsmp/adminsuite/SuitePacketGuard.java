@@ -68,7 +68,7 @@ final class SuitePacketGuard {
         }catch(ReflectiveOperationException|RuntimeException e){warn("Connection: "+e.getClass().getSimpleName()+" "+e.getMessage());}
     }
     void quit(Player p){UUID id=p.getUniqueId();snapshots.remove(id);Channel c=channels.remove(id);if(c!=null)c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});}
-    void stop(){for(Channel c:channels.values())c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});channels.clear();snapshots.clear();plugin.packetTrace.clear();}
+    void stop(){for(Channel c:channels.values())c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});channels.clear();snapshots.clear();if(plugin.packetTrace!=null)plugin.packetTrace.clear();}
     private void warn(String message){if(warned.add(message))plugin.getLogger().warning("[Packet guard] "+message+". Native Paper hidePlayer remains active; unsupported packet filtering is not claimed.");}
     private static Channel findChannel(Object value,int depth,Set<Object> seen)throws IllegalAccessException{
         if(value instanceof Channel c)return c;if(value==null||depth>5||!seen.add(value))return null;

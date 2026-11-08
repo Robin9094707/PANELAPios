@@ -128,6 +128,9 @@ public final class Release1060Harness {
         var packet=trace.take(player,4000);
         check(packet.get("inbound").equals(1L)&&packet.get("errorAgeMs").equals(1000L)&&packet.get("lastInbound").equals("String"),"packet metadata includes class counts and age");
         check(!packet.toString().contains("private packet payload")&&!packet.toString().contains("secret failure message")&&trace.take(player,4000).isEmpty(),"packet trace contains no payload and is removed at quit");
+        check(DisconnectAnalyzer.category("DISCONNECTED","","",Map.of("error","DecoderException","errorAgeMs",250)).equals("PACKET"),"fresh decoder observation explains otherwise unclassified disconnect");
+        check(DisconnectAnalyzer.category("KICKED","BANNED","banned",Map.of("error","DecoderException","errorAgeMs",250)).equals("ACCESS"),"stronger Paper kick cause takes precedence");
+        check(DisconnectAnalyzer.category("DISCONNECTED","","",Map.of("error","DecoderException","errorAgeMs",3500)).equals("CLIENT_QUIT"),"stale packet error does not reclassify a quit");
     }
 
 }
