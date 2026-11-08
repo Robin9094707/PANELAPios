@@ -19,7 +19,7 @@ final class PlayerNbtAccess {
         try {
             var entries=PlayerNbtLocator.find(serverRoot,worlds,player);
             if(entries.isEmpty())return SimplexAdminSuite.appMap("available",false,"reason","missing");
-            var entry=entries.getFirst();
+            var entry=entries.get(0);
             var attributes=Files.readAttributes(entry.file(),java.nio.file.attribute.BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
             if(!attributes.isRegularFile()||attributes.size()>2*1024*1024)return SimplexAdminSuite.appMap("available",false,"reason","unreadable");
             var nbt=NbtPlayerData.read(entry.file().toFile());

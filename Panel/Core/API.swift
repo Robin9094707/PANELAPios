@@ -194,7 +194,7 @@ final class PanelAPI {
         }.value
         var request = URLRequest(url: target); request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        try await TransferManager.shared.upload(request, body: staging, filename: file.lastPathComponent, context: "\(base.host ?? "Panel") · \(server) · \(directory)", operationKey: operationKey + "|" + checksum)
+        try await TransferManager.shared.upload(request, body: staging, filename: file.lastPathComponent, context: "\(base.host ?? "Panel") · \(server) · \(directory)", operationKey: operationKey + "|" + checksum, destinationKey: operationKey)
     }
     nonisolated static func uploadTarget(_ signed: String, directory: String) throws -> URL {
         guard var c = URLComponents(string: signed), c.scheme == "https", c.host != nil,

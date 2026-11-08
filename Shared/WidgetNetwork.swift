@@ -85,19 +85,24 @@ enum WidgetNetwork {
                     if let tps = AMPMetrics.number(overview["tps"]), tps > 0 { record.tps = tps; record.tpsUpdated = Date() }
                 }
                 if includeNames {
-                var names: [String] = [], offset = 0
-                for _ in 0..<30 {
-                    var c = URLComponents(url: url.appendingPathComponent("v1/data/players"), resolvingAgainstBaseURL: false)!
-                    c.queryItems = [URLQueryItem(name: "offset", value: String(offset))]
-                    var request = URLRequest(url: c.url!); request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-                    let result = try await load(request, pin: record.suitePin ?? "")
-                    let data = result["data"] == .null ? result : result["data"]
-                    let rows = data["items"].array
-                    names += rows.filter { $0["online"].bool }.map { $0["name"].string }
-                    let next = data["next"].int
-                    if rows.contains(where: { !$0["online"].bool }) || data["next"] == .null || next <= offset { break }; offset = next
-                }
-                record.playerNames = Array(Set(names)).sorted(); record.online = record.playerNames?.count; record.playersUpdated = Date()
+                    var names: [String] = [], offset = 0, snapshot = ""
+                    for _ in 0..<30 {
+                        var c = URLComponents(url: url.appendingPathComponent("v1/data/players"), resolvingAgainstBaseURL: false)!
+                        c.queryItems = [URLQueryItem(name: "filter", value: "online"), URLQueryItem(name: "limit", value: "100"),
+                                        URLQueryItem(name: "offset", value: String(offset)), URLQueryItem(name: "snapshot", value: snapshot)]
+                        var request = URLRequest(url: c.url!); request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+                        let result = try await load(request, pin: record.suitePin ?? "")
+                        let data = result["data"] == .null ? result : result["data"]
+                        let rows = data["items"].array
+                        names += rows.filter { $0["online"].bool }.map { $0["name"].string }
+                        let next = data["next"].int
+                        if rows.contains(where: { !$0["online"].bool }) || data["next"] == .null || next <= offset { break }
+                        offset = next; snapshot = data["snapshot"].string
+                    }
+                    record.playerNames = Array(Set(names)).sorted()
+                    if record.playersUpdated == initial.playersUpdated {
+                        record.online = record.playerNames?.count; record.playersUpdated = Date()
+                    }
                 }
             }
             if record.state == "offline" { record.online = 0; record.playerNames = []; record.playersUpdated = Date(); record.tps = nil; record.tpsUpdated = nil; record.uptime = 0 }

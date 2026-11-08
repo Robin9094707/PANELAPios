@@ -110,7 +110,7 @@ struct HomeView: View {
         suiteRequest = nil
         add = false; directSuite = false; settings = false; transfers = false; widgets = false
         suiteEvents = false; suiteTickets = false; adHub = false; editLayout = false
-        quickHub = false; redeemSetup = false; shortcutHelp = false; setupInbox.link = nil
+        quickHub = false; redeemSetup = false; shortcutHelp = false; shortcutSettings = false; setupInbox.link = nil
         do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
         guard suiteNavigation.request?.id == request.id else { return }
         suiteRequest = request

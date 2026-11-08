@@ -73,7 +73,42 @@ public final class Release1060Harness {
         plugin.adminLog.historyReplace(List.of()); plugin.adminLog.stop();
         plugin.adminLog = new AdminActivityLog(plugin); plugin.adminLog.record("Console",null,"After restart","entry");
         check(plugin.adminLog.historySnapshot().stream().allMatch(r->AdminActivityLog.number(r.get("id"))>serial), "admin log cursor stays monotonic after clearing and restart");
+        customization(c,b,plugin,api,owner,viewer);
         plugin.appChat.stop();
         System.out.println("PASS " + checks + " 10.6.0 history and startup checks");
     }
+    private static void customization(HttpClient c, URI b, SimplexAdminSuite plugin, AppApiManager api, String owner, String viewer) throws Exception {
+        check(Release1020Harness.call(c,b,"/v1/shortcut-prefs",null,null).statusCode()==401,"preferences require login");
+        post(c,b,"/v1/shortcut-prefs",owner,Map.of("name","Survival","tools",List.of("tickets","players","tickets"),"hidden",true));
+        post(c,b,"/v1/shortcut-prefs",owner,Map.of("compact",false,"appearance",Map.of("radius",22)));
+        post(c,b,"/v1/shortcut-prefs",owner,Map.of("appearance",Map.of("chartStyle","line")));
+        var saved=get(c,b,"/v1/shortcut-prefs",owner);
+        check(List.of("tickets","players").equals(saved.get("tools")) && Boolean.TRUE.equals(saved.get("hidden")) && Boolean.FALSE.equals(saved.get("compact")),"ordered shortcuts and partial updates");
+        check(((Map<?,?>)saved.get("appearance")).size()==2,"parallel surfaces preserve other appearance values");
+        check(get(c,b,"/v1/shortcut-prefs",viewer).isEmpty(),"preferences isolated per account");
+        check(Release1020Harness.call(c,b,"/v1/shortcut-prefs",owner,Map.of("appearance",Map.of("radius",-1))).statusCode()==400,"invalid appearance rejected");
+        check(new PanelHub(api,plugin,api.security).shortcutPrefs(api.security.notificationOwner(api.security.authenticate(owner))).get("name").equals("Survival"),"shortcut preferences survive restart");
+        check(Release1020Harness.call(c,b,"/v1/player-nbt/summary?player=unknown",viewer,null).statusCode()==403,"NBT summary requires a separate NBT right");
+
+        Path root=Files.createTempDirectory("sas-nbt-profile-");
+        try {
+            Path data=Files.createDirectories(root.resolve("world/players/data"));
+            UUID id=UUID.randomUUID();
+            check("missing".equals(PlayerNbtAccess.summary(root,List.of(),id).get("reason")),"missing NBT distinguished");
+            try(var out=new java.io.DataOutputStream(new java.util.zip.GZIPOutputStream(Files.newOutputStream(data.resolve(id+".dat"))))){
+                out.writeByte(10);out.writeUTF("");
+                out.writeByte(3);out.writeUTF("DataVersion");out.writeInt(4321);
+                out.writeByte(10);out.writeUTF("bukkit");
+                out.writeByte(4);out.writeUTF("firstPlayed");out.writeLong(1700000000000L);
+                out.writeByte(4);out.writeUTF("lastPlayed");out.writeLong(1710000000000L);
+                out.writeByte(0);out.writeByte(0);
+            }
+            var nbt=PlayerNbtAccess.summary(root,List.of(),id);
+            check(Boolean.TRUE.equals(nbt.get("available")) && Objects.equals(nbt.get("firstJoin"),1700000000000L) && Objects.equals(nbt.get("lastPlayed"),1710000000000L),"NBT first and last played use stored timestamps");
+            check(nbt.get("path").equals("/world/players/data/"+id+".dat") && !((List<?>)nbt.get("fields")).isEmpty(),"modern world path and metadata");
+        } finally {
+            try(var paths=Files.walk(root)){for(Path path:paths.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(path);}
+        }
+    }
+
 }

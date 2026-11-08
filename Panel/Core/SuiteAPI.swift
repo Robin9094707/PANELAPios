@@ -212,8 +212,9 @@ enum SuiteDevice {
         do {
             let body: Data
             if pin.isEmpty {
+                let destination = "suite-plugin|" + connection.id.uuidString + "|" + candidate.filename
                 body = try await TransferManager.shared.upload(request, body: file, filename: candidate.next.versionedFilename,
-                    context: context, operationKey: "suite-plugin|" + connection.id.uuidString + "|" + candidate.filename + "|" + sha)
+                    context: context, operationKey: destination + "|" + sha, destinationKey: destination)
             } else {
                 let (bytes, response) = try await PinnedHTTPS.load(request, pin: pin, file: file, progress: progress)
                 try PanelAPI.validate(bytes, response: response)

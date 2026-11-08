@@ -55,6 +55,14 @@ import Combine
         }
         if let connection { update(connection, "preferredAt", .number(Date().timeIntervalSince1970 * 1000)) }
     }
+    func appearance(for id: UUID) -> [String: JSON] { values[id]?["appearance"]?.object ?? [:] }
+    func setAppearance(_ patch: [String: JSON], for id: UUID) {
+        guard !patch.isEmpty else { return }
+        values[id, default: [:]]["appearance"] = .object(appearance(for: id).merging(patch) { _, new in new })
+        let queued = pending[id]?["appearance"]?.object ?? [:]
+        pending[id, default: [:]]["appearance"] = .object(queued.merging(patch) { _, new in new })
+        queueSync(id)
+    }
     func request(tool: SuiteTool, connection: UUID, records: [SuiteConnection]) -> SuiteLaunchRequest? {
         guard !isHidden(connection), records.contains(where: { $0.id == connection }) else { return nil }
         return SuiteLaunchRequest(tool: tool, connection: connection)
@@ -63,6 +71,9 @@ import Combine
     private func update(_ id: UUID, _ key: String, _ value: JSON) {
         values[id, default: [:]][key] = value
         pending[id, default: [:]][key] = value
+        queueSync(id)
+    }
+    private func queueSync(_ id: UUID) {
         persist()
         if let record = SuiteConnections.shared.values.first(where: { $0.id == id }) {
             Task { await synchronize(record) }

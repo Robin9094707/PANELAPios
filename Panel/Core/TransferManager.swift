@@ -16,6 +16,7 @@ struct TransferRecord: Identifiable, Codable {
     var issue: String?
     var source: DownloadSource?
     var operationKey: String?
+    var destinationKey: String?
     var fraction: Double? { total > 0 ? min(1, max(0, Double(completed) / Double(total))) : nil }
     var active: Bool { state == "running" || state == "pausing" || state == "resolving" }
     var title: String {
@@ -112,17 +113,27 @@ struct TransferRecord: Identifiable, Codable {
         guard let record = records.first(where: { $0.id == id && $0.state == "completed" }) else { throw PanelError(message: "Download wurde entfernt oder nicht vollständig gespeichert.") }
         return localFile(record)
     }
-    @discardableResult func upload(_ request: URLRequest, body: URL, filename: String, context: String, operationKey: String? = nil) async throws -> Data {
+    @discardableResult func upload(_ request: URLRequest, body: URL, filename: String, context: String, operationKey: String? = nil, destinationKey: String? = nil) async throws -> Data {
         if let operationKey, let active = records.first(where: { $0.upload && $0.active && $0.operationKey == operationKey }) {
             return try await withCheckedThrowingContinuation { waiters[active.id, default: []].append($0) }
         }
+        if let destinationKey, records.contains(where: { $0.upload && $0.active && $0.destinationKey == destinationKey }) {
+            throw PanelError(message: "Für diese Zieldatei läuft bereits ein anderer Upload.")
+        }
         var record = TransferRecord(filename: filename, context: context, upload: true)
-        try FileManager.default.createDirectory(at: folder(record.id), withIntermediateDirectories: true)
-        let persistent = folder(record.id).appendingPathComponent("body.upload")
-        try FileManager.default.copyItem(at: body, to: persistent)
+        let folder = folder(record.id)
+        let persistent = folder.appendingPathComponent("body.upload")
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: body, to: persistent)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: persistent.path)
+            record.total = Int64((try persistent.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0)
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
         record.operationKey = operationKey
-        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: persistent.path)
-        record.total = Int64((try persistent.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0)
+        record.destinationKey = destinationKey
         let task = session.uploadTask(with: request, fromFile: persistent)
         return try await withCheckedThrowingContinuation { continuation in
             waiters[record.id, default: []].append(continuation); begin(record, task: task)
@@ -132,13 +143,13 @@ struct TransferRecord: Identifiable, Codable {
         records.insert(record, at: 0); tasks[record.id] = task; task.taskDescription = record.id.uuidString
         persist(force: true); startActivity(record); task.resume()
     }
-    func progress(_ id: UUID, sent: Int64, total: Int64) {
-        guard let i = records.firstIndex(where: { $0.id == id }), records[i].active else { return }
+    func progress(_ id: UUID, taskIdentifier: Int, sent: Int64, total: Int64) {
+        guard let i = records.firstIndex(where: { $0.id == id }), records[i].active, tasks[id]?.taskIdentifier == taskIdentifier else { return }
         records[i].completed = max(0, sent); records[i].total = total; records[i].updated = Date()
         persist(); updateActivity(records[i])
     }
-    func finish(_ id: UUID, response: URLResponse?, error: Error?, data: Data = Data()) {
-        guard let i = records.firstIndex(where: { $0.id == id }) else { return }
+    func finish(_ id: UUID, taskIdentifier: Int, response: URLResponse?, error: Error?, data: Data = Data()) {
+        guard let i = records.firstIndex(where: { $0.id == id }), (tasks[id]?.taskIdentifier ?? taskIdentifier) == taskIdentifier else { return }
         // A paused task's cancellation is expected. Resume-data delivery owns this transition.
         if records[i].state == "pausing" || records[i].state == "paused" {
             if error != nil || !FileManager.default.fileExists(atPath: localFile(records[i]).path) { return }
@@ -265,11 +276,11 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, URLS
     private var responseBodies: [UUID: Data] = [:]
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard let id = downloadTask.taskDescription.flatMap(UUID.init(uuidString:)) else { return }
-        Task { @MainActor in owner?.progress(id, sent: totalBytesWritten, total: totalBytesExpectedToWrite) }
+        Task { @MainActor in owner?.progress(id, taskIdentifier: downloadTask.taskIdentifier, sent: totalBytesWritten, total: totalBytesExpectedToWrite) }
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
         guard let id = task.taskDescription.flatMap(UUID.init(uuidString:)) else { return }
-        Task { @MainActor in owner?.progress(id, sent: totalBytesSent, total: totalBytesExpectedToSend) }
+        Task { @MainActor in owner?.progress(id, taskIdentifier: task.taskIdentifier, sent: totalBytesSent, total: totalBytesExpectedToSend) }
     }
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let id = downloadTask.taskDescription.flatMap(UUID.init(uuidString:)) else { return }
@@ -296,7 +307,7 @@ private final class TransferDelegate: NSObject, URLSessionDownloadDelegate, URLS
         guard let id = task.taskDescription.flatMap(UUID.init(uuidString:)) else { return }
         let downloadError = downloadErrors.removeValue(forKey: id)
         let data = responseBodies.removeValue(forKey: id) ?? Data()
-        Task { @MainActor in owner?.finish(id, response: task.response, error: error ?? downloadError, data: data) }
+        Task { @MainActor in owner?.finish(id, taskIdentifier: task.taskIdentifier, response: task.response, error: error ?? downloadError, data: data) }
     }
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         Task { @MainActor in owner?.persist(force: true); let completion = owner?.backgroundCompletion; owner?.backgroundCompletion = nil; completion?() }

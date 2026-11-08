@@ -41,12 +41,56 @@ struct AppearanceSettingsView: View {
     @AppStorage("theme.compactServerCards") private var compactServerCards = true
     @AppStorage("widgets.compactMetrics") private var compactMetrics = false
     @AppStorage("widgets.chartStyle") private var chartStyle = "area"
+    @AppStorage("suite.appearanceAccount.v1") private var appearanceAccount = ""
+    @ObservedObject private var connections = SuiteConnections.shared
+    @ObservedObject private var preferences = SuiteQuickAccess.shared
+    @State private var activeSync: UUID?
     @State private var icon = UIApplication.shared.alternateIconName ?? "AppIcon"
     @State private var error: String?
     @State private var changing = false
     func binding(_ value: Binding<String>) -> Binding<Color> { Binding(get: { ThemeRGB(value.wrappedValue).color }, set: { color in var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0; UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a); value.wrappedValue = ThemeRGB(red: Double(r), green: Double(g), blue: Double(b)).hex }) }
+    private var syncConnection: SuiteConnection? { connections.values.first { $0.id.uuidString == appearanceAccount } }
+    private var style: [String: JSON] {
+        ["primary": .string(primary), "secondary": .string(secondary), "compact": .bool(compact), "radius": .number(radius),
+         "cardTint": .number(cardTint), "backgroundStrength": .number(backgroundStrength), "launchAnimation": .bool(launchAnimation),
+         "compactServers": .bool(compactServerCards), "compactMetrics": .bool(compactMetrics), "chartStyle": .string(chartStyle)]
+    }
+    private func restore(_ saved: [String: JSON]) {
+        if let value = saved["primary"] { primary = value.string }
+        if let value = saved["secondary"] { secondary = value.string }
+        if let value = saved["compact"] { compact = value.bool }
+        if let value = saved["radius"] { radius = value.double }
+        if let value = saved["cardTint"] { cardTint = value.double }
+        if let value = saved["backgroundStrength"] { backgroundStrength = value.double }
+        if let value = saved["launchAnimation"] { launchAnimation = value.bool }
+        if let value = saved["compactServers"] { compactServerCards = value.bool }
+        if let value = saved["compactMetrics"] { compactMetrics = value.bool }
+        if let value = saved["chartStyle"] { chartStyle = value.string }
+    }
+    private func synchronizeStyle() async {
+        activeSync = nil
+        guard let record = syncConnection else { return }
+        await preferences.synchronize(record)
+        guard !Task.isCancelled, syncConnection?.id == record.id else { return }
+        let saved = preferences.appearance(for: record.id)
+        if saved.isEmpty { preferences.setAppearance(style, for: record.id) }
+        else { restore(saved) }
+        activeSync = record.id
+    }
     var body: some View {
         Form {
+            if !connections.values.isEmpty {
+                Section {
+                    Picker("Darstellung synchronisieren", selection: $appearanceAccount) {
+                        Text("Nur dieses Gerät").tag("")
+                        ForEach(connections.values) { record in Text(preferences.name(record)).tag(record.id.uuidString) }
+                    }
+                    if let record = syncConnection, let error = preferences.errors[record.id] {
+                        Text("Lokal gespeichert. Synchronisierung: " + error).font(.caption).foregroundStyle(.secondary)
+                        Button("Erneut synchronisieren") { Task { await synchronizeStyle() } }
+                    }
+                } footer: { Text("Farben, Dichte, Karten und Diagramme werden mit dem ausgewählten Suite-Konto synchronisiert.") }
+            }
             Section("Farbwelten") {
                 ForEach(["Simplex", "Ozean", "Sonnenuntergang", "Wald", "Amethyst", "Mitternacht", "Kirschblüte", "Graphit"], id: \.self) { name in
                     Button(name) {
@@ -86,5 +130,11 @@ struct AppearanceSettingsView: View {
                 }
             }
         }.panelScreen().navigationTitle("Farben & App-Icon").errorAlert($error)
+            .task(id: appearanceAccount) { await synchronizeStyle() }
+            .onChange(of: style) { _, new in
+                guard let id = activeSync, syncConnection?.id == id else { return }
+                let saved = preferences.appearance(for: id)
+                preferences.setAppearance(new.filter { saved[$0.key] != $0.value }, for: id)
+            }
     }
 }

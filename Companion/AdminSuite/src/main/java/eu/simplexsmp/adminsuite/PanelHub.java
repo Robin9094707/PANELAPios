@@ -300,7 +300,7 @@ final class PanelHub {
 
     synchronized Map<String, Object> shortcutPrefs(String owner) {
         String stored = prefs.getProperty("shortcuts." + owner, "");
-        if (!stored.isBlank() && DiscordBotManager.Json.parse(stored) instanceof Map<?, ?> value) return AppApiManager.object(value);
+        if (!stored.isBlank()) try { if (DiscordBotManager.Json.parse(stored) instanceof Map<?, ?> value) return AppApiManager.object(value); } catch (RuntimeException invalid) { /* older or invalid personal settings */ }
         return new LinkedHashMap<>();
     }
 
@@ -323,6 +323,27 @@ final class PanelHub {
                         throw new IllegalArgumentException("Servername ungültig");
                     value = name.strip();
                 }
+                case "appearance" -> {
+                    if (!(value instanceof Map<?, ?> appearance)) throw new IllegalArgumentException("App-Darstellung ungültig");
+                    Map<String, Object> updated = new LinkedHashMap<>();
+                    if (nextValues.get("appearance") instanceof Map<?, ?> previous) updated.putAll(AppApiManager.object(previous));
+                    for (var field : appearance.entrySet()) {
+                        String name = String.valueOf(field.getKey());
+                        Object setting = field.getValue();
+                        boolean valid = switch (name) {
+                            case "primary", "secondary" -> setting instanceof String hex && hex.matches("[a-fA-F0-9]{6}");
+                            case "compact", "launchAnimation", "compactServers", "compactMetrics" -> setting instanceof Boolean;
+                            case "radius" -> between(setting, 8, 36);
+                            case "cardTint" -> between(setting, 0, 0.3);
+                            case "backgroundStrength" -> between(setting, 0, 2);
+                            case "chartStyle" -> setting instanceof String style && Set.of("area", "line", "bars").contains(style);
+                            default -> false;
+                        };
+                        if (!valid) throw new IllegalArgumentException("Ungültige App-Darstellung: " + name);
+                        updated.put(name, setting);
+                    }
+                    value = updated;
+                }
                 case "tools" -> {
                     if (!(value instanceof List<?> list) || list.size() > 60 || list.stream().anyMatch(tool -> !(tool instanceof String id) || !id.matches("[a-zA-Z][a-zA-Z0-9-]{0,39}")))
                         throw new IllegalArgumentException("Schnellzugriffe ungültig");
@@ -337,6 +358,10 @@ final class PanelHub {
         AtomicState.save(prefsFile, next, "Simplex panel preferences per account");
         prefs.clear(); prefs.putAll(next);
         return nextValues;
+    }
+
+    private static boolean between(Object value, double minimum, double maximum) {
+        return value instanceof Number number && number.doubleValue() >= minimum && number.doubleValue() <= maximum;
     }
 
     private synchronized void renamePrefs(String from, String to) throws IOException {

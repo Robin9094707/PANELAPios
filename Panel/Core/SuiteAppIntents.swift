@@ -48,7 +48,7 @@ struct SuiteAdvertisingPlaceQuery: EntityStringQuery {
         // The app still fetches the current ad and checks rights/intervals before doing anything.
         identifiers.compactMap { id in
             let value = SuiteAdvertisingPlace(id: id, name: "Werbe-Ort")
-            guard let (connectionID, place) = value.target,
+            guard let (connectionID, place) = value.target, !SuiteQuickAccess.shared.isHidden(connectionID),
                   let record = SuiteConnections.shared.values.first(where: { $0.id == connectionID }) else { return nil }
             let name = AdHubCache.entry(serverId: record.serverIdentity, place: place)?["name"] ?? "Werbe-Ort"
             return SuiteAdvertisingPlace(id: id, name: name + " · " + SuiteConnections.shared.name(record))
