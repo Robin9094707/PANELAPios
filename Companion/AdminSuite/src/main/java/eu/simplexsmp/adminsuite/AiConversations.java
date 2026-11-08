@@ -21,7 +21,7 @@ final class AiConversations {
     synchronized Map<String,Object> create(AiAdmin.Actor actor, String title, int days) throws IOException {
         if (owned(actor).size() >= MAX_THREADS) throw new AppApiManager.ApiError(409,"Maximal 30 Chats. Lösche zuerst einen Chat.");
         Map<String,Object> row = new LinkedHashMap<>();
-        row.put("id", UUID.randomUUID().toString()); row.put("owner", actor.id());
+        row.put("id", UUID.randomUUID().toString()); row.put("owner", actor.storageId());
         row.put("title", title(title)); row.put("days", retention(days));
         row.put("at", System.currentTimeMillis()); row.put("turns", List.of());
         save(row); return metadata(row);
@@ -98,7 +98,7 @@ final class AiConversations {
             for (Path path : paths) {
                 Map<String,Object> row = load(path);
                 if (expired(row)) Files.deleteIfExists(path);
-                else if (AiAdmin.text(row,"owner").equals(actor.id())) rows.add(row);
+                else if (AiAdmin.text(row,"owner").equals(actor.storageId())) rows.add(row);
             }
         }
         rows.sort(Comparator.<Map<String,Object>>comparingLong(r -> AiAdmin.number(r.get("at"))).reversed());
@@ -110,7 +110,7 @@ final class AiConversations {
         if (Files.isRegularFile(path)) {
             Map<String,Object> row = load(path);
             if (expired(row)) Files.deleteIfExists(path);
-            else if (AiAdmin.text(row,"owner").equals(actor.id())) return row;
+            else if (AiAdmin.text(row,"owner").equals(actor.storageId())) return row;
         }
         throw new AppApiManager.ApiError(404,"Chat fehlt oder wurde automatisch gelöscht.");
     }
@@ -131,7 +131,7 @@ final class AiConversations {
         String value = AiAdmin.redact(AiAdmin.clean(title.replace('\n',' '),65));
         return value.isBlank() ? "Neuer Chat" : value;
     }
-    private static String ownerPrefix(AiAdmin.Actor actor) { return AppApiSecurity.hash(actor.id()); }
+    private static String ownerPrefix(AiAdmin.Actor actor) { return AppApiSecurity.hash(actor.storageId()); }
     private Path file(AiAdmin.Actor actor, String id) {
         try { if (UUID.fromString(id).toString().equals(id)) return folder.resolve(ownerPrefix(actor)+"-"+id+".properties"); }
         catch (IllegalArgumentException ignored) { }

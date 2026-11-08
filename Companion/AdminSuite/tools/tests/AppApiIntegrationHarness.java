@@ -198,11 +198,11 @@ public final class AppApiIntegrationHarness {
             check(call(path,staff,json(Map.of("operation","delete","id",secondChat))).statusCode()==200,"private chat can be deleted");
             check(call("/v1/assistant/job?id="+secondJob,full.token(),null).statusCode()==404,"deleting a chat cancels open proposals");
             var store=new AiConversations(plugin.getDataFolder().toPath().resolve("assistant-chats"),plugin.getLogger());
-            var actor=new AiAdmin.Actor("user-assistant-staff","assistant-staff",()->true,()->false,"ai.assistant.use"::equals,()->true);
+            var actor=new AiAdmin.Actor("user-assistant-staff","assistant-staff",()->true,()->false,"ai.assistant.use"::equals,()->true,"user-assistant-staff-"+api.security.users.created("assistant-staff"));
             var hidden=store.open(actor,chat);
             check(!json(hidden).contains("Fixture")&&json(hidden).contains(marker),"reopened chat persists with answer rights rechecked");
             check(store.context(actor,chat,new HashSet<>()).isEmpty(),"revoked sources cannot leak via remembered context");
-            Path persisted=plugin.getDataFolder().toPath().resolve("assistant-chats").resolve(AppApiSecurity.hash(actor.id())+"-"+chat+".properties");
+            Path persisted=plugin.getDataFolder().toPath().resolve("assistant-chats").resolve(AppApiSecurity.hash(actor.storageId())+"-"+chat+".properties");
             Properties stored=new Properties();try(var reader=Files.newBufferedReader(persisted)){stored.load(reader);}
             Map<String,Object> oldChat=new LinkedHashMap<>(object(DiscordBotManager.Json.parse(stored.getProperty("chat"))));
             oldChat.put("at",1L);stored.setProperty("chat",json(oldChat));AtomicState.save(persisted,stored,"expired fixture");
@@ -213,6 +213,11 @@ public final class AppApiIntegrationHarness {
             check(transcribe(staff,"audio/mp4",new byte[16]).statusCode()==400,"corrupt recording rejected");
             var transcript=transcribe(staff,"audio/mp4",audio);
             check(transcript.statusCode()==200&&transcript.body().contains("Eine Audiofrage"),"authenticated voice input returns editable transcript through the provider boundary");
+            String orphan=AiAdmin.text(object(DiscordBotManager.Json.parse(call(path,staff,json(Map.of("operation","create"))).body())),"id");
+            api.security.users.delete("assistant-staff");
+            api.security.users.save("assistant-staff","assistant-fixture-password",Set.of("ai.assistant.use"),true);
+            String newStaff=api.security.users.createSession("assistant-staff",System.currentTimeMillis(),3600_000L,Map.of());
+            check(call(path+"?id="+orphan,newStaff,null).statusCode()==404,"a recreated username cannot inherit the old account's chat");
             var audit=Map.<String,Object>of("time",500L,"action","Vanish aktiviert","adminName","Fixture");
             check(AiAdmin.select(List.of(audit),"Vanish",400,600,5,"time","action","adminName").size()==1,"admin log time and names resolve correctly");
             check(AiAdmin.redact("connect 192.168.1.1 with sk-proj-example-secret").equals("connect [IP entfernt] with [Schlüssel entfernt]"),"IP and key redaction");

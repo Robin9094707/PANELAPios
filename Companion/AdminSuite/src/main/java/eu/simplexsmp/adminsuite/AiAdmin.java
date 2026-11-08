@@ -16,7 +16,10 @@ final class AiAdmin {
     static final String USE = "ai.assistant.use";
     private static final long TTL = 20 * 60_000L;
     private static final int CONTEXT = 14_000, MAX_ROWS = 35;
-    record Actor(String id, String name, BooleanSupplier valid, BooleanSupplier owner, Predicate<String> permission, BooleanSupplier writeAccess) {
+    record Actor(String id, String name, BooleanSupplier valid, BooleanSupplier owner, Predicate<String> permission, BooleanSupplier writeAccess, String storageId) {
+        Actor(String id,String name,BooleanSupplier valid,BooleanSupplier owner,Predicate<String> permission,BooleanSupplier writeAccess){
+            this(id,name,valid,owner,permission,writeAccess,id);
+        }
         boolean can(String right) { return valid.getAsBoolean() && (owner.getAsBoolean() || permission.test(right)); }
         boolean writable(){return valid.getAsBoolean()&&writeAccess.getAsBoolean();}
         boolean canApprove() { return writable() && valid.getAsBoolean() && owner.getAsBoolean(); }
@@ -124,7 +127,7 @@ final class AiAdmin {
         };
     }
     private synchronized void forgetChat(Actor actor,String id){
-        jobs.values().removeIf(job->job.author.id.equals(actor.id)&&job.conversation.equals(id));
+        jobs.values().removeIf(job->sameAuthor(job,actor)&&job.conversation.equals(id));
     }
     Map<String,Object> transcribe(Actor actor,String contentType,InputStream body)throws Exception{
         requireUse(actor);
@@ -207,7 +210,7 @@ final class AiAdmin {
         synchronized(this){
             Job original=job(actor,id);
             if(original.steps.isEmpty()||!"ready".equals(original.view.get("status")))throw new AppApiManager.ApiError(409,"Kein offener Aktionsplan.");
-            if(original.author.id.equals(actor.id)&&original.readRights.stream().anyMatch(right->!actor.can(right)))
+            if(sameAuthor(original,actor)&&original.readRights.stream().anyMatch(right->!actor.can(right)))
                 throw new AppApiManager.ApiError(403,"Datenrechte wurden entzogen.");
             input=redact(DiscordBotManager.Json.stringify(actionRows(original.steps)));
         }
@@ -460,8 +463,10 @@ final class AiAdmin {
                     if(Set.of("permanent","dauerhaft").contains(duration))values.put("duration","");
                     else if(!SimplexAdminSuite.DurationValue.isValid(duration))throw new IllegalArgumentException("Gültige Dauer oder dauerhaft erforderlich.");
                 }
+                if(values.getOrDefault("reason","").length()>200||values.getOrDefault("reason","").contains("\n"))
+                    throw new IllegalArgumentException("Der Grund muss einzeilig und höchstens 200 Zeichen lang sein.");
                 if(kind.equals("player-commands")){
-                    required(values,"commands");
+                    values.put("commands",String.join(",",CommandRights.resolved(required(values,"commands"))));
                     if(operation.equals("block"))one(values,"alts","true","false");
                 }
                 if(operation.equals("remove"))required(values,"flags");
@@ -500,15 +505,18 @@ final class AiAdmin {
         if(!value.matches("#?[1-9][0-9]{0,17}"))throw new IllegalArgumentException("Gültige Ticketnummer erforderlich.");
         return Long.parseLong(value.replace("#",""));
     }
+    private static boolean sameAuthor(Job job,Actor actor){
+        return job.conversation.isBlank()?job.author.id.equals(actor.id):job.author.storageId.equals(actor.storageId);
+    }
     private synchronized Job job(Actor actor,String id){
         requireUse(actor);prune();Job job=jobs.get(id);
-        if(job==null||!job.author.id.equals(actor.id)&&!actor.canApprove())throw new AppApiManager.ApiError(404,"Anfrage fehlt oder ist abgelaufen.");
+        if(job==null||!sameAuthor(job,actor)&&!actor.canApprove())throw new AppApiManager.ApiError(404,"Anfrage fehlt oder ist abgelaufen.");
         return job;
     }
     synchronized Map<String,Object> view(Actor actor,String id){
         Job job=job(actor,id);
         if(!job.done.isDone())return Map.of("id",id,"status","running");
-        if(!job.author.id.equals(actor.id)&&actor.canApprove()) {
+        if(!sameAuthor(job,actor)&&actor.canApprove()) {
             return SimplexAdminSuite.appMap("id",id,"status",job.view.get("status"),"actions",job.view.getOrDefault("actions",List.of()),
                 "author",job.author.name,"expires",job.expires,"summary",job.view.getOrDefault("summary",""),"revision",job.view.getOrDefault("revision",""),"players",job.view.getOrDefault("players",List.of()));
         }
@@ -520,7 +528,7 @@ final class AiAdmin {
         String question, conversation;
         synchronized(this){
             Job job=job(actor,id);
-            if(!job.done.isDone()||!job.author.id.equals(actor.id)||!"ready".equals(job.view.get("status"))||!(job.view.get("choices") instanceof List<?> choices)||index<0||index>=choices.size())
+            if(!job.done.isDone()||!sameAuthor(job,actor)||!"ready".equals(job.view.get("status"))||!(job.view.get("choices") instanceof List<?> choices)||index<0||index>=choices.size())
                 throw new AppApiManager.ApiError(404,"Antwortoption ist abgelaufen.");
             question=clean(job.question,1550)+"\nAusgewählte Antwort auf die Rückfrage: "+choices.get(index);
             conversation=job.conversation;
