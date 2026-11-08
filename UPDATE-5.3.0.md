@@ -4,7 +4,7 @@
 
 - **Live-Inventar** im Profil eines Online-Spielers. Inventar, Hotbar, Ausrüstung, Nebenhand und Endertruhe aktualisieren sich im geöffneten Fenster etwa alle zwei Sekunden. Mit Bearbeitungsrecht können Staff-Mitglieder vorhandene Stapel im Inventar und in der Endertruhe verschieben oder tauschen. Der Server prüft vor dem Anwenden den Inventarstand erneut. Rüstung und Nebenhand sind in der Vorschau lesbar.
 - **Texturen** lädt die Suite im Hintergrund aus dem offiziellen Client der neuesten stabilen Minecraft-Java-Version. Ein eigenes Java-ZIP bis 32 MiB kann in der Vorschau importiert werden. Die Vorschau nutzt passende 2D-Texturen und für komplexe Modelle einen Textplatzhalter. Der Minecraft-Client erhält dadurch kein Ressourcenpaket.
-- **Konsolenarchiv** unter Diagnose. Aufbewahrung standardmäßig 30 Tage, einstellbar von 1 bis 365 Tagen. Suche nach Text oder Quelle, Stufe und Zeitraum. Einzelne Zeilen oder das gesamte Panel-Archiv lassen sich nach Bestätigung löschen. Aufzeichnung beginnt, sobald die Suite ihren Log4j-Mitschnitt aktiviert. Vorhandene Paper-Logdateien und Diagnoseberichte liegen separat.
+- **Konsolenarchiv** unter Diagnose. Aufbewahrung standardmäßig 30 Tage, einstellbar von 1 bis 365 Tagen. Suche nach Text oder Quelle, Stufe und Zeitraum. Einzelne Zeilen oder das gesamte Panel-Archiv lassen sich nach Bestätigung löschen. Beim Leeren und Kürzen der Aufbewahrung gibt die Datenbank freien Speicherplatz zurück. Aufzeichnung beginnt, sobald die Suite ihren Log4j-Mitschnitt aktiviert. Vorhandene Paper-Logdateien und Diagnoseberichte liegen separat.
 - **Event-Modus & Lockdown** unter Server und Diagnose. Event-Namen im Serverstatus anzeigen. Für eine Welt einen zukünftigen Ingame-Tag planen und Bark-Hinweise erhalten. Mit gesondertem Vollzugriffsrecht können registrierte Konsolenbefehle ausgeführt werden. Der Tag folgt der Weltzeit mit 24.000 Ticks pro Tag. Ein Termin wird vor der Ausführung als verbraucht gespeichert, damit ein Absturz keinen Befehl doppelt startet.
 - **Lockdown** erlaubt je nach Stufe bekannte Spieler, eine Verbindung pro geteilter IP oder starkem Alt-Signal, oder nur Spieler mit Ausnahme. OPs und `simplexadminsuite.lockdown.bypass` können weiter beitreten. IP-Ausnahmen der Alt-Erkennung werden berücksichtigt. IP-Reservierungen gelten für die laufende Serversitzung.
 - **Spielerrechte** zeigen überlappende Altsperren nur dort an, wo sie noch zusätzlich gelten. Eine neu gesetzte Bereichssperre oder Vorlage ersetzt alte Einzelsperren in den betroffenen Bereichen.
@@ -28,7 +28,7 @@
 ## Im Spiel
 
 `/sas event list` zeigt den aktuellen Status, Termine und die Befehle für Verwaltung, Löschung und Lockdown.
-Beispiel für einen Alarm am Spieltag 1200: `/sas event schedule world 1200 alarm Bau-Event`.
+Für einen Alarm am Spieltag 1200 nutze `/sas event schedule world 1200 alarm Bau-Event`.
 Für einen Start mit registriertem Befehl nutzt ein Hauptadmin `/sas event schedule world 1200 start Bau-Event | minecraft:say Das Bau-Event beginnt!`.
 
 ## Aktualisieren

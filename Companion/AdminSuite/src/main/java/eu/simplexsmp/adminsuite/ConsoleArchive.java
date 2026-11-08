@@ -27,6 +27,7 @@ final class ConsoleArchive implements AutoCloseable {
         Path file = directory.resolve("console.sqlite");
         db = DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath());
         try (Statement sql = db.createStatement()) {
+            sql.execute("PRAGMA auto_vacuum=FULL");
             sql.execute("PRAGMA journal_mode=WAL");
             sql.execute("PRAGMA secure_delete=ON");
             sql.execute("CREATE TABLE IF NOT EXISTS console (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, level TEXT NOT NULL, rank INTEGER NOT NULL, source TEXT NOT NULL, text TEXT NOT NULL, search TEXT NOT NULL)");
@@ -75,7 +76,7 @@ final class ConsoleArchive implements AutoCloseable {
         }
         long now = System.currentTimeMillis();
         if (now - lastPrune >= 3_600_000L) {
-            prune(now - DAY * days);
+            if (prune(now - DAY * days) > 0) checkpoint();
             lastPrune = now;
         }
     }
@@ -128,7 +129,16 @@ final class ConsoleArchive implements AutoCloseable {
             }
             default -> throw new IllegalArgumentException("Unbekannte Archivaktion");
         }
+        if (removed > 0 && !operation.equals("delete")) checkpoint();
         return removed;
+    }
+
+    private void checkpoint() {
+        try (Statement sql = db.createStatement()) {
+            sql.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+        } catch (SQLException ignored) {
+            // The deletion is already committed and unused pages remain reusable.
+        }
     }
 
     private int prune(long before) throws SQLException {

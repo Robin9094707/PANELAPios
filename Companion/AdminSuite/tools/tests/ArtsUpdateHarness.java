@@ -30,6 +30,14 @@ final class ArtsUpdateHarness {
                 assert archive.change("clear", "", 0) == 1;
                 archive.offer(new DiagnosticsCenter.Line(now, "INFO", "Paper", "still recording"));
                 assert items(archive.read(Map.of(), "", false)).size() == 1;
+                for (int index = 0; index < 150; index++)
+                    archive.offer(new DiagnosticsCenter.Line(now, "INFO", "Paper", "line " + index + " " + "x".repeat(8000)));
+            }
+            Path file = directory.resolve("console.sqlite");
+            long used = Files.size(file);
+            try (ConsoleArchive archive = new ConsoleArchive(directory, 30)) {
+                assert archive.change("clear", "", 0) == 151;
+                assert Files.size(file) < used / 2 : "Deleting the archive should release disk pages";
             }
         } finally {
             try (var paths = Files.walk(directory)) {
