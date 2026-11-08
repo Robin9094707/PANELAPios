@@ -59,6 +59,20 @@ enum Vault {
     @Published var demo = false
     @Published var locked = false
     @Published var biometricLock = false { didSet { defaults.set(biometricLock, forKey: "biometricLock") } }
+    @Published private var hiddenServers = Set(UserDefaults.standard.stringArray(forKey: "panel.hiddenServers.v1") ?? [])
+    var visibleServers: [Server] { servers.filter { !isHidden($0) } }
+    func isHidden(_ server: Server) -> Bool {
+        guard let api else { return false }
+        if let record = SuiteConnections.shared.get(api, server) { return SuiteQuickAccess.shared.isHidden(record.id) }
+        return hiddenServers.contains(api.base.absoluteString + "|" + server.id)
+    }
+    func setHidden(_ server: Server, _ hidden: Bool) {
+        guard let api else { return }
+        if let record = SuiteConnections.shared.get(api, server) { SuiteQuickAccess.shared.hide(record.id, hidden); return }
+        let key = api.base.absoluteString + "|" + server.id
+        if hidden { hiddenServers.insert(key) } else { hiddenServers.remove(key) }
+        UserDefaults.standard.set(Array(hiddenServers), forKey: "panel.hiddenServers.v1")
+    }
     var active: PanelProfile? { profiles.first { $0.id == selected } }
     init(defaults: UserDefaults = .standard, readSecret: @escaping (UUID) throws -> String = Vault.read, launchDemo: Bool? = nil) {
         self.defaults = defaults; self.readSecret = readSecret

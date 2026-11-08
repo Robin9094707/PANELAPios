@@ -151,7 +151,7 @@ enum SuiteDevice {
         guard !demo else { throw PanelError(message: "Änderungen sind im Demomodus deaktiviert.") }
         return try JSONDecoder().decode(JSON.self, from: try await transfer(path, method: "POST", query: query, body: data, contentType: contentType, limit: 8 * 1024 * 1024))
     }
-    private func transfer(_ path: String, method: String, query: [String: String], body: Data?, contentType: String?, limit: Int, timeout: TimeInterval? = nil) async throws -> Data {
+    private func makeRequest(_ path: String, method: String, query: [String: String], timeout: TimeInterval?) throws -> URLRequest {
         guard !path.contains(".."), !path.contains("://"), !path.contains("?") else { throw PanelError(message: "Ungültiger Suite-Pfad.") }
         var c = URLComponents(url: try Self.endpoint(connection.endpoint).appendingPathComponent("v1").appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         c.queryItems = query.isEmpty ? nil : query.sorted(by: { $0.key < $1.key }).map { URLQueryItem(name: $0.key, value: $0.value) }
@@ -159,6 +159,10 @@ enum SuiteDevice {
         c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         var request = URLRequest(url: c.url!); request.httpMethod = method; request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization"); request.setValue("application/json", forHTTPHeaderField: "Accept"); request.setValue(SuiteDevice.header, forHTTPHeaderField: "X-Simplex-Device")
         request.timeoutInterval = timeout ?? defaultTimeout
+        return request
+    }
+    private func transfer(_ path: String, method: String, query: [String: String], body: Data?, contentType: String?, limit: Int, timeout: TimeInterval? = nil) async throws -> Data {
+        var request = try makeRequest(path, method: method, query: query, timeout: timeout)
         if let body { request.httpBody = body; request.setValue(contentType ?? "application/octet-stream", forHTTPHeaderField: "Content-Type") }
         let data: Data
         let response: URLResponse
@@ -177,6 +181,56 @@ enum SuiteDevice {
         try PanelAPI.validate(data, response: response)
         guard data.count <= limit else { throw PanelError(message: "Suite-Antwort zu groß.") }
         return data
+    }
+    static func forPluginUpdates(_ panel: PanelAPI, _ server: String) async -> SuiteAPI? {
+        guard !panel.demo, panel.amp == nil, let connection = SuiteConnections.shared.values.first(where: { $0.panel == panel.base.absoluteString && $0.server == server }),
+              let api = try? SuiteAPI(connection, timeout: 8), (try? await api.health(timeout: 8)) != nil,
+              api.features.contains("plugin-stage-v2"), api.scope == "full", api.can("data.plugins"), api.can("action.plugins.stage") else { return nil }
+        return api
+    }
+    func pluginIdentity(_ filename: String) async throws -> (PluginDescriptor, String) {
+        let row = try await request("plugin-files/identity", query: ["filename": filename], timeout: 12)
+        var descriptor = try PluginDescriptor.parse(row["yaml"].string)
+        descriptor.descriptorFile = row["descriptorFile"].string
+        let hash = row["sha256"].string
+        guard hash.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else { throw PanelError(message: "Admin Suite lieferte keine gültige JAR-Prüfsumme.") }
+        return (descriptor, hash)
+    }
+    func stagePlugin(_ candidate: PluginUpdateCandidate, context: String, progress: (@Sendable (Int64, Int64) -> Void)? = nil) async throws -> JSON {
+        let file = candidate.file
+        let sha = try await Task.detached(priority: .userInitiated) { try PluginArchive.digest(Data(contentsOf: file, options: .mappedIfSafe)) }.value
+        let query = ["filename": candidate.filename, "sha256": sha]
+        if let current = try? await self.request("plugin-files/status", query: query, timeout: 12), current["queued"].bool { return current }
+        try Task.checkCancellation()
+        let values = ["filename": candidate.filename, "expected": candidate.originalHash, "sha256": sha,
+                      "name": candidate.next.name, "main": candidate.next.main, "version": candidate.next.version].mapValues(JSON.string)
+        let plan = try await request("prepare", method: "POST", body: .object(["path": .string("plugins.stage"), "values": .object(values)]), timeout: 20)
+        guard !plan["ticket"].string.isEmpty else { throw PanelError(message: "Suite hat keine Upload-Freigabe erteilt.") }
+        var request = try makeRequest("plugin-files/upload", method: "POST", query: ["ticket": plan["ticket"].string], timeout: 110)
+        request.setValue("application/java-archive", forHTTPHeaderField: "Content-Type")
+        let pin = try Self.pin(connection.fingerprint)
+        do {
+            let body: Data
+            if pin.isEmpty {
+                let destination = "suite-plugin|" + connection.id.uuidString + "|" + candidate.filename
+                body = try await TransferManager.shared.upload(request, body: file, filename: candidate.next.versionedFilename,
+                    context: context, operationKey: destination + "|" + sha, destinationKey: destination)
+            } else {
+                let upload = Task { try await PinnedHTTPS.load(request, pin: pin, file: file, progress: progress) }
+                let background = UIApplication.shared.beginBackgroundTask(withName: "Plugin-Update übertragen") { upload.cancel() }
+                defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
+                let (bytes, response) = try await withTaskCancellationHandler { try await upload.value } onCancel: { upload.cancel() }
+                try PanelAPI.validate(bytes, response: response)
+                body = bytes
+            }
+            let result = try JSONDecoder().decode(JSON.self, from: body)
+            guard result["queued"].bool, result["sha256"].string == sha else { throw PanelError(message: "Suite hat die vorgemerkte JAR noch nicht bestätigt.") }
+            return result
+        } catch {
+            if RequestFailure.isCancellation(error) { throw error }
+            if let current = try? await self.request("plugin-files/status", query: query, timeout: 12), current["queued"].bool { return current }
+            throw error
+        }
     }
     /// Password sign-in. Throws `SuiteLoginChallenge` when a new password or a second factor is required (Admin Suite 9.8).
     func login(username: String, password: String) async throws -> String {

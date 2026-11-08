@@ -35,7 +35,7 @@ struct WidgetSettingsView: View {
             if let api = store.api {
                 Section("Aktuelles Panel") {
                     Button("Alle Instanzen für Widgets freigeben", systemImage: "square.grid.2x2") { Task { await addAll() } }.disabled(busy || api.demo)
-                    ForEach(store.servers) { server in Button(server.name, systemImage: "plus.circle") { background = true; pending = server }.disabled(busy || api.demo) }
+                    ForEach(store.visibleServers) { server in Button(server.name, systemImage: "plus.circle") { background = true; pending = server }.disabled(busy || api.demo) }
                 }
             }
             if WidgetStorage.folder == nil { Section("Falls die Signatur App-Gruppen entfernt") { Text("Die App versucht zusätzlich den gemeinsamen Schlüsselbund. Ist auch dieser nicht freigegeben, kann iOS keine automatische App-Verbindung erlauben. Dann App und Erweiterung mit derselben App-Gruppe signieren oder den Daten-Code als manuelle Kopie verwenden. Eine Neuinstallation der App ist nicht nötig.").font(.footnote).foregroundStyle(.secondary) } }
@@ -73,7 +73,7 @@ struct WidgetSettingsView: View {
     }
     func addAll() async {
         busy = true; defer { busy = false }
-        for server in store.servers { do { try await add(server, background: true) } catch { self.error = error.localizedDescription; break } }
+        for server in store.visibleServers { do { try await add(server, background: true) } catch { self.error = error.localizedDescription; break } }
     }
     func refresh() async {
         busy = true; defer { busy = false }

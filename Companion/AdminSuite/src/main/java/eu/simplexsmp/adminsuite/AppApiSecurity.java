@@ -51,10 +51,11 @@ final class AppApiSecurity {
         tickets.values().removeIf(t->t.owner().equals(id));
         try{users.forgetKey(id);}catch(Exception ignored){}
     }
-    synchronized String prepare(Key key,String request,long now){
+    synchronized String prepare(Key key,String request,long now){return prepare(key,request,now,60_000);}
+    synchronized String prepare(Key key,String request,long now,long duration){
         tickets.values().removeIf(t->t.expires()<now);
         if(tickets.size()>=128)throw new IllegalArgumentException("Zu viele offene Bestätigungen");
-        String id=randomToken();tickets.put(id,new Ticket(key.id(),request,now+60_000));return id;
+        String id=randomToken();tickets.put(id,new Ticket(key.id(),request,now+duration));return id;
     }
     synchronized String consume(Key key,String id,long now){
         Ticket ticket=tickets.get(id);

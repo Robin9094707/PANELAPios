@@ -9,7 +9,7 @@ struct AMPApplicationsView: View {
     var body: some View {
         List {
             Section { Text("Python-App-Runner und andere Anwendungen direkt verwalten: Dateien, Startparameter, Umgebung und alle vom AMP-Modul angebotenen Einstellungen.").font(.footnote).foregroundStyle(.secondary) }
-            ForEach(store.servers.filter { !$0.data["invocation"].string.lowercased().contains("minecraft") }) { server in
+            ForEach(store.visibleServers.filter { !$0.data["invocation"].string.lowercased().contains("minecraft") }) { server in
                 NavigationLink { PythonRunnerView(api: api, server: server) } label: { Label(server.name, systemImage: server.isPythonRunner ? "terminal.fill" : "server.rack") }
             }
         }.panelScreen().navigationTitle("AMP-Anwendungen").refreshable { await store.refresh() }

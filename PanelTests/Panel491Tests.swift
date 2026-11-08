@@ -51,6 +51,29 @@ private final class ShortcutProtocol: URLProtocol {
         XCTAssertEqual(connections.values.first?.fingerprint, first.fingerprint)
     }
 
+    func testOldShortcutOrderMigratesAndHiddenServerCanBeRestored() throws {
+        let domain = "Panel500-" + UUID().uuidString, defaults = UserDefaults(suiteName: domain)!
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let first = record(), second = record("second.invalid")
+        defaults.set([first.id.uuidString: ["tickets", "players"]], forKey: "suite.serverShortcuts.v1")
+        defaults.set(first.id.uuidString, forKey: "suite.preferredConnection.v1")
+        let choices = SuiteQuickAccess(defaults: defaults)
+        XCTAssertEqual(choices.tools(for: first.id), [.tickets, .players])
+        choices.hide(first.id, true)
+        choices.setCompact(first.id, false)
+        choices.setAppearance(["radius": .number(20)], for: first.id)
+        XCTAssertNil(choices.preferred)
+        XCTAssertNil(choices.request(tool: .players, connection: first.id, records: [first, second]))
+        let restored = SuiteQuickAccess(defaults: defaults)
+        XCTAssertTrue(restored.isHidden(first.id))
+        XCTAssertFalse(restored.compact(first.id))
+        XCTAssertEqual(restored.appearance(for: first.id)["radius"], .number(20))
+        XCTAssertTrue(restored.appearance(for: second.id).isEmpty)
+        restored.hide(first.id, false)
+        XCTAssertEqual(restored.preferred, first.id)
+        XCTAssertEqual(restored.request(tool: .players, connection: first.id, records: [first, second])?.connection, first.id)
+    }
+
     func testAdvertisingOpensWithoutWaitingForSchema() async throws {
         var paths: [String] = []; let health = self.health
         ShortcutProtocol.handler = { request in paths.append(request.url!.lastPathComponent); return request.url!.lastPathComponent == "health" ? (200, health) : (503, .null) }

@@ -60,6 +60,14 @@ import Foundation
         }
     }
 
+    func installed(_ filename: String, suite: SuiteAPI?) async throws -> (PluginDescriptor, String) {
+        if let suite { return try await suite.pluginIdentity(filename) }
+        let data = try await read("/plugins/" + filename)
+        return try await Task.detached(priority: .userInitiated) {
+            try (PluginArchive.descriptor(data), PluginArchive.digest(data))
+        }.value
+    }
+
     init(list: @escaping (String) async throws -> [JSON], read: @escaping (String) async throws -> Data,
          mkdir: @escaping (String, String) async throws -> Void, send: @escaping (URL, String) async throws -> Void,
          rename: @escaping (String, String, String) async throws -> Void) {

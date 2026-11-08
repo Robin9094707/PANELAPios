@@ -14,7 +14,7 @@ struct PluginUploadTarget: Identifiable {
     @Published private(set) var status = "JAR-Datei auswählen"
     @Published var error: String?
     private var folder: URL?
-    func inspect(_ url: URL, filename: String, files: PluginUpdateFiles) async {
+    func inspect(_ url: URL, filename: String, files: PluginUpdateFiles, suite: SuiteAPI? = nil) async {
         guard !busy else { return }
         busy = true; candidate = nil; error = nil; cleanup()
         status = "Ausgewählte JAR prüfen …"
@@ -30,15 +30,14 @@ struct PluginUploadTarget: Identifiable {
             }.value
             let next = try await Task.detached { try PluginArchive.descriptor(nextData) }.value
             status = "Installierte JAR laden und vergleichen …"
-            let oldData = try await files.read("/plugins/" + filename)
-            let old = try await Task.detached { try PluginArchive.descriptor(oldData) }.value
+            let (old, oldHash) = try await files.installed(filename, suite: suite)
             let report = try old.validateUpdate(next)
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("plugin-validation-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             folder = directory
             let local = directory.appendingPathComponent(next.versionedFilename)
             try nextData.write(to: local, options: .atomic)
-            candidate = PluginUpdateCandidate(filename: filename, file: local, installed: old, next: next, originalHash: PluginArchive.digest(oldData), report: report)
+            candidate = PluginUpdateCandidate(filename: filename, file: local, installed: old, next: next, originalHash: oldHash, report: report)
             status = "Dateiprüfung erfolgreich"
         } catch { self.error = error.localizedDescription; status = "Dateiprüfung fehlgeschlagen" }
     }
@@ -56,13 +55,21 @@ struct PluginUploadFlow: View {
     @State private var acknowledged = false
     @State private var uploading = false
     @State private var done = false
+    @ObservedObject private var transfers = TransferManager.shared
+    let pinnedProgress: Double?
+    var uploadContext: String { "Plugin-Update · " + server.name + " · " + filename }
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     Text(filename).font(.headline).textSelection(.enabled)
                     Label(model.status, systemImage: model.candidate == nil ? "doc.badge.gearshape" : "checkmark.shield.fill")
-                    if model.busy || uploading { ProgressView(uploading ? "Übertragen und Prüfsumme bestätigen …" : model.status) }
+                    if uploading {
+                        let transfer = transfers.records.first { $0.active && $0.upload && $0.context == uploadContext }
+                        if let fraction = pinnedProgress ?? transfer?.fraction {
+                            ProgressView(value: fraction) { Text(fraction >= 1 ? "Server prüft die JAR …" : "JAR wird übertragen …") }
+                        } else { ProgressView("Upload vorbereiten …") }
+                    } else if model.busy { ProgressView(model.status) }
                     if !done { Button("JAR auswählen", systemImage: "doc") { picker = true }.disabled(model.busy || uploading) }
                 }
                 if let value = model.candidate {
@@ -99,7 +106,8 @@ struct PluginUploadFlow: View {
                     acknowledged = false
                     Task {
                         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
-                        await model.inspect(url, filename: filename, files: PluginUpdateFiles(api: api, server: server.id))
+                        let suite = await SuiteAPI.forPluginUpdates(api, server.id)
+                        await model.inspect(url, filename: filename, files: PluginUpdateFiles(api: api, server: server.id), suite: suite)
                     }
                 case .failure(let issue): model.error = issue.localizedDescription
                 }

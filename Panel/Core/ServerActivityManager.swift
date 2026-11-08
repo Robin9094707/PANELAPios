@@ -1,8 +1,11 @@
 import SwiftUI
 import ActivityKit
 import UIKit
+import BackgroundTasks
+import WidgetKit
 
 @MainActor final class ServerActivityManager: ObservableObject {
+    nonisolated static let refreshIdentifier = "eu.simplexsmp.panel.live-refresh"
     static let shared = ServerActivityManager()
     @Published private(set) var activity: Activity<ServerActivity>? = Activity<ServerActivity>.activities.first
     @Published var error: String?
@@ -25,11 +28,37 @@ import UIKit
     }
     func stop() async {
         generation = UUID(); task?.cancel(); task = nil
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.refreshIdentifier)
         let old = activity; activity = nil
         for item in Activity<ServerActivity>.activities { await item.end(nil, dismissalPolicy: .immediate) }
         if let old, !Activity<ServerActivity>.activities.contains(where: { $0.id == old.id }) { await old.end(nil, dismissalPolicy: .immediate) }
     }
-    func suspend() { generation = UUID(); task?.cancel(); task = nil }
+    func suspend() { generation = UUID(); task?.cancel(); task = nil; scheduleRefresh() }
+    private func scheduleRefresh() {
+        guard let activity = Activity<ServerActivity>.activities.first(where: { $0.activityState == .active || $0.activityState == .stale }),
+              backgroundServer(activity) != nil else { return }
+        let request = BGAppRefreshTaskRequest(identifier: Self.refreshIdentifier)
+        request.earliestBeginDate = Date().addingTimeInterval(15 * 60)
+        try? BGTaskScheduler.shared.submit(request)
+    }
+    private func backgroundServer(_ activity: Activity<ServerActivity>) -> WidgetServer? {
+        WidgetStorage.servers().first { $0.panel == activity.attributes.panel && $0.serverID == activity.attributes.serverID && $0.backgroundRefresh }
+    }
+    func refreshInBackground() async {
+        guard let activity = Activity<ServerActivity>.activities.first(where: { $0.activityState == .active || $0.activityState == .stale }),
+              let server = backgroundServer(activity) else { return }
+        scheduleRefresh()
+        let fresh = await WidgetNetwork.refresh(server, includeNames: false)
+        guard !Task.isCancelled, UIApplication.shared.applicationState != .active, let date = fresh.updated, fresh.issue == nil,
+              date > activity.content.state.updated, activity.activityState == .active || activity.activityState == .stale else { return }
+        var state = activity.content.state
+        state.state = fresh.state; state.cpu = fresh.cpu; state.memory = fresh.memory; state.uptime = fresh.uptime
+        state.online = fresh.online; state.maximum = fresh.maximum; state.playersUpdated = fresh.playersUpdated
+        state.tps = fresh.tps; state.mspt = nil; state.performanceUpdated = fresh.tpsUpdated
+        state.source = "Hintergrund"; state.updated = date; state.issue = nil
+        await activity.update(ActivityContent(state: state, staleDate: date.addingTimeInterval(90)))
+        WidgetCenter.shared.reloadAllTimelines()
+    }
     func resume(api: PanelAPI?, servers: [Server]) {
         task?.cancel(); task = nil; generation = UUID()
         activity = Activity<ServerActivity>.activities.first { $0.activityState == .active || $0.activityState == .stale }
@@ -76,7 +105,7 @@ import UIKit
             } else if state.state != "offline", let result = try? await api.request("servers/\(server.id)/players"), let players = PlayerSnapshot.decode(result) {
                 state.online = players.online; state.maximum = players.maximum; state.playersUpdated = players.updated; state.source = "Panel"
             }
-            if state.state == "offline" { state.online = 0; state.playersUpdated = Date(); state.tps = nil; state.mspt = nil }
+            if state.state == "offline" { state.online = 0; state.playersUpdated = Date(); state.tps = nil; state.mspt = nil; state.performanceUpdated = nil; state.uptime = nil }
             guard !Task.isCancelled, generation == id, self.activity?.id == activity.id else { return }
             await activity.update(ActivityContent(state: state, staleDate: state.updated.addingTimeInterval(90)))
         } catch {
@@ -102,8 +131,8 @@ struct ServerActivitySettings: View {
                 else { Button("Live-Aktivität starten", systemImage: "play.circle") { Task { await manager.start(api: api, server: server, live: live) } } }
             }
             Section("Aktualisierung") {
-                Text("Solange die App aktiv ist, werden Werte etwa alle 20 Sekunden erneuert – auch wenn du in der App eine andere Seite öffnest. Im Hintergrund bleibt der letzte empfangene Stand sichtbar. Nach 90 Sekunden wird er als veraltet markiert.")
-                Text("iOS begrenzt Live-Aktivitäten auf etwa acht Stunden. Für fortlaufende Werte bei geschlossener App wäre ein eigener ActivityKit-Push-Dienst nötig. Zum erneuten Starten diese Seite öffnen.").font(.footnote).foregroundStyle(.secondary)
+                Text("Solange die App aktiv ist, werden Werte etwa alle 20 Sekunden erneuert – auch wenn du in der App eine andere Seite öffnest. Mit direktem Widget-Zugang für diesen Server kann iOS gelegentlich auch im Hintergrund neue Werte holen. Nach 90 Sekunden wird der letzte Stand als veraltet markiert.")
+                Text("iOS begrenzt Live-Aktivitäten auf etwa acht Stunden. Die Hintergrundzeitpunkte bestimmt iOS. Nach erzwungenem Schließen sind regelmäßige Updates nur mit ActivityKit-Push, passender Signatur und APNs-Dienst möglich. Zum erneuten Starten diese Seite öffnen.").font(.footnote).foregroundStyle(.secondary)
             }
         }.panelScreen().navigationTitle("Server-Live-Aktivität").errorAlert($manager.error)
     }

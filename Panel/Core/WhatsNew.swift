@@ -18,6 +18,12 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.0.0", title: "Dein Panel, deine Ansicht", summary: "Kompakte Schnellzugriffe, echte NBT-Spielerinfos und schnellere Plugin-Updates.", items: [
+            WhatsNewItem(symbol: "slider.horizontal.3", title: "Server-Schnellzugriffe anpassen", detail: "Werkzeuge auswählen und sortieren, Server umbenennen oder ausblenden. Gekoppelte Suite-Konten synchronisieren App und Webpanel."),
+            WhatsNewItem(symbol: "doc.text.magnifyingglass", title: "Spielerdatei im Profil", detail: "Ersten Beitritt laut NBT, Datei-Zeitstempel und weitere gespeicherte Werte direkt sehen."),
+            WhatsNewItem(symbol: "arrow.up.circle", title: "Plugin-Update mit Fortschritt", detail: "Die gekoppelte Suite prüft und bestätigt das Update serverseitig. Der Transfer zeigt den Fortschritt."),
+            WhatsNewItem(symbol: "waveform.path.ecg", title: "Aktuellere Live-Aktivitäten", detail: "Mit direktem Widget-Zugang kann iOS gelegentlich auch bei geschlossener App neue Werte holen.")
+        ]),
         WhatsNewRelease(version: "4.9.1", title: "Dein Server. Ein Tipp.", summary: "Feste Server-Schnellzugriffe und zuverlässiges Verbinden – ohne endloses Laden.", items: [
             WhatsNewItem(symbol: "bolt.fill", title: "Direkt zum richtigen Server", detail: "Jeder gespeicherte Suite-Zugang hat eigene Kacheln für Admin Suite, Werbung, Spieler und Tickets. Ein Tipp öffnet genau diesen Server ohne zusätzliche Auswahl."),
             WhatsNewItem(symbol: "slider.horizontal.3", title: "Schnellzugriffe anpassen", detail: "Server benennen, Werkzeuge je Server auswählen und einen Standard für allgemeine Zugriffe festlegen. Die bisherigen Kopplungen und Zugangsdaten bleiben erhalten."),

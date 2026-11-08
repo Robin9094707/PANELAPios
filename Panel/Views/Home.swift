@@ -2,6 +2,9 @@ import SwiftUI
 
 struct HomeView: View {
     @ObservedObject private var suiteConnections = SuiteConnections.shared
+    @ObservedObject private var preferences = SuiteQuickAccess.shared
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var shortcutSettings = false
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var workspace: WorkspaceStore
     @State private var add = false
@@ -23,7 +26,7 @@ struct HomeView: View {
     @ObservedObject private var setupInbox = SuiteSetupInbox.shared
     @ObservedObject private var layouts = DashboardLayouts.shared
     var layoutKey: String { "home:" + (store.api?.base.absoluteString ?? "none") + "|" + (store.demo ? "demo" : store.selected?.uuidString ?? "none") }
-    var filtered: [Server] { store.servers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.node.localizedCaseInsensitiveContains(search) }.sorted { a, b in
+    var filtered: [Server] { store.visibleServers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.node.localizedCaseInsensitiveContains(search) }.sorted { a, b in
         guard let api = store.api else { return a.name < b.name }
         let ap = workspace.favorites.contains(workspace.key(api, a)), bp = workspace.favorites.contains(workspace.key(api, b))
         return ap == bp ? a.name.localizedStandardCompare(b.name) == .orderedAscending : ap
@@ -50,11 +53,12 @@ struct HomeView: View {
                 }.padding(.bottom, 60).padding(22).frame(maxWidth: 1100).frame(maxWidth: .infinity)
             }.panelScreen().navigationTitle("Panel").navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $search, prompt: "Server, Werkzeuge & Einstellungen suchen")
-                .refreshable { iconRevision += 1; await store.refresh(); await store.refreshPresence() }.scrollBounceBehavior(.always)
+                .refreshable { iconRevision += 1; await store.refresh(); await store.refreshPresence(); await syncShortcuts() }.scrollBounceBehavior(.always)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Menu {
                             ForEach(store.profiles) { p in Button { store.select(p.id) } label: { Label(p.name, systemImage: store.selected == p.id && !store.demo ? "checkmark.circle.fill" : "server.rack") } }
+                            Button("Server-Sichtbarkeit & Schnellzugriffe", systemImage: "eye") { shortcutSettings = true }
                             Button("Panel hinzufügen", systemImage: "plus") { add = true }
                             Button("Mit Admin-Suite-Benutzer anmelden", systemImage: "person.badge.key") { directSuite = true }
                             Button("Setup-Link einlösen", systemImage: "link.badge.plus") { redeemSetup = true }
@@ -67,6 +71,9 @@ struct HomeView: View {
                     ToolbarItem(placement: .topBarTrailing) { Button("Einstellungen", systemImage: "slider.horizontal.3") { settings = true } }
                 }
                 .navigationDestination(for: Server.self) { server in if let api = store.api { ServerView(api: api, server: server).id("\(store.selected?.uuidString ?? "demo")-\(server.id)") } }
+                .sheet(isPresented: $shortcutSettings) { SuiteServerShortcutSettings().environmentObject(store) }
+                .task(id: suiteConnections.values.map(\.id)) { if scenePhase == .active { await syncShortcuts() } }
+                .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await syncShortcuts() } } }
                 .sheet(isPresented: $editLayout) { DashboardEditor(scope: .home, layoutKey: layoutKey).environmentObject(workspace) }
                 .sheet(isPresented: $quickHub) { SuiteWorkspaceLauncher(request: SuiteLaunchRequest()) }
                 .sheet(item: $suiteRequest) { SuiteWorkspaceLauncher(request: $0).id($0.id) }
@@ -91,13 +98,19 @@ struct HomeView: View {
                 .onChange(of: store.servers) { _, servers in if let api = store.api { suiteConnections.rememberServerNames(panel: api.base.absoluteString, servers: servers) } }
         }
     }
+    private func syncShortcuts() async {
+        for connection in suiteConnections.values {
+            if Task.isCancelled { return }
+            await preferences.synchronize(connection)
+        }
+    }
     /// Wait for an existing sheet to close before presenting a shortcut. Pending links survive app locking.
     func receiveSuiteShortcut() async {
         guard let request = suiteNavigation.request else { return }
         suiteRequest = nil
         add = false; directSuite = false; settings = false; transfers = false; widgets = false
         suiteEvents = false; suiteTickets = false; adHub = false; editLayout = false
-        quickHub = false; redeemSetup = false; shortcutHelp = false; setupInbox.link = nil
+        quickHub = false; redeemSetup = false; shortcutHelp = false; shortcutSettings = false; setupInbox.link = nil
         do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
         guard suiteNavigation.request?.id == request.id else { return }
         suiteRequest = request
@@ -121,7 +134,7 @@ struct HomeView: View {
     }
     var serverList: some View {
         VStack(alignment: .leading, spacing: 18) {
-                        HStack { Label("\(store.servers.count) Server", systemImage: "square.stack.3d.up").font(.subheadline.weight(.medium)); Spacer(); if store.loading { ProgressView() } }
+                        HStack { Label("\(store.visibleServers.count) Server", systemImage: "square.stack.3d.up").font(.subheadline.weight(.medium)); Spacer(); if store.loading { ProgressView() } }
                         if filtered.isEmpty {
                             ContentUnavailableView(search.isEmpty ? "Keine Server" : "Keine Treffer", systemImage: "server.rack", description: Text("Ziehe nach unten, um die Liste zu aktualisieren."))
                         }
@@ -130,6 +143,7 @@ struct HomeView: View {
                                 VStack(spacing: 8) {
                                 NavigationLink(value: server) { ServerCard(server: server, api: store.api, iconEnabled: store.api.map { workspace.isMinecraft($0, server) && !$0.demo && !isBedrockOnly(server) } ?? false, iconRevision: iconRevision, presence: store.presence[server.id], favorite: store.api.map { workspace.favorites.contains(workspace.key($0, server)) } ?? false) }.buttonStyle(.plain).accessibilityIdentifier("server-\(server.id)").contextMenu {
                                     if let api = store.api { Button(workspace.favorites.contains(workspace.key(api, server)) ? "Server lösen" : "Server anpinnen", systemImage: "star") { workspace.toggleServer(api, server) } }
+                                    Button("Server ausblenden", systemImage: "eye.slash") { store.setHidden(server, true) }
                                     Button("Server-ID kopieren", systemImage: "number") { Clipboard.copy(server.id) }
                                 }
                                 if let api = store.api, suiteConnections.get(api, server) != nil || store.demo && ProcessInfo.processInfo.arguments.contains("--demo-suite") {
@@ -157,9 +171,9 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Label("Server im Überblick", systemImage: card.symbol).font(.headline)
                 HStack(spacing: 24) {
-                    fleetCount("Online", count: store.servers.filter { store.presence[$0.id]?.state == "running" }.count, color: .green)
-                    fleetCount("Offline", count: store.servers.filter { store.presence[$0.id]?.state == "offline" }.count, color: .secondary)
-                    fleetCount("Weitere", count: store.servers.filter { !["running", "offline"].contains(store.presence[$0.id]?.state ?? "unknown") }.count, color: .orange)
+                    fleetCount("Online", count: store.visibleServers.filter { store.presence[$0.id]?.state == "running" }.count, color: .green)
+                    fleetCount("Offline", count: store.visibleServers.filter { store.presence[$0.id]?.state == "offline" }.count, color: .secondary)
+                    fleetCount("Weitere", count: store.visibleServers.filter { !["running", "offline"].contains(store.presence[$0.id]?.state ?? "unknown") }.count, color: .orange)
                 }
                 Text("Statusabfrage etwa alle 15 Sekunden, solange die Startseite geöffnet ist. Unbekannte Zustände zählen unter Weitere.").font(.caption).foregroundStyle(.secondary)
                 if let updated = store.presence.values.map(\.updated).max() { HStack { Text("Letzte Antwort"); Spacer(); Text(updated, style: .time) }.font(.caption).foregroundStyle(.secondary) }
@@ -178,7 +192,7 @@ struct HomeView: View {
                 Label("Panel-Informationen", systemImage: card.symbol).font(.headline)
                 LabeledContent("Panel", value: store.demo ? "Demo" : store.active?.name ?? "Panel")
                 Text(api.base.absoluteString).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-                LabeledContent("Server", value: String(store.servers.count))
+                LabeledContent("Server", value: String(store.visibleServers.count))
                 NavigationLink(api.amp == nil ? "Account & Sicherheit" : "AMP-Zugang") { if api.amp != nil { AMPAccountView(api: api) } else { AccountView(api: api) } }
             }.frame(maxWidth: .infinity, alignment: .leading).card()
         default: EmptyView()
@@ -212,12 +226,12 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 4) { Text(count, format: .number).font(.title.bold()).foregroundStyle(color); Text(title).font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
     }
     @ViewBuilder func pinnedFolders(_ api: PanelAPI) -> some View {
-        let pins = workspace.folders.filter { pin in pin.panel == api.base.absoluteString && store.servers.contains(where: { $0.id == pin.serverID }) }
+        let pins = workspace.folders.filter { pin in pin.panel == api.base.absoluteString && store.visibleServers.contains(where: { $0.id == pin.serverID }) }
         if !pins.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Favoritenordner", systemImage: "pin.fill").font(.headline)
                 ForEach(pins) { pin in
-                    if let server = store.servers.first(where: { $0.id == pin.serverID }) {
+                    if let server = store.visibleServers.first(where: { $0.id == pin.serverID }) {
                         NavigationLink { ServerView(api: api, server: server, initialFolder: pin.path) } label: {
                             HStack { Image(systemName: "folder.fill").foregroundStyle(Color.panelAccent); VStack(alignment: .leading) { Text(pin.path); Text(server.name).font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").font(.caption) }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                         }.buttonStyle(.plain).contextMenu { Button("Lösen", systemImage: "pin.slash") { workspace.toggleFolder(api, server, pin.path) } }

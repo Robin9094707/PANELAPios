@@ -7,8 +7,8 @@ import CryptoKit
 /// Only HTTPS and HTTP/1.1 over TLS 1.2+; no redirect, proxy, cookie or plaintext fallback.
 enum PinnedHTTPS {
     static let limit = 8 * 1024 * 1024
-    static func load(_ request: URLRequest, pin: String) async throws -> (Data, URLResponse) {
-        let transfer = try PinnedHTTPTransfer(request: request, pin: pin)
+    static func load(_ request: URLRequest, pin: String, file: URL? = nil, progress: (@Sendable (Int64, Int64) -> Void)? = nil) async throws -> (Data, URLResponse) {
+        let transfer = try PinnedHTTPTransfer(request: request, pin: pin, file: file, progress: progress)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in transfer.start(continuation) }
         } onCancel: { transfer.cancel() }
@@ -94,6 +94,10 @@ enum PinnedHTTPS {
 private final class PinnedHTTPTransfer: @unchecked Sendable {
     private let request: URLRequest
     private let pin: String
+    private let file: URL?
+    private let progress: (@Sendable (Int64, Int64) -> Void)?
+    private var reader: FileHandle?
+    private var sent: Int64 = 0
     private let queue = DispatchQueue(label: "eu.simplexsmp.panel.pinned-https")
     private var continuation: CheckedContinuation<(Data, URLResponse), Error>?
     private var connection: NWConnection?
@@ -101,11 +105,13 @@ private final class PinnedHTTPTransfer: @unchecked Sendable {
     private var buffer = Data()
     private var cancelled = false
     private var pinRejected = false
-    init(request: URLRequest, pin: String) throws {
+    init(request: URLRequest, pin: String, file: URL?, progress: (@Sendable (Int64, Int64) -> Void)?) throws {
         guard request.url?.scheme == "https", request.url?.host != nil, ["GET", "POST"].contains(request.httpMethod ?? "GET"), pin.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
               request.allHTTPHeaderFields?.values.allSatisfy({ !$0.contains("\r") && !$0.contains("\n") }) ?? true else { throw PanelError(message: "Ungültige gepinnte HTTPS-Anfrage.") }
         self.request = request
         self.pin = pin
+        self.file = file
+        self.progress = progress
     }
     func start(_ continuation: CheckedContinuation<(Data, URLResponse), Error>) {
         queue.async {
@@ -150,18 +156,40 @@ private final class PinnedHTTPTransfer: @unchecked Sendable {
         let host = components.host ?? ""
         let authority = (host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host) + (components.port.map { ":\($0)" } ?? "")
         let body = request.httpBody ?? Data()
+        let size: Int64
+        do {
+            if let file {
+                size = try Int64(file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
+                reader = try FileHandle(forReadingFrom: file)
+            } else { size = Int64(body.count) }
+        } catch { finish(.failure(error)); return }
         var headers = request.allHTTPHeaderFields ?? [:]
         for key in Array(headers.keys) where ["host", "content-length", "connection", "accept-encoding"].contains(key.lowercased()) { headers.removeValue(forKey: key) }
         headers["Host"] = authority
         headers["Connection"] = "close"
         headers["Accept-Encoding"] = "identity"
-        headers["Content-Length"] = String(body.count)
+        headers["Content-Length"] = String(size)
         var bytes = Data(((request.httpMethod ?? "GET") + " " + target + " HTTP/1.1\r\n" + headers.sorted { $0.key < $1.key }.map { $0.key + ": " + $0.value + "\r\n" }.joined() + "\r\n").utf8)
         bytes.append(body)
         connection?.send(content: bytes, completion: .contentProcessed { [weak self] error in
             guard let self else { return }
-            if let error { self.finish(.failure(error)) } else { self.receive() }
+            if let error { self.finish(.failure(error)) } else if self.reader != nil { self.sendChunk(total: size) } else { self.receive() }
         })
+    }
+    private func sendChunk(total: Int64) {
+        guard continuation != nil, let reader else { return }
+        if sent == total { receive(); return }
+        do {
+            let count = Int(min(256 * 1024, total - sent))
+            guard let chunk = try reader.read(upToCount: count), !chunk.isEmpty else { throw URLError(.requestBodyStreamExhausted) }
+            connection?.send(content: chunk, completion: .contentProcessed { [weak self] error in
+                guard let self, self.continuation != nil else { return }
+                if let error { self.finish(.failure(error)); return }
+                self.sent += Int64(chunk.count)
+                self.progress?(self.sent, total)
+                self.sendChunk(total: total)
+            })
+        } catch { finish(.failure(error)) }
     }
     private func receive() {
         connection?.receive(minimumIncompleteLength: 1, maximumLength: 262144) { [weak self] data, _, complete, error in
@@ -179,6 +207,7 @@ private final class PinnedHTTPTransfer: @unchecked Sendable {
         guard let continuation else { return }
         self.continuation = nil
         timeout?.cancel()
+        try? reader?.close(); reader = nil
         connection?.stateUpdateHandler = nil
         connection?.cancel()
         self.continuation = nil

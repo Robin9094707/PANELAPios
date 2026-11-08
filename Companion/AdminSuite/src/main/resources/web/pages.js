@@ -183,6 +183,25 @@
     // 10.1.0: rank with prefix/suffix preview and one-click group assignment right in the profile.
     if (S.has("luckperms-v1") && S.can("data.luckperms")) cards.push(rankCard(p));
     var grid = h("div", { class: "grid two" }, info);
+    if (S.has("player-nbt-summary-v1") && S.can("data.nbt-paths")) {
+      var data = h("div", { class: "stack" }, S.notice("Gespeicherte Werte werden geladen …"));
+      grid.appendChild(S.card("Gespeicherte Spielerdatei (NBT)", { icon: "file" }, data));
+      async function loadNBT() {
+        try {
+          var n = await S.api("player-nbt/summary", { query: { player: p.id }, quiet: true });
+          if (!alive()) return;
+          S.clear(data);
+          if (!n.available) { data.appendChild(S.notice(n.reason === "missing" ? "Keine gespeicherte Spielerdatei gefunden." : "Die Spielerdatei ist derzeit nicht lesbar.")); return; }
+          data.appendChild(S.kv([["Erster Beitritt laut NBT", n.firstJoin ? S.date(n.firstJoin) : "–"], ["Zuletzt gespielt laut NBT", n.lastPlayed ? S.date(n.lastPlayed) : "–"], ["Datei zuletzt gespeichert", S.date(n.modified)], ["Dateigröße", S.num(n.size) + " B"], ["Datei", n.path]]));
+          data.appendChild(h("details", {}, h("summary", { text: "Weitere gespeicherte Werte" }), S.kv((n.fields || []).map(function (field) { return [field.label, field.value]; }))));
+        } catch (e) {
+          if (!alive()) return;
+          S.clear(data);
+          data.append(S.notice(e.message, "warn", "alert"), S.btn("Erneut laden", { onClick: loadNBT }));
+        }
+      }
+      loadNBT();
+    }
     if (p.live) {
       var l = p.live;
       grid.appendChild(S.card("Live", { icon: "activity", sub: l.world + " · " + Math.round(l.x) + " / " + Math.round(l.y) + " / " + Math.round(l.z) }, h("div", { class: "stack" },

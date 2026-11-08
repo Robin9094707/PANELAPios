@@ -3,9 +3,11 @@ package eu.simplexsmp.adminsuite;
 import com.sun.net.httpserver.*;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import javax.net.ssl.*;
+import java.io.File;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -232,7 +234,7 @@ final class AppApiManager {
                     case "/v1/data/app-settings"->onMain(rev,()->AppSettings.data(plugin));
                     case "/v1/data/staff-tasks"->onMain(rev,()->plugin.appStaffTasks());
                     case "/v1/data/setup-info"->onMain(rev,()->SimplexAdminSuite.appMap("fingerprint",fingerprint,"publicAddress",plugin.getConfig().getString("app-api.public-address",""),"port",plugin.getConfig().getInt("app-api.port",39093),"name",serverName));
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1","admin-log-v1","staff-chat-v1","setup-links-v1","quiet-hours-v1","nameplates-v1","app-settings-v1","staff-tasks-v1","accounts-v2","sessions-v1","mfa-v1","passkeys-v1","web-panel-v1","admin-log-v2","web-push-v1","web-prefs-v1","account-rename-v1","public-name-v1","luckperms-v1","lands-v1","nameplates-v2","access-locks-v1","player-rights-v1","luckperms-v2","changelog-v1","bans-sources-v2","permission-catalog-v2","command-rights-v1","luckperms-v3","live-switches-v1","diagnostics-v1","lag-map-v1","spark-v1","crash-manager-v1","player-connection-v1","command-rights-v2","world-trim-v1","discord-status-designer-v1","scoreboard-designer-v1","player-dossier-v1","bridge-v3","bark-test-v1","ad-hub-v1","history-management-v1"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis(),
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1","admin-log-v1","staff-chat-v1","setup-links-v1","quiet-hours-v1","nameplates-v1","app-settings-v1","staff-tasks-v1","accounts-v2","sessions-v1","mfa-v1","passkeys-v1","web-panel-v1","admin-log-v2","web-push-v1","web-prefs-v1","account-rename-v1","public-name-v1","luckperms-v1","lands-v1","nameplates-v2","access-locks-v1","player-rights-v1","luckperms-v2","changelog-v1","bans-sources-v2","permission-catalog-v2","command-rights-v1","luckperms-v3","live-switches-v1","diagnostics-v1","lag-map-v1","spark-v1","crash-manager-v1","player-connection-v1","command-rights-v2","world-trim-v1","discord-status-designer-v1","scoreboard-designer-v1","player-dossier-v1","bridge-v3","bark-test-v1","ad-hub-v1","history-management-v1","player-nbt-summary-v1","shortcut-preferences-v1","plugin-stage-v2"),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis(),
                         "account",SimplexAdminSuite.appMap("kind",key.id().startsWith("user:")?"user":"key","username",key.id().startsWith("user:")?key.label():"","owner",key.id().startsWith("user:")&&security.users.owner(key.label()),"manager",accounts.manager(key),"mfa",key.id().startsWith("user:")&&security.users.mfa(key.label()),"canMigrate",!key.id().startsWith("user:")&&key.scope().equals("full")&&security.users.ownerName().isEmpty()),"web",SimplexAdminSuite.appMap("domain",accounts.domain(),"url",accounts.webUrl(),"passkeys",!accounts.rpId().isEmpty()));
                     case "/v1/data/access"->{if(!key.scope().equals("full"))throw new ApiError(403,"Benutzerverwaltung benötigt full-Zugriff");yield SimplexAdminSuite.appMap("items",security.users.list(),"catalog",permissionCatalog(),"presets",rolePresets());}
                     case "/v1/data/links"->SimplexAdminSuite.appMap("items",plugin.accountLinks.store.all().stream().map(l->SimplexAdminSuite.appMap("player",l.minecraft().toString(),"name",l.name(),"discord",l.discord(),"linkedAt",l.linkedAt())).toList());
@@ -246,11 +248,19 @@ final class AppApiManager {
                     case "/v1/data/operations"->onMain(rev,plugin::appOperations);
                     case "/v1/data/admin-dashboard"->onMain(rev,()->plugin.appAdminDashboard(key.scope().equals("full")));
                     case "/v1/data/management"->onMain(rev,()->{if(!key.scope().equals("full")&&Set.of("admins","admin-rights","roles").contains(query.getOrDefault("section","status")))throw new ApiError(403,"Adminrechte benötigen full-Zugriff");return plugin.app250Data(query);});
+                    case "/v1/player-nbt/summary"->{
+                        requirePermission(key,"data.profile");requirePermission(key,"data.nbt-paths");
+                        UUID player=onMain(rev,()->plugin.discordAdminResolvePlayer(query.getOrDefault("player","")));
+                        if(player==null)throw new ApiError(404,"Spielerprofil fehlt");
+                        List<File> worlds=onMain(rev,()->Bukkit.getWorlds().stream().map(World::getWorldFolder).toList());
+                        yield PlayerNbtAccess.summary(Path.of("."),worlds,player);
+                    }
                     case "/v1/player-nbt"->onMain(rev,()->playerNbt.read(query.getOrDefault("player",""),query.getOrDefault("path",""),Boolean.parseBoolean(query.getOrDefault("status","false"))));
                     case "/v1/notifications"->onMain(rev,()->{if(!key.scope().equals("full"))throw new ApiError(403,"Bark-Einrichtung benötigt full-Zugriff");if(plugin.appEvents==null)throw new ApiError(503,"Ereignismodul nicht verfügbar");return plugin.appEvents.subscription(security.notificationOwner(key));});
                     case "/v1/data/discord-channels"->{DiscordBotManager bot=onMain(rev,()->plugin.discordRelay());if(bot==null)throw new ApiError(503,"Discord-Bot ist nicht geladen");yield bot.appChannels();}
                     case "/v1/data/litebans"->{org.bukkit.plugin.Plugin lite=onMain(rev,()->Bukkit.getPluginManager().getPlugin("LiteBans"));int offset;try{offset=Math.max(0,Integer.parseInt(query.getOrDefault("offset","0")));}catch(Exception e){offset=0;}yield plugin.moderationOverview.appLite(lite,query.getOrDefault("q",""),offset);}
                     case "/v1/plugin-files"->pluginFiles().list(Boolean.parseBoolean(query.getOrDefault("pending","false")));
+                    case "/v1/plugin-files/identity"->pluginFiles().identity(query.getOrDefault("filename",""));
                     case "/v1/plugin-files/inspect"->pluginFiles().inspect(query.getOrDefault("filename",""),Boolean.parseBoolean(query.getOrDefault("pending","false")));
                     case "/v1/plugin-files/status"->pluginFiles().status(query.getOrDefault("filename",""),query.getOrDefault("sha256",""));
                     case "/v1/menu"->onMain(rev,()->{if(!key.scope().equals("full"))throw new ApiError(403,"Suite-Menüs benötigen einen full-Schlüssel.");return menus.current(key);});
@@ -363,7 +373,8 @@ final class AppApiManager {
                     else if(req.path.equals("plugins.stage")){pluginFiles().prepare(values);summary="Plugin: "+req.text("name")+" · "+req.text("version")+". Update wird geprüft und für den nächsten Serverstart vorgemerkt.";}
                     else summary=onMain(rev,()->{if(req.path.equals("alts.ip"))return plugin.altIpPlan(req.values);if(req.path.equals("world.update"))return "Welt: "+req.text("world")+"\nEinstellung: "+req.text("field")+"\nNeuer Wert: "+req.text("value");if(req.path.equals("logs.retry"))return "Gespeicherte private Discord-Protokolle erneut versuchen. Keine Einträge werden gelöscht; die Prüfung privater Kanalrechte bleibt aktiv.";if(req.path.equals("settings.update")){checkSetting(req);return "**Einstellung:** "+req.text("key")+"\n**Neuer Wert:** "+(req.text("value").isEmpty()?"(leer)":req.text("value"))+"\nDer geladene Stand wird vor dem Speichern erneut geprüft.";}return controller.confirmationSummary(req);});
                     validateDiscordChannel(req,rev);
-                    result=SimplexAdminSuite.appMap("ticket",security.prepare(key,encoded,System.currentTimeMillis()),"summary",summary,"expiresIn",60);
+                    long expires=req.path.equals("plugins.stage")?30*60:60;
+                    result=SimplexAdminSuite.appMap("ticket",security.prepare(key,encoded,System.currentTimeMillis(),expires*1000),"summary",summary,"expiresIn",expires);
                 }else{
                     String stored=security.consume(key,String.valueOf(payload.getOrDefault("ticket","")),System.currentTimeMillis());Map<String,Object> plan=object(DiscordBotManager.Json.parse(stored));DiscordAdminController.Request req=request(String.valueOf(plan.get("path")),object(plan.get("values")));authorize(key,req);
                     validateDiscordChannel(req,rev);
@@ -468,6 +479,7 @@ final class AppApiManager {
         else if(path.equals("/v1/menu"))permission="action.menu.action";
         else if(path.startsWith("/v1/data/"))permission="data."+path.substring(9);
         else if(path.startsWith("/v1/plugin-files"))permission=method.equals("POST")?"action.plugins.stage":"data.plugins";
+        else if(path.equals("/v1/player-nbt/summary"))permission="data.nbt-paths";
         else if(path.equals("/v1/player-nbt"))permission=method.equals("POST")?"player-nbt.write":"data.nbt-paths";
         else if(path.equals("/v1/database/inspect"))permission="database.inspect";
         else if(path.startsWith("/v1/chat"))permission=path.endsWith("clear")?"chat.clear":"chat.send";

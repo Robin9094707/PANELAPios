@@ -39,6 +39,7 @@ import SwiftUI
                     if phase == .active { Task { await store.resume(); ServerActivityManager.shared.resume(api: store.api, servers: store.servers) } }
                 }
         }
+        .backgroundTask(.appRefresh(ServerActivityManager.refreshIdentifier)) { await ServerActivityManager.shared.refreshInBackground() }
     }
     /// Shown once per updated version after unlocking; fresh installs and UI tests skip it.
     func presentWhatsNewIfNeeded() {

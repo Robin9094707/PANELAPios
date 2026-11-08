@@ -1,4 +1,12 @@
-## Aktuelles Update: Panel 4.9.1 / Admin Suite 10.6.0
+## Aktuelles Update: Panel 5.0.0 / Admin Suite 10.7.0
+
+**Anpassungs-Update** mit kompakter, pro Suite-Konto gespeicherter Server-Navigation,
+automatischen NBT-Spielerinfos, Fortschritt bei Plugin-Updates und systemgesteuerter
+Hintergrundaktualisierung für freigegebene Server.
+
+[Update-Anleitung](UPDATE-5.0.0.md) · [Releases](https://github.com/Robin9094707/PANELAPios/releases)
+
+## Panel 4.9.1 / Admin Suite 10.6.0
 
 **Feste Schnellzugriffe je Server** öffnen Admin Suite, Werbung, Spieler und Tickets direkt. Servernamen,
 Werkzeuge und ein Standardserver lassen sich anpassen; auch iOS-Kurzbefehle unterstützen ein festes Serverziel.

@@ -18,6 +18,7 @@ struct PluginsView: View {
     @State private var stagedLocal: URL?
     @State private var busy = false
     @State private var message: String?
+    @State private var pluginProgress: Double?
     var prefix: String { "servers/\(server.id)/files" }
     var jars: [JSON] { entries.filter { $0["is_file"].bool && ($0["name"].string.hasSuffix(".jar") || $0["name"].string.hasSuffix(".jar.disabled")) }.sorted { $0["name"].string.localizedStandardCompare($1["name"].string) == .orderedAscending } }
     var body: some View {
@@ -65,9 +66,9 @@ struct PluginsView: View {
                 }
             }
             .sheet(item: $upload, onDismiss: { Task { await load(); refreshID = UUID() } }) { target in
-                PluginUploadFlow(api: api, server: server, filename: target.filename) { value in
+                PluginUploadFlow(api: api, server: server, filename: target.filename, stage: { value in
                     try await commit(value)
-                }
+                }, pinnedProgress: pluginProgress)
             }
     }
     func load() async {
@@ -96,30 +97,46 @@ struct PluginsView: View {
     func makeCandidate(_ url: URL, filename: String) async throws -> PluginUpdateCandidate {
             guard !api.demo else { throw PanelError(message: "Updates sind im Demomodus deaktiviert.") }
             let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
-            let installedData = try await PluginUpdateFiles(api: api, server: server.id).read("/plugins/" + filename)
+            let suite = await SuiteAPI.forPluginUpdates(api, server.id)
+            let (old, oldHash) = try await PluginUpdateFiles(api: api, server: server.id).installed(filename, suite: suite)
             return try await Task.detached(priority: .userInitiated) {
                 let resource = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
                 guard resource.isRegularFile == true else { throw PanelError(message: "Bitte eine einzelne JAR-Datei auswählen, keinen Ordner.") }
                 let size = resource.fileSize ?? 0
                 guard size <= 128 * 1024 * 1024 else { throw PanelError(message: "JAR größer als 128 MiB.") }
                 let nextData = try Data(contentsOf: url)
-                let old = try PluginArchive.descriptor(installedData), next = try PluginArchive.descriptor(nextData)
+                let next = try PluginArchive.descriptor(nextData)
                 let report = try old.validateUpdate(next)
                 let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let local = folder.appendingPathComponent(next.versionedFilename); try nextData.write(to: local)
-                return PluginUpdateCandidate(filename: filename, file: local, installed: old, next: next, originalHash: PluginArchive.digest(installedData), report: report)
+                return PluginUpdateCandidate(filename: filename, file: local, installed: old, next: next, originalHash: oldHash, report: report)
             }.value
     }
     func commit(_ value: PluginUpdateCandidate) async throws {
-        busy = true; defer { busy = false }
-        let directory = try await PluginUpdateInstaller.stage(value, files: PluginUpdateFiles(api: api, server: server.id))
+        guard !busy else { throw PanelError(message: "Ein Plugin-Update läuft bereits.") }
+        busy = true; pluginProgress = nil
+        defer { busy = false; pluginProgress = nil }
+        let directory: String
+        let filename: String
+        if let suite = await SuiteAPI.forPluginUpdates(api, server.id) {
+            let context = "Plugin-Update · " + server.name + " · " + value.filename
+            let result = try await suite.stagePlugin(value, context: context) { sent, total in
+                guard total > 0 else { return }
+                Task { @MainActor in if busy { pluginProgress = Double(sent) / Double(total) } }
+            }
+            directory = result["updateDirectory"].string
+            filename = result["filename"].string
+        } else {
+            directory = try await PluginUpdateInstaller.stage(value, files: PluginUpdateFiles(api: api, server: server.id))
+            filename = value.updateFilename
+        }
         updateDirectory = directory
         await load()
-        if let entry = pending.first(where: { $0["name"].string == value.updateFilename }) {
+        if let entry = pending.first(where: { $0["name"].string == filename }) {
             api.plugins.rememberVerifiedUpload(value.next, server: server.id, directory: directory, entry: entry)
         }
-        message = "\(value.updateFilename) geprüft hochgeladen nach \(directory). Wird beim nächsten Start von Paper übernommen, sofern kompatibel."
+        message = "\(filename) geprüft vorgemerkt in \(directory). Paper übernimmt das Update beim nächsten Start."
         Feedback.success()
     }
 }

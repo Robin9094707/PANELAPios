@@ -6,7 +6,7 @@ import java.security.*;
 import java.util.*;
 import org.bukkit.*;
 
-/** Called only on the Minecraft main thread: login and save cannot interleave. */
+/** Main-thread editing and off-thread, read-only profile summaries. */
 final class PlayerNbtAccess {
     private final SimplexAdminSuite plugin;
     PlayerNbtAccess(SimplexAdminSuite plugin) { this.plugin=plugin; }
@@ -14,6 +14,28 @@ final class PlayerNbtAccess {
         for(PlayerNbtLocator.Entry entry:PlayerNbtLocator.find(Path.of("."),Bukkit.getWorlds().stream().map(World::getWorldFolder).toList(),player))
             if(entry.id().equals(requested))return entry.file();
         throw new IllegalArgumentException("Nur die gespeicherte NBT-Datei dieses Spielers in geladenen Welten ist erlaubt.");
+    }
+    static Map<String,Object> summary(Path serverRoot, Collection<File> worlds, UUID player) {
+        try {
+            var entries=PlayerNbtLocator.find(serverRoot,worlds,player);
+            if(entries.isEmpty())return SimplexAdminSuite.appMap("available",false,"reason","missing");
+            var entry=entries.get(0);
+            var attributes=Files.readAttributes(entry.file(),java.nio.file.attribute.BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
+            if(!attributes.isRegularFile()||attributes.size()>2*1024*1024)return SimplexAdminSuite.appMap("available",false,"reason","unreadable");
+            var nbt=NbtPlayerData.read(entry.file().toFile());
+            if(!nbt.error.isEmpty())return SimplexAdminSuite.appMap("available",false,"reason","unreadable");
+            return SimplexAdminSuite.appMap("available",true,"path",entry.id(),"size",attributes.size(),
+                "modified",attributes.lastModifiedTime().toMillis(),"firstJoin",timestamp(nbt.values.get("Bukkit first played")),
+                "lastPlayed",timestamp(nbt.values.get("Bukkit last played")),
+                "fields",nbt.values.entrySet().stream().filter(e->!Set.of("Bukkit first played","Bukkit last played").contains(e.getKey()))
+                    .map(e->SimplexAdminSuite.appMap("id",e.getKey(),"label",NbtPlayerData.label(e.getKey()),"value",e.getValue())).toList());
+        }catch(IOException|IllegalArgumentException unavailable){
+            return SimplexAdminSuite.appMap("available",false,"reason","unreadable");
+        }
+    }
+    private static Long timestamp(String value) {
+        if(value==null)return null;
+        try{long time=Long.parseLong(value);return time>0?time:null;}catch(NumberFormatException invalid){return null;}
     }
     private static byte[] bytes(Path path) throws IOException {
         if(Files.size(path)>2*1024*1024)throw new IllegalArgumentException("Spielerdatei überschreitet 2 MiB");
