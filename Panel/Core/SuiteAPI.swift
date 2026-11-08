@@ -216,7 +216,10 @@ enum SuiteDevice {
                 body = try await TransferManager.shared.upload(request, body: file, filename: candidate.next.versionedFilename,
                     context: context, operationKey: destination + "|" + sha, destinationKey: destination)
             } else {
-                let (bytes, response) = try await PinnedHTTPS.load(request, pin: pin, file: file, progress: progress)
+                let upload = Task { try await PinnedHTTPS.load(request, pin: pin, file: file, progress: progress) }
+                let background = UIApplication.shared.beginBackgroundTask(withName: "Plugin-Update übertragen") { upload.cancel() }
+                defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
+                let (bytes, response) = try await withTaskCancellationHandler { try await upload.value } onCancel: { upload.cancel() }
                 try PanelAPI.validate(bytes, response: response)
                 body = bytes
             }

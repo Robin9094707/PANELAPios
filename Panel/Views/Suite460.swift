@@ -790,6 +790,7 @@ struct SuitePlayerDossierView: View {
     var body: some View {
         List {
             if data == .null { Section { ProgressView("Steckbrief laden …") } }
+            if search.isEmpty { SuiteSavedNBTSection(suite: suite, player: player) }
             ForEach(data["sections"].array, id: \.["id"].string) { section in SuiteDossierSection(section: section, search: search) }
         }
         .panelScreen()

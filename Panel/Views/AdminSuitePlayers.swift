@@ -151,6 +151,47 @@ struct SuitePlayersView: View {
 struct SuiteFavoriteLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View { HStack(spacing: 10) { configuration.icon.foregroundStyle(.yellow); configuration.title } }
 }
+struct SuiteSavedNBTSection: View {
+    let suite: SuiteAPI
+    let player: String
+    @State private var savedNBT: JSON = .null
+    @State private var nbtError: String?
+    var body: some View {
+        if suite.features.contains("player-nbt-summary-v1") && suite.can("data.profile") && suite.can("data.nbt-paths") {
+            Section("Gespeicherte Spielerdatei (NBT)") {
+                if savedNBT["available"].bool {
+                    nbtDate("Erster Beitritt laut NBT", "firstJoin")
+                    nbtDate("Zuletzt gespielt laut NBT", "lastPlayed")
+                    nbtDate("Datei zuletzt gespeichert", "modified")
+                    LabeledContent("Dateigröße", value: ByteCountFormatter.string(fromByteCount: Int64(savedNBT["size"].double), countStyle: .file))
+                    SuiteDetailRow(title: "Datei", value: savedNBT["path"].string)
+                    DisclosureGroup("Weitere gespeicherte Werte") {
+                        ForEach(savedNBT["fields"].array, id: \.["id"].string) { field in
+                            SuiteDetailRow(title: field["label"].string, value: field["value"].string)
+                        }
+                    }
+                } else if let nbtError {
+                    Text(nbtError).foregroundStyle(.secondary)
+                    Button("Erneut laden") { Task { await loadSavedNBT() } }
+                } else if savedNBT != .null {
+                    Text(savedNBT["reason"].string == "missing" ? "Keine gespeicherte Spielerdatei gefunden." : "Die Spielerdatei ist derzeit nicht lesbar.").foregroundStyle(.secondary)
+                } else {
+                    ProgressView("Gespeicherte Werte werden geladen …")
+                }
+            }
+            .task(id: player) { await loadSavedNBT() }
+        }
+    }
+    private func nbtDate(_ label: String, _ key: String) -> some View {
+        LabeledContent(label, value: SuitePlayerPresentation.date(savedNBT[key]).map { SuiteGermanTime.text($0) } ?? "–")
+    }
+    private func loadSavedNBT() async {
+        nbtError = nil
+        do { savedNBT = try await suite.request("player-nbt/summary", query: ["player": player], timeout: 10) }
+        catch { if !RequestFailure.isCancellation(error) { nbtError = error.localizedDescription } }
+    }
+}
+
 struct SuitePlayerView: View {
     let suite: SuiteAPI
     let panel: PanelAPI
@@ -160,8 +201,6 @@ struct SuitePlayerView: View {
     var initialProfile: JSON = .null
     @State private var profile: JSON = .null
     @State private var error: String?
-    @State private var savedNBT: JSON = .null
-    @State private var nbtError: String?
     @State private var automatic = true
     @State private var vpnSheet = false
     @State private var updated: Date?
@@ -201,30 +240,7 @@ struct SuitePlayerView: View {
                     NavigationLink { SuitePlayerDossierView(suite: suite, player: player) } label: { Label("Steckbrief: alles über \(name)", systemImage: "person.text.rectangle.fill") }.accessibilityIdentifier("player-dossier")
                 } footer: { Text("Identität, Aktivität, Client, Bedrock-Gerät, Netzwerk, Moderation und Verlauf auf einen Blick – durchsuchbar.") }
             }
-            if suite.features.contains("player-nbt-summary-v1") && suite.can("data.profile") && suite.can("data.nbt-paths") {
-                Section("Gespeicherte Spielerdatei (NBT)") {
-                    if savedNBT["available"].bool {
-                        nbtDate("Erster Beitritt laut NBT", "firstJoin")
-                        nbtDate("Zuletzt gespielt laut NBT", "lastPlayed")
-                        nbtDate("Datei zuletzt gespeichert", "modified")
-                        LabeledContent("Dateigröße", value: ByteCountFormatter.string(fromByteCount: Int64(savedNBT["size"].double), countStyle: .file))
-                        SuiteDetailRow(title: "Datei", value: savedNBT["path"].string)
-                        DisclosureGroup("Weitere gespeicherte Werte") {
-                            ForEach(savedNBT["fields"].array, id: \.["id"].string) { field in
-                                SuiteDetailRow(title: field["label"].string, value: field["value"].string)
-                            }
-                        }
-                    } else if let nbtError {
-                        Text(nbtError).foregroundStyle(.secondary)
-                        Button("Erneut laden") { Task { await loadSavedNBT() } }
-                    } else if savedNBT != .null {
-                        Text(savedNBT["reason"].string == "missing" ? "Keine gespeicherte Spielerdatei gefunden." : "Die Spielerdatei ist derzeit nicht lesbar.").foregroundStyle(.secondary)
-                    } else {
-                        ProgressView("Gespeicherte Werte werden geladen …")
-                    }
-                }
-                .task(id: player) { await loadSavedNBT() }
-            }
+            SuiteSavedNBTSection(suite: suite, player: player)
             Section("Inventar & Speicherstand") {
                 if current["inventoryPreview"] != .null {
                     LabeledContent("Belegte Inventarplätze", value: current["inventoryPreview"]["occupied"].string + " / 36")
@@ -346,14 +362,6 @@ struct SuitePlayerView: View {
     static func duration(_ millis: Double) -> String {
         guard millis > 0 else { return "–" }
         return Duration.milliseconds(millis).formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 2))
-    }
-    private func nbtDate(_ label: String, _ key: String) -> some View {
-        LabeledContent(label, value: SuitePlayerPresentation.date(savedNBT[key]).map { SuiteGermanTime.text($0) } ?? "–")
-    }
-    private func loadSavedNBT() async {
-        nbtError = nil
-        do { savedNBT = try await suite.request("player-nbt/summary", query: ["player": player], timeout: 10) }
-        catch { if !RequestFailure.isCancellation(error) { nbtError = error.localizedDescription } }
     }
     func load() async { do { profile = try await suite.data("profile", query: ["player": player]); updated = Date(); bookmarks.visited(suite.bookmarkScope, id: player, name: profile["name"].string)
         resolved = nil
