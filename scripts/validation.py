@@ -10,8 +10,8 @@ from pathlib import Path
 import subprocess
 import urllib.request
 
-VALIDATED_SOURCE = "890e82e95f9a874479fac7a8f3acfff6e960fb35"
-VALIDATED_RUN = 40742251784
+VALIDATED_SOURCE = "d359d2cec8d91f872ce4e879d68b5ef6dc7004ee"
+VALIDATED_RUN = 42432313078
 INPUTS = ["Shared", "PanelWidgets", "Panel", "PanelTests", "PanelUITests", "project.yml", "Config", "scripts/suite_tls_fixture.py", "scripts/test-fixtures"]
 
 
