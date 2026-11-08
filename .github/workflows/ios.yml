@@ -33,31 +33,6 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install xcodegen
       - name: Generate project
         run: xcodegen generate
-      - name: Pick iPhone simulator
-        if: steps.validation.outputs.reuse != 'true'
-        id: simulator
-        run: |
-          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for k,vs in sorted(d["devices"].items(),reverse=True) if "iOS" in k for v in vs if "iPhone" in v["name"]))')
-          echo "id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
-      - name: Compile app and simulator tests
-        if: steps.validation.outputs.reuse != 'true'
-        run: |
-          set -o pipefail
-          xcodebuild build-for-testing -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_ENTITLEMENTS=Config/Simulator.entitlements | tee simulator-build.log
-      - name: Boot simulator
-        if: steps.validation.outputs.reuse != 'true'
-        run: |
-          xcrun simctl boot '${{ steps.simulator.outputs.id }}' || true
-          xcrun simctl bootstatus '${{ steps.simulator.outputs.id }}' -b
-      - name: Test on simulator
-        if: steps.validation.outputs.reuse != 'true'
-        run: |
-          set -o pipefail
-          python3 scripts/suite_tls_fixture.py > build/tls-fixture.log 2>&1 &
-          fixture_pid=$!
-          trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
-          # Focused regression checks, a real pinned TLS fixture and three short UI navigation checks.
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -only-testing:PanelTests/Panel460Tests -only-testing:PanelTests/Panel480Tests -only-testing:PanelTests/Panel490Tests -only-testing:PanelTests/Panel491Tests -only-testing:PanelTests/PinnedHTTPTests -only-testing:PanelUITests/PanelUITests/test490HomeShortcutsAndHelpLaunch -only-testing:PanelUITests/PanelUITests/test491SpecificServerShortcutsAndSelectablePicker -only-testing:PanelUITests/PanelUITests/test491FailedServerCanRetryWithoutBlockingOtherServers -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
       - name: Build unsigned iPhone app
         run: |
           set -o pipefail
@@ -84,6 +59,31 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 30
+      - name: Pick iPhone simulator
+        if: steps.validation.outputs.reuse != 'true'
+        id: simulator
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for k,vs in sorted(d["devices"].items(),reverse=True) if "iOS" in k for v in vs if "iPhone" in v["name"]))')
+          echo "id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+      - name: Compile app and simulator tests
+        if: steps.validation.outputs.reuse != 'true'
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_ENTITLEMENTS=Config/Simulator.entitlements | tee simulator-build.log
+      - name: Boot simulator
+        if: steps.validation.outputs.reuse != 'true'
+        run: |
+          xcrun simctl boot '${{ steps.simulator.outputs.id }}' || true
+          xcrun simctl bootstatus '${{ steps.simulator.outputs.id }}' -b
+      - name: Test on simulator
+        if: steps.validation.outputs.reuse != 'true'
+        run: |
+          set -o pipefail
+          python3 scripts/suite_tls_fixture.py > build/tls-fixture.log 2>&1 &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
+          # Focused regression checks, a real pinned TLS fixture and three short UI navigation checks.
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -only-testing:PanelTests/Panel460Tests -only-testing:PanelTests/Panel480Tests -only-testing:PanelTests/Panel490Tests -only-testing:PanelTests/Panel491Tests -only-testing:PanelTests/PinnedHTTPTests -only-testing:PanelUITests/PanelUITests/test490HomeShortcutsAndHelpLaunch -only-testing:PanelUITests/PanelUITests/test491SpecificServerShortcutsAndSelectablePicker -only-testing:PanelUITests/PanelUITests/test491FailedServerCanRetryWithoutBlockingOtherServers -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
       - name: Extract UI test screenshots
         if: always()
         run: |
@@ -142,6 +142,13 @@ jobs:
       - name: Build with verified real Paper dependencies
         working-directory: Companion/AdminSuite
         run: python3 tools/build-real.py
+      - name: Upload the JAR as an individual file
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          path: Companion/AdminSuite/target/SimplexAdminSuite-10.12.0.jar
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
       - name: Check HTTPS authentication, accounts, push, admin-log filters, recovery, LuckPerms/Lands, access locks, command rights, diagnostics, world trimmer, studio designers, dossier, Werbe-Zentrale (ad hub), web panel and existing data
         working-directory: Companion/AdminSuite
         run: python3 tools/test-830.py
@@ -153,7 +160,7 @@ jobs:
           python3 tools/package-source.py
           cp ../../docs/Simplex-Admin-Recovery.pdf target/
           cd target
-          sha256sum SimplexAdminSuite-10.11.1.jar SimplexAdminSuite-10.11.1-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-10.12.0.jar SimplexAdminSuite-10.12.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
       - name: Build and test SimplexSentinelBridge (Geyser extension) against the real Geyser API
         working-directory: Companion/SentinelBridge
         run: |
@@ -167,8 +174,8 @@ jobs:
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-10.11.1.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-10.11.1-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-10.12.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-10.12.0-source.zip
             Companion/AdminSuite/target/Simplex-Admin-Recovery.pdf
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
@@ -228,6 +235,8 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
+          Simplex Panel 5.5.0 / Admin Suite 10.12.0: pre-delivery whisper review, player chat timelines, Minecraft admin activity, report replies, and a Bark subscription center. See UPDATE-5.5.0.md.
+
           Simplex Panel 5.4.1 / Admin Suite 10.11.1: searchable PowerBot keyword rules and recent server events on the iPhone home screen. See UPDATE-5.4.1.md.
 
           Simplex Panel 5.4.0 / Admin Suite 10.11.0: PowerBot chat moderation, staff case queue and visual inventory snapshots. See UPDATE-5.4.0.md.

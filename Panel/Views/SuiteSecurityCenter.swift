@@ -25,7 +25,7 @@ enum SuiteSecurityArea: String, CaseIterable {
             if !more { try await Task.sleep(for: .milliseconds(220)) }
             let endpoint: String
             switch area { case .events: endpoint = "events"; case .bans: endpoint = source == "litebans" ? "litebans" : "bans"; case .vpn: endpoint = source; case .reports: endpoint = "reports" }
-            let data = try await suite.data(endpoint, query: ["q": query, "source": source, "offset": String(more ? max(0, next) : 0)])
+            let data = try await suite.data(endpoint, query: ["q": query, "source": source, "status": area == .reports ? source : "", "offset": String(more ? max(0, next) : 0)])
             try Task.checkCancellation(); guard generation == revision else { return }
             if more { let existing = Set(rows.map { $0["id"].string }); rows += data["items"].array.filter { !existing.contains($0["id"].string) } }
             else { rows = data["items"].array }
@@ -59,7 +59,7 @@ struct SuiteSecurityCenterView: View {
     init(suite: SuiteAPI, panel: PanelAPI, server: Server, actions: [SuiteAction], area: SuiteSecurityArea) {
         self.suite = suite; self.panel = panel; self.server = server; self.actions = actions; self.area = area
         _model = StateObject(wrappedValue: SuiteSecurityModel(suite))
-        _source = State(initialValue: area == .vpn ? "vpn-whitelist" : "internal")
+        _source = State(initialValue: area == .vpn ? "vpn-whitelist" : area == .reports ? "all" : "internal")
     }
     var body: some View {
         List {
@@ -69,6 +69,13 @@ struct SuiteSecurityCenterView: View {
                 if area == .bans {
                     Picker("Bannquelle", selection: $source) { Text("Admin Suite").tag("internal"); Text("Client-Prüfung").tag("client"); Text("Minecraft").tag("minecraft"); Text("LiteBans").tag("litebans") }
                     NavigationLink { SuiteUltraView(suite: suite, actions: actions) } label: { Label("Ultrabanns & Identitätsgruppen", systemImage: "person.2.slash") }
+                }
+                if area == .reports && suite.features.contains("moderation-qol-v1") {
+                    Picker("Fälle", selection: $source) {
+                        Text("Alle").tag("all")
+                        Text("Offen").tag("open")
+                        Text("Erledigt").tag("done")
+                    }.pickerStyle(.segmented)
                 }
                 if area == .vpn { NavigationLink("Geprüfte Plattformen & IP-Diagnose") { SuiteVPNPlatformView(suite: suite) }; Picker("Bereich", selection: $source) { Text("Whitelist").tag("vpn-whitelist"); Text("Letzte Kicks").tag("vpn-kicks") }.pickerStyle(.segmented) }
                 if area == .events { Button("Bark & Alarmtöne", systemImage: "bell.and.waves.left.and.right") { bark = true }.disabled(suite.scope != "full" || !suite.can("action.notifications.update")) }
@@ -132,6 +139,7 @@ struct SuiteSecurityDetailView: View {
     @StateObject private var model: SuiteSecurityModel
     @State private var note: String
     @State private var status: String
+    @State private var reply = ""
     @Environment(\.dismiss) private var dismiss
     init(suite: SuiteAPI, panel: PanelAPI, server: Server, actions: [SuiteAction], area: SuiteSecurityArea, source: String, row: JSON, updated: @escaping () async -> Void) {
         self.suite = suite; self.panel = panel; self.server = server; self.actions = actions; self.area = area; self.source = source; self.row = row; self.updated = updated
@@ -151,6 +159,25 @@ struct SuiteSecurityDetailView: View {
                     Picker("Status", selection: $status) { ForEach(["OPEN","IN_REVIEW","RESOLVED","REJECTED"], id: \.self) { Text(reportStatus($0)).tag($0) } }
                     TextField("Interne Notiz ergänzen", text: $note, axis: .vertical).lineLimit(3...8)
                     Button("Report speichern", systemImage: "checkmark.circle") { prepare("reports.update", ["id": row["id"], "status": .string(status), "expected": row["revision"], "note": .string(note)], "Report #\(row["id"].string): \(reportStatus(status))\n\(note)") }.disabled(suite.scope == "read" || model.busy)
+                }
+                if suite.features.contains("moderation-qol-v1") {
+                    Section("Antworten an die meldende Person") {
+                        ForEach(row["replies"].array, id: \.["at"].string) { entry in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(entry["text"].string).textSelection(.enabled)
+                                if let date = SuitePlayerPresentation.date(entry["at"]) {
+                                    Text(date, format: .dateTime.day().month().hour().minute()).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        if row["canReply"].bool && suite.scope != "read" && suite.can("action.reports.update") {
+                            TextField("Antwort an \(row["reporter"].string)", text: $reply, axis: .vertical).lineLimit(3...8)
+                            Button("Antwort senden", systemImage: "paperplane") {
+                                prepare("reports.update", ["id": row["id"], "status": row["status"], "expected": row["revision"], "reply": .string(reply.replacingOccurrences(of: "\n", with: " "))],
+                                        "Antwort an \(row["reporter"].string) senden?\n\n" + reply)
+                            }.disabled(model.busy || reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
                 }
                 if case .object(let evidence) = row["evidence"] { ForEach(evidence.keys.sorted(), id: \.self) { key in Section(key == "chat" ? "Chatbelege" : key == "combat" ? "Kampfbelege" : "Aktionen") { ForEach(Array((evidence[key]?.array ?? []).enumerated()), id: \.offset) { _, line in NavigationLink { ScrollView { Text(cleanConsole(line.string)).textSelection(.enabled).padding() }.navigationTitle("Beleg") } label: { Text(cleanConsole(line.string)).font(.footnote).lineLimit(1) } } } } }
             }
@@ -217,7 +244,11 @@ struct SuiteBarkSettingsView: View {
     @State private var delivery = ""
     @State private var rules: [String:String] = [:]
     @State private var sounds: [String:String] = [:]
-    @State private var repeats: Set<String> = []
+    @State private var repeatSeconds: [String: String] = [:]
+    @State private var advertisedKinds: [String] = []
+    @State private var eventSearch = ""
+    @State private var subscriptionsOnly = false
+    @State private var loaded = false
     @State private var quietMode="off"
     @State private var quietStart="22:00"
     @State private var quietEnd="07:00"
@@ -225,7 +256,7 @@ struct SuiteBarkSettingsView: View {
     @State private var quietKinds: Set<String> = []
     @State private var testing = false
     @State private var testResult: JSON = .null
-    var encodedRules: String { events.map { event in let id=event.0;return [id,selected.contains(id) ? (rules[id] ?? Self.defaultLevel(id, level: level, critical: critical)):"off",sounds[id] ?? (Self.criticalKinds.contains(id) ? criticalSound:sound),repeats.contains(id) ? "120":"0"].joined(separator:":") }.joined(separator:";") }
+    var encodedRules: String { events.map { event in let id=event.0;return [id,selected.contains(id) ? (rules[id] ?? Self.defaultLevel(id, level: level, critical: critical)):"off",sounds[id] ?? (Self.criticalKinds.contains(id) ? criticalSound:sound),repeatSeconds[id] ?? "0"].joined(separator:":") }.joined(separator:";") }
     @Environment(\.dismiss) private var dismiss
     init(suite: SuiteAPI) { self.suite = suite; _model = StateObject(wrappedValue: SuiteSecurityModel(suite)) }
     static let criticalKinds: Set<String> = ["ban", "ban-evasion", "overload", "ticket-urgent", "crash", "disconnect-wave", "lag-spike", "game-day"]
@@ -250,6 +281,10 @@ struct SuiteBarkSettingsView: View {
         if suite.features.contains("powerbot-v1") { list.append(("powerbot-case", "PowerBot · Fälle und AutoMod-Mutes")) }
         if suite.features.contains("server-events-v1") { list += [("game-day", "Ingame-Tag erreicht"), ("ai-chat-alert", "Chat-KI: Hilfe oder Streit erkannt")] }
         if suite.features.contains("ad-hub-v1") { list += Self.adsEvents }
+        let extraNames = ["admin-log": "Admin-Protokoll", "staff-chat": "Teamchat",
+                          "emergency-restart": "Notfallneustart", "discord-ads": "Discord-Werbung"]
+        let known = Set(list.map(\.0))
+        list += advertisedKinds.filter { !known.contains($0) }.map { ($0, extraNames[$0] ?? $0) }
         return list
     }
     var body: some View {
@@ -261,14 +296,28 @@ struct SuiteBarkSettingsView: View {
                 if suite.features.contains("bark-test-v1") { barkTestRow }
                 Text("Kopiere die Push-Adresse aus Bark. Das Plugin nutzt den öffentlichen Bark-Dienst und sendet auch bei geschlossener Panel-App. Nachrichteninhalt wird dabei an Bark und Apple übertragen.").font(.footnote).foregroundStyle(.secondary)
             }
+            Section("Abonnements") {
+                LabeledContent("Abonniert", value: "\(selected.count) von \(events.count)")
+                if !delivery.isEmpty { LabeledContent("Zustellung", value: delivery) }
+                Toggle("Nur abonnierte Ereignisse", isOn: $subscriptionsOnly)
+                TextField("Ereignis suchen", text: $eventSearch).autocorrectionDisabled()
+            }
             Section("Ereignisse einzeln konfigurieren") {
-                ForEach(events,id:\.0){event in NavigationLink(event.1) { Form {
-                    Toggle("Abonniert",isOn:Binding(get:{selected.contains(event.0)},set:{if $0{selected.insert(event.0)}else{selected.remove(event.0)}}))
-                    interruption("Dringlichkeit",selection:Binding(get:{rules[event.0] ?? Self.defaultLevel(event.0, level: level, critical: critical)},set:{rules[event.0]=$0}))
-                    Picker("Klang",selection:Binding(get:{sounds[event.0] ?? (Self.criticalKinds.contains(event.0) ? criticalSound:sound)},set:{sounds[event.0]=$0})){ForEach(Array(Set(["minuet","alarm","bell",sounds[event.0] ?? (Self.criticalKinds.contains(event.0) ? criticalSound:sound)])).sorted(),id:\.self){Text($0).tag($0)}};TextField("Eigener Bark-Klang",text:Binding(get:{sounds[event.0] ?? (Self.criticalKinds.contains(event.0) ? criticalSound:sound)},set:{sounds[event.0]=$0})).textInputAutocapitalization(.never)
-                    Toggle("Alle 2 Minuten bis Bestätigung wiederholen",isOn:Binding(get:{repeats.contains(event.0)},set:{if $0{repeats.insert(event.0)}else{repeats.remove(event.0)}}))
-                    Text("Bestätigen in der Ereignisglocke beim jeweiligen Ereignis. Bark- oder iOS-Einstellungen können die Zustellung begrenzen.").font(.footnote).foregroundStyle(.secondary)
-                }.navigationTitle(event.1) } }
+                ForEach(visibleEvents, id: \.0) { event in
+                    NavigationLink {
+                        eventForm(event)
+                    } label: {
+                        HStack {
+                            Label(event.1, systemImage: selected.contains(event.0) ? "bell.badge.fill" : "bell")
+                            Spacer()
+                            if selected.contains(event.0) {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.panelAccent)
+                                    .accessibilityLabel("Abonniert")
+                            }
+                        }
+                    }
+                }
+                if visibleEvents.isEmpty { Text("Keine passenden Ereignisse").foregroundStyle(.secondary) }
             }
             if suite.features.contains("quiet-hours-v1") {
                 Section { NavigationLink { SuiteQuietHoursView(suite: suite) } label: { Label("Ruhezeiten & Notfallneustart", systemImage: "moon.zzz.fill") } } footer: { Text("Schlafenszeit, Arbeitszeit und der Hinweis nach einem Notfallneustart haben einen eigenen Bereich.") }
@@ -284,12 +333,82 @@ struct SuiteBarkSettingsView: View {
                 TextField("Alarmklang", text: $criticalSound).textInputAutocapitalization(.never)
                 Text("Bark-Klangnamen, z. B. minuet, alarm oder bell. Eigene Bark-Klänge sind möglich. Stille Hinweise: „Nur Liste“. Kritische Töne benötigen die entsprechende Erlaubnis in Bark und iOS. Wiederholte gleichartige Meldungen werden begrenzt.").font(.footnote).foregroundStyle(.secondary)
             }
-            Section { Button("Einstellungen speichern", systemImage: "checkmark.shield") { Task { await save() } }.disabled(model.busy || suite.scope != "full" || !suite.can("action.notifications.update")); if !delivery.isEmpty { Text(delivery).font(.footnote).foregroundStyle(.secondary) } }
-        }.panelScreen().navigationTitle("Benachrichtigungen").navigationBarTitleDisplayMode(.inline).errorAlert($model.error)
+            Section { Button("Einstellungen speichern", systemImage: "checkmark.shield") { Task { await save() } }.disabled(!loaded || model.busy || suite.scope != "full" || !suite.can("action.notifications.update")) }
+        }.panelScreen().navigationTitle("Bark-Zentrale").navigationBarTitleDisplayMode(.inline).errorAlert($model.error)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { dismiss() } } }
-            .task { do { let value = try await suite.request("notifications"); configured = value["configured"].bool; enabled = value["enabled"].bool; selected = Set(value["events"].string.split(separator: ",").map(String.init)); level = value["level"].string; critical = value["critical"].string; sound = value["sound"].string; criticalSound = value["criticalSound"].string; delivery = value["deliveryStatus"].string; quietMode=value["quietMode"].string.isEmpty ? "off":value["quietMode"].string;quietStart=value["quietStart"].string.isEmpty ? "22:00":value["quietStart"].string;quietEnd=value["quietEnd"].string.isEmpty ? "07:00":value["quietEnd"].string;timezone=value["timezone"].string.isEmpty ? "Europe/Berlin":value["timezone"].string;quietKinds=Set(value["quietKinds"].string.split(separator:",").map(String.init));for rule in value["rules"].string.split(separator:";"){let a=rule.split(separator:":",omittingEmptySubsequences:false).map(String.init);if a.count==4 {if a[1] != "off"{rules[a[0]]=a[1]};sounds[a[0]]=a[2];if a[1]=="off"{selected.remove(a[0])}else{selected.insert(a[0])};if a[3] != "0"{repeats.insert(a[0])}}}; if suite.features.contains("tickets-v1") { for kind in (Self.ticketEvents + (suite.features.contains("tickets-v2") ? Self.priorityTicketEvents : [])).map(\.0) where !value["rules"].string.contains(";" + kind + ":") && !value["rules"].string.hasPrefix(kind + ":") { selected.insert(kind) } }; if suite.features.contains("ad-hub-v1"), !value["rules"].string.contains(";ad-reminder:"), !value["rules"].string.hasPrefix("ad-reminder:") { selected.insert("ad-reminder") } } catch { model.error = error.localizedDescription } }
+            .task { await load() }
             .sheet(isPresented: Binding(get: { model.plan != nil }, set: { if !$0 { model.plan = nil } })) { SuiteSecurityConfirmation(model: model) { key = ""; configured = true; dismiss() } }
     }
+    private var visibleEvents: [(String, String)] {
+        events.filter { event in
+            (!subscriptionsOnly || selected.contains(event.0)) &&
+                (eventSearch.isEmpty || event.1.localizedCaseInsensitiveContains(eventSearch)
+                    || event.0.localizedCaseInsensitiveContains(eventSearch))
+        }
+    }
+
+    private func eventForm(_ event: (String, String)) -> some View {
+        let id = event.0
+        let defaultSound = Self.criticalKinds.contains(id) ? criticalSound : sound
+        return Form {
+            Toggle("Abonniert", isOn: Binding(get: { selected.contains(id) }, set: { value in
+                if value { selected.insert(id) } else { selected.remove(id) }
+            }))
+            interruption("Dringlichkeit", selection: Binding(
+                get: { rules[id] ?? Self.defaultLevel(id, level: level, critical: critical) },
+                set: { rules[id] = $0 }))
+            TextField("Bark-Klang", text: Binding(get: { sounds[id] ?? defaultSound }, set: { sounds[id] = $0 }))
+                .textInputAutocapitalization(.never)
+            Toggle("Bis zur Bestätigung wiederholen", isOn: Binding(
+                get: { (Int(repeatSeconds[id] ?? "0") ?? 0) > 0 },
+                set: { repeatSeconds[id] = $0 ? "120" : "0" }))
+            if let seconds = Int(repeatSeconds[id] ?? "0"), seconds > 0 {
+                LabeledContent("Intervall", value: "\(seconds) s")
+            }
+            Text("Wiederholungen lassen sich in der Ereignisglocke bestätigen. Bark und iOS können die Zustellung begrenzen.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }.navigationTitle(event.1)
+    }
+
+    private func load() async {
+        do {
+            let value = try await suite.request("notifications")
+            configured = value["configured"].bool
+            enabled = value["enabled"].bool
+            advertisedKinds = value["eventKinds"].array.map(\.string)
+            selected = Set(value["events"].string.split(separator: ",").map(String.init))
+            level = value["level"].string
+            critical = value["critical"].string
+            sound = value["sound"].string
+            criticalSound = value["criticalSound"].string
+            delivery = value["deliveryStatus"].string
+            quietMode = value["quietMode"].string.isEmpty ? "off" : value["quietMode"].string
+            quietStart = value["quietStart"].string.isEmpty ? "22:00" : value["quietStart"].string
+            quietEnd = value["quietEnd"].string.isEmpty ? "07:00" : value["quietEnd"].string
+            timezone = value["timezone"].string.isEmpty ? "Europe/Berlin" : value["timezone"].string
+            quietKinds = Set(value["quietKinds"].string.split(whereSeparator: { $0 == ":" || $0 == "," }).map(String.init))
+            var stored = Set<String>()
+            for rule in value["rules"].string.split(separator: ";") {
+                let fields = rule.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+                guard fields.count == 4 else { continue }
+                let id = fields[0]
+                stored.insert(id)
+                if fields[1] == "off" { selected.remove(id) }
+                else { rules[id] = fields[1]; selected.insert(id) }
+                sounds[id] = fields[2]
+                repeatSeconds[id] = fields[3]
+            }
+            if advertisedKinds.isEmpty && suite.features.contains("tickets-v1") {
+                let defaults = Self.ticketEvents + (suite.features.contains("tickets-v2") ? Self.priorityTicketEvents : [])
+                selected.formUnion(defaults.map(\.0).filter { !stored.contains($0) })
+            }
+            if advertisedKinds.isEmpty && suite.features.contains("ad-hub-v1") && !stored.contains("ad-reminder") { selected.insert("ad-reminder") }
+            loaded = true
+        } catch {
+            if !RequestFailure.isCancellation(error) { model.error = error.localizedDescription }
+        }
+    }
+
     /// 4.6.0: test message to this device – always possible, also during quiet hours and before saving.
     @ViewBuilder private var barkTestRow: some View {
         Button { Task { await sendTest() } } label: { if testing { ProgressView() } else { Label("Testnachricht senden", systemImage: "paperplane.fill") } }

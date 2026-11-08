@@ -129,6 +129,84 @@
   S.appBadge = function (n) { try { if (navigator.setAppBadge) { if (n > 0) navigator.setAppBadge(n); else navigator.clearAppBadge(); } } catch (e) { /* optional */ } };
 
   // ============================================================ Page: notifications
+  function barkCenter(config) {
+    var labels = {
+      "first-join": "Neue Spieler", join: "Alle Beitritte", "client-brand": "Ungewöhnlicher Client",
+      "client-check": "Client-Prüfungen", ban: "Sperren", "ban-evasion": "Bannumgehung", "vpn-kick": "VPN-Kicks",
+      report: "Neue Reports", overload: "Serverüberlastung", guard: "Spielerschutz", admin: "Admin-Aktionen",
+      "admin-log": "Admin-Protokoll", "staff-chat": "Teamchat", ticket: "Tickets", "ticket-low": "Tickets · Niedrig",
+      "ticket-high": "Tickets · Hoch", "ticket-urgent": "Tickets · Notfall", "emergency-restart": "Notfallneustart",
+      "disconnect-wave": "Disconnect-Wellen", crash: "Serverabsturz", "lag-spike": "Server-Hänger",
+      "discord-ads": "Discord-Werbung", "ad-reminder": "Werbe-Zentrale", "game-day": "Ingame-Tag",
+      "ai-chat-alert": "Chat-KI", "powerbot-case": "PowerBot-Fälle"
+    };
+    var levels = [["active", "Normal"], ["passive", "Still"], ["timeSensitive", "Zeitkritisch"], ["critical", "Kritisch"]];
+    function select(value) {
+      return h("select", { class: "input" }, levels.map(function (entry) {
+        return h("option", { value: entry[0], selected: entry[0] === value, text: entry[1] });
+      }));
+    }
+    var key = S.input({ type: "password", autocomplete: "off", placeholder: config.configured ? "Leer lassen, um den Schlüssel zu behalten" : "Bark-Schlüssel oder Push-Adresse" });
+    var enabled = h("input", { type: "checkbox", checked: config.enabled });
+    var standard = select(config.level), critical = select(config.critical);
+    var sound = S.input({ value: config.sound }), criticalSound = S.input({ value: config.criticalSound });
+    var stored = new Map((config.rules || "").split(";").filter(Boolean).map(function (rule) {
+      var fields = rule.split(":"); return [fields[0], fields];
+    }));
+    var selected = new Set((config.events || "").split(","));
+    var criticalKinds = new Set(["ban", "ban-evasion", "overload", "ticket-urgent", "crash", "disconnect-wave", "lag-spike", "game-day"]);
+    var rules = (config.eventKinds || []).map(function (id) {
+      var saved = stored.get(id), isCritical = criticalKinds.has(id);
+      var subscribed = h("input", { type: "checkbox", checked: saved ? saved[1] !== "off" : selected.has(id) });
+      var defaultLevel = id === "ticket-low" ? "passive" : id === "ticket-high" ? "timeSensitive" : isCritical ? config.critical : config.level;
+      var level = select(saved && saved[1] !== "off" ? saved[1] : defaultLevel);
+      var eventSound = S.input({ value: saved ? saved[2] : isCritical ? config.criticalSound : config.sound });
+      var repeat = S.input({ type: "number", min: 0, max: 86400, value: saved ? saved[3] : "0" });
+      var title = labels[id] || id;
+      var row = h("details", { class: "dossier-sec" }, h("summary", { text: title }),
+        h("div", { class: "stack" }, h("label", { class: "check" }, subscribed, "Abonniert"),
+          S.field("Dringlichkeit", level), S.field("Klang", eventSound), S.field("Wiederholung in Sekunden (0 = aus)", repeat)));
+      return { id: id, title: title, row: row, subscribed: subscribed, level: level, sound: eventSound, repeat: repeat };
+    });
+    var list = h("div", { class: "dossier" }), count = h("p", { class: "small muted" });
+    var term = "", only = h("input", { type: "checkbox" });
+    function draw() {
+      var total = 0;
+      rules.forEach(function (rule) {
+        if (rule.subscribed.checked) total++;
+        rule.row.hidden = (only.checked && !rule.subscribed.checked) ||
+          !(rule.title + " " + rule.id).toLowerCase().includes(term);
+      });
+      count.textContent = total + " von " + rules.length + " abonniert · " + (config.deliveryStatus || "Kein Versandstatus");
+    }
+    rules.forEach(function (rule) { list.appendChild(rule.row); rule.subscribed.addEventListener("change", draw); });
+    only.addEventListener("change", draw); draw();
+    var output = h("div", { "aria-live": "polite" });
+    var test = S.btn("Test senden", { icon: "send", onClick: async function () {
+      var r = await S.api("bark/test", { body: { key: key.value.trim() } });
+      S.clear(output).appendChild(S.notice(r.title + " · " + r.description, r.ok ? "ok" : "danger"));
+    } });
+    var save = S.btn("Bark speichern", { kind: "primary", icon: "check", onClick: async function () {
+      var chosen = rules.filter(function (rule) { return rule.subscribed.checked; });
+      var encoded = rules.map(function (rule) {
+        return [rule.id, rule.subscribed.checked ? rule.level.value : "off", rule.sound.value.trim(), rule.repeat.value || "0"].join(":");
+      }).join(";");
+      if (await S.runAction("notifications.update", { key: key.value.trim(), enabled: String(enabled.checked),
+        events: chosen.map(function (rule) { return rule.id; }).join(","), rules: encoded,
+        level: standard.value, critical: critical.value, sound: sound.value.trim(), criticalSound: criticalSound.value.trim() })) S.reload();
+    } });
+    return S.card("Bark-Zentrale", { icon: "bell", sub: "Abonnements, Töne und Wiederholungen für dein Suite-Konto" },
+      h("div", { class: "stack" }, h("label", { class: "check" }, enabled, "Bark aktiv"),
+        S.field("Gerät koppeln", key), count,
+        h("div", { class: "row wrap" }, S.searchBox("Bark-Ereignis suchen …", function (value) { term = value.toLowerCase(); draw(); }),
+          h("label", { class: "check" }, only, "Nur abonnierte Ereignisse")),
+        list,
+        h("details", {}, h("summary", { text: "Standardtöne und Dringlichkeit" }), h("div", { class: "dossier" },
+          S.field("Normale Hinweise", standard), S.field("Kritische Ereignisse", critical),
+          S.field("Normaler Klang", sound), S.field("Alarmklang", criticalSound))),
+        h("div", { class: "row wrap" }, save, test), output));
+  }
+
   P.notifications = async function (param, query, alive) {
     var info = await S.api("push"); if (!alive()) return;
     var st = await S.pushState(); if (!alive()) return;
@@ -167,7 +245,16 @@
     }) : S.empty("bell", "Noch kein Gerät", "Aktiviere Push oben auf jedem Gerät, das Hinweise bekommen soll.")));
     // 10.3.0: Bark test – always possible, also during quiet hours; a typed key can be tested before saving it in the app.
     var barkCard = null;
-    if (S.has("bark-test-v1")) {
+    if (S.has("moderation-qol-v1") && S.can("action.notifications.update")) {
+      try {
+        var config = await S.api("notifications");
+        if (!alive()) return;
+        barkCard = barkCenter(config);
+      } catch (error) {
+        if (!alive()) return;
+        barkCard = S.card("Bark-Zentrale", { icon: "bell" }, S.notice(error.message, "warn"));
+      }
+    } else if (S.has("bark-test-v1")) {
       var barkKey = S.input({ type: "password", placeholder: "Leer = gespeicherten Bark-Schlüssel nutzen", autocomplete: "off" }), barkOut = h("div");
       barkCard = S.card("Bark testen", { icon: "send", sub: "Schickt sofort eine Testnachricht an dein Bark-Gerät – unabhängig von Ruhezeiten und Ereignis-Auswahl." },
         h("div", { class: "stack" }, S.field("Bark-Schlüssel oder Push-Adresse (optional)", barkKey),
@@ -177,7 +264,7 @@
             S.toast(r.title, r.ok ? "ok" : "err");
           } })), barkOut));
     }
-    S.title("Benachrichtigungen", "Push für Browser und Home-Bildschirm-App");
+    S.title("Benachrichtigungen", "Bark und Browser-Push");
     S.mount(h("div", { class: "stack" }, h("div", { class: "grid two" }, here, devices), barkCard));
   };
 

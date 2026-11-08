@@ -18,6 +18,11 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.5.0", title: "Moderation & Übersicht", summary: "Chat, Admin-Aktionen, Reports und Bark an den passenden Stellen.", items: [
+            .init(symbol: "text.bubble.fill", title: "Chatverlauf pro Spieler", detail: "Chat und berechtigte Flüsternachrichten mit Absender, Empfänger und Uhrzeit."),
+            .init(symbol: "shield.lefthalf.filled", title: "Minecraft-Adminaktionen", detail: "Finde echte Minecraft-Admins und filtere ihre Aktionen."),
+            .init(symbol: "bell.badge.fill", title: "Bark-Zentrale", detail: "Abonnements suchen, prüfen und einzeln einstellen.")
+        ]),
         WhatsNewRelease(version: "5.4.1", title: "PowerBot-Stichwörter", summary: "Eigene Chat-Prüfregeln und aktuelle Ereignisse direkt auf der Startseite.", items: [
             WhatsNewItem(symbol: "text.magnifyingglass", title: "Eigene Stichwortregeln", detail: "Ganze Wörter oder Phrasen hinzufügen und die KI mit einer eigenen Regel prüfen lassen. SMP ist bereits hinterlegt."),
             WhatsNewItem(symbol: "bell.badge", title: "Aktuelle Ereignisse", detail: "Die neuesten Meldungen verbundener Server stehen direkt auf deiner Startseite.")

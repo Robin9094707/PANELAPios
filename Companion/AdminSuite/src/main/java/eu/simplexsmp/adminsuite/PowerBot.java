@@ -158,6 +158,49 @@ final class PowerBot implements AutoCloseable {
         return OpenAiIntegration.ChatDecision.allow();
     }
 
+    void reviewWhisper(String identity, String name, String text, boolean german, boolean firstJoin,
+                       java.util.function.Consumer<OpenAiIntegration.ChatDecision> completed) {
+        try {
+            reviews.execute(() -> {
+                OpenAiIntegration.ChatDecision decision = null;
+                try {
+                    decision = preflight(identity, name, "Whisper", text, german);
+                    if (decision.allowed && enabled() && on("whispers") && on("moderation")) {
+                        if (!chatReady()) decision = null;
+                        else {
+                            String sample = clean(text, 450);
+                            var result = plugin.openAiIntegration().powerBotReview(sample, policy, true,
+                                keywords.matches(sample), firstJoin);
+                            recovered();
+                            decision = result.decision();
+                            if (!decision.allowed) {
+                                if (result.moderationFlagged()) applyReview(identity, name, "Whisper", "abuse");
+                                else record("whisper-block", identity, name, "Whisper", firstJoin
+                                    ? "Flüstern beim ersten Beitritt zurückgehalten."
+                                    : "Flüstern nach Kontextprüfung zurückgehalten.", 0, List.of());
+                                decision = OpenAiIntegration.ChatDecision.block(
+                                    german ? "Deine Flüsternachricht wurde zurückgehalten." : "Your whisper was held.",
+                                    "AutoMod: whisper blocked");
+                            } else if (decision.warning) {
+                                record("warning", identity, name, "Whisper", "Kontextprüfung: Hinweis an Spieler", 0, List.of());
+                                decision = OpenAiIntegration.ChatDecision.warn(
+                                    german ? "Bitte beachte die Chatregeln beim Flüstern." : "Please follow the rules when whispering.",
+                                    "AutoMod: whisper warning");
+                            }
+                        }
+                    }
+                } catch (Exception error) {
+                    decision = null;
+                    if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+                    failed();
+                }
+                completed.accept(decision);
+            });
+        } catch (RejectedExecutionException busy) {
+            completed.accept(null);
+        }
+    }
+
     OpenAiIntegration.ChatDecision reviewModel(String identity, String name, String source, String text, boolean german, boolean onMain) {
         if (!managed(source) || text.isBlank() || !on("moderation") || !chatReady()) return OpenAiIntegration.ChatDecision.allow();
         if (source.equals("Whisper") && !on("whispers")) return OpenAiIntegration.ChatDecision.allow();

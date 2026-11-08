@@ -100,12 +100,14 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -1563,6 +1565,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             player.sendMessage(playerUiText(player, prefix() + "The report system is currently disabled."));
             return true;
         }
+        if (args.length >= 1 && (args[0].equalsIgnoreCase("replies") || args[0].equalsIgnoreCase("antworten"))) {
+            reports.showReplies(player, args.length > 1 ? args[1] : "");
+            return true;
+        }
         ReportBlock block = reports.blockFor(player.getUniqueId());
         if (block != null) {
             player.sendMessage(playerUiText(player, prefix() + "You are currently blocked from using the report system. Reason: " + block.reason));
@@ -1772,6 +1778,25 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         for (Player online : Bukkit.getOnlinePlayers()) if (online.isOp() || has(online, "simplexadminsuite.admin")) out.add(online.getName().toLowerCase(Locale.ROOT));
         for (OfflinePlayer operator : Bukkit.getOperators()) if (operator.getName() != null) out.add(operator.getName().toLowerCase(Locale.ROOT));
         return out;
+    }
+
+    Set<String> panelPlayerAdminNames(Set<String> candidates) {
+        Set<String> names = new HashSet<>();
+        for (Player player : Bukkit.getOnlinePlayers())
+            if (has(player, "simplexadminsuite.admin")) names.add(player.getName().toLowerCase(Locale.ROOT));
+        for (OfflinePlayer operator : Bukkit.getOperators())
+            if (operator.getName() != null) names.add(operator.getName().toLowerCase(Locale.ROOT));
+        if (database == null || adminAccess == null) return names;
+        List<PlayerProfile> unresolved = new ArrayList<>();
+        for (PlayerProfile profile : database.sortedProfiles()) {
+            String name = profile.name.toLowerCase(Locale.ROOT);
+            if (!candidates.contains(name) || names.contains(name)) continue;
+            Map<String, Boolean> inherited = luckPerms == null ? Map.of() : luckPerms.permissions.getOrDefault(profile.uuid, Map.of());
+            if (adminAccess.hasAccess(profile.uuid, Bukkit.getPlayer(profile.uuid), inherited)) names.add(name);
+            else if (luckPerms != null && !luckPerms.permissions.containsKey(profile.uuid)) unresolved.add(profile);
+        }
+        if (luckPerms != null && !unresolved.isEmpty()) luckPerms.refresh(unresolved);
+        return names;
     }
 
     boolean isStaffAccount(UUID uuid) {
@@ -2039,6 +2064,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         profile.addAction("Server betreten");
         profile.lastLocation = StoredLocation.from(player.getLocation());
         database.save(profile);
+        if (!player.hasPlayedBefore() && profile.sessionCount == 0) adminSpy.firstSession(player);
         profile.sessionCount++;
         profile.lastJoinAt = System.currentTimeMillis();
         profile.currentSessionStartedAt = profile.lastJoinAt;
@@ -2184,6 +2210,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
     @EventHandler public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
+        adminSpy.endWhisperSession(player);
         worldNotices.remove(player.getUniqueId());nativeFormGenerations.remove(player.getUniqueId());activeNativeForms.remove(player.getUniqueId());
         PlayerProfile profile = database.touch(player);
         boolean rejected = rejectedJoinQuits.remove(player.getUniqueId());
@@ -2501,7 +2528,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         discordBot.relayDeath(stripFormatting(death));
     }
 
-    @EventHandler public void onCommandPreprocess(PlayerCommandPreprocessEvent event) {
+    @EventHandler(ignoreCancelled = true) public void onCommandPreprocess(PlayerCommandPreprocessEvent event) {
         if (adminRuntime != null && adminRuntime.blocked(event.getPlayer())) { event.setCancelled(true); return; }
         Player player = event.getPlayer();
         String msg = event.getMessage();
@@ -2542,8 +2569,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             database.save(blockedProfile);
             return;
         }
-        String whisper = adminSpy.privateText(msg);
-        boolean privateMessage = whisper != null;
+        boolean privateMessage = adminSpy.whisper(msg) != null;
         boolean suiteCommand = lower.equals("/sas") || lower.startsWith("/sas ") || lower.equals("/simplexadmin") || lower.startsWith("/simplexadmin ");
         if (profile.isBlocked("commands") && !suiteCommand && !has(player, "simplexadminsuite.admin")) {
             event.setCancelled(true);
@@ -2560,15 +2586,21 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             database.save(profile);
             return;
         }
-        if (privateMessage && powerBot != null && !powerBot.bypass(player) && !isPubliclyHidden(player)) {
-            var decision = powerBot.review(player.getUniqueId().toString(), player.getName(), "Whisper", whisper, publicAiGerman(player), true);
-            if (decision.warning || !decision.allowed) player.sendMessage(prefix() + decision.playerMessage);
-            if (!decision.allowed) { event.setCancelled(true); return; }
+        if (!privateMessage) {
+            adminSpy.spyCommand(player, msg);
+            profile.addAction("Befehl genutzt: " + msg);
+            database.save(profile);
         }
-        adminSpy.spyCommand(player, msg);
-        if (privateMessage) adminSpy.capturePrivateCommand(player, msg);
-        profile.addAction(privateMessage ? "Private Nachricht gesendet" : "Befehl genutzt: " + msg);
-        database.save(profile);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void reviewWhisper(PlayerCommandPreprocessEvent event) {
+        adminSpy.reviewWhisper(event);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void observeWhisper(PlayerCommandPreprocessEvent event) {
+        adminSpy.observeWhisper(event);
     }
 
     private boolean isSensitiveCommand(String lower) {
@@ -8693,7 +8725,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(route.equals("reports")) {
             List<Object> rows=new ArrayList<>();for(ReportCase r:reports.sortedReports()) {
                 if(!query.isBlank()&&!(r.targetName+" "+r.reporterName+" "+r.details+" "+r.id).toLowerCase(Locale.ROOT).contains(query))continue;
-                rows.add(appMap("id",Long.toString(r.id),"name",r.targetName,"player",r.targetUuid==null?"":r.targetUuid.toString(),"reporter",r.reporterName,"category",r.category,"details",r.details,"status",r.status.name(),"created",r.createdAt,"handledBy",r.handledBy,"revision",r.status.name()+":"+r.handledAt,"note",r.staffNote,"evidence",r.evidenceIncluded?appMap("chat",new ArrayList<>(r.chatEvidence),"actions",new ArrayList<>(r.actionEvidence),"combat",new ArrayList<>(r.combatEvidence)):appMap()));
+                String statusFilter = q.getOrDefault("status", "");
+                boolean open = r.status == ReportStatus.OPEN || r.status == ReportStatus.IN_REVIEW;
+                if ((statusFilter.equals("open") && !open) || (statusFilter.equals("done") && open)) continue;
+                rows.add(appMap("id",Long.toString(r.id),"name",r.targetName,"player",r.targetUuid==null?"":r.targetUuid.toString(),"reporter",r.reporterName,"category",r.category,"details",r.details,"status",r.status.name(),"created",r.createdAt,"handledBy",r.handledBy,"revision",r.status.name()+":"+r.handledAt,"note",r.staffNote,"replies",r.replies,"canReply",r.reporterUuid!=null,"evidence",r.evidenceIncluded?appMap("chat",new ArrayList<>(r.chatEvidence),"actions",new ArrayList<>(r.actionEvidence),"combat",new ArrayList<>(r.combatEvidence)):appMap()));
             }int end=Math.min(rows.size(),offset+100);return appMap("items",rows.subList(Math.min(offset,rows.size()),end),"next",end<rows.size()?end:-1,"total",rows.size());
         }
         if(route.equals("log-status"))return securityHub==null?appMap("available",false,"discord","Client-Protokollmodul nicht aktiv"):securityHub.logStatus();
@@ -8943,7 +8978,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             long number=Long.parseLong(id);ReportCase r=reports.get(number);if(r==null)throw new IllegalArgumentException("Report fehlt");
             String expected=String.valueOf(values.getOrDefault("expected",""));String revision=r.status.name()+":"+r.handledAt;
             if(!expected.equals(revision))throw new IllegalArgumentException("Report wurde inzwischen bearbeitet. Bitte neu laden.");
-            reports.updateStatus(number,ReportStatus.valueOf(String.valueOf(values.get("status"))),actor,String.valueOf(values.getOrDefault("note","")));
+            String reply = String.valueOf(values.getOrDefault("reply", "")).strip();
+            if (!reply.isEmpty()) reports.reply(number, actor, reply);
+            else reports.updateStatus(number,ReportStatus.valueOf(String.valueOf(values.get("status"))),actor,String.valueOf(values.getOrDefault("note","")));
             return appMap("ok",true,"title","Report gespeichert","description","#"+number+" wurde aktualisiert.");
         }
         throw new IllegalArgumentException("Unbekannte Moderationsaktion");
@@ -9062,10 +9099,22 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if(p.logoutLocation!=null)dossierRow(pos,"Ausgeloggt bei",p.logoutLocation.world+" • "+Math.round(p.logoutLocation.x)+" / "+Math.round(p.logoutLocation.y)+" / "+Math.round(p.logoutLocation.z),true,"");
         if(p.lastLocation!=null)dossierRow(pos,"Letzte bekannte Position",p.lastLocation.world+" • "+Math.round(p.lastLocation.x)+" / "+Math.round(p.lastLocation.y)+" / "+Math.round(p.lastLocation.z),true,"");
         if(!pos.isEmpty())sections.add(dossierSection("position","Position & Werte","location.fill","map",pos,null));
-        if(allowed.test("data.chat")){List<String> chat;synchronized(p.recentChat){chat=new ArrayList<>(p.recentChat);}List<String> actions;synchronized(p.recentActions){actions=new ArrayList<>(p.recentActions);}List<String> combat;synchronized(p.recentCombat){combat=new ArrayList<>(p.recentCombat);}
-            List<String> all=new ArrayList<>();for(String c:chat.subList(Math.max(0,chat.size()-15),chat.size()))all.add("Chat: "+c);for(String a:actions.subList(Math.max(0,actions.size()-15),actions.size()))all.add("Aktion: "+a);for(String c:combat.subList(Math.max(0,combat.size()-10),combat.size()))all.add("Kampf: "+c);
-            if(!all.isEmpty())sections.add(dossierSection("recent","Zuletzt (Chat, Aktionen, Kämpfe)","text.bubble.fill","chat",List.of(),all));}
-        return appMap("player",p.uuid.toString(),"name",p.name,"online",online!=null,"generatedAt",now,"sections",sections);
+        boolean publicChat = allowed.test("data.chat");
+        boolean privateChat = allowed.test(PlayerChatTimeline.PRIVATE_PERMISSION);
+        if (publicChat) {
+            List<String> actions, combat;
+            synchronized (p.recentActions) { actions = new ArrayList<>(p.recentActions); }
+            synchronized (p.recentCombat) { combat = new ArrayList<>(p.recentCombat); }
+            List<String> recent = new ArrayList<>();
+            for (String action : actions.subList(Math.max(0, actions.size() - 15), actions.size())) recent.add("Aktion: " + action);
+            for (String entry : combat.subList(Math.max(0, combat.size() - 10), combat.size())) recent.add("Kampf: " + entry);
+            if (!recent.isEmpty()) sections.add(dossierSection("recent", "Letzte Aktionen & Kämpfe",
+                "clock.arrow.circlepath", "clock", List.of(), recent));
+        }
+        return appMap("player", p.uuid.toString(), "name", p.name, "online", online != null, "generatedAt", now,
+            "sections", sections, "chatVisible", publicChat || privateChat, "whispersVisible", privateChat,
+            "chatTimeline", PlayerChatTimeline.rows(p.name, publicChat ? p.recentChat : List.of(),
+                privateChat ? p.recentPrivateMessages : List.of()));
     }
     Object appApiMutation(String route,Map<String,Object> values,String actor){
         if(route.equals("logs.retry")){if(securityHub==null)throw new IllegalArgumentException("Client-Protokollmodul nicht aktiv");securityHub.retryLogs();expansionAudit(actor,null,"App-Protokollversand","Erneut versuchen");return appMap("ok",true,"title","Versand erneut geplant","description","Gespeicherte Ereignisse werden automatisch erneut geprüft und versendet.");}
@@ -13017,6 +13066,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         private String handledBy = "";
         private long handledAt;
         private String staffNote = "";
+        private final List<Map<String, Object>> replies = new ArrayList<>();
         private long targetLastSeen;
         private String targetClient = "";
         private String targetLocation = "";
@@ -13075,6 +13125,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             y.set("handled.by", handledBy);
             y.set("handled.at", handledAt);
             y.set("staff-note", staffNote);
+            y.set("staff-replies", replies);
             y.set("snapshot.target-last-seen", targetLastSeen);
             y.set("snapshot.target-client", targetClient);
             y.set("snapshot.target-location", targetLocation);
@@ -13107,6 +13158,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             report.handledBy = y.getString("handled.by", "");
             report.handledAt = y.getLong("handled.at", 0L);
             report.staffNote = y.getString("staff-note", "");
+            for (Map<?, ?> reply : y.getMapList("staff-replies")) {
+                if (reply.get("text") instanceof String text && reply.get("at") instanceof Number at)
+                    report.replies.add(appMap("text", text, "at", at.longValue(), "actor", Objects.toString(reply.get("actor"), "")));
+            }
             report.targetLastSeen = y.getLong("snapshot.target-last-seen", 0L);
             report.targetClient = y.getString("snapshot.target-client", "");
             report.targetLocation = y.getString("snapshot.target-location", "");
@@ -13291,6 +13346,47 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if (note != null && !note.isBlank()) report.staffNote = appendNote(report.staffNote, admin + ": " + note, plugin.getConfig().getInt("reports.max-staff-note-length", 500));
             save(report);
             plugin.audit.log(admin, report.targetUuid, "Report-Status", "#" + id + " = " + status.name());
+        }
+
+        private synchronized void reply(long id, String admin, String raw) throws Exception {
+            ReportCase report = cases.get(id);
+            if (report == null || report.reporterUuid == null) throw new IllegalArgumentException("Kein Empfänger für diesen Report.");
+            String message = plugin.sanitizeText(stripFormatting(raw), 1000);
+            if (message.isBlank()) throw new IllegalArgumentException("Die Antwort ist leer.");
+            if (report.replies.size() >= 100) throw new IllegalArgumentException("Dieser Report hat bereits 100 Antworten.");
+            long oldAt = report.handledAt;
+            String oldBy = report.handledBy;
+            report.handledAt = Math.max(System.currentTimeMillis(), oldAt + 1);
+            report.handledBy = admin;
+            report.replies.add(appMap("text", message, "at", report.handledAt, "actor", admin));
+            try {
+                report.save(new File(folder, String.format(Locale.ROOT, "report-%06d.yml", id)));
+            } catch (Exception failure) {
+                report.replies.removeLast();
+                report.handledAt = oldAt;
+                report.handledBy = oldBy;
+                throw failure;
+            }
+            Player reporter = Bukkit.getPlayer(report.reporterUuid);
+            if (reporter != null) reporter.sendMessage(plugin.prefix() + plugin.playerText(reporter,
+                "Antwort vom Team zu Report #" + id + ": ", "Team reply to report #" + id + ": ") + message);
+            plugin.audit.log(admin, report.targetUuid, "Report-Antwort", "#" + id);
+        }
+
+        private synchronized void showReplies(Player reporter, String id) {
+            int sent = 0;
+            for (ReportCase report : sortedReports()) {
+                if (!reporter.getUniqueId().equals(report.reporterUuid) || report.replies.isEmpty()) continue;
+                if (!id.isEmpty() && !id.equals(Long.toString(report.id))) continue;
+                int start = id.isEmpty() ? report.replies.size() - 1 : Math.max(0, report.replies.size() - 10);
+                for (int i = start; i < report.replies.size() && sent < 10; i++) {
+                    reporter.sendMessage(plugin.prefix() + "Report #" + report.id + " · " + report.replies.get(i).get("text"));
+                    sent++;
+                }
+                if (sent >= 10) break;
+            }
+            if (sent == 0) reporter.sendMessage(plugin.prefix() + plugin.playerText(reporter,
+                "Für deine Reports gibt es hier keine Antworten.", "There are no replies for your reports here."));
         }
 
         private synchronized boolean deleteReport(long id, String admin) {
@@ -14667,55 +14763,156 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             }
         }
 
-        private String privateText(String command) {
+        private static final Set<String> DIRECT_WHISPERS = Set.of("msg", "tell", "w", "whisper", "message", "pm", "m",
+                "emsg", "etell", "ewhisper", "emessage", "epm", "t", "et");
+        private static final Set<String> REPLY_WHISPERS = Set.of("r", "reply", "er", "ereply");
+        private static final long WHISPER_COOLDOWN_MS = 1000, FIRST_SESSION_MS = 120_000, REVIEW_TIMEOUT_MS = 8_000;
+        private final Map<UUID, Long> firstSessions = new HashMap<>();
+        private final Map<UUID, Long> lastWhisper = new HashMap<>();
+        private final Map<UUID, HeldWhisper> pendingWhispers = new HashMap<>();
+        private final Map<PlayerCommandPreprocessEvent, HeldWhisper> approvedWhispers = new IdentityHashMap<>();
+
+        private record Whisper(String alias, String target, String text) {}
+        private record HeldWhisper(Player player, String command, List<UUID> recipients, long started) {}
+
+        private void firstSession(Player player) {
+            firstSessions.put(player.getUniqueId(), System.currentTimeMillis());
+        }
+
+        private void endWhisperSession(Player player) {
+            UUID id = player.getUniqueId();
+            firstSessions.remove(id);
+            lastWhisper.remove(id);
+            pendingWhispers.remove(id);
+            lastPrivatePartner.remove(id);
+        }
+
+        private Whisper whisper(String command) {
             if (command == null || !command.startsWith("/")) return null;
             String[] parts = command.substring(1).strip().split("\\s+", 3);
-            String alias = parts[0].toLowerCase(Locale.ROOT);
-            alias = alias.substring(alias.lastIndexOf(':') + 1);
-            List<String> direct = plugin.getConfig().getStringList("adminspy.private-message-aliases");
-            List<String> replies = plugin.getConfig().getStringList("adminspy.reply-aliases");
-            if ((direct.isEmpty() ? List.of("msg", "tell", "w", "whisper", "message", "pm", "m") : direct).contains(alias))
-                return parts.length == 3 ? parts[2] : null;
-            if ((replies.isEmpty() ? List.of("r", "reply") : replies).contains(alias))
-                return parts.length >= 2 ? command.substring(1).strip().split("\\s+", 2)[1] : null;
-            return null;
+            if (parts.length < 2) return null;
+            String label = parts[0].toLowerCase(Locale.ROOT);
+            String alias = label.substring(label.lastIndexOf(':') + 1);
+            boolean direct = DIRECT_WHISPERS.contains(alias)
+                    || plugin.getConfig().getStringList("adminspy.private-message-aliases").contains(alias);
+            boolean reply = REPLY_WHISPERS.contains(alias)
+                    || plugin.getConfig().getStringList("adminspy.reply-aliases").contains(alias);
+            if (!direct && !reply) {
+                var registered = Bukkit.getCommandMap().getCommand(label);
+                if (registered != null) {
+                    direct = DIRECT_WHISPERS.contains(registered.getName());
+                    reply = REPLY_WHISPERS.contains(registered.getName());
+                }
+            }
+            if (direct) return parts.length == 3 ? new Whisper(alias, parts[1], parts[2]) : null;
+            return reply ? new Whisper(alias, "", command.substring(1).strip().split("\\s+", 2)[1]) : null;
         }
 
-        private boolean capturePrivateCommand(Player sender, String rawCommand) {
-            if (rawCommand == null || rawCommand.length() < 2) return false;
-            String raw = rawCommand.substring(1).trim();
-            if (raw.isEmpty()) return false;
-            String[] parts = raw.split("\\s+", 3);
-            String root = parts[0].toLowerCase(Locale.ROOT);
-            int namespace = root.indexOf(':');
-            if (namespace >= 0) root = root.substring(namespace + 1);
-            Set<String> direct = new HashSet<>(plugin.getConfig().getStringList("adminspy.private-message-aliases"));
-            if (direct.isEmpty()) direct.addAll(Arrays.asList("msg", "tell", "w", "whisper", "message", "pm", "m"));
-            Set<String> replies = new HashSet<>(plugin.getConfig().getStringList("adminspy.reply-aliases"));
-            if (replies.isEmpty()) replies.addAll(Arrays.asList("r", "reply"));
-            if (direct.contains(root)) {
-                if (parts.length < 3) return false;
-                Player recipient = findOnline(parts[1]);
-                spyPrivate(sender, recipient, parts[2], root);
-                return true;
-            }
-            if (replies.contains(root)) {
-                String[] replyParts = raw.split("\\s+", 2);
-                if (replyParts.length < 2) return false;
+        private List<UUID> recipients(Player sender, Whisper whisper) {
+            if (whisper == null) return List.of();
+            if (whisper.target.isEmpty()) {
                 UUID partner = lastPrivatePartner.get(sender.getUniqueId());
-                Player recipient = partner == null ? null : Bukkit.getPlayer(partner);
-                spyPrivate(sender, recipient, replyParts[1], root);
-                return true;
+                return partner == null || Bukkit.getPlayer(partner) == null ? List.of() : List.of(partner);
             }
-            return false;
+            Player target = Bukkit.getPlayerExact(whisper.target);
+            if (target != null) return List.of(target.getUniqueId());
+            if (whisper.target.startsWith("@") && sender.hasPermission("minecraft.command.selector")) {
+                try {
+                    return Bukkit.selectEntities(sender, whisper.target).stream()
+                        .filter(Player.class::isInstance).map(entity -> entity.getUniqueId()).sorted().toList();
+                } catch (IllegalArgumentException invalid) { return List.of(); }
+            }
+            String prefix = whisper.target.toLowerCase(Locale.ROOT);
+            var matches = Bukkit.getOnlinePlayers().stream()
+                .filter(player -> player.getName().toLowerCase(Locale.ROOT).startsWith(prefix)).limit(2).toList();
+            return matches.size() == 1 ? List.of(matches.getFirst().getUniqueId()) : List.of();
         }
 
-        private Player findOnline(String query) {
-            Player exact = Bukkit.getPlayerExact(query);
-            if (exact != null) return exact;
-            String lower = query.toLowerCase(Locale.ROOT);
-            for (Player player : Bukkit.getOnlinePlayers()) if (player.getName().toLowerCase(Locale.ROOT).startsWith(lower)) return player;
-            return null;
+        private void reviewWhisper(PlayerCommandPreprocessEvent event) {
+            HeldWhisper approved = approvedWhispers.get(event);
+            if (approved != null) {
+                if (!approved.command.equals(event.getMessage())) event.setCancelled(true);
+                return;
+            }
+            Whisper whisper = whisper(event.getMessage());
+            PowerBot bot = plugin.powerBot;
+            if (whisper == null || bot == null || !bot.enabled() || !bot.on("whispers")) return;
+            Player player = event.getPlayer();
+            UUID id = player.getUniqueId();
+            long now = System.currentTimeMillis();
+            if (now - lastWhisper.getOrDefault(id, 0L) < WHISPER_COOLDOWN_MS || pendingWhispers.containsKey(id)) {
+                event.setCancelled(true);
+                whisperNotice(player, "Bitte warte vor der nächsten Flüsternachricht.", "Please wait before sending another whisper.");
+                return;
+            }
+            lastWhisper.put(id, now);
+            boolean firstJoin = now - firstSessions.getOrDefault(id, 0L) < FIRST_SESSION_MS;
+            if (!bot.on("moderation") && !bot.on("advertising") && !bot.muted(id.toString())) return;
+            event.setCancelled(true);
+            HeldWhisper held = new HeldWhisper(player, event.getMessage(), recipients(player, whisper), now);
+            pendingWhispers.put(id, held);
+            if (firstJoin) whisperNotice(player, "Deine Flüsternachricht wird vor dem Versand geprüft.",
+                "Your whisper is being checked before delivery.");
+            bot.reviewWhisper(id.toString(), player.getName(), whisper.text, plugin.publicAiGerman(player), firstJoin,
+                decision -> plugin.runAdminTask(() -> finishWhisper(held, decision)));
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (pendingWhispers.remove(id, held)) whisperUnavailable(player);
+            }, REVIEW_TIMEOUT_MS / 50);
+        }
+
+        private void finishWhisper(HeldWhisper held, OpenAiIntegration.ChatDecision decision) {
+            Player player = held.player;
+            UUID id = player.getUniqueId();
+            if (!pendingWhispers.remove(id, held) || Bukkit.getPlayer(id) != player) return;
+            if (decision == null || System.currentTimeMillis() - held.started >= REVIEW_TIMEOUT_MS) {
+                whisperUnavailable(player);
+                return;
+            }
+            if (!decision.allowed || decision.warning) player.sendMessage(plugin.prefix() + decision.playerMessage);
+            if (!decision.allowed) return;
+            if (plugin.powerBot != null && plugin.powerBot.muted(id.toString())) {
+                whisperNotice(player, "Dein AutoMod-Chatmute läuft noch.", "Your AutoMod chat mute is still active.");
+                return;
+            }
+            if (!held.recipients.equals(recipients(player, whisper(held.command)))) {
+                whisperNotice(player, "Das Flüsterziel hat sich geändert. Bitte sende erneut.",
+                    "The whisper target changed. Please send it again.");
+                return;
+            }
+            var replay = new PlayerCommandPreprocessEvent(player, held.command);
+            approvedWhispers.put(replay, held);
+            try {
+                Bukkit.getPluginManager().callEvent(replay);
+                if (!replay.isCancelled() && held.command.equals(replay.getMessage())) {
+                    if (Bukkit.dispatchCommand(player, held.command.substring(1)))
+                        captureWhisper(player, whisper(held.command), held.recipients);
+                }
+            } finally {
+                approvedWhispers.remove(replay);
+            }
+        }
+
+        private void observeWhisper(PlayerCommandPreprocessEvent event) {
+            if (approvedWhispers.containsKey(event)) return;
+            Whisper whisper = whisper(event.getMessage());
+            if (whisper != null) captureWhisper(event.getPlayer(), whisper, recipients(event.getPlayer(), whisper));
+        }
+
+        private void captureWhisper(Player sender, Whisper whisper, List<UUID> recipients) {
+            if (plugin.isPubliclyHidden(sender)) return;
+            for (UUID recipient : recipients) {
+                Player target = Bukkit.getPlayer(recipient);
+                if (target != null) spyPrivate(sender, target, whisper.text, whisper.alias);
+            }
+        }
+
+        private void whisperUnavailable(Player player) {
+            whisperNotice(player, "Flüstern konnte gerade nicht geprüft werden. Bitte versuche es erneut.",
+                "Whisper review is temporarily unavailable. Please try again.");
+        }
+
+        private void whisperNotice(Player player, String german, String english) {
+            player.sendMessage(plugin.prefix() + plugin.playerText(player, german, english));
         }
 
         private void broadcast(String colored) {

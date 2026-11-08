@@ -161,16 +161,24 @@ final class SuiteEventCenter {
         return SimplexAdminSuite.appMap("ok",true,"title","Protokoll aktualisiert","description","Die Änderung wurde gespeichert. Ursprüngliche Strafen und Reports bleiben erhalten.");
     }
     private String defaultBarkEvents(String prefix) {
-        Set<String> events = new TreeSet<>(Arrays.asList(subscriptions.getProperty(prefix + "events", "ban-evasion,vpn-kick,overload,client-brand").split(",")));
-        for (String type : List.of("disconnect-wave", "game-day", "ai-chat-alert", "powerbot-case"))
-            if (!BarkPolicy.rules(subscriptions.getProperty(prefix + "rules", "")).containsKey(type)) events.add(type);
+        Set<String> events = new TreeSet<>(Arrays.asList(subscriptions.getProperty(prefix + "events", "").split(",")));
+        Map<String, String[]> rules = BarkPolicy.rules(subscriptions.getProperty(prefix + "rules", ""));
+        for (String type : TYPES) {
+            if (!rules.containsKey(type) && defaultSubscription(type)) events.add(type);
+        }
         events.remove("");
         return String.join(",", events);
     }
 
+    private boolean defaultSubscription(String type) {
+        return (type.startsWith("ticket") && plugin.getConfig().getBoolean("tickets.bark", true))
+            || Set.of("emergency-restart", "discord-ads", "ad-reminder", "disconnect-wave",
+                "game-day", "ai-chat-alert", "powerbot-case").contains(type);
+    }
+
     synchronized Object subscription(String owner) {
         String prefix=owner+".";
-        return SimplexAdminSuite.appMap("enabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"enabled","false")),"configured",!subscriptions.getProperty(prefix+"key","").isBlank(),"events",defaultBarkEvents(prefix),"level",subscriptions.getProperty(prefix+"level","active"),"critical",subscriptions.getProperty(prefix+"critical","critical"),"sound",subscriptions.getProperty(prefix+"sound","minuet"),"criticalSound",subscriptions.getProperty(prefix+"criticalSound","alarm"),"rules",subscriptions.getProperty(prefix+"rules",""),"quietMode",subscriptions.getProperty(prefix+"quietMode","off"),"quietStart",subscriptions.getProperty(prefix+"quietStart","22:00"),"quietEnd",subscriptions.getProperty(prefix+"quietEnd","07:00"),"timezone",subscriptions.getProperty(prefix+"timezone","Europe/Berlin"),"quietKinds",subscriptions.getProperty(prefix+"quietKinds",""),"workEnabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"workEnabled","false")),"workStart",subscriptions.getProperty(prefix+"workStart","08:00"),"workEnd",subscriptions.getProperty(prefix+"workEnd","17:00"),"workDays",subscriptions.getProperty(prefix+"workDays","1,2,3,4,5"),"emergencyEnabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"emergencyEnabled","true")),"emergencyOverride",subscriptions.getProperty(prefix+"emergencyOverride","both"),"sleepActive",BarkPolicy.quiet(subscriptions,prefix,java.time.Instant.now()),"workActive",BarkPolicy.working(subscriptions,prefix,java.time.Instant.now()),"deliveryStatus",deliveryStatus);
+        return SimplexAdminSuite.appMap("enabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"enabled","false")),"configured",!subscriptions.getProperty(prefix+"key","").isBlank(),"events",defaultBarkEvents(prefix),"eventKinds",new TreeSet<>(TYPES),"level",subscriptions.getProperty(prefix+"level","active"),"critical",subscriptions.getProperty(prefix+"critical","critical"),"sound",subscriptions.getProperty(prefix+"sound","minuet"),"criticalSound",subscriptions.getProperty(prefix+"criticalSound","alarm"),"rules",subscriptions.getProperty(prefix+"rules",""),"quietMode",subscriptions.getProperty(prefix+"quietMode","off"),"quietStart",subscriptions.getProperty(prefix+"quietStart","22:00"),"quietEnd",subscriptions.getProperty(prefix+"quietEnd","07:00"),"timezone",subscriptions.getProperty(prefix+"timezone","Europe/Berlin"),"quietKinds",subscriptions.getProperty(prefix+"quietKinds",""),"workEnabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"workEnabled","false")),"workStart",subscriptions.getProperty(prefix+"workStart","08:00"),"workEnd",subscriptions.getProperty(prefix+"workEnd","17:00"),"workDays",subscriptions.getProperty(prefix+"workDays","1,2,3,4,5"),"emergencyEnabled",Boolean.parseBoolean(subscriptions.getProperty(prefix+"emergencyEnabled","true")),"emergencyOverride",subscriptions.getProperty(prefix+"emergencyOverride","both"),"sleepActive",BarkPolicy.quiet(subscriptions,prefix,java.time.Instant.now()),"workActive",BarkPolicy.working(subscriptions,prefix,java.time.Instant.now()),"deliveryStatus",deliveryStatus);
     }
     synchronized Object configure(String owner,Map<String,Object> values) throws IOException {
         String prefix=owner+".";Properties next=new Properties();next.putAll(subscriptions);
@@ -223,7 +231,7 @@ final class SuiteEventCenter {
             // 10.2.0: diagnostics alarms only reach accounts that may open the diagnostics centre.
             if(Set.of("disconnect-wave","crash","lag-spike","discord-ads","ad-reminder","game-day","ai-chat-alert","powerbot-case").contains(type)&&!plugin.appApi.diagnosticsNotifiable(owner,type))continue;String[] rule=BarkPolicy.rules(copy.getProperty(prefix+"rules","")).get(type);
             // Tickets reach every Bark subscriber until the app stores an explicit rule for them.
-            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!(type.startsWith("ticket")&&plugin.getConfig().getBoolean("tickets.bark",true))&&!type.equals("emergency-restart")&&!type.equals("discord-ads")&&!type.equals("ad-reminder")&&!Set.of("disconnect-wave","game-day","ai-chat-alert","powerbot-case").contains(type))continue;
+            if(rule==null&&!Arrays.asList(copy.getProperty(prefix+"events","").split(",")).contains(type)&&!defaultSubscription(type))continue;
             boolean critical=Boolean.TRUE.equals(row.get("critical"));String hint=row.get("level") instanceof String h&&LEVELS.contains(h)?h:null;
             String level=rule!=null?rule[1]:hint!=null?hint:copy.getProperty(prefix+(critical?"critical":"level"),"active");
             if(type.equals("emergency-restart")&&rule==null)level="critical";

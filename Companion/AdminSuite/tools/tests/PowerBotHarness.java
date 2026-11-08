@@ -3,7 +3,9 @@ package eu.simplexsmp.adminsuite;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.GZIPOutputStream;
 
 final class PowerBotHarness {
@@ -16,6 +18,7 @@ final class PowerBotHarness {
         assert !PowerBot.advertising("Example.net posted an article", "simplexsmp.eu");
 
         keywords();
+        moderationViews();
 
         OfflineInventory old = new OfflineInventory(inventory());
         assert old.editable();
@@ -33,6 +36,25 @@ final class PowerBotHarness {
         try { new OfflineInventory(new byte[]{10, 0, 0, 9}); throw new AssertionError("Accepted truncated NBT"); }
         catch (IOException expected) { }
         System.out.println("PASS PowerBot literal keywords, durable deletion, targeted self-promotion and offline cross-container NBT edits");
+    }
+
+    private static void moderationViews() {
+        var publicChat = List.of("08.11.2026 20:00:00 Alex: Hello");
+        var whispers = List.of("08.11.2026 20:01:00 OUT → Sam [msg]: Hi!", "08.11.2026 20:02:00 IN ← Jo [r]: Ready?");
+        var timeline = PlayerChatTimeline.rows("Alex", publicChat, whispers);
+        assert timeline.size() == 3;
+        assert timeline.get(0).get("from").equals("Jo") && timeline.get(0).get("to").equals("Alex");
+        assert timeline.get(1).get("from").equals("Alex") && timeline.get(1).get("to").equals("Sam");
+        assert timeline.get(1).get("text").equals("Hi!");
+        assert timeline.get(2).get("kind").equals("public");
+        assert (long) timeline.get(0).get("at") - (long) timeline.get(2).get("at") == 120_000L;
+        assert PlayerChatTimeline.rows("Alex", publicChat, List.of()).size() == 1;
+        var staff = Set.of("alex");
+        assert AdminActivityLog.playerAdminRow(Map.of("source", "ingame", "admin", "alex"), staff);
+        assert AdminActivityLog.playerAdminRow(Map.of("source", "ingame", "admin", "sam", "playerAdmin", true), staff);
+        assert !AdminActivityLog.playerAdminRow(Map.of("source", "ingame", "admin", "alex", "playerAdmin", false), staff);
+        for (String source : List.of("system", "console", "app", "discord"))
+            assert !AdminActivityLog.playerAdminRow(Map.of("source", source, "admin", "alex", "playerAdmin", true), staff);
     }
 
     private static void keywords() throws Exception {
