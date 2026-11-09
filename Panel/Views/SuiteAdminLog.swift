@@ -55,7 +55,12 @@ struct SuiteAdminLogView: View {
     @State private var busy = false
     @AppStorage("adminLog.includeViews") private var includeViews = false
     @State private var filter = false
-    var admins: [JSON] { data["admins"].array }
+    @State private var playerAdmins = true
+    @State private var search = ""
+    var onlyPlayers: Bool { playerAdmins && suite.features.contains("moderation-qol-v1") }
+    var admins: [JSON] {
+        data["admins"].array.filter { search.isEmpty || $0["name"].string.localizedCaseInsensitiveContains(search) }
+    }
     /// 9.9: which actions raise the unread counter for this account.
     var filterCaption: String {
         let mode = data["settings"]["mode"].string
@@ -77,22 +82,29 @@ struct SuiteAdminLogView: View {
                     Spacer()
                     if busy { ProgressView() }
                 }
-                Button("Alle als gelesen markieren", systemImage: "checkmark.circle") { Task { await markRead("") } }.disabled(data["unread"].int == 0 || busy).accessibilityIdentifier("adminLogReadAll")
+                if !onlyPlayers { Button("Alle als gelesen markieren", systemImage: "checkmark.circle") { Task { await markRead("") } }.disabled(data["unread"].int == 0 || busy).accessibilityIdentifier("adminLogReadAll") }
+                if suite.features.contains("moderation-qol-v1") {
+                    Picker("Protokoll", selection: $playerAdmins) {
+                        Text("Minecraft-Admins").tag(true)
+                        Text("Alle Quellen").tag(false)
+                    }.pickerStyle(.segmented)
+                }
                 Toggle("Auch reine Ansichten zeigen", isOn: $includeViews)
             }
-            Section("Admins") {
+            Section(onlyPlayers ? "Minecraft-Admins" : "Akteure") {
                 if data == .null && error == nil { ProgressView("Admin-Log wird geladen …") }
                 if data != .null && admins.isEmpty { Text("Noch keine Admin-Aktionen protokolliert.").foregroundStyle(.secondary) }
                 ForEach(admins, id: \.["admin"].string) { row in
-                    NavigationLink { SuiteAdminLogDetailView(suite: suite, admin: row["admin"].string, title: row["name"].string, panel: panel, server: server) { await load() } } label: { adminRow(row) }
+                    NavigationLink { SuiteAdminLogDetailView(suite: suite, admin: row["admin"].string, title: row["name"].string, panel: panel, server: server, playerAdmins: onlyPlayers) { await load() } } label: { adminRow(row) }
                         .swipeActions { if row["unread"].int > 0 { Button("Gelesen", systemImage: "checkmark") { Task { await markRead(row["admin"].string) } }.tint(Color.panelAccent) } }
                 }
             }
-            Section { NavigationLink { SuiteAdminLogDetailView(suite: suite, admin: "", title: "Gesamtes Protokoll", panel: panel, server: server) { await load() } } label: { Label("Gesamtes Protokoll durchsuchen", systemImage: "magnifyingglass") } }
+            Section { NavigationLink { SuiteAdminLogDetailView(suite: suite, admin: "", title: onlyPlayers ? "Minecraft-Adminaktionen" : "Gesamtes Protokoll", panel: panel, server: server, playerAdmins: onlyPlayers) { await load() } } label: { Label("Gesamtes Protokoll durchsuchen", systemImage: "magnifyingglass") } }
         }.panelScreen().navigationTitle("Admin-Log").errorAlert($error)
             .toolbar { if suite.features.contains("admin-log-v2") && data != .null { Button("Filter", systemImage: "line.3.horizontal.decrease.circle") { filter = true }.accessibilityIdentifier("adminLogFilter") } }
             .sheet(isPresented: $filter) { SuiteAdminLogFilterView(suite: suite, overview: data) { await load() } }
-            .task(id: includeViews) { await load() }.refreshable { await load() }
+            .searchable(text: $search, prompt: "Admin suchen")
+            .task(id: "\(includeViews)|\(onlyPlayers)") { await load() }.refreshable { await load() }
     }
     func adminRow(_ row: JSON) -> some View {
         HStack(spacing: 12) {
@@ -117,7 +129,12 @@ struct SuiteAdminLogView: View {
     }
     func load() async {
         busy = true; defer { busy = false }
-        do { data = try await suite.data("admin-log", query: includeViews ? ["views": "true"] : [:]); error = nil }
+        do {
+            let value = try await suite.data("admin-log", query: ["views": String(includeViews), "playerAdmins": String(onlyPlayers)])
+            try Task.checkCancellation()
+            data = value
+            error = nil
+        }
         catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
     }
     func markRead(_ admin: String) async {
@@ -132,6 +149,7 @@ struct SuiteAdminLogDetailView: View {
     let title: String
     var panel: PanelAPI? = nil
     var server: Server? = nil
+    var playerAdmins = false
     var changed: () async -> Void = {}
     @State private var items: [JSON] = []
     @State private var next = -1
@@ -155,7 +173,7 @@ struct SuiteAdminLogDetailView: View {
             if items.isEmpty && !busy { ContentUnavailableView(query.isEmpty ? "Keine Einträge" : "Keine Treffer", systemImage: "list.bullet.clipboard") }
         }.panelScreen().navigationTitle(title).navigationBarTitleDisplayMode(.inline).errorAlert($error)
             .searchable(text: $query, prompt: "Aktion, Spieler oder Welt")
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Als gelesen markieren", systemImage: "checkmark.circle") { Task { await markRead() } }.disabled(unread == 0).accessibilityIdentifier("adminLogMarkRead") } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Als gelesen markieren", systemImage: "checkmark.circle") { Task { await markRead() } }.disabled(unread == 0 || (playerAdmins && admin.isEmpty)).accessibilityIdentifier("adminLogMarkRead") } }
             .task(id: "\(query)|\(category)|\(includeViews)") { try? await Task.sleep(for: .milliseconds(query.isEmpty ? 0 : 300)); await load() }
             .refreshable { await load() }
     }
@@ -191,6 +209,7 @@ struct SuiteAdminLogDetailView: View {
         busy = true; defer { busy = false }
         var parameters = ["admin": admin, "q": query, "category": category, "offset": String(more ? max(0, next) : 0)]
         if includeViews || category == "view" { parameters["views"] = "true" }
+        if playerAdmins { parameters["playerAdmins"] = "true" }
         do {
             let data = try await suite.data("admin-log", query: parameters)
             if more { items += data["items"].array } else { items = data["items"].array }

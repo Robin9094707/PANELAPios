@@ -32,7 +32,7 @@ final class AiAdmin {
         Map.entry("server", new Source("data.overview", "Serverstatus, Onlinezahl, TPS und Neustartstatus")),
         Map.entry("chat", new Source("data.chat", "Öffentlicher Minecraft-Chat, Zeitfenster oder Suchwort")),
         Map.entry("staff-chat", new Source("data.staff-chat", "Privater Staff-Chat, nur bei ausdrücklicher Frage zum Staff-Chat; Text ohne Anhänge")),
-        Map.entry("admin-log", new Source("data.admin-log", "Teamaktionen, Vanish, Name oder Stichwort")),
+        Map.entry("admin-log", new Source("data.admin-log", "Aktionen tatsächlicher Minecraft-Admins, Vanish, Name oder Stichwort")),
         Map.entry("tickets", new Source("data.tickets", "Ticketliste, Suchwort")),
         Map.entry("ticket", new Source("data.ticket", "Einzelnes Ticket, ID im query-Feld")),
         Map.entry("devices", new Source("data.devices", "Letztes beobachtetes Gerät eines konkreten Spielers; nur auf Nachfrage zu Gerät, Plattform oder Eingabemethode")),
@@ -307,7 +307,7 @@ final class AiAdmin {
             case "chat"->chatRows(plugin.appChat.historySnapshot(),l.query,from,to);
             case "staff-chat"->plugin.staffChat==null?List.of():select(plugin.staffChat.historySnapshot(),l.query,from,to,20,"at","author","text");
             case "events"->plugin.appEvents==null?List.of():select(plugin.appEvents.historySnapshot(),l.query,from,to,25,"id","at","player","type","title","summary","detail","critical");
-            case "admin-log"->plugin.adminLog==null?List.of():select(plugin.adminLog.historySnapshot(),l.query,from,to,MAX_ROWS,"id","time","adminUuid","adminName","action","category","detail","target","targetName");
+            case "admin-log"->plugin.adminLog==null?List.of():select(plugin.adminLog.playerAdminHistory(),l.query,from,to,MAX_ROWS,"id","time","adminUuid","adminName","action","category","detail","target","targetName");
             case "tickets"->take(plugin.tickets.appList(Map.of("q",l.query,"status","all")),20,"id","title","status","priority","category","updated");
             case "ticket"->{Map<String,Object> ticket=object(plugin.tickets.appTicket(ticket(l.query)));yield select(objects(ticket.get("items"),500),"",from,to,20,"id","at","author","role","text");}
             case "reports"->take(plugin.appApiData("reports",Map.of("q",l.query)),20,"id","name","player","reporter","category","details","status","created");

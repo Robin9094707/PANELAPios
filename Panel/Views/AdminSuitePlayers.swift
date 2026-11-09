@@ -235,6 +235,9 @@ struct SuitePlayerView: View {
                 LabeledContent("Warnungen", value: current["warnings"].string)
             }
             quickActionSection
+            if suite.features.contains("moderation-qol-v1") && suite.can("ai.assistant.use") {
+                SuitePlayerAssistantLink(suite: suite, player: player)
+            }
             if suite.features.contains("player-dossier-v1") && suite.can("data.profile") {
                 Section {
                     NavigationLink { SuitePlayerDossierView(suite: suite, player: player) } label: { Label("Steckbrief: alles über \(name)", systemImage: "person.text.rectangle.fill") }.accessibilityIdentifier("player-dossier")

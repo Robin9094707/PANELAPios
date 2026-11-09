@@ -101,7 +101,11 @@ final class AdminActivityLog {
         // Locations are read only on the main thread; asynchronous audit calls keep them empty.
         if (Bukkit.isPrimaryThread()) {
             Player admin = who.source().equals("ingame") ? Bukkit.getPlayerExact(who.name()) : null;
-            if (admin != null) { row.put("adminUuid", admin.getUniqueId().toString()); row.put("location", location(admin.getLocation())); }
+            if (admin != null) {
+                row.put("adminUuid", admin.getUniqueId().toString());
+                row.put("location", location(admin.getLocation()));
+                row.put("playerAdmin", plugin.has(admin, "simplexadminsuite.admin"));
+            }
             Player victim = target == null ? null : Bukkit.getPlayer(target);
             if (victim != null) row.put("targetLocation", location(victim.getLocation()));
         }
@@ -277,12 +281,39 @@ final class AdminActivityLog {
         return owner.isBlank() ? "" : owner.toLowerCase(Locale.ROOT);
     }
 
+    static boolean playerAdminRow(Map<String, Object> row, Set<String> playerNames) {
+        return "ingame".equals(row.get("source"))
+            && (row.get("playerAdmin") instanceof Boolean admin ? admin : playerNames.contains(String.valueOf(row.get("admin"))));
+    }
+
+    private Set<String> playerAdminNames() {
+        Set<String> actors = new HashSet<>();
+        for (Map<String, Object> row : rows) {
+            if ("ingame".equals(row.get("source")) && !row.containsKey("playerAdmin"))
+                actors.add(String.valueOf(row.get("admin")));
+        }
+        return plugin.panelPlayerAdminNames(actors);
+    }
+
+    synchronized List<Map<String, Object>> playerAdminHistory() {
+        Set<String> names = playerAdminNames();
+        return HistoryApi.copies(rows.stream().filter(row -> playerAdminRow(row, names)).toList());
+    }
+
     synchronized Object overview(String viewer, String self, boolean includeViews) {
+        return overview(viewer, self, includeViews, false);
+    }
+
+    synchronized Object overview(String viewer, String self, boolean includeViews, boolean playerAdmins) {
         Map<String, Map<String, Object>> admins = new LinkedHashMap<>();
         List<Map<String, Object>> newestFirst = new ArrayList<>(rows); Collections.reverse(newestFirst);
         Filter f = filter(viewer); Set<String> staff = staffNames();
         int unreadTotal = 0;
+        int total = 0;
+        Set<String> playerNames = playerAdmins ? playerAdminNames() : Set.of();
         for (Map<String, Object> row : newestFirst) {
+            if (playerAdmins && !playerAdminRow(row, playerNames)) continue;
+            total++;
             if (!actionable(row, includeViews)) continue;
             String admin = String.valueOf(row.get("admin"));
             Map<String, Object> summary = admins.computeIfAbsent(admin, k -> SimplexAdminSuite.appMap("admin", k, "name", row.get("adminName"), "source", row.get("source"), "total", 0, "unread", 0, "last", row, "self", k.equals(self), "online", false, "sources", new TreeSet<String>(), "staff", staffRow(row, staff)));
@@ -303,15 +334,22 @@ final class AdminActivityLog {
         }
         List<Map<String, Object>> list = new ArrayList<>(admins.values());
         list.sort(Comparator.comparing((Map<String, Object> m) -> -((Integer) m.get("unread"))).thenComparing(m -> -number(((Map<?, ?>) m.get("last")).get("time"))));
-        return SimplexAdminSuite.appMap("admins", list, "unread", unreadTotal, "total", rows.size(), "limit", LIMIT, "settings", f.json(), "modes", MODES);
+        return SimplexAdminSuite.appMap("admins", list, "unread", unreadTotal, "total", total, "limit", LIMIT, "settings", f.json(), "modes", MODES);
     }
 
     synchronized Object entries(String viewer, String self, String admin, String query, String category, int offset, boolean includeViews) {
+        return entries(viewer, self, admin, query, category, offset, includeViews, false);
+    }
+
+    synchronized Object entries(String viewer, String self, String admin, String query, String category, int offset,
+                                boolean includeViews, boolean playerAdmins) {
         String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
         Filter f = filter(viewer); Set<String> staff = staffNames();
         List<Map<String, Object>> out = new ArrayList<>();
         List<Map<String, Object>> newestFirst = new ArrayList<>(rows); Collections.reverse(newestFirst);
+        Set<String> playerNames = playerAdmins ? playerAdminNames() : Set.of();
         for (Map<String, Object> row : newestFirst) {
+            if (playerAdmins && !playerAdminRow(row, playerNames)) continue;
             if (!admin.isBlank() && !admin.equals(row.get("admin"))) continue;
             if (!actionable(row, includeViews)) continue;
             if (!category.isBlank() && !category.equals(row.get("category"))) continue;

@@ -49,7 +49,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .settings: return ("Suite-Einstellungen", "slider.horizontal.3", "Einstellungen & Zugänge", "data.settings", "")
         case .access: return ("Zugänge & Serverregeln", "person.badge.key.fill", "Einstellungen & Zugänge", "", "accounts-v1")
         case .account: return ("Konto & Sicherheit", "lock.shield.fill", "Einstellungen & Zugänge", "", "accounts-v2")
-        case .bark: return ("Bark-Mitteilungen", "bell.fill", "Einstellungen & Zugänge", "action.notifications.update", "events-v1")
+        case .bark: return ("Bark-Zentrale", "bell.badge.fill", "Einstellungen & Zugänge", "action.notifications.update", "events-v1")
         case .quiet: return ("Ruhezeiten", "moon.zzz.fill", "Einstellungen & Zugänge", "action.notifications.update", "quiet-hours-v1")
         case .memory: return ("RAM-Notfallneustart", "memorychip.fill", "Einstellungen & Zugänge", "data.memory", "memory-restart-v1")
         case .links: return ("Discord-Verknüpfungen", "link", "Einstellungen & Zugänge", "data.links", "links-v1")

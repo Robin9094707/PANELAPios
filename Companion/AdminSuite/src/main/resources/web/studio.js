@@ -287,13 +287,15 @@
   // ============================================================ Player dossier (Steckbrief)
   var TONES = { ok: "ok", warn: "warn", danger: "danger", info: "info" };
   S.dossierCard = function (player) {
-    var body = h("div", {}, S.skeleton(3)), filter = "";
+    var body = h("div", {}, S.skeleton(3)), filter = "", kind = "";
     var c = S.card("Steckbrief – alles über den Spieler", { icon: "id", sub: "Identität, Aktivität, Client, Bedrock-Gerät, Netzwerk, Moderation und Verlauf – je nach deinen Rechten" }, body);
     (async function () {
       try {
         var d = await S.api("player/dossier", { query: { player: player } });
         var search = S.searchBox("Im Steckbrief suchen …", function (v) { filter = v.toLowerCase(); draw(); });
-        var grid = h("div", { class: "dossier" });
+        var grid = h("div", { class: "dossier" }), timeline = h("div", { class: "list" });
+        var controls = d.whispersVisible ? S.segmented([["", "Alle"], ["public", "Öffentlich"], ["whisper", "Flüstern"]],
+          "", function (value) { kind = value; draw(); }) : null;
         function draw() {
           S.clear(grid);
           d.sections.forEach(function (s) {
@@ -305,9 +307,32 @@
               list.length ? h("details", { open: !!filter || list.length <= 6 }, h("summary", { text: list.length + " Einträge" }), h("ul", { class: "dossier-list" }, list.map(function (l) { return h("li", { text: l }); }))) : null));
           });
           if (!grid.children.length) grid.appendChild(S.empty("search", "Nichts gefunden"));
+          S.clear(timeline);
+          (d.chatTimeline || []).filter(function (row) {
+            return (!kind || row.kind === kind) && (!filter || [row.from, row.to, row.text].join(" ").toLowerCase().includes(filter));
+          }).forEach(function (row) {
+            var whisper = row.kind === "whisper";
+            timeline.appendChild(h("div", { class: "item" }, icon(whisper ? "lock" : "chat"),
+              h("div", { class: "meta" },
+                h("b", { text: row.from + (row.to ? " → " + row.to : "") }),
+                h("p", { text: row.text }),
+                h("small", { text: [whisper ? "Flüstern" : "Öffentlicher Chat",
+                  row.at ? S.date(row.at) + " · " + S.ago(row.at) : ""].filter(Boolean).join(" · ") }))));
+          });
+          if (!timeline.children.length) timeline.appendChild(S.empty("chat", "Keine Nachrichten gefunden"));
         }
         draw();
-        S.clear(body).appendChild(h("div", { class: "stack" }, search, grid));
+        var tools = h("div", { class: "row wrap" }, search);
+        S.clear(body).appendChild(h("div", { class: "stack" }, tools,
+          d.chatVisible ? S.card("Chatverlauf", { icon: "chat", sub: "Neueste zuerst" }, h("div", { class: "stack" }, controls, timeline)) : null,
+          grid));
+        if (S.has("moderation-qol-v1") && S.can("ai.assistant.use")) {
+          try {
+            var ai = await S.api("assistant/status", { quiet: true });
+            if (ai.available) tools.appendChild(h("a", { class: "btn ghost", href: "#/assistant?player=" + encodeURIComponent(d.player) },
+              icon("sparkles"), h("span", { text: "KI zum Spieler fragen" })));
+          } catch (e) { /* optional */ }
+        }
       } catch (e) { S.clear(body).appendChild(S.notice(e.message, "danger")); }
     })();
     return c;

@@ -41,7 +41,9 @@ public final class Security900Harness {
             check(events.data("Reviewed",0).toString().contains("Reviewed"),"event note durable");
             Map<String,Object> config=SimplexAdminSuite.appMap("key","synthetic-key-900","enabled","false","events","first-join,ban-evasion","level","passive","critical","critical","sound","minuet","criticalSound","alarm");
             events.configure("owner",config);check(!events.subscription("owner").toString().contains("synthetic-key-900"),"secret never returned");
-            check(!events.subscription("other").toString().contains("first-join"),"subscription isolated per API key");
+            Map<String,Object> otherSubscription=AppApiIntegrationHarness.object(events.subscription("other"));
+            check(!String.valueOf(otherSubscription.get("events")).contains("first-join"),"subscription isolated per API key");
+            check(((Collection<?>)otherSubscription.get("eventKinds")).contains("first-join"),"available event kinds independent of subscriptions");
             config.put("key","https://attacker.invalid/key");SuiteEventCenter current=events;reject(()->current.configure("owner",config),"external Bark hosts rejected");
             Properties alarms=(Properties)Moderation790Harness.get(events,"subscriptions");alarms.setProperty("alarm.owner."+id+".row","{}");alarms.setProperty("alarm.owner."+id+".owner","owner");
             events.acknowledge("owner",id);check(!alarms.containsKey("alarm.owner."+id+".row")&&alarms.containsKey("ack.owner."+id),"ack ends pending alarm and protects against in-flight rescheduling");

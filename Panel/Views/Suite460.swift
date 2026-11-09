@@ -781,11 +781,33 @@ struct SuiteWorldTrimView: View {
 
 // MARK: - Player dossier
 
+struct SuitePlayerAssistantLink: View {
+    let suite: SuiteAPI
+    let player: String
+    @State private var available = false
+
+    var body: some View {
+        Group {
+            if available {
+                NavigationLink {
+                    SuiteAIAssistantView(suite: suite, profilePlayer: player)
+                } label: {
+                    Label("KI zu diesem Spieler fragen", systemImage: "sparkles")
+                }
+            }
+        }
+        .task {
+            available = (try? await suite.request("assistant/status", timeout: 8))?["available"].bool == true
+        }
+    }
+}
+
 struct SuitePlayerDossierView: View {
     let suite: SuiteAPI
     let player: String
     @State private var data: JSON = .null
     @State private var search = ""
+    @State private var chatKind = ""
     @State private var error: String?
     var body: some View {
         List {
@@ -820,6 +842,19 @@ struct SuitePlayerDossierView: View {
                 }
             }
             if search.isEmpty { SuiteSavedNBTSection(suite: suite, player: player) }
+            if data["chatVisible"].bool {
+                Section("Chatverlauf · neueste zuerst") {
+                    if data["whispersVisible"].bool {
+                        Picker("Nachrichten", selection: $chatKind) {
+                            Text("Alle").tag("")
+                            Text("Öffentlich").tag("public")
+                            Text("Flüstern").tag("whisper")
+                        }.pickerStyle(.segmented)
+                    }
+                    if chatRows.isEmpty { Text("Keine Nachrichten gefunden").foregroundStyle(.secondary) }
+                    ForEach(chatRows, id: \.["id"].string) { row in chatRow(row) }
+                }
+            }
             ForEach(data["sections"].array, id: \.["id"].string) { section in SuiteDossierSection(section: section, search: search) }
         }
         .panelScreen()
@@ -829,6 +864,32 @@ struct SuitePlayerDossierView: View {
         .refreshable { await load() }
         .errorAlert($error)
     }
+    private var chatRows: [JSON] {
+        data["chatTimeline"].array.filter { row in
+            (chatKind.isEmpty || row["kind"].string == chatKind) &&
+                (search.isEmpty || ["from", "to", "text"].contains { row[$0].string.localizedCaseInsensitiveContains(search) })
+        }
+    }
+
+    private func chatRow(_ row: JSON) -> some View {
+        let whisper = row["kind"].string == "whisper"
+        let recipient = row["to"].string
+        return VStack(alignment: .leading, spacing: 5) {
+            Label(row["from"].string + (recipient.isEmpty ? "" : " → " + recipient),
+                  systemImage: whisper ? "lock.bubble" : "text.bubble")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(whisper ? Color.purple : Color.panelAccent)
+            Text(row["text"].string).textSelection(.enabled)
+            if let date = SuitePlayerPresentation.date(row["at"]) {
+                HStack {
+                    Text(date, format: .dateTime.day().month().hour().minute().second())
+                    Text("·")
+                    Text(date, style: .relative)
+                }.font(.caption2).foregroundStyle(.secondary)
+            }
+        }.padding(.vertical, 3)
+    }
+
     private func load() async {
         do { data = try await suite.request("player/dossier", query: ["player": player]) }
         catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }

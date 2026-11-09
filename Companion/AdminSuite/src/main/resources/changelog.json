@@ -1,5 +1,29 @@
 [
   {
+    "version": "10.12.0",
+    "app": "5.5.0",
+    "title": "Moderation & Übersicht",
+    "items": [
+      {
+        "title": "Flüstern vor dem Versand prüfen",
+        "icon": "chat",
+        "text": "PowerBot prüft Minecraft-Flüstern im Hintergrund und begrenzt die Rate."
+      },
+      {
+        "title": "Verlauf und Adminaktionen",
+        "icon": "shieldCheck",
+        "text": "Zeitlich sortierte Chatverläufe und ein eigener Bereich für Minecraft-Admins."
+      },
+      {
+        "title": "Reports und Bark",
+        "icon": "bell",
+        "text": "Antworten an meldende Spieler und durchsuchbare Bark-Abonnements in App und Webpanel."
+      }
+    ],
+    "date": "2026-11-08",
+    "intro": "Verbesserte Moderation, Reports und Benachrichtigungen in App und Webpanel."
+  },
+  {
     "version": "10.11.1",
     "app": "5.4.1",
     "date": "2026-11-08",

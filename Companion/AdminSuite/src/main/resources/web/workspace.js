@@ -147,6 +147,10 @@
     var answer = h("div", { class: "stack", "aria-live": "polite" });
     var inbox = h("div", { class: "stack" }), settings = h("div", { class: "stack" });
     var input = h("textarea", { class: "input", maxlength: 2000, rows: threaded ? 1 : 4, placeholder: threaded ? "Nachricht an die KI …" : "Was soll die KI für diesen Server prüfen?", "aria-label": "Deine Frage" });
+    var profilePlayer = query && query.get("player");
+    if (status.available && /^[0-9a-f-]{36}$/i.test(profilePlayer || "")) {
+      input.value = "Fasse das Spielerprofil zu UUID " + profilePlayer + " zusammen. Welche belegten Moderationsereignisse sind relevant?";
+    }
     var send = S.btn(threaded ? "" : "Fragen", { kind: "primary", icon: "send", title: "Nachricht senden", disabled: !status.available, onClick: function () {
       var question = input.value.trim(); if (!question || question.length > 2000 || busy || recorder) return;
       return run(async function () {
@@ -445,7 +449,7 @@
       chatUI = S.card("Serverassistent", { icon: "sparkles" }, h("div", { class: "stack" }, availability, input, h("div", { class: "row wrap" }, send, usage), examples));
     }
     S.mount(h("div", { class: "stack" }, chatUI, answer, owner ? S.card("Offene Freigaben", { icon: "list" }, inbox) : null, owner ? S.card("Tageslimits", { icon: "settings" }, settings) : null));
-    if (threaded) { await loadChats(); if (alive() && chats.length) await loadChat(chats[0].id); else renderTimeline(); }
+    if (threaded) { await loadChats(); if (alive() && !profilePlayer && chats.length) await loadChat(chats[0].id); else renderTimeline(); }
     if (owner && alive()) await Promise.all([loadInbox(), loadLimits()]);
   };
 

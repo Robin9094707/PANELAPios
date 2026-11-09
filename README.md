@@ -1,4 +1,9 @@
-## Aktuelles Update · Panel 5.4.1 und Admin Suite 10.11.1
+## Panel 5.5.0 und Admin Suite 10.12.0
+
+Quality-of-Life-Update für Flüstermoderation, Spielerchronik, Minecraft-Adminaktionen, Reportantworten und Bark.
+[Update und Kopplung](UPDATE-5.5.0.md)
+
+## Panel 5.4.1 und Admin Suite 10.11.1
 
 Simplex Panel 5.4.1 und Admin Suite 10.11.1 ergänzen durchsuchbare PowerBot-Stichwortregeln und aktuelle Ereignisse direkt auf der iPhone-Startseite.
 

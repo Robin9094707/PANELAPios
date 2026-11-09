@@ -5,6 +5,7 @@ struct SuiteAIAssistantView: View {
     let suite: SuiteAPI
     var panel: PanelAPI?
     var server: Server?
+    var profilePlayer: String? = nil
     @State private var status: JSON = .null
     @State private var result: JSON = .null
     @State private var inbox: [JSON] = []
@@ -55,7 +56,13 @@ struct SuiteAIAssistantView: View {
         }
         .panelScreen()
         .navigationTitle("KI-Assistent")
-        .task { await refresh(); if threaded { await restoreChat() } }
+        .task {
+            await refresh()
+            if threaded && profilePlayer == nil { await restoreChat() }
+            if let player = profilePlayer, input.isEmpty {
+                input = "Fasse das Spielerprofil zu UUID \(player) zusammen. Welche belegten Moderationsereignisse sind relevant?"
+            }
+        }
         .refreshable { await refresh(); if threaded && !busy { await restoreChat() } }
         .onDisappear {
             work?.cancel(); recorder.cancel(); stopDraftAudio()
