@@ -17,29 +17,34 @@ struct SuiteSmartRestartView: View {
     @State private var busy = false
     @State private var error: String?
     var manage: Bool { data["manage"].bool }
+    private var headerSymbol: String { data["countdown"].bool ? "arrow.clockwise.circle.fill" : (enabled ? "clock.badge.checkmark.fill" : "clock.badge.xmark") }
+    private var headerColors: [Color] { [enabled ? Color.green : Color.gray, Color.panelAccent] }
+    private var playersText: String { "Nur bei höchstens \(maxPlayers) " + (maxPlayers == 1 ? "Spieler" : "Spielern") + " online" }
+    private var dueText: String? {
+        guard let due = SuitePlayerPresentation.date(data["dueAt"]) else { return nil }
+        return due > Date() ? SuiteRelativeTime.absolute(due) : "jetzt, sobald die Bedingung passt"
+    }
 
     var body: some View {
         Form {
             Section {
                 HStack(spacing: 14) {
-                    Image(systemName: data["countdown"].bool ? "arrow.clockwise.circle.fill" : enabled ? "clock.badge.checkmark.fill" : "clock.badge.xmark")
+                    Image(systemName: headerSymbol)
                         .font(.system(size: 30)).foregroundStyle(.white).frame(width: 54, height: 54)
-                        .background(LinearGradient(colors: [enabled ? Color.green : Color.gray, Color.panelAccent], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 15))
+                        .background(LinearGradient(colors: headerColors, startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 15))
                     VStack(alignment: .leading, spacing: 3) {
                         Text(data["phase"].string.isEmpty ? "Lädt …" : data["phase"].string).font(.headline)
                         Text("\(data["online"].int) Spieler online").font(.subheadline).foregroundStyle(.secondary)
                     }
                 }.padding(.vertical, 4)
-                if let due = SuitePlayerPresentation.date(data["dueAt"]) {
-                    LabeledContent("Frühestens", value: due > Date() ? SuiteRelativeTime.absolute(due) : "jetzt, sobald die Bedingung passt")
-                }
+                if let dueText { LabeledContent("Frühestens", value: dueText) }
                 if let last = SuitePlayerPresentation.date(data["lastRestart"]) { LabeledContent("Letzter Smart-Neustart", value: SuiteRelativeTime.text(last)) }
                 if let start = SuitePlayerPresentation.date(data["serverStart"]) { LabeledContent("Server läuft seit", value: SuiteRelativeTime.text(start).replacingOccurrences(of: "vor ", with: "")) }
             }
             Section {
                 Toggle("Smart-Neustart aktiv", isOn: $enabled)
                 Stepper("Höchstens alle \(Int(interval)) Std.", value: $interval, in: 1...48, step: 1)
-                Stepper("Nur bei höchstens \(maxPlayers) Spieler\(maxPlayers == 1 ? "" : "n") online", value: $maxPlayers, in: 0...20)
+                Stepper(playersText, value: $maxPlayers, in: 0...20)
                 Stepper("Bedingung \(stable) Min. stabil", value: $stable, in: 0...30)
                 Stepper("Countdown \(countdown) Sek.", value: $countdown, in: 10...300, step: 10)
                 Toggle("Abbrechen, wenn Spieler dazukommen", isOn: $abortOnJoin)
@@ -268,7 +273,13 @@ struct SuiteAutomationEditor: View {
     let save: (JSON) async -> Bool
     @Environment(\.dismiss) private var dismiss
     @State private var busy = false
-    private static let times: [String] = stride(from: 0, to: 24 * 60, by: 15).map { String(format: "%02d:%02d", $0 / 60, $0 % 60) }
+    private static let times: [String] = stride(from: 0, to: 24 * 60, by: 15).map { (minute: Int) -> String in String(format: "%02d:%02d", minute / 60, minute % 60) }
+    private var countText: String { (draft.trigger == "players-above" ? "Mindestens " : "Höchstens ") + String(draft.count) + " Spieler" }
+    private func actionChoices(_ current: String) -> [(String, String, String)] {
+        SuiteAutomationText.actions.filter { (choice: (String, String, String)) -> Bool in
+            commands || choice.0 == current || (choice.0 != "command" && choice.0 != "restart")
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -289,7 +300,7 @@ struct SuiteAutomationEditor: View {
                     case "interval":
                         Stepper("Alle \(draft.minutes) Minuten", value: $draft.minutes, in: 15...10_080, step: 15)
                     case "players-above", "players-below":
-                        Stepper("\(draft.trigger == "players-above" ? "Mindestens" : "Höchstens") \(draft.count) Spieler", value: $draft.count, in: 0...500)
+                        Stepper(countText, value: $draft.count, in: 0...500)
                         Stepper("Pause danach: \(draft.cooldown) Min.", value: $draft.cooldown, in: 1...1440, step: 5)
                     default:
                         Text("Platzhalter {player} wird durch den Namen des neuen Spielers ersetzt.").font(.caption).foregroundStyle(.secondary)
@@ -299,7 +310,7 @@ struct SuiteAutomationEditor: View {
                     ForEach($draft.actions) { $action in
                         VStack(alignment: .leading, spacing: 8) {
                             Picker("Aktion", selection: $action.type) {
-                                ForEach(SuiteAutomationText.actions.filter { commands || !["command", "restart"].contains($0.0) || $0.0 == action.type }, id: \.0) { Label($0.1, systemImage: $0.2).tag($0.0) }
+                                ForEach(actionChoices(action.type), id: \.0) { choice in Label(choice.1, systemImage: choice.2).tag(choice.0) }
                             }
                             switch action.type {
                             case "broadcast":

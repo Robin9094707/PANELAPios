@@ -105,42 +105,58 @@ struct SuiteVisualInventoryView: View {
     @State private var error: String?
     private let nine = Array(repeating: GridItem(.flexible(), spacing: 2), count: 9)
 
+    private static let armorSymbols: [Int: String] = [39: "shield.lefthalf.filled", 38: "tshirt", 37: "figure.walk", 36: "shoe"]
+    private var panelTitle: String { name.isEmpty ? "Inventar" : "Inventar von " + name }
+    private var statusSymbol: String { swapping ? "arrow.left.arrow.right" : "square.grid.3x3" }
+
+    private var playerPanel: some View {
+        MinecraftPanel(title: panelTitle) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(spacing: 2) {
+                    ForEach([39, 38, 37, 36], id: \.self) { index in slot(index, placeholder: Self.armorSymbols[index]) }
+                }.frame(width: 44)
+                VStack(spacing: 6) {
+                    Image(systemName: "person.fill").font(.system(size: 54)).foregroundStyle(Color(white: 0.35)).frame(maxWidth: .infinity, minHeight: 120)
+                        .background(Color.black.opacity(0.85)).overlay { MinecraftBevel(light: Color(white: 0.33), dark: .white) }
+                    HStack { Spacer(); slot(40, placeholder: "shield").frame(width: 44) }
+                }
+            }
+            slotGrid(9..<36).padding(.top, 6)
+            slotGrid(0..<9).padding(.top, 8)
+        }
+    }
+
+    private func slotGrid(_ range: Range<Int>) -> some View {
+        LazyVGrid(columns: nine, spacing: 2) { ForEach(range, id: \.self) { index in slot(index) } }
+    }
+
+    @ViewBuilder private var extras: some View {
+        if canTransfer && suite.features.contains("item-locker-v1") {
+            NavigationLink { SuiteItemLockerView(suite: suite) } label: {
+                Label("Einbehaltungsablage öffnen", systemImage: "archivebox.fill").frame(maxWidth: .infinity, alignment: .leading).card()
+            }.buttonStyle(.plain)
+        }
+        if !packStatus.isEmpty || canPack {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Ressourcenpaket", systemImage: "paintbrush.pointed.fill").font(.headline)
+                Text(packStatus).font(.footnote).foregroundStyle(.secondary)
+                if canPack {
+                    HStack {
+                        Button("Java-ZIP importieren") { importing = true }.disabled(busy)
+                        if customPack { Button("Vanilla verwenden", role: .destructive) { reset = true }.disabled(busy) }
+                    }.buttonStyle(.bordered)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).card()
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Label(status, systemImage: swapping ? "arrow.left.arrow.right" : "square.grid.3x3").font(.callout).foregroundStyle(.secondary)
-                MinecraftPanel(title: name.isEmpty ? "Inventar" : "Inventar von " + name) {
-                    HStack(alignment: .top, spacing: 10) {
-                        VStack(spacing: 2) { ForEach([39, 38, 37, 36], id: \.self) { slot($0, placeholder: ["shield.lefthalf.filled", "tshirt", "figure.walk", "shoe"][39 - $0]) } }.frame(width: 44)
-                        VStack(spacing: 6) {
-                            Image(systemName: "person.fill").font(.system(size: 54)).foregroundStyle(Color(white: 0.35)).frame(maxWidth: .infinity, minHeight: 120)
-                                .background(Color.black.opacity(0.85)).overlay { MinecraftBevel(light: Color(white: 0.33), dark: .white) }
-                            HStack { Spacer(); slot(40, placeholder: "shield").frame(width: 44) }
-                        }
-                    }
-                    LazyVGrid(columns: nine, spacing: 2) { ForEach(9..<36, id: \.self) { slot($0) } }.padding(.top, 6)
-                    LazyVGrid(columns: nine, spacing: 2) { ForEach(0..<9, id: \.self) { slot($0) } }.padding(.top, 8)
-                }
-                MinecraftPanel(title: "Endertruhe") {
-                    LazyVGrid(columns: nine, spacing: 2) { ForEach(41..<68, id: \.self) { slot($0) } }
-                }
-                if canTransfer && suite.features.contains("item-locker-v1") {
-                    NavigationLink { SuiteItemLockerView(suite: suite) } label: {
-                        Label("Einbehaltungsablage öffnen", systemImage: "archivebox.fill").frame(maxWidth: .infinity, alignment: .leading).card()
-                    }.buttonStyle(.plain)
-                }
-                if !packStatus.isEmpty || canPack {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Ressourcenpaket", systemImage: "paintbrush.pointed.fill").font(.headline)
-                        Text(packStatus).font(.footnote).foregroundStyle(.secondary)
-                        if canPack {
-                            HStack {
-                                Button("Java-ZIP importieren") { importing = true }.disabled(busy)
-                                if customPack { Button("Vanilla verwenden", role: .destructive) { reset = true }.disabled(busy) }
-                            }.buttonStyle(.bordered)
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading).card()
-                }
+                Label(status, systemImage: statusSymbol).font(.callout).foregroundStyle(.secondary)
+                playerPanel
+                MinecraftPanel(title: "Endertruhe") { slotGrid(41..<68) }
+                extras
             }.padding(16).frame(maxWidth: 620).frame(maxWidth: .infinity)
         }
         .safeAreaInset(edge: .bottom) { if let selected, let item = items[selected] { actionBar(selected, item) } }
@@ -172,12 +188,12 @@ struct SuiteVisualInventoryView: View {
 
     private func slot(_ index: Int, placeholder: String? = nil) -> some View {
         let item = items[index]
-        let label = item.map { $0["name"].string + " × " + $0["amount"].string } ?? "Leer"
+        let label: String = item.map { (row: JSON) -> String in row["name"].string + " × " + row["amount"].string } ?? "Leer"
         return Button { tap(index) } label: {
             MinecraftSlot(item: item, icon: item.flatMap { icons[$0["material"].string] }, selected: selected == index, placeholder: placeholder)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Slot \(index) · " + label)
+        .accessibilityLabel("Slot \(index) · \(label)")
         .contextMenu { if item != nil { Button("Name kopieren", systemImage: "doc.on.doc") { Clipboard.copy(label) } } }
     }
 
@@ -408,44 +424,66 @@ struct SuiteItemLockerView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Einbehaltene Items mit Herkunft, Grund und Teammitglied. Antippen, um sie zurückzugeben, weiterzugeben oder zu löschen. Im Spiel: /sas ablage.")
                     .font(.callout).foregroundStyle(.secondary)
-                MinecraftPanel(title: "Einbehaltungsablage · \(data["count"].int)") {
-                    let held = data["items"].array
-                    LazyVGrid(columns: nine, spacing: 2) {
-                        ForEach(0..<max(27, ((held.count + 8) / 9) * 9), id: \.self) { index in
-                            if index < held.count {
-                                let row = held[index]
-                                Button { selected = row } label: { MinecraftSlot(item: row, icon: icons[row["material"].string]) }
-                                    .buttonStyle(.plain).accessibilityLabel(row["name"].string + " × " + row["amount"].string + " von " + row["fromName"].string)
-                            } else { MinecraftSlot(item: nil, icon: nil) }
-                        }
-                    }
-                }
-                if !data["history"].array.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Label("Verlauf", systemImage: "clock.arrow.circlepath").font(.headline)
-                        ForEach(data["history"].array.prefix(30), id: \.["id"].string) { row in
-                            HStack(spacing: 10) {
-                                MinecraftSlot(item: row, icon: icons[row["material"].string]).frame(width: 34)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(row["amount"].string + "× " + row["name"].string).font(.subheadline.weight(.semibold))
-                                    Text(SuiteItemLockerView.statusText(row)).font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 0)
-                                if let date = SuitePlayerPresentation.date(row["resolvedAt"]) { Text(SuiteRelativeTime.text(date)).font(.caption2).foregroundStyle(.secondary) }
-                            }
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading).card()
-                }
+                lockerGrid
+                historyCard
             }.padding(16).frame(maxWidth: 620).frame(maxWidth: .infinity)
         }
         .panelScreen()
         .navigationTitle("Einbehaltungsablage")
         .task { await load() }
         .refreshable { await load() }
-        .sheet(item: Binding(get: { selected.map { SuiteLockerSelection(row: $0) } }, set: { selected = $0?.row })) { selection in
+        .sheet(item: selection) { selection in
             SuiteLockerItemSheet(suite: suite, row: selection.row, icon: icons[selection.row["material"].string], manage: data["manage"].bool) { await load() }
         }
         .errorAlert($error)
+    }
+
+    private var selection: Binding<SuiteLockerSelection?> {
+        Binding(get: { selected.map { SuiteLockerSelection(row: $0) } }, set: { selected = $0?.row })
+    }
+
+    private var held: [JSON] { data["items"].array }
+    private var slotCount: Int { max(27, ((held.count + 8) / 9) * 9) }
+
+    private var lockerGrid: some View {
+        MinecraftPanel(title: "Einbehaltungsablage · \(data["count"].int)") {
+            LazyVGrid(columns: nine, spacing: 2) {
+                ForEach(0..<slotCount, id: \.self) { index in lockerSlot(index) }
+            }
+        }
+    }
+
+    @ViewBuilder private func lockerSlot(_ index: Int) -> some View {
+        if index < held.count {
+            let row = held[index]
+            let label = row["name"].string + " × " + row["amount"].string + " von " + row["fromName"].string
+            Button { selected = row } label: { MinecraftSlot(item: row, icon: icons[row["material"].string]) }
+                .buttonStyle(.plain).accessibilityLabel(label)
+        } else {
+            MinecraftSlot(item: nil, icon: nil)
+        }
+    }
+
+    @ViewBuilder private var historyCard: some View {
+        let history = Array(data["history"].array.prefix(30))
+        if !history.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Verlauf", systemImage: "clock.arrow.circlepath").font(.headline)
+                ForEach(history, id: \.["id"].string) { row in historyRow(row) }
+            }.frame(maxWidth: .infinity, alignment: .leading).card()
+        }
+    }
+
+    private func historyRow(_ row: JSON) -> some View {
+        HStack(spacing: 10) {
+            MinecraftSlot(item: row, icon: icons[row["material"].string]).frame(width: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row["amount"].string + "× " + row["name"].string).font(.subheadline.weight(.semibold))
+                Text(SuiteItemLockerView.statusText(row)).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if let date = SuitePlayerPresentation.date(row["resolvedAt"]) { Text(SuiteRelativeTime.text(date)).font(.caption2).foregroundStyle(.secondary) }
+        }
     }
 
     static func statusText(_ row: JSON) -> String {
