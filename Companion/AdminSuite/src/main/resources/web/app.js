@@ -9,7 +9,7 @@
     { group: "Übersicht", items: [
       { id: "dashboard", label: "Dashboard", icon: "home", perm: null },
       { id: "tools", label: "Alle Werkzeuge", icon: "grid", perm: null },
-      { id: "powerbot", label: "PowerBot-Fallzentrale", icon: "shieldCheck", perm: "data.powerbot", feature: "powerbot-v1" },
+      { id: "powerbot", label: "PowerBot-Zentrale", icon: "shieldCheck", perm: "data.powerbot", feature: "powerbot-v1" },
       { id: "assistant", label: "KI-Assistent", icon: "sparkles", perm: "ai.assistant.use", feature: "admin-assistant-v1" },
       { id: "histories", label: "Verläufe verwalten", icon: "list", perm: null, feature: "history-management-v1" },
       { id: "events", label: "Ereignisse", icon: "bell", perm: "data.events" },
@@ -20,10 +20,13 @@
       { id: "tickets", label: "Tickets", icon: "ticket", perm: "data.tickets", badge: "tickets" },
       { id: "staff-chat", label: "Staff-Chat", icon: "team", perm: "data.staff-chat", feature: "staff-chat-v1" },
       { id: "chat", label: "Serverchat", icon: "chat", perm: "data.chat" },
-      { id: "moderation", label: "Moderation", icon: "gavel", perm: "data.reports" }
+      { id: "moderation", label: "Moderation", icon: "gavel", perm: "data.reports" },
+      { id: "locker", label: "Einbehaltungsablage", icon: "box", perm: "data.inventory", feature: "item-locker-v1" }
     ] },
     { group: "Server", items: [
       { id: "server-events", label: "Event-Modus & Lockdown", icon: "bell", perm: "data.server-events", feature: "server-events-v1" },
+      { id: "automations", label: "Automationen", icon: "star", perm: "data.server-events", feature: "automations-v1" },
+      { id: "smart-restart", label: "Smart-Neustart", icon: "clock", perm: "data.operations", feature: "smart-restart-v1" },
       { id: "diagnostics", label: "Diagnose", icon: "activity", perm: "data.diagnostics", feature: "diagnostics-v1", badge: "diagnostics" },
       { id: "statistics", label: "Statistiken", icon: "chart", perm: "data.statistics" },
       { id: "worlds", label: "Welten", icon: "globe", perm: "data.worlds" },

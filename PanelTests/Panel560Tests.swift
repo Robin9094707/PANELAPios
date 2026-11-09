@@ -90,8 +90,7 @@ import XCTest
             XCTAssertNotNil(SuiteShortcutTool(rawValue: tool.rawValue))
         }
         XCTAssertEqual(SuiteTool.powerBot.group, SuiteTool.reports.group)
-        XCTAssertEqual(WhatsNew.releases.first?.version, "5.6.0")
-        XCTAssertGreaterThanOrEqual(WhatsNew.releases.first?.items.count ?? 0, 8)
+        XCTAssertGreaterThanOrEqual(WhatsNew.releases.first { $0.version == "5.6.0" }?.items.count ?? 0, 8)
         XCTAssertTrue(WhatsNew.shouldPresent(current: "5.6.0", lastSeen: "5.5.0", existingUser: true))
         XCTAssertEqual(PowerBotPresentation.title("mute"), "Chatpause")
         XCTAssertEqual(SuitePowerBotView.kinds["conflict"], "Streit erkannt")

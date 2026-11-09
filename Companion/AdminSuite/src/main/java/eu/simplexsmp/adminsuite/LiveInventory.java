@@ -13,17 +13,28 @@ final class LiveInventory implements AutoCloseable {
     private final SimplexAdminSuite plugin;
     private final InventoryTextures textures;
     private final PlayerNbtAccess playerNbt;
+    final ItemLocker locker;
 
     LiveInventory(SimplexAdminSuite plugin) {
         this.plugin = plugin;
         playerNbt = new PlayerNbtAccess(plugin);
         textures = new InventoryTextures(plugin.getDataFolder().toPath());
+        ItemLocker loaded = null;
+        try { loaded = new ItemLocker(plugin); Bukkit.getPluginManager().registerEvents(loaded, plugin); }
+        catch (java.io.IOException | RuntimeException error) { plugin.getLogger().warning("Einbehaltungsablage nicht geladen: " + error.getMessage()); }
+        locker = loaded;
     }
 
     private record Snapshot(Player player, List<ItemStack> items, String revision) {
         ItemStack item(int slot) { return items.get(slot); }
         void set(int slot, ItemStack item) {
             if (slot < 36) player.getInventory().setItem(slot, item);
+            else if (slot < 40) {
+                // getArmorContents order: boots, leggings, chestplate, helmet.
+                ItemStack[] armor = player.getInventory().getArmorContents();
+                armor[slot - 36] = item;
+                player.getInventory().setArmorContents(armor);
+            } else if (slot == 40) player.getInventory().setItemInOffHand(item);
             else player.getEnderChest().setItem(slot - 41, item);
         }
     }
@@ -64,6 +75,7 @@ final class LiveInventory implements AutoCloseable {
     }
 
     boolean route(AppApiManager api, HttpExchange exchange, AppApiSecurity.Key key, String path, String method, long rev) throws Exception {
+        if (path.equals("/v1/invsee/transfer") || path.equals("/v1/locker")) return transferRoute(api, exchange, key, path, method, rev);
         if (!path.equals("/v1/invsee") && !path.equals("/v1/invsee/pack") && !path.equals("/v1/invsee/icons")) return false;
         if (!path.endsWith("/icons") || !api.allows(key, "data.snapshot-content")) api.requirePermission(key, READ);
         var query = AppApiManager.query(exchange.getRequestURI());
@@ -96,7 +108,8 @@ final class LiveInventory implements AutoCloseable {
                 }
                 var snapshot = snapshot(player);
                 var base = SimplexAdminSuite.appMap("revision", snapshot.revision, "textures", textures.generation(),
-                    "editable", edit, "pack", key.scope().equals("full") && api.allows(key, PACK), "unchanged", known.equals(snapshot.revision));
+                    "editable", edit, "pack", key.scope().equals("full") && api.allows(key, PACK), "unchanged", known.equals(snapshot.revision),
+                    "name", snapshot.player.getName(), "transfer", edit && locker != null);
                 if (!known.equals(snapshot.revision)) base.put("slots", slots(snapshot));
                 return base;
             });
@@ -132,6 +145,94 @@ final class LiveInventory implements AutoCloseable {
         } else throw new AppApiManager.ApiError(405, "Methode nicht erlaubt");
         AppApiManager.send(exchange, 200, out);
         return true;
+    }
+
+    /**
+     * 10.14.0: move a stack (or part of it) from one online player to another online player or into the
+     * Einbehaltungsablage, and manage the locker. The source revision must match, so nothing moves twice.
+     */
+    private boolean transferRoute(AppApiManager api, HttpExchange exchange, AppApiSecurity.Key key, String path, String method, long rev) throws Exception {
+        api.requirePermission(key, READ);
+        boolean manage = api.allows(key, EDIT) && AppApiSecurity.permitted(key, "manage");
+        if (locker == null) throw new AppApiManager.ApiError(503, "Einbehaltungsablage nicht geladen");
+        if (path.equals("/v1/locker") && method.equals("GET")) {
+            AppApiManager.send(exchange, 200, api.onMain(rev, () -> locker.data(manage)));
+            return true;
+        }
+        if (!method.equals("POST")) throw new AppApiManager.ApiError(405, "Methode nicht erlaubt");
+        if (!manage) throw new AppApiManager.ApiError(403, "Items verschieben benötigt inventory.edit und manage-Zugriff");
+        if (!api.rate("invsee-transfer:" + key.id(), 40)) throw new AppApiManager.ApiError(429, "Bitte kurz warten.");
+        var body = AppApiManager.body(exchange, 4096);
+        if (!Boolean.TRUE.equals(body.get("confirmed"))) throw new IllegalArgumentException("Bestätigung fehlt");
+        Object out = api.onMain(rev, () -> {
+            api.requirePermission(key, READ);
+            api.requirePermission(key, EDIT);
+            String actor = key.label();
+            if (path.equals("/v1/locker")) {
+                String operation = AiAdmin.text(body, "operation"), id = AiAdmin.text(body, "id");
+                switch (operation) {
+                    case "give" -> {
+                        Player target = online(AiAdmin.text(body, "target"));
+                        return SimplexAdminSuite.appMap("ok", true, "moved", locker.give(id, target, actor), "target", target.getName());
+                    }
+                    case "delete" -> locker.delete(id, actor);
+                    case "note" -> locker.note(id, AiAdmin.text(body, "note"), actor);
+                    default -> throw new IllegalArgumentException("Unbekannte Ablage-Aktion");
+                }
+                return Map.of("ok", true);
+            }
+            var snapshot = snapshot(AiAdmin.text(body, "player"));
+            if (!snapshot.revision.equals(body.get("revision"))) throw new AppApiManager.ApiError(409, "Inventar wurde inzwischen geändert. Bitte neu auswählen.");
+            int slot = anySlot(body.get("slot"));
+            ItemStack source = snapshot.item(slot);
+            if (empty(source)) throw new IllegalArgumentException("Der gewählte Platz ist leer");
+            int amount = body.get("amount") instanceof Number n ? Math.max(1, Math.min(source.getAmount(), n.intValue())) : source.getAmount();
+            ItemStack moving = source.clone();
+            moving.setAmount(amount);
+            String reason = PowerBot.clean(AiAdmin.text(body, "reason"), 300);
+            Player from = snapshot.player;
+            String destination = AiAdmin.text(body, "destination");
+            int moved;
+            String targetName;
+            if (destination.equals("locker")) {
+                locker.store(moving, from.getUniqueId(), from.getName(), actor, reason);
+                moved = amount;
+                targetName = "Einbehaltungsablage";
+            } else {
+                Player target = online(AiAdmin.text(body, "target"));
+                if (target.getUniqueId().equals(from.getUniqueId())) throw new IllegalArgumentException("Quelle und Ziel sind derselbe Spieler. Zum Umsortieren Slots tauschen.");
+                var leftover = target.getInventory().addItem(moving.clone());
+                moved = amount - leftover.values().stream().mapToInt(ItemStack::getAmount).sum();
+                if (moved <= 0) throw new AppApiManager.ApiError(409, target.getName() + " hat keinen freien Platz im Inventar.");
+                targetName = target.getName();
+                plugin.suiteItemHistory(target.getUniqueId(), "Vom Team erhalten (" + actor + ") von " + from.getName() + ": " + moved + "× " + ItemLocker.label(moving)
+                    + (reason.isBlank() ? "" : " · " + reason));
+            }
+            int left = source.getAmount() - moved;
+            ItemStack rest = source.clone();
+            rest.setAmount(left);
+            snapshot.set(slot, left > 0 ? rest : null);
+            plugin.suiteItemHistory(from.getUniqueId(), "Vom Team entnommen (" + actor + ") → " + targetName + ": " + moved + "× " + ItemLocker.label(moving)
+                + (reason.isBlank() ? "" : " · " + reason));
+            plugin.powerAudit(actor, from.getUniqueId(), "Item verschoben", moved + "× " + ItemLocker.label(moving) + " → " + targetName + (reason.isBlank() ? "" : " · " + reason));
+            return SimplexAdminSuite.appMap("ok", true, "moved", moved, "target", targetName);
+        });
+        AppApiManager.send(exchange, 200, out);
+        return true;
+    }
+
+    private static Player online(String target) {
+        Player player = null;
+        try { player = Bukkit.getPlayer(UUID.fromString(target)); }
+        catch (IllegalArgumentException name) { player = Bukkit.getPlayerExact(target); }
+        if (player == null) throw new AppApiManager.ApiError(409, "Zielspieler ist gerade nicht online");
+        return player;
+    }
+
+    private static int anySlot(Object value) {
+        if (!(value instanceof Number n) || n.doubleValue() != n.intValue() || n.intValue() < 0 || n.intValue() >= 68)
+            throw new IllegalArgumentException("Ungültiger Platz");
+        return n.intValue();
     }
 
     private record OfflineData(String path, String sha, OfflineInventory inventory) {

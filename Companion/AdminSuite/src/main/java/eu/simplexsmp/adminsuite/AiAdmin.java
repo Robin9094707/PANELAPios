@@ -106,9 +106,11 @@ final class AiAdmin {
     void stop(){worker.shutdownNow();synchronized(this){jobs.clear();}}
     boolean enabled(){return available.getAsBoolean();}
     void cleanupChats(){conversations.cleanup();}
-    Map<String,Object> chats(Actor actor,String id)throws IOException{
+    Map<String,Object> chats(Actor actor,String id)throws IOException{ return chats(actor,id,""); }
+    Map<String,Object> chats(Actor actor,String id,String query)throws IOException{
         requireUse(actor);
-        return id.isBlank()?conversations.list(actor):conversations.open(actor,id);
+        if(!id.isBlank())return conversations.open(actor,id);
+        return query.isBlank()?conversations.list(actor):conversations.search(actor,query);
     }
     Map<String,Object> changeChat(Actor actor,String operation,String id,String title,int days)throws IOException{
         requireUse(actor);
@@ -118,6 +120,11 @@ final class AiAdmin {
                 Map<String,Object> result=conversations.update(actor,id,title,days);
                 if(Boolean.TRUE.equals(result.get("expired")))forgetChat(actor,id);
                 yield result;
+            }
+            case "pin"->conversations.pin(actor,id);
+            case "clear"->{
+                forgetChat(actor,id);
+                yield conversations.clear(actor,id);
             }
             case "delete"->{
                 conversations.delete(actor,id);
@@ -650,9 +657,15 @@ final class AiAdmin {
     }
     private static Map<String,Object> with(Map<String,Object> map,String key,Object value){Map<String,Object> copy=new LinkedHashMap<>(map);copy.put(key,value);return copy;}
     static String clean(String value,int length){if(value==null)return "";String clean=value.replaceAll("[\\p{Cc}&&[^\\n]]"," ").strip();return clean.substring(0,Math.min(clean.length(),length));}
+    private static final java.util.regex.Pattern IPV6_CANDIDATE=java.util.regex.Pattern.compile("(?i)(?<![a-f0-9:])(?:[a-f0-9]{0,4}:){2,7}[a-f0-9]{0,4}(?![a-f0-9:])");
     static String redact(String value){
-        return value.replaceAll("(?i)\\b(?:sk|sasu|sas)_[A-Za-z0-9_-]{12,}|\\bsk-[A-Za-z0-9_-]{12,}","[Schlüssel entfernt]")
-            .replaceAll("(?<![\\w.])(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?![\\w.])","[IP entfernt]")
-            .replaceAll("(?i)(?<![a-f0-9:])(?:[a-f0-9]{0,4}:){2,7}[a-f0-9]{0,4}(?![a-f0-9:])","[IP entfernt]");
+        String text=value.replaceAll("(?i)\\b(?:sk|sasu|sas)_[A-Za-z0-9_-]{12,}|\\bsk-[A-Za-z0-9_-]{12,}","[Schlüssel entfernt]")
+            .replaceAll("(?<![\\w.])(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?![\\w.])","[IP entfernt]");
+        return IPV6_CANDIDATE.matcher(text).replaceAll(match->ipv6(match.group())?"[IP entfernt]":java.util.regex.Matcher.quoteReplacement(match.group()));
+    }
+    /** 10.14.0: clock times such as 09:36:12 are not IPv6 addresses; only real IPv6 forms are removed. */
+    static boolean ipv6(String value){
+        long colons=value.chars().filter(c->c==':').count();
+        return value.contains("::")||colons>=5||colons>=2&&value.matches("(?i).*[a-f].*");
     }
 }

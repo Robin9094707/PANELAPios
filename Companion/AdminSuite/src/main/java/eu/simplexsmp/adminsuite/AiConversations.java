@@ -18,6 +18,38 @@ final class AiConversations {
         return Map.of("items", owned(actor).stream().map(this::metadata).toList());
     }
 
+    /** 10.14.0: search titles and turns of the own chats; returns matching chats with a short snippet. */
+    synchronized Map<String,Object> search(AiAdmin.Actor actor, String query) throws IOException {
+        String needle = AiAdmin.clean(query, 80).toLowerCase(Locale.ROOT);
+        if (needle.isBlank()) return list(actor);
+        List<Map<String,Object>> rows = new ArrayList<>();
+        for (Map<String,Object> row : owned(actor)) {
+            String hit = AiAdmin.text(row,"title").toLowerCase(Locale.ROOT).contains(needle) ? AiAdmin.text(row,"title") : "";
+            for (Map<String,Object> turn : turns(row)) {
+                if (!hit.isEmpty() || !readable(actor,turn)) continue;
+                for (String key : List.of("question","answer")) {
+                    String text = AiAdmin.text(turn,key);
+                    int at = text.toLowerCase(Locale.ROOT).indexOf(needle);
+                    if (at >= 0) { hit = (at > 30 ? "…" : "") + text.substring(Math.max(0, at - 30), Math.min(text.length(), at + needle.length() + 60)); break; }
+                }
+            }
+            if (!hit.isEmpty()) { Map<String,Object> meta = new LinkedHashMap<>(metadata(row)); meta.put("match", hit); rows.add(meta); }
+        }
+        return Map.of("items", rows);
+    }
+
+    synchronized Map<String,Object> pin(AiAdmin.Actor actor, String id) throws IOException {
+        Map<String,Object> row = require(actor,id);
+        row.put("pinned", !Boolean.TRUE.equals(row.get("pinned")));
+        save(row); return metadata(row);
+    }
+
+    synchronized Map<String,Object> clear(AiAdmin.Actor actor, String id) throws IOException {
+        Map<String,Object> row = require(actor,id);
+        row.put("turns", List.of()); row.put("at", System.currentTimeMillis());
+        save(row); return metadata(row);
+    }
+
     synchronized Map<String,Object> create(AiAdmin.Actor actor, String title, int days) throws IOException {
         if (owned(actor).size() >= MAX_THREADS) throw new AppApiManager.ApiError(409,"Maximal 30 Chats. Lösche zuerst einen Chat.");
         Map<String,Object> row = new LinkedHashMap<>();
@@ -101,7 +133,8 @@ final class AiConversations {
                 else if (AiAdmin.text(row,"owner").equals(actor.storageId())) rows.add(row);
             }
         }
-        rows.sort(Comparator.<Map<String,Object>>comparingLong(r -> AiAdmin.number(r.get("at"))).reversed());
+        rows.sort(Comparator.<Map<String,Object>,Boolean>comparing(r -> !Boolean.TRUE.equals(r.get("pinned")))
+            .thenComparing(Comparator.<Map<String,Object>>comparingLong(r -> AiAdmin.number(r.get("at"))).reversed()));
         return rows;
     }
 
@@ -122,7 +155,12 @@ final class AiConversations {
         long days = AiAdmin.number(row.get("days"));
         return days > 0 && AiAdmin.number(row.get("at")) + days * DAY <= System.currentTimeMillis();
     }
-    private Map<String,Object> metadata(Map<String,Object> row) { return Map.of("id",row.get("id"),"title",row.get("title"),"days",row.get("days"),"at",row.get("at")); }
+    private Map<String,Object> metadata(Map<String,Object> row) {
+        List<Map<String,Object>> turns = turns(row);
+        String preview = turns.isEmpty() ? "" : AiAdmin.clean(AiAdmin.text(turns.get(turns.size()-1),"question").replace('\n',' '),90);
+        return SimplexAdminSuite.appMap("id",row.get("id"),"title",row.get("title"),"days",row.get("days"),"at",row.get("at"),
+            "pinned",Boolean.TRUE.equals(row.get("pinned")),"count",turns.size(),"preview",preview);
+    }
     private static int retention(int days) {
         if (!Set.of(0,1,7,30).contains(days)) throw new IllegalArgumentException("Auto-Löschen: Aus, 1, 7 oder 30 Tage.");
         return days;

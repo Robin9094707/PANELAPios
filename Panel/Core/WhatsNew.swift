@@ -18,6 +18,16 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.7.0", title: "Inventare, Ablage & Automationen", summary: "Items zwischen Spielern verschieben, Gestohlenes sicher einbehalten, Neustarts nur bei leerem Server und eigene Wenn-dann-Regeln. Dazu ein schönerer KI-Chat. Alle Daten bleiben erhalten.", items: [
+            .init(symbol: "square.grid.3x3.fill", title: "Inventar wie im Spiel", detail: "Live-Inventar und Endertruhe im echten Minecraft-Look mit Rüstung, Nebenhand und Hotbar – in App und Webpanel."),
+            .init(symbol: "arrow.left.arrow.right", title: "Items verschieben", detail: "Ein Item antippen und an einen anderen Spieler geben – zum Beispiel Diebesgut von Spieler A zurück zu Spieler B. Menge und Grund wählbar."),
+            .init(symbol: "archivebox.fill", title: "Einbehaltungsablage", detail: "Items mit Herkunft, Grund und Teammitglied sicher verwahren und später zurückgeben, weitergeben oder löschen. Auch im Spiel mit /sas ablage."),
+            .init(symbol: "clock.arrow.2.circlepath", title: "Smart-Neustart", detail: "Zum Beispiel alle 6 Stunden, aber nur wenn höchstens 1 Spieler online ist – mit Countdown auf Deutsch und Englisch, Abbruch bei neuen Spielern und nie zwei Neustarts direkt hintereinander."),
+            .init(symbol: "wand.and.stars", title: "Automationen", detail: "Wenn … dann …: Ingame-Tag, Uhrzeit, Intervall, Spielerzahl oder Erstbeitritt lösen Ansagen, Event-Status, Lockdown, Befehle oder einen Neustart aus. Mit Vorlagen."),
+            .init(symbol: "sparkles", title: "Schönerer KI-Chat", detail: "Neue Sprechblasen, Tipp-Animation, Antworten erscheinen Wort für Wort, Chats durchsuchen, anpinnen, leeren und verwalten."),
+            .init(symbol: "clock.badge.checkmark", title: "Uhrzeiten in KI-Antworten", detail: "Uhrzeiten wurden fälschlich als „[IP entfernt]“ ausgeblendet. Jetzt stehen dort wieder die echten Zeiten."),
+            .init(symbol: "safari.fill", title: "Flüssigeres Webpanel", detail: "Neue Seiten für Ablage, Automationen und Smart-Neustart, sanftere Übergänge und schnellere lange Listen.")
+        ]),
         WhatsNewRelease(version: "5.6.0", title: "Die neue PowerBot-Zentrale", summary: "Nachvollziehen, warum PowerBot eingreift, Spieler gezielt verwalten und morgens sofort sehen, was passiert ist. Alle Daten, Zugänge und dein OpenAI-Schlüssel bleiben erhalten.", items: [
             .init(symbol: "bubble.left.and.text.bubble.right.fill", title: "Jeder Fall mit Chatverlauf", detail: "Die betroffene Nachricht, was die anderen geschrieben haben, was PowerBot geantwortet hat – Streitpunkte farbig markiert."),
             .init(symbol: "sparkles", title: "Warum PowerBot eingegriffen hat", detail: "Zu jedem Eingriff eine kurze Begründung der KI, die Schwere des Streits und alle Beteiligten mit einem Tipp zum Profil."),

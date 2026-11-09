@@ -9,6 +9,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
     case management, team, appSettings, settings, access, account, bark, quiet, memory, links, crossplay, functions
     case reports, bans, vpn, alts, ultrabans, statistics, menu, ticketSettings, online, dependencies
     case chat, restart, pairing
+    case locker, smartRestart, automations
     var id: String { rawValue }
     var title: String { metadata.0 }
     var symbol: String { metadata.1 }
@@ -69,6 +70,9 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .chat: return ("Serverchat", "bubble.left.and.bubble.right.fill", "Kommunikation & Studio", "data.chat", "public-chat-v1")
         case .restart: return ("Neustart planen", "arrow.clockwise.circle.fill", "Server & Diagnose", "data.operations", "restart-v1")
         case .pairing: return ("Kopplung & Verbindung", "key.horizontal.fill", "Einstellungen & Zugänge", "", "")
+        case .locker: return ("Einbehaltungsablage", "archivebox.fill", "Moderation & PowerBot", "data.inventory", "item-locker-v1")
+        case .smartRestart: return ("Smart-Neustart", "clock.arrow.2.circlepath", "Server & Diagnose", "data.operations", "smart-restart-v1")
+        case .automations: return ("Automationen", "wand.and.stars", "Server & Diagnose", "data.server-events", "automations-v1")
         }
     }
     func matches(_ query: String) -> Bool {
@@ -77,6 +81,9 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .advertising: extra = " Werbung werben kopieren Anzeige Shortcut Kurzbefehle"
         case .powerBot: extra = " AutoMod Moderation Streit Mute Chatpause Fälle Systemanweisung KI"
         case .briefing: extra = " Übersicht Nacht Zusammenfassung letzter Besuch Neuigkeiten"
+        case .locker: extra = " Items einbehalten gestohlen Diebstahl zurückgeben Inventar Ablage"
+        case .smartRestart: extra = " Neustart automatisch Intervall Spieler online Countdown"
+        case .automations: extra = " Wenn dann Regeln Ingame-Tag Zeitplan Auslöser Aktionen planen"
         default: extra = ""
         }
         return SuiteSearch.matches(query, in: title + " " + group + " " + rawValue + extra)

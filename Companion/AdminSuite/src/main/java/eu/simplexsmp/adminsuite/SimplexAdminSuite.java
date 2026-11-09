@@ -265,6 +265,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     LiveInventory liveInventory;
     volatile PowerBot powerBot;
     ServerEvents serverEvents;
+    SmartRestart smartRestart;
+    Automations automations;
     PublicChatAssistant publicChatAssistant;
     OpenAiIntegration openAiIntegration() { return openAi; }
     SuiteExpansion expansion;
@@ -521,6 +523,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         catch (java.io.IOException error) { getLogger().warning("PowerBot: " + error.getMessage()); }
         publicChatAssistant = new PublicChatAssistant(this);
         try { serverEvents = new ServerEvents(this); } catch (Exception error) { getLogger().warning("Event-Modus konnte nicht geladen werden: " + error.getClass().getSimpleName()); }
+        try { smartRestart = new SmartRestart(this); } catch (Exception error) { getLogger().warning("Smart-Neustart konnte nicht geladen werden: " + error.getMessage()); }
+        try { automations = new Automations(this); } catch (Exception error) { getLogger().warning("Automationen konnten nicht geladen werden: " + error.getMessage()); }
         try { appApi = new AppApiManager(this); appApi.reload(); } catch (Exception error) { getLogger().warning("Optionale App-API bleibt aus: " + error.getClass().getSimpleName()); }
         if (getConfig().getBoolean("ad-hub.enabled", getConfig().getBoolean("discord-ads.enabled", true))) startAdHub();
         getLogger().info("Simplex Admin Suite v" + getDescription().getVersion() + " wurde geladen. Bedrock-Forms: " + bedrockMenus.status());
@@ -801,6 +805,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return powerBot.command(sender, args);
         if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length > 0 && args[0].equalsIgnoreCase("event") && serverEvents != null)
             return serverEvents.command(sender, args);
+        if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length > 0 && (args[0].equalsIgnoreCase("ablage") || args[0].equalsIgnoreCase("locker"))
+            && liveInventory != null && liveInventory.locker != null)
+            return liveInventory.locker.command(sender, args);
         if ((rootCommand.equals("sas") || rootCommand.equals("simplexadmin")) && args.length > 0 && args[0].equalsIgnoreCase("app")) { if (appApi == null) { sender.sendMessage("App-API nicht geladen; Serverprotokoll prüfen."); return true; } return appApi.command(sender, Arrays.copyOfRange(args, 1, args.length)); }
         if(rootCommand.equals("rechtesperre")) { if (accessLocks == null) sender.sendMessage(prefix() + "Rechte-Sperren nicht geladen."); else accessLocks.command(sender, args); return true; }
         if(rootCommand.equals("shop")) return shop.command(sender,args);
@@ -1911,7 +1918,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (!has(sender, "simplexadminsuite.admin")) return Collections.emptyList();
         if (moderationControl != null) { List<String> suggestions = moderationControl.complete(sender, args); if (suggestions != null) return suggestions; }
         if (args.length >= 1 && args[0].equalsIgnoreCase("app")) return args.length == 2 ? filter(Arrays.asList("status", "enable", "disable", "reload", "create", "user", "users", "setup", "keys", "revoke", "domain", "fingerprint", "owner-reset", "user-reset", "owner-transfer", "unlock", "recovery", "rename", "user-enable", "user-disable", "user-logout", "public-name"), args[1]) : Collections.emptyList();
-        if (args.length == 1) return filter(Arrays.asList("powerbot", "detectors", "detektoren", "securityhub", "checkwhitelist", "emergency", "restartplan", "geoinfo", "bluemap", "names", "clientcheck", "checkhacks", "checklang", "delivery", "shop", "branding", "connection", "links", "serverstats", "commands", "befehle", "moderationplus", "banmode", "restrict", "deviceblock", "osblock", "adminlog", "chatstyle", "modlog", "suiteconfig", "menü", "items", "checkban", "checkmute", "xraybait", "setdiscord", "adminupdate", "adminrights", "watch", "relay", "vpn", "power", "laginspector", "statusdesign", "fun", "qol", "aufgaben", "planer", "incidents", "health", "makros", "bulk", "timeline", "bedrock", "java", "online", "spieler", "welten", "trimmer", "warps", "regeln", "umfragen", "punkte", "chatfilter", "antispam", "updates", "check", "channels", "clientsecurity", "discordstatus", "status", "steuerung", "chat", "spy", "sicherheit", "stealth", "afk", "startnachrichten", "operations", "leitstelle", "alts", "altlink", "altignore", "altban", "ultraban", "ultraunban", "ultrareset", "slowmode", "commandlock", "commandspy", "duty", "watchlist", "announcement", "diagnostics", "deviceinfo", "devicediagnostics", "export", "wartung", "maintenance", "report", "reports", "staff", "staffmsg", "tp", "tplast", "bring", "freeze", "unfreeze", "heal", "feed", "gamemode", "vanish", "invsee", "homes", "homeadmin", "ban", "tempban", "unban", "mute", "tempmute", "unmute", "kick", "warn", "warnungen", "clearwarnings", "notes", "recht", "suche", "cleardata", "datenloeschen", "snapshot", "password", "app", "reload", "help"), args[0]);
+        if (args.length == 1) return filter(Arrays.asList("powerbot", "ablage", "detectors", "detektoren", "securityhub", "checkwhitelist", "emergency", "restartplan", "geoinfo", "bluemap", "names", "clientcheck", "checkhacks", "checklang", "delivery", "shop", "branding", "connection", "links", "serverstats", "commands", "befehle", "moderationplus", "banmode", "restrict", "deviceblock", "osblock", "adminlog", "chatstyle", "modlog", "suiteconfig", "menü", "items", "checkban", "checkmute", "xraybait", "setdiscord", "adminupdate", "adminrights", "watch", "relay", "vpn", "power", "laginspector", "statusdesign", "fun", "qol", "aufgaben", "planer", "incidents", "health", "makros", "bulk", "timeline", "bedrock", "java", "online", "spieler", "welten", "trimmer", "warps", "regeln", "umfragen", "punkte", "chatfilter", "antispam", "updates", "check", "channels", "clientsecurity", "discordstatus", "status", "steuerung", "chat", "spy", "sicherheit", "stealth", "afk", "startnachrichten", "operations", "leitstelle", "alts", "altlink", "altignore", "altban", "ultraban", "ultraunban", "ultrareset", "slowmode", "commandlock", "commandspy", "duty", "watchlist", "announcement", "diagnostics", "deviceinfo", "devicediagnostics", "export", "wartung", "maintenance", "report", "reports", "staff", "staffmsg", "tp", "tplast", "bring", "freeze", "unfreeze", "heal", "feed", "gamemode", "vanish", "invsee", "homes", "homeadmin", "ban", "tempban", "unban", "mute", "tempmute", "unmute", "kick", "warn", "warnungen", "clearwarnings", "notes", "recht", "suche", "cleardata", "datenloeschen", "snapshot", "password", "app", "reload", "help"), args[0]);
         String sub = args[0].toLowerCase(Locale.ROOT);
         if (args.length == 2 && Set.of("adminrights","checkban","checkmute","xraybait").contains(sub)) return filter(database.names(), args[1]);
         if (args.length == 2 && sub.equals("watch")) {
@@ -2096,6 +2103,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return;
         }
         if (adminSpy.hiddenJoin(player) || isPubliclyHidden(player)) return;
+        if (firstJoin && automations != null) try { automations.firstJoin(player); } catch (RuntimeException error) { getLogger().warning("Automation beim Erstbeitritt: " + error.getMessage()); }
         if(appEvents!=null) {
             appEvents.record(firstJoin?"first-join":"join",player.getUniqueId(),firstJoin?"Neuer Spieler":"Spieler beigetreten",player.getName()+" · "+current.label(true),false);
             if(!current.bedrock&&!current.brand().isBlank()&&ClientBrands.known(current.brand()).isBlank()) {
@@ -6976,6 +6984,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     Set<String> verifiedLinks(UUID id){return securityHub==null?Set.of():securityHub.overrides.verifiedLinks(id);}
     boolean managedProbeTeleport(Player p){return securityHub!=null&&securityHub.relocation.managed(p);}
     void suiteKick(Player p,String message){if(p!=null&&!emergency(p.getUniqueId()))p.kickPlayer(message==null?"Please contact server staff.":message);}
+    boolean restartCountdownActive(){return restartManager!=null&&restartManager.active();}
+    /** 10.14.0: staff item moves appear in the player's item history. */
+    void suiteItemHistory(UUID id,String text){PlayerProfile p=database.get(id);if(p!=null){p.addItem(text);database.save(p);}}
     void calendarRestart(String actor,int seconds){if(restartManager!=null&&!restartManager.schedule(actor,seconds))getLogger().info("Neustart-Zeitplan: vorhandener Countdown läuft bereits.");}
     void cancelCalendarRestart(String actor){if(restartManager!=null)restartManager.cancel(actor);}
     void refreshVpnSettings(){if(vpnProtection!=null)vpnProtection.reload();}
