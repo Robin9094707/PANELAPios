@@ -135,6 +135,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     private static final int DEFAULT_MAX_CHAT_LINES = 100;
     private static final int DEFAULT_MAX_ACTION_LINES = 240;
     private static final int DEFAULT_MAX_COMBAT_LINES = 160;
+    private static final int DEFAULT_MAX_ITEM_LINES = 160;
     private static final int DEFAULT_MAX_PRIVATE_MESSAGE_LINES = 120;
     private static final int DEFAULT_MAX_SNAPSHOTS = 100;
     private static final String[] RIGHTS = new String[]{"chat", "chat-colors", "chat-formatting", "build", "break", "interact", "chest", "doors", "buttons", "levers", "drop", "pickup", "bucket", "commands", "redstone", "pvp", "animals", "villagers", "nether", "end", "elytra", "move", "private-messages", "mentions", "food", "potions", "projectiles", "vehicles", "crafting", "enchanting", "anvils", "brewing", "explosives", "fire", "enderchest", "furnaces", "hoppers", "beacons", "beds", "respawn-anchors", "item-frames", "armor-stands", "signs", "books", "fishing", "teleportation", "jukeboxes", "lecterns", "campfires", "shulkers"};
@@ -2380,7 +2381,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         boolean usePowerBot = automod != null && !automod.bypass(player);
         if (usePowerBot && serverControls.globalChatEnabled() && !isPubliclyHidden(player)) {
             var local = automod.preflight(player.getUniqueId().toString(), player.getName(), "Minecraft", stripFormatting(entered), publicAiGerman(player));
-            if (!local.allowed) { event.setCancelled(true); player.sendMessage(prefix() + local.playerMessage); return; }
+            if (!local.allowed) { event.setCancelled(true); player.sendMessage(prefix() + local.playerMessage); profile.addAction("PowerBot · Nachricht zurückgehalten: " + sanitizeText(stripFormatting(entered), 160)); database.save(profile); return; }
         }
         String muteMessage = punishments.activeMuteMessage(profile);
         if (muteMessage != null && !has(player, "simplexadminsuite.admin")) {
@@ -2465,7 +2466,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 OpenAiIntegration.ChatDecision decision = automod.reviewModel(player.getUniqueId().toString(), player.getName(),
                     "Minecraft", stripFormatting(processedMessage), publicAiGerman(player), Bukkit.isPrimaryThread());
                 if (decision.warning || !decision.allowed) player.sendMessage(prefix() + decision.playerMessage);
-                if (!decision.allowed) { event.setCancelled(true); return; }
+                if (decision.warning) profile.addAction("PowerBot · Hinweis zur Nachricht: " + sanitizeText(stripFormatting(processedMessage), 160));
+                if (!decision.allowed) { event.setCancelled(true); profile.addAction("PowerBot · Nachricht zurückgehalten: " + sanitizeText(stripFormatting(processedMessage), 160)); database.save(profile); return; }
             }
         } else if (openAi != null) {
             OpenAiIntegration.ChatDecision decision = openAi.reviewChat(player, processedMessage);
@@ -2517,6 +2519,45 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             int amount = item.getAmount() - event.getRemaining();
             if (amount > 0) publicChatAssistant.pickedUp(player.getUniqueId(), event.getItem().getUniqueId(), item.getType().name(), amount);
         }
+    }
+
+    // ------------------------------------------------------------------ 10.13.0 item history
+    private static String itemLabel(org.bukkit.inventory.ItemStack item, int amount) {
+        if (item == null) return "Item";
+        String name = item.getType().name().toLowerCase(Locale.ROOT).replace('_', ' ');
+        return Math.max(1, amount) + "× " + name;
+    }
+    private static String itemPlace(Location location) {
+        return location == null || location.getWorld() == null ? "" : " · " + location.getWorld().getName() + " " + location.getBlockX() + " / " + location.getBlockY() + " / " + location.getBlockZ();
+    }
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void recordItemDrop(PlayerDropItemEvent event) {
+        var stack = event.getItemDrop().getItemStack();
+        PlayerProfile profile = database.get(event.getPlayer().getUniqueId());
+        if (profile != null) profile.addItem("Abgelegt: " + itemLabel(stack, stack.getAmount()) + itemPlace(event.getItemDrop().getLocation()));
+    }
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void recordItemPickup(EntityPickupItemEvent event) {
+        if (!(event.getEntity() instanceof Player player)) return;
+        UUID thrower = event.getItem().getThrower();
+        if (thrower == null || thrower.equals(player.getUniqueId())) return;
+        var stack = event.getItem().getItemStack();
+        int amount = stack.getAmount() - event.getRemaining();
+        if (amount <= 0) return;
+        PlayerProfile from = database.get(thrower), to = database.get(player.getUniqueId());
+        String fromName = from == null ? "unbekannt" : from.name;
+        if (to != null) to.addItem("Aufgehoben von " + fromName + ": " + itemLabel(stack, amount) + itemPlace(player.getLocation()));
+        if (from != null) from.addItem("Weitergegeben an " + player.getName() + ": " + itemLabel(stack, amount) + itemPlace(player.getLocation()));
+    }
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void recordItemDeath(PlayerDeathEvent event) {
+        Player player = event.getEntity();
+        PlayerProfile profile = database.get(player.getUniqueId());
+        if (profile == null) return;
+        int stacks = event.getKeepInventory() ? 0 : event.getDrops().size();
+        Player killer = player.getKiller();
+        profile.addItem("Gestorben" + (killer == null ? "" : " durch " + killer.getName()) + (stacks > 0 ? " · " + stacks + " Stapel fallen gelassen" : " · Inventar behalten") + itemPlace(player.getLocation()));
+        database.save(profile);
     }
 
     @EventHandler public void onDeath(PlayerDeathEvent event) {
@@ -9115,6 +9156,30 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             "sections", sections, "chatVisible", publicChat || privateChat, "whispersVisible", privateChat,
             "chatTimeline", PlayerChatTimeline.rows(p.name, publicChat ? p.recentChat : List.of(),
                 privateChat ? p.recentPrivateMessages : List.of()));
+    }
+    /** 10.13.0: chat, whispers, actions, combat, items and PowerBot decisions of one player in one searchable list. */
+    Map<String,Object> appPlayerTimeline(String query, boolean publicChat, boolean whispers, boolean flags) {
+        PlayerProfile p = database.find(query);
+        if (p == null) throw new IllegalArgumentException("Spieler nicht gefunden");
+        List<String> chat, privateChat, actions, combat, items;
+        synchronized (p.recentChat) { chat = publicChat ? new ArrayList<>(p.recentChat) : List.of(); }
+        synchronized (p.recentPrivateMessages) { privateChat = whispers ? new ArrayList<>(p.recentPrivateMessages) : List.of(); }
+        synchronized (p.recentActions) { actions = publicChat ? new ArrayList<>(p.recentActions) : List.of(); }
+        synchronized (p.recentCombat) { combat = publicChat ? new ArrayList<>(p.recentCombat) : List.of(); }
+        synchronized (p.recentItems) { items = publicChat ? new ArrayList<>(p.recentItems) : List.of(); }
+        List<Map<String,Object>> bot = flags && powerBot != null ? powerBot.playerFlags(p.uuid.toString(), whispers) : List.of();
+        return appMap("player", p.uuid.toString(), "name", p.name, "online", Bukkit.getPlayer(p.uuid) != null, "generatedAt", System.currentTimeMillis(),
+            "items", PlayerTimeline.rows(p.name, chat, privateChat, actions, combat, items, bot, 600),
+            "chatVisible", publicChat, "whispersVisible", whispers, "flagsVisible", flags);
+    }
+    /** Players for the briefing: first joins and returning players since a point in time. */
+    Map<String,Object> briefingPlayers(long since) {
+        int fresh = 0, active = 0; List<String> names = new ArrayList<>();
+        for (PlayerProfile p : database.sortedProfiles()) {
+            if (p.lastSeen > since || Bukkit.getPlayer(p.uuid) != null) active++;
+            if (p.firstSeen > since) { fresh++; if (names.size() < 8) names.add(p.name); }
+        }
+        return appMap("new", fresh, "newNames", names, "active", active, "online", Bukkit.getOnlinePlayers().size(), "known", database.sortedProfiles().size());
     }
     Object appApiMutation(String route,Map<String,Object> values,String actor){
         if(route.equals("logs.retry")){if(securityHub==null)throw new IllegalArgumentException("Client-Protokollmodul nicht aktiv");securityHub.retryLogs();expansionAudit(actor,null,"App-Protokollversand","Erneut versuchen");return appMap("ok",true,"title","Versand erneut geplant","description","Gespeicherte Ereignisse werden automatisch erneut geprüft und versendet.");}
@@ -18535,7 +18600,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         private long lastAdminAuthenticationAt; private int failedAdminAuthentications;
         private final Set<String> blockedRights = Collections.synchronizedSet(new HashSet<>());
         private final Map<String, Long> temporaryBlockedRights = Collections.synchronizedMap(new LinkedHashMap<>());
-        private final List<String> previousNames = Collections.synchronizedList(new ArrayList<>()); private final List<String> recentChat = Collections.synchronizedList(new ArrayList<>()); private final List<String> recentPrivateMessages = Collections.synchronizedList(new ArrayList<>()); private final List<String> recentActions = Collections.synchronizedList(new ArrayList<>()); private final List<String> recentCombat = Collections.synchronizedList(new ArrayList<>()); private final List<String> warnings = Collections.synchronizedList(new ArrayList<>()); private final List<String> notes = Collections.synchronizedList(new ArrayList<>());
+        private final List<String> previousNames = Collections.synchronizedList(new ArrayList<>()); private final List<String> recentChat = Collections.synchronizedList(new ArrayList<>()); private final List<String> recentPrivateMessages = Collections.synchronizedList(new ArrayList<>()); private final List<String> recentActions = Collections.synchronizedList(new ArrayList<>()); private final List<String> recentCombat = Collections.synchronizedList(new ArrayList<>()); private final List<String> recentItems = Collections.synchronizedList(new ArrayList<>()); private final List<String> warnings = Collections.synchronizedList(new ArrayList<>()); private final List<String> notes = Collections.synchronizedList(new ArrayList<>());
         private PlayerProfile(UUID uuid, String name) { this.uuid = uuid; this.name = name; }
         private volatile java.util.function.BooleanSupplier emergencyAccess = () -> false;
         private synchronized boolean isBlocked(String right) {
@@ -18592,6 +18657,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         private synchronized void addPrivateMessage(String message) { recentPrivateMessages.add(stamp() + " " + message); trim(recentPrivateMessages, DEFAULT_MAX_PRIVATE_MESSAGE_LINES); }
         private synchronized void addAction(String action) { recentActions.add(stamp() + " " + action); trim(recentActions, DEFAULT_MAX_ACTION_LINES); }
         private synchronized void addCombat(String action) { recentCombat.add(stamp() + " " + action); trim(recentCombat, DEFAULT_MAX_COMBAT_LINES); }
+        /** 10.13.0: item drops, pickups from other players and deaths; repeated identical lines within the same second are merged. */
+        private synchronized void addItem(String action) { String line = stamp() + " " + action; if (!recentItems.isEmpty() && recentItems.get(recentItems.size() - 1).equals(line)) return; recentItems.add(line); trim(recentItems, DEFAULT_MAX_ITEM_LINES); }
         synchronized ServerStatistics.Profile statisticsSnapshot() {
             return new ServerStatistics.Profile(clientPlatform,"BEDROCK".equals(clientPlatform)?(currentDeviceModel==null?bedrockDeviceModel:currentDeviceModel):"","BEDROCK".equals(clientPlatform)?(clientDevice.isBlank()?bedrockDeviceOs:clientDevice):"","BEDROCK".equals(clientPlatform)?clientInput:"",clientVersion,lastSeen,firstSeen,
                 Math.max(0,totalPlayMillis+(currentSessionStartedAt>0?System.currentTimeMillis()-currentSessionStartedAt:0)),Math.max(0,totalAfkMillis),sessionCount,simplexPoints,warnings.size(),internalBanActive(System.currentTimeMillis()),internalMuteActive(System.currentTimeMillis()),devices.size(),localeValue());
@@ -18691,7 +18758,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             y.set("client-details.bedrock.last-snapshot-at", lastBedrockSnapshotAt);
             y.set("alt.manual-links", new ArrayList<>(manualAltLinks)); y.set("alt.ignored-links", new ArrayList<>(ignoredAltLinks));
             clearExpiredTemporaryRights(System.currentTimeMillis());
-            y.set("rights.blocked", new ArrayList<>(blockedRights)); y.set("rights.temporary", encodeHistory(temporaryBlockedRights)); y.set("recent-chat", recentChat); y.set("recent-private-messages", recentPrivateMessages); y.set("recent-actions", recentActions); y.set("recent-combat", recentCombat); y.set("warnings", warnings); y.set("staff-notes", notes);
+            y.set("rights.blocked", new ArrayList<>(blockedRights)); y.set("rights.temporary", encodeHistory(temporaryBlockedRights)); y.set("recent-chat", recentChat); y.set("recent-private-messages", recentPrivateMessages); y.set("recent-actions", recentActions); y.set("recent-combat", recentCombat); y.set("recent-items", recentItems); y.set("warnings", warnings); y.set("staff-notes", notes);
             y.set("activity.session-count", sessionCount); y.set("activity.last-join-at", lastJoinAt); y.set("activity.total-play-millis", totalPlayMillis); y.set("activity.total-afk-millis", totalAfkMillis); y.set("activity.last-chat-at", lastChatAt);
             y.set("simplex-points.balance", simplexPoints); y.set("simplex-points.active-play-millis", pointsActiveMillis);
             y.set("security.last-admin-authentication-at", lastAdminAuthenticationAt); y.set("security.failed-admin-authentications", failedAdminAuthentications);
@@ -18719,7 +18786,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             decodeDevices(y.getStringList("device-history"), p.devices);
             p.manualAltLinks.addAll(y.getStringList("alt.manual-links")); p.ignoredAltLinks.addAll(y.getStringList("alt.ignored-links"));
             p.blockedRights.addAll(y.getStringList("rights.blocked")); decodeHistory(y.getStringList("rights.temporary"), p.temporaryBlockedRights); p.clearExpiredTemporaryRights(System.currentTimeMillis()); if (y.getBoolean("rights.chat-blocked", false)) p.blockedRights.add("chat"); if (y.getBoolean("rights.build-blocked", false)) { p.blockedRights.add("build"); p.blockedRights.add("break"); } if (y.getBoolean("rights.pvp-blocked", false)) p.blockedRights.add("pvp");
-            p.recentChat.addAll(y.getStringList("recent-chat")); trim(p.recentChat, DEFAULT_MAX_CHAT_LINES); p.recentPrivateMessages.addAll(y.getStringList("recent-private-messages")); trim(p.recentPrivateMessages, DEFAULT_MAX_PRIVATE_MESSAGE_LINES); p.recentActions.addAll(y.getStringList("recent-actions")); trim(p.recentActions, DEFAULT_MAX_ACTION_LINES); p.recentCombat.addAll(y.getStringList("recent-combat")); trim(p.recentCombat, DEFAULT_MAX_COMBAT_LINES); p.warnings.addAll(y.getStringList("warnings")); p.notes.addAll(y.getStringList("staff-notes"));
+            p.recentChat.addAll(y.getStringList("recent-chat")); trim(p.recentChat, DEFAULT_MAX_CHAT_LINES); p.recentPrivateMessages.addAll(y.getStringList("recent-private-messages")); trim(p.recentPrivateMessages, DEFAULT_MAX_PRIVATE_MESSAGE_LINES); p.recentActions.addAll(y.getStringList("recent-actions")); trim(p.recentActions, DEFAULT_MAX_ACTION_LINES); p.recentCombat.addAll(y.getStringList("recent-combat")); trim(p.recentCombat, DEFAULT_MAX_COMBAT_LINES); p.recentItems.addAll(y.getStringList("recent-items")); trim(p.recentItems, DEFAULT_MAX_ITEM_LINES); p.warnings.addAll(y.getStringList("warnings")); p.notes.addAll(y.getStringList("staff-notes"));
             p.sessionCount = y.getInt("activity.session-count", 0); p.lastJoinAt = y.getLong("activity.last-join-at", 0L); p.totalPlayMillis = y.getLong("activity.total-play-millis", 0L); p.totalAfkMillis = y.getLong("activity.total-afk-millis", 0L); p.lastChatAt = y.getLong("activity.last-chat-at", 0L);
             p.simplexPoints = Math.max(0L, y.getLong("simplex-points.balance", 0L)); p.pointsActiveMillis = Math.max(0L, y.getLong("simplex-points.active-play-millis", 0L));
             p.lastAdminAuthenticationAt = y.getLong("security.last-admin-authentication-at", 0L); p.failedAdminAuthentications = y.getInt("security.failed-admin-authentications", 0);

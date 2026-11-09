@@ -396,7 +396,7 @@ struct SuiteLuckPermsGroupView: View {
     private var parentSection: some View {
         Section("Erbt von") {
             ForEach(group["parents"].array.map(\.string), id: \.self) { parent in
-                Text(parent).swipeActions { Button("Entfernen", role: .destructive) { ask(["operation": .string("group-parent-remove"), "value": .string(parent)], "„" + parent + "“ nicht mehr erben?") }.disabled(!canEdit) }
+                Text(parent).swipeActions { Button("Entfernen") { ask(["operation": .string("group-parent-remove"), "value": .string(parent)], "„" + parent + "“ nicht mehr erben?") }.tint(.red).disabled(!canEdit) }
             }
             Menu {
                 ForEach(all.filter { $0["name"].string != name && !group["parents"].array.map(\.string).contains($0["name"].string) }, id: \.["name"].string) { other in
@@ -409,7 +409,7 @@ struct SuiteLuckPermsGroupView: View {
         Section {
             ForEach(permissions, id: \.["key"].string) { node in
                 SuiteNodeToggleRow(node: node, value: nodeBinding(node), enabled: canEdit && !runner.busy)
-                    .swipeActions { Button("Entfernen", role: .destructive) { ask(["operation": .string("group-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht „" + node["key"].string + "“ entfernen?") }.disabled(!canEdit) }
+                    .swipeActions { Button("Entfernen") { ask(["operation": .string("group-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht „" + node["key"].string + "“ entfernen?") }.tint(.red).disabled(!canEdit) }
                     .contextMenu { Button("Entfernen", systemImage: "trash", role: .destructive) { ask(["operation": .string("group-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht „" + node["key"].string + "“ entfernen?") }.disabled(!canEdit) }
             }
         } header: { Text("Rechte (\(permissions.count))") } footer: { Text("Schalter an = erlaubt (true), aus = verweigert (false) – wird sofort in LuckPerms gespeichert. Nach links wischen zum Entfernen.") }
@@ -509,7 +509,7 @@ struct SuiteLuckPermsPlayerView: View {
             SuiteNodeRow(node: node)
         } else {
             SuiteNodeToggleRow(node: node, value: ownBinding(node), enabled: canEdit && !runner.busy)
-                .swipeActions { Button("Entfernen", role: .destructive) { ask(["operation": .string("user-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht entfernen?") }.disabled(!canEdit) }
+                .swipeActions { Button("Entfernen") { ask(["operation": .string("user-permission-unset"), "node": node["key"], "context": .string(SuiteNodeRow.context(node))], "Recht entfernen?") }.tint(.red).disabled(!canEdit) }
         }
     }
     private func ownBinding(_ node: JSON) -> Binding<Bool> {
@@ -532,7 +532,7 @@ struct SuiteLuckPermsPlayerView: View {
                     Text(group["group"].string).bold(group["group"].string == user["primary"].string)
                     Spacer()
                     if group["expiry"].double > 0 { Text("bis " + Date(timeIntervalSince1970: group["expiry"].double / 1000).formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary) }
-                }.swipeActions { Button("Entfernen", role: .destructive) { ask(["operation": .string("user-parent-remove"), "group": group["group"]], who + " aus „" + group["group"].string + "“ entfernen?") }.disabled(!canEdit) }
+                }.swipeActions { Button("Entfernen") { ask(["operation": .string("user-parent-remove"), "group": group["group"]], who + " aus „" + group["group"].string + "“ entfernen?") }.tint(.red).disabled(!canEdit) }
             }
         }
     }

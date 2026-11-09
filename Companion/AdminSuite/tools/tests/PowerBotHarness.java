@@ -19,6 +19,7 @@ final class PowerBotHarness {
 
         keywords();
         moderationViews();
+        release1013();
 
         OfflineInventory old = new OfflineInventory(inventory());
         assert old.editable();
@@ -55,6 +56,35 @@ final class PowerBotHarness {
         assert !AdminActivityLog.playerAdminRow(Map.of("source", "ingame", "admin", "alex", "playerAdmin", false), staff);
         for (String source : List.of("system", "console", "app", "discord"))
             assert !AdminActivityLog.playerAdminRow(Map.of("source", source, "admin", "alex", "playerAdmin", true), staff);
+    }
+
+    /** 10.13.0: unified player timeline, flag matching, severity thresholds, briefing groups and old log compatibility. */
+    private static void release1013() {
+        var flag = Map.<String, Object>of("id", "case-1", "at", PlayerTimeline.time("08.11.2026 20:00:05 x"), "kind", "warning",
+            "message", "Du bist SO schlecht!!", "reason", "Beleidigung", "detail", "Hinweis");
+        var blocked = Map.<String, Object>of("id", "case-2", "at", PlayerTimeline.time("08.11.2026 20:03:00 x"), "kind", "abuse",
+            "message", "", "reason", "", "detail", "Nachricht zurückgehalten");
+        var rows = PlayerTimeline.rows("Alex", List.of("08.11.2026 20:00:00 Alex: du bist so schlecht"),
+            List.of("08.11.2026 20:01:00 OUT → Sam [msg]: Hi"), List.of("08.11.2026 20:02:00 PowerBot · Nachricht zurückgehalten: x", "Legacy ohne Datum"),
+            List.of("08.11.2026 19:59:00 Alex traf Sam für 2,00 Schaden"), List.of("08.11.2026 20:04:00 Abgelegt: 3× diamond · world 1 / 2 / 3"),
+            List.of(flag, blocked), 50);
+        assert rows.size() == 7 : rows;
+        assert rows.get(0).get("category").equals("item") && rows.get(0).get("kind").equals("drop");
+        assert rows.get(1).get("category").equals("powerbot") && rows.get(1).get("case").equals("case-2");
+        var chat = rows.stream().filter(row -> row.get("category").equals("chat")).findFirst().orElseThrow();
+        assert Boolean.TRUE.equals(chat.get("flagged")) && chat.get("flagReason").equals("Beleidigung") && chat.get("case").equals("case-1");
+        assert rows.stream().anyMatch(row -> row.get("category").equals("action") && Boolean.TRUE.equals(row.get("flagged")));
+        assert rows.get(rows.size() - 1).get("text").equals("Legacy ohne Datum");
+        assert PlayerTimeline.rows("Alex", List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), 10).isEmpty();
+        assert PowerBot.atLeast("severe", "medium") && PowerBot.atLeast("medium", "medium") && !PowerBot.atLeast("low", "medium") && !PowerBot.atLeast("none", "low");
+        assert PowerBot.Evidence.parse(null).empty();
+        var proof = PowerBot.Evidence.parse(Map.of("message", "hi", "severity", "unknown", "context", List.of(Map.of("name", "Alex", "text", "hi", "highlight", true))));
+        assert proof.severity().isEmpty() && proof.context().size() == 1 && Boolean.TRUE.equals(proof.context().get(0).get("highlight"));
+        var summary = SuiteBriefing.summarizeEvents(List.of(Map.of("time", 10L, "type", "report", "title", "alt"),
+            Map.of("time", 200L, "type", "ticket-high", "title", "Ticket", "critical", true), Map.of("time", 300L, "type", "first-join", "title", "Neu")), 100);
+        assert summary.get("total").equals(2L) && summary.get("critical").equals(1L);
+        @SuppressWarnings("unchecked") var groups = (Map<String, Long>) summary.get("groups");
+        assert groups.get("tickets") == 1L && groups.get("joins") == 1L && !groups.containsKey("reports");
     }
 
     private static void keywords() throws Exception {

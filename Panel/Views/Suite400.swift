@@ -497,7 +497,7 @@ struct SuiteStaffTasksView: View {
                     }
                     .swipeActions(edge: .leading) { Button(row["status"].string == "DONE" ? "Öffnen" : "Erledigt", systemImage: "checkmark") { act("done", row) }.tint(.green) }
                     .swipeActions(edge: .trailing) {
-                        Button("Löschen", systemImage: "trash", role: .destructive) { act("delete", row) }
+                        Button("Löschen", systemImage: "trash") { act("delete", row) }.tint(.red)
                         Button("Übernehmen", systemImage: "person.fill.checkmark") { act("claim", row) }.tint(Color.panelAccent)
                         Button("Priorität", systemImage: "flag") { act("priority", row) }.tint(.orange)
                     }

@@ -276,6 +276,12 @@ struct SuitePlayerView: View {
             if suite.features.contains("luckperms-v1") && suite.can("data.luckperms") { SuitePlayerRankSection(suite: suite, player: player, name: name) }
             if suite.features.contains("player-connection-v1") && (suite.can("data.diagnostics") || suite.can("data.profile")) { SuitePlayerConnectionSection(suite: suite, player: player) }
             Section("Spielerverwaltung") {
+                if suite.features.contains("player-timeline-v1") && suite.can("data.profile") {
+                    NavigationLink { SuitePlayerTimelineView(suite: suite, player: player, name: name) } label: { Label("Verlauf · Chat, Aktionen, Kämpfe & Items", systemImage: "clock.arrow.circlepath") }.accessibilityIdentifier("player-timeline")
+                }
+                if suite.features.contains("powerbot-cases-v2") && suite.can("data.powerbot") {
+                    NavigationLink { SuitePowerBotPlayerView(suite: suite, player: player, name: name) } label: { Label("PowerBot-Akte", systemImage: "shield.lefthalf.filled") }
+                }
                 if suite.features.contains("player-rights-v1") {
                     NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: player) } label: { Label("Rechte & Sperren", systemImage: "lock.shield.fill") }.disabled(!suite.can("data.access-locks")).accessibilityIdentifier("player-rights")
                     if suite.features.contains("command-rights-v1") { NavigationLink { SuiteCommandPlayerView(suite: suite, player: player) } label: { Label("Befehle erlauben & sperren", systemImage: "terminal.fill") }.disabled(!suite.can("data.commands")).accessibilityIdentifier("player-commands") }
@@ -322,7 +328,7 @@ struct SuitePlayerView: View {
             }
             moderationRecord
             Section { DisclosureGroup("Spielerakte & gespeicherte Daten") {
-                ForEach([("player.info", "Vollständige Spielerakte"), ("player.identity", "Identität & Ultrabann"), ("player.history", "Aktions- und Chatverlauf")], id: \.0) { route, title in NavigationLink(title) { SuiteReadView(suite: suite, path: route, title: title, values: ["player": .string(player), "category": .string("all")]) } }
+                ForEach([("player.info", "Vollständige Spielerakte"), ("player.identity", "Identität & Ultrabann")] + (suite.features.contains("player-timeline-v1") ? [] : [("player.history", "Aktions- und Chatverlauf")]), id: \.0) { route, title in NavigationLink(title) { SuiteReadView(suite: suite, path: route, title: title, values: ["player": .string(player), "category": .string("all")]) } }
             }
             }
             Section { DisclosureGroup("Weitere Spieleraktionen") {

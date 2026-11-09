@@ -1104,7 +1104,7 @@ struct SuiteDiagnosticsConsoleView: View {
                     SuiteDiagnosticsLogRow(row: item.element)
                         .swipeActions {
                             if archived && data["manage"].bool {
-                                Button("Löschen", role: .destructive) { pending = ["operation": .string("delete"), "id": item.element["id"]] }
+                                Button("Löschen") { pending = ["operation": .string("delete"), "id": item.element["id"]] }.tint(.red)
                             }
                         }
                         .contextMenu {

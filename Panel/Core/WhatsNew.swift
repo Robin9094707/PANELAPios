@@ -18,6 +18,19 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.6.0", title: "Die neue PowerBot-Zentrale", summary: "Nachvollziehen, warum PowerBot eingreift, Spieler gezielt verwalten und morgens sofort sehen, was passiert ist. Alle Daten, Zugänge und dein OpenAI-Schlüssel bleiben erhalten.", items: [
+            .init(symbol: "bubble.left.and.text.bubble.right.fill", title: "Jeder Fall mit Chatverlauf", detail: "Die betroffene Nachricht, was die anderen geschrieben haben, was PowerBot geantwortet hat – Streitpunkte farbig markiert."),
+            .init(symbol: "sparkles", title: "Warum PowerBot eingegriffen hat", detail: "Zu jedem Eingriff eine kurze Begründung der KI, die Schwere des Streits und alle Beteiligten mit einem Tipp zum Profil."),
+            .init(symbol: "person.2.badge.gearshape.fill", title: "Spieler einzeln verwalten", detail: "PowerBot-Akte je Spieler mit Verstoßzähler, Chatpause setzen oder aufheben und Zähler zurücksetzen."),
+            .init(symbol: "slider.horizontal.3", title: "Strenge & Systemanweisungen", detail: "Gelassen, ausgewogen oder streng. Kleine Sticheleien bleiben erlaubt, schwere Streits werden eingedämmt. Systemanweisungen für Moderation und Chat-KI frei bearbeiten."),
+            .init(symbol: "flame.fill", title: "Schwere Streits eindämmen", detail: "Nur bei wirklich schweren Streits bekommt der Verursacher eine kurze Chatpause – einstellbar und abschaltbar."),
+            .init(symbol: "clock.arrow.circlepath", title: "Spielerverlauf neu", detail: "Chat, Flüstern, Aktionen, Kämpfe und Items in einer Zeitleiste – mit Suche, Filtern, Zeitraum, relativen Zeiten und markierten Nachrichten."),
+            .init(symbol: "shippingbox.fill", title: "Items im Blick", detail: "Abgelegte, aufgehobene und weitergegebene Items sowie Tode mit Ort und Uhrzeit im Verlauf."),
+            .init(symbol: "sun.horizon.fill", title: "Rückblick beim Öffnen", detail: "Neue Spieler, Eingriffe von PowerBot, Tickets, Reports und Serverprobleme seit deinem letzten Besuch – mit Glocke für Benachrichtigungen. Einstellbar."),
+            .init(symbol: "square.stack.3d.up.fill", title: "Kurzbefehle & Startseite", detail: "PowerBot, KI-Assistent und Rückblick direkt auf der Startseite und als iOS-Kurzbefehl für den Home-Bildschirm."),
+            .init(symbol: "rectangle.portrait.and.arrow.right", title: "Geräte sicher abmelden", detail: "Abmelden per Wischen bleibt sichtbar und stürzt nicht mehr ab. Die Bestätigung erscheint zuverlässig."),
+            .init(symbol: "rectangle.3.group.fill", title: "Aufgeräumt", detail: "Werkzeuge nach Aufgaben sortiert, Moderation an einem Ort und eine übersichtlichere Startseite.")
+        ]),
         WhatsNewRelease(version: "5.5.0", title: "Moderation & Übersicht", summary: "Chat, Admin-Aktionen, Reports und Bark an den passenden Stellen.", items: [
             .init(symbol: "text.bubble.fill", title: "Chatverlauf pro Spieler", detail: "Chat und berechtigte Flüsternachrichten mit Absender, Empfänger und Uhrzeit."),
             .init(symbol: "shield.lefthalf.filled", title: "Minecraft-Adminaktionen", detail: "Finde echte Minecraft-Admins und filtere ihre Aktionen."),

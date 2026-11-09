@@ -1,5 +1,29 @@
 [
   {
+    "version": "10.13.0",
+    "app": "5.6.0",
+    "title": "PowerBot-Zentrale & Spielerverlauf",
+    "items": [
+      {
+        "title": "Fälle mit Chatverlauf",
+        "icon": "shieldCheck",
+        "text": "Jeder PowerBot-Fall speichert die betroffene Nachricht, die Begründung, die Bot-Antwort und den markierten Chatverlauf."
+      },
+      {
+        "title": "Strenge & Systemanweisungen",
+        "icon": "chat",
+        "text": "Gelassen, ausgewogen oder streng: kleine Sticheleien bleiben erlaubt, schwere Streits werden eingedämmt."
+      },
+      {
+        "title": "Spielerverlauf & Rückblick",
+        "icon": "bell",
+        "text": "Chat, Flüstern, Aktionen, Kämpfe und Items in einer Zeitleiste und ein Rückblick seit dem letzten Besuch."
+      }
+    ],
+    "date": "2026-11-09",
+    "intro": "Nachvollziehbare PowerBot-Entscheidungen, Spielerverwaltung und ein neuer Spielerverlauf."
+  },
+  {
     "version": "10.12.0",
     "app": "5.5.0",
     "title": "Moderation & Übersicht",

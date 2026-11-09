@@ -1231,3 +1231,11 @@ powerbot:
   staff-device-context: true
   critical-alerts: false
   guidelines: ''
+  # 10.13.0: relaxed, balanced or strict. Balanced lets small disagreements pass and acts on real, strong disputes.
+  strictness: balanced
+  # Short chat pause (minutes) for the player driving a severe dispute. Disable with conflict-actions: false.
+  conflict-actions: true
+  conflict-mute-minutes: 5
+  # Leave empty to use the built-in system prompts; the app and web panel can edit them.
+  system-prompt: ''
+  assistant-prompt: ''

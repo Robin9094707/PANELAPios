@@ -44,9 +44,9 @@ struct SuitePowerBotKeywordsView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }.buttonStyle(.plain).disabled(busy || loading)
                     .swipeActions {
-                        Button(role: .destructive) { deletion = draft } label: {
+                        Button { deletion = draft } label: {
                             Label("Löschen", systemImage: "trash")
-                        }.disabled(busy || loading)
+                        }.tint(.red).disabled(busy || loading)
                     }
                 }
             } header: {

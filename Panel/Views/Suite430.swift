@@ -506,7 +506,7 @@ struct SuiteAccessLockPlayerView: View {
                 if !rank["prefix"].string.isEmpty || !rank["suffix"].string.isEmpty { SuiteMinecraftPreview(prefix: rank["prefix"].string, name: who, suffix: rank["suffix"].string) }
                 ForEach(rank["groups"].array, id: \.["key"].string) { group in
                     SuiteRankGroupRow(group: group, primary: rank["primary"].string)
-                        .swipeActions { Button("Entfernen", role: .destructive) { ungroup(group) }.disabled(!canEditRank) }
+                        .swipeActions { Button("Entfernen") { ungroup(group) }.tint(.red).disabled(!canEditRank) }
                 }
                 Menu {
                     ForEach(availableGroups, id: \.["name"].string) { group in
