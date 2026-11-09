@@ -46,6 +46,9 @@ import Combine
         setTools(selected, for: connection)
     }
     func setTools(_ tools: [SuiteTool], for id: UUID) { update(id, "tools", .array(tools.map { .string($0.rawValue) })) }
+    /// 5.8.0: Schnellzentrale tiles (synced with the web panel through the same account preferences).
+    func actions(for id: UUID) -> [JSON] { values[id]?["actions"]?.array ?? [] }
+    func setActions(_ actions: [JSON], for id: UUID) { update(id, "actions", .array(Array(actions.prefix(24)))) }
     func hide(_ id: UUID, _ hidden: Bool) { update(id, "hidden", .bool(hidden)) }
     func setCompact(_ id: UUID, _ compact: Bool) { update(id, "compact", .bool(compact)) }
     func rename(_ id: UUID, _ name: String) { update(id, "name", .string(String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)))) }

@@ -645,6 +645,18 @@ final class PowerBot implements AutoCloseable {
             .map(row -> visible(row, whispers, false)).toList();
     }
 
+    /** 10.15.0: recent decisions for the AI assistant, filtered by time window and an optional name or keyword. */
+    synchronized List<Map<String, Object>> assistantRows(String query, long from, long to, boolean whispers) {
+        var list = new ArrayList<>(entries.values());
+        Collections.reverse(list);
+        return list.stream().filter(row -> row.at >= from && row.at <= to).filter(row -> matches(row, query)).limit(25).map(row -> {
+            var view = visible(row, whispers, false);
+            view.remove("participants");
+            view.put("kindLabel", row.kind);
+            return view;
+        }).toList();
+    }
+
     /** Counts for the morning briefing. */
     synchronized Map<String, Object> briefing(long since) {
         var recent = entries.values().stream().filter(row -> row.at > since).toList();

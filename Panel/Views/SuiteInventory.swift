@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 // MARK: - Minecraft look
@@ -49,6 +50,10 @@ struct MinecraftSlot: View {
                     if let icon { Image(uiImage: icon).resizable().interpolation(.none).scaledToFit() }
                     else { Text(item["name"].string.prefix(2).uppercased()).font(.system(size: 10, weight: .heavy, design: .monospaced)).foregroundStyle(.white) }
                 }.padding(4).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay { if item["enchanted"].bool { MinecraftGlint() } }
+                if item["maxDurability"].int > 0 && item["durability"].int < item["maxDurability"].int {
+                    MinecraftDurability(value: item["durability"].double / max(1, item["maxDurability"].double))
+                }
                 if item["amount"].int > 1 {
                     Text(item["amount"].string).font(.system(size: 11, weight: .heavy, design: .monospaced)).foregroundStyle(.white)
                         .shadow(color: Color(white: 0.24), radius: 0, x: 1, y: 1).padding(.trailing, 2).padding(.bottom, 1)
@@ -59,6 +64,31 @@ struct MinecraftSlot: View {
             if selected { Rectangle().fill(Color.white.opacity(0.35)); Rectangle().strokeBorder(Color.cyan, lineWidth: 2) }
         }
         .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+/// Purple shimmer over enchanted items, like the enchantment glint in game.
+struct MinecraftGlint: View {
+    @State private var phase = false
+    var body: some View {
+        LinearGradient(colors: [.clear, Color(red: 0.75, green: 0.45, blue: 1).opacity(0.55), .clear], startPoint: phase ? .bottomLeading : .topLeading, endPoint: phase ? .topTrailing : .bottomTrailing)
+            .blendMode(.plusLighter).allowsHitTesting(false)
+            .onAppear { if !UIAccessibility.isReduceMotionEnabled { withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) { phase = true } } }
+    }
+}
+
+/// Green-to-red durability bar at the bottom of a slot.
+struct MinecraftDurability: View {
+    let value: Double
+    var body: some View {
+        GeometryReader { geo in
+            VStack { Spacer()
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(.black).frame(height: 2)
+                    Rectangle().fill(Color(hue: 0.33 * max(0, min(1, value)), saturation: 1, brightness: 1)).frame(width: geo.size.width * 0.8 * max(0, min(1, value)), height: 2)
+                }.frame(width: geo.size.width * 0.8).padding(.bottom, geo.size.height * 0.1)
+            }.frame(maxWidth: .infinity)
+        }.allowsHitTesting(false)
     }
 }
 
@@ -74,338 +104,6 @@ enum SuiteItemIcons {
             custom = data["custom"].bool; status = data["status"].string
         }
         return (result, custom, status)
-    }
-}
-
-// MARK: - Live inventory
-
-struct SuiteVisualInventoryView: View {
-    let suite: SuiteAPI
-    let player: String
-    var offline = false
-    @State private var items: [Int: JSON] = [:]
-    @State private var icons: [String: UIImage] = [:]
-    @State private var requestedIcons: Set<String> = []
-    @State private var revision = ""
-    @State private var textures: String?
-    @State private var name = ""
-    @State private var status = "Inventar wird geladen …"
-    @State private var packStatus = ""
-    @State private var canEdit = false
-    @State private var canTransfer = false
-    @State private var canPack = false
-    @State private var customPack = false
-    @State private var selected: Int?
-    @State private var swapping = false
-    @State private var transfer: SuiteItemTransfer?
-    @State private var busy = false
-    @State private var refreshing = false
-    @State private var reset = false
-    @State private var importing = false
-    @State private var error: String?
-    private let nine = Array(repeating: GridItem(.flexible(), spacing: 2), count: 9)
-
-    private static let armorSymbols: [Int: String] = [39: "shield.lefthalf.filled", 38: "tshirt", 37: "figure.walk", 36: "shoe"]
-    private var panelTitle: String { name.isEmpty ? "Inventar" : "Inventar von " + name }
-    private var statusSymbol: String { swapping ? "arrow.left.arrow.right" : "square.grid.3x3" }
-
-    private var playerPanel: some View {
-        MinecraftPanel(title: panelTitle) {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(spacing: 2) {
-                    ForEach([39, 38, 37, 36], id: \.self) { index in slot(index, placeholder: Self.armorSymbols[index]) }
-                }.frame(width: 44)
-                VStack(spacing: 6) {
-                    Image(systemName: "person.fill").font(.system(size: 54)).foregroundStyle(Color(white: 0.35)).frame(maxWidth: .infinity, minHeight: 120)
-                        .background(Color.black.opacity(0.85)).overlay { MinecraftBevel(light: Color(white: 0.33), dark: .white) }
-                    HStack { Spacer(); slot(40, placeholder: "shield").frame(width: 44) }
-                }
-            }
-            slotGrid(9..<36).padding(.top, 6)
-            slotGrid(0..<9).padding(.top, 8)
-        }
-    }
-
-    private func slotGrid(_ range: Range<Int>) -> some View {
-        LazyVGrid(columns: nine, spacing: 2) { ForEach(range, id: \.self) { index in slot(index) } }
-    }
-
-    @ViewBuilder private var extras: some View {
-        if canTransfer && suite.features.contains("item-locker-v1") {
-            NavigationLink { SuiteItemLockerView(suite: suite) } label: {
-                Label("Einbehaltungsablage öffnen", systemImage: "archivebox.fill").frame(maxWidth: .infinity, alignment: .leading).card()
-            }.buttonStyle(.plain)
-        }
-        if !packStatus.isEmpty || canPack {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Ressourcenpaket", systemImage: "paintbrush.pointed.fill").font(.headline)
-                Text(packStatus).font(.footnote).foregroundStyle(.secondary)
-                if canPack {
-                    HStack {
-                        Button("Java-ZIP importieren") { importing = true }.disabled(busy)
-                        if customPack { Button("Vanilla verwenden", role: .destructive) { reset = true }.disabled(busy) }
-                    }.buttonStyle(.bordered)
-                }
-            }.frame(maxWidth: .infinity, alignment: .leading).card()
-        }
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Label(status, systemImage: statusSymbol).font(.callout).foregroundStyle(.secondary)
-                playerPanel
-                MinecraftPanel(title: "Endertruhe") { slotGrid(41..<68) }
-                extras
-            }.padding(16).frame(maxWidth: 620).frame(maxWidth: .infinity)
-        }
-        .safeAreaInset(edge: .bottom) { if let selected, let item = items[selected] { actionBar(selected, item) } }
-        .panelScreen()
-        .navigationTitle(offline ? "Offline-Inventar" : "Live-Inventar")
-        .navigationBarTitleDisplayMode(.inline)
-        .task {
-            while !Task.isCancelled {
-                await load()
-                if offline { return }
-                do { try await Task.sleep(for: .seconds(2)) } catch { return }
-            }
-        }
-        .refreshable { await load() }
-        .sheet(item: $transfer, onDismiss: { selected = nil; Task { await load() } }) { request in
-            SuiteItemTransferSheet(suite: suite, request: request, icon: icons[request.item["material"].string])
-        }
-        .confirmationDialog("Eigenes Paket entfernen?", isPresented: $reset, titleVisibility: .visible) {
-            Button("Entfernen", role: .destructive) { Task { await changePack(nil) } }
-        }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
-            Task {
-                do { await changePack(try result.get()) }
-                catch { self.error = error.localizedDescription }
-            }
-        }
-        .errorAlert($error)
-    }
-
-    private func slot(_ index: Int, placeholder: String? = nil) -> some View {
-        let item = items[index]
-        let label: String = item.map { (row: JSON) -> String in row["name"].string + " × " + row["amount"].string } ?? "Leer"
-        return Button { tap(index) } label: {
-            MinecraftSlot(item: item, icon: item.flatMap { icons[$0["material"].string] }, selected: selected == index, placeholder: placeholder)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Slot \(index) · \(label)")
-        .contextMenu { if item != nil { Button("Name kopieren", systemImage: "doc.on.doc") { Clipboard.copy(label) } } }
-    }
-
-    private func tap(_ index: Int) {
-        guard !busy else { return }
-        if swapping, let from = selected {
-            swapping = false
-            guard from != index, from < 36 || from > 40, index < 36 || index > 40 else { status = "Ausrüstung kann nicht getauscht werden."; selected = nil; return }
-            Task { await swap(from, index) }
-            return
-        }
-        if selected == index { selected = nil; return }
-        if items[index] != nil { withAnimation(.snappy) { selected = index }; status = "Slot \(index) · " + (items[index]?["name"].string ?? "") }
-        else { selected = nil }
-    }
-
-    private func actionBar(_ index: Int, _ item: JSON) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                MinecraftSlot(item: item, icon: icons[item["material"].string]).frame(width: 44)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item["name"].string).font(.headline).lineLimit(1)
-                    Text("\(item["amount"].int)× · Slot \(index)").font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button { selected = nil; swapping = false } label: { Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary) }.buttonStyle(.plain)
-            }
-            if swapping { Label("Zielslot antippen …", systemImage: "hand.tap").font(.subheadline).foregroundStyle(Color.panelAccent) }
-            else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        if canEdit && (index < 36 || index > 40) { Button("Tauschen", systemImage: "arrow.left.arrow.right") { swapping = true } }
-                        if canTransfer && !offline {
-                            Button("An Spieler geben", systemImage: "person.fill.badge.plus") { transfer = SuiteItemTransfer(player: player, playerName: name, revision: revision, slot: index, item: item, destination: "player") }
-                            Button("In Ablage", systemImage: "archivebox") { transfer = SuiteItemTransfer(player: player, playerName: name, revision: revision, slot: index, item: item, destination: "locker") }
-                        }
-                    }.buttonStyle(.bordered)
-                }
-                if !canEdit && !canTransfer { Text("Nur Ansicht").font(.caption).foregroundStyle(.secondary) }
-            }
-        }
-        .padding(14).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 12).padding(.bottom, 6)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-
-    private func load() async {
-        guard !busy, !refreshing, transfer == nil else { return }
-        refreshing = true
-        defer { refreshing = false }
-        do {
-            let value = try await suite.request("invsee", query: ["player": player, "revision": revision, "offline": offline ? "true" : "false"], timeout: 8)
-            guard !Task.isCancelled, !busy else { return }
-            canEdit = value["editable"].bool
-            canTransfer = value["transfer"].bool
-            canPack = value["pack"].bool
-            if !value["name"].string.isEmpty { name = value["name"].string }
-            if !value["unchanged"].bool {
-                if selected != nil { status = "Inventar wurde geändert. Bitte neu auswählen." }
-                else { status = canEdit || canTransfer ? "Item antippen, um es zu tauschen, weiterzugeben oder einzubehalten." : "Nur Ansicht" }
-                selected = nil; swapping = false
-                items = Dictionary(uniqueKeysWithValues: value["slots"].array.map { ($0["slot"].int, $0) })
-                revision = value["revision"].string
-            }
-            let materials = Set(items.values.map { $0["material"].string })
-            if textures != value["textures"].string || !materials.isSubset(of: requestedIcons) {
-                let loaded = await SuiteItemIcons.load(suite, materials: materials)
-                guard !Task.isCancelled else { return }
-                icons = loaded.icons; requestedIcons = materials; textures = value["textures"].string
-                customPack = loaded.custom
-                packStatus = (customPack ? "Eigenes ZIP + " : "") + loaded.status
-            }
-        } catch {
-            if !Task.isCancelled && !RequestFailure.isCancellation(error) {
-                status = error.localizedDescription
-                items = [:]; revision = ""; selected = nil; canEdit = false; canTransfer = false
-            }
-        }
-    }
-
-    private func swap(_ from: Int, _ to: Int) async {
-        busy = true
-        do {
-            _ = try await suite.post("invsee", ["player": .string(player), "revision": .string(revision),
-                "offline": .bool(offline), "from": .number(Double(from)), "to": .number(Double(to)), "confirmed": .bool(true)])
-            Feedback.success()
-        } catch { self.error = error.localizedDescription }
-        selected = nil; busy = false
-        await load()
-    }
-
-    private func changePack(_ url: URL?) async {
-        guard !busy else { return }
-        busy = true
-        do {
-            if let url {
-                let accessing = url.startAccessingSecurityScopedResource()
-                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                let limit = 32 * 1024 * 1024
-                if let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > limit {
-                    throw PanelError(message: "Das ZIP darf maximal 32 MiB groß sein.")
-                }
-                let file = try FileHandle(forReadingFrom: url)
-                defer { try? file.close() }
-                let bytes = try file.read(upToCount: limit + 1) ?? Data()
-                guard bytes.count <= limit else { throw PanelError(message: "Das ZIP darf maximal 32 MiB groß sein.") }
-                _ = try await suite.upload("invsee/pack", query: [:], data: bytes, contentType: "application/zip", timeout: 120)
-            } else {
-                _ = try await suite.request("invsee/pack", method: "POST", query: ["mode": "reset"], body: .object(["confirmed": .bool(true)]))
-            }
-            textures = nil
-        } catch { self.error = error.localizedDescription }
-        busy = false
-        await load()
-    }
-}
-
-// MARK: - Transfer
-
-struct SuiteItemTransfer: Identifiable {
-    let id = UUID()
-    let player: String
-    let playerName: String
-    let revision: String
-    let slot: Int
-    let item: JSON
-    let destination: String
-}
-
-/// Give a stack (or part of it) to another online player or put it into the Einbehaltungsablage.
-struct SuiteItemTransferSheet: View {
-    let suite: SuiteAPI
-    let request: SuiteItemTransfer
-    let icon: UIImage?
-    @Environment(\.dismiss) private var dismiss
-    @State private var amount = 1
-    @State private var reason = ""
-    @State private var target: JSON?
-    @State private var search = ""
-    @State private var players: [JSON] = []
-    @State private var busy = false
-    @State private var error: String?
-    var locker: Bool { request.destination == "locker" }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    HStack(spacing: 12) {
-                        MinecraftSlot(item: request.item, icon: icon).frame(width: 52)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(request.item["name"].string).font(.headline)
-                            Text("Von " + (request.playerName.isEmpty ? "Spieler" : request.playerName) + " · Slot \(request.slot)").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    if request.item["amount"].int > 1 {
-                        Stepper("Menge: \(amount) von \(request.item["amount"].int)", value: $amount, in: 1...max(1, request.item["amount"].int))
-                    }
-                }
-                if !locker {
-                    Section("Zielspieler (online)") {
-                        if let target {
-                            HStack {
-                                PowerBotPlayerLabel(id: target["id"].string, name: target["name"].string)
-                                Spacer()
-                                Button("Ändern") { self.target = nil }.font(.caption)
-                            }
-                        } else {
-                            TextField("Spieler suchen", text: $search).textInputAutocapitalization(.never).autocorrectionDisabled()
-                            ForEach(players.filter { $0["id"].string != request.player }.prefix(12), id: \.["id"].string) { row in
-                                Button { target = row } label: { PowerBotPlayerLabel(id: row["id"].string, name: row["name"].string) }.buttonStyle(.plain)
-                            }
-                            if players.isEmpty { Text("Keine passenden Spieler online.").font(.caption).foregroundStyle(.secondary) }
-                        }
-                    }
-                }
-                Section {
-                    TextField(locker ? "Grund, z. B. gestohlen von Spieler B" : "Grund, z. B. Rückgabe nach Diebstahl", text: $reason, axis: .vertical).lineLimit(1...3)
-                } header: { Text("Grund") } footer: {
-                    Text(locker ? "Das Item wird sofort aus dem Inventar entfernt und sicher in der Einbehaltungsablage verwahrt – mit Herkunft, Grund und deinem Namen."
-                         : "Das Item wird sofort verschoben. Passt nicht alles, bleibt der Rest beim ursprünglichen Spieler. Beide Verläufe zeigen die Aktion.")
-                }
-            }
-            .panelScreen()
-            .navigationTitle(locker ? "In Ablage legen" : "An Spieler geben")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(locker ? "Einlagern" : "Geben") { Task { await submit() } }.disabled(busy || !locker && target == nil)
-                }
-            }
-            .onAppear { amount = max(1, request.item["amount"].int) }
-            .task(id: search) {
-                guard !locker else { return }
-                if !search.isEmpty { do { try await Task.sleep(for: .milliseconds(250)) } catch { return } }
-                players = ((try? await suite.data("players", query: ["filter": "online", "limit": "100", "q": search]))?["items"].array ?? []).filter { $0["online"].bool }
-            }
-            .errorAlert($error)
-        }
-    }
-
-    private func submit() async {
-        busy = true; defer { busy = false }
-        do {
-            var body: [String: JSON] = ["player": .string(request.player), "revision": .string(request.revision), "slot": .number(Double(request.slot)),
-                                        "amount": .number(Double(amount)), "destination": .string(request.destination), "reason": .string(reason), "confirmed": .bool(true)]
-            if let target { body["target"] = target["id"] }
-            let reply = try await suite.post("invsee/transfer", body)
-            Feedback.success()
-            _ = reply
-            dismiss()
-        } catch { self.error = error.localizedDescription }
     }
 }
 
@@ -547,10 +245,12 @@ struct SuiteLockerItemSheet: View {
                         Button("Endgültig löschen", systemImage: "trash") { deleting = true }.foregroundStyle(.red)
                     }
                     if choosing {
-                        Section("Spieler wählen (online)") {
+                        Section("Spieler wählen (online oder offline)") {
                             TextField("Spieler suchen", text: $search).textInputAutocapitalization(.never).autocorrectionDisabled()
                             ForEach(players.prefix(12), id: \.["id"].string) { player in
-                                Button { Task { await give(player["id"].string) } } label: { PowerBotPlayerLabel(id: player["id"].string, name: player["name"].string) }.buttonStyle(.plain)
+                                Button { Task { await give(player["id"].string) } } label: {
+                                    HStack { PowerBotPlayerLabel(id: player["id"].string, name: player["name"].string); Spacer(); PowerBotTag(text: player["online"].bool ? "Online" : "Offline", tint: player["online"].bool ? .green : .secondary) }
+                                }.buttonStyle(.plain)
                             }
                         }
                     }
@@ -569,7 +269,8 @@ struct SuiteLockerItemSheet: View {
             .task(id: search + String(choosing)) {
                 guard choosing else { return }
                 if !search.isEmpty { do { try await Task.sleep(for: .milliseconds(250)) } catch { return } }
-                players = ((try? await suite.data("players", query: ["filter": "online", "limit": "100", "q": search]))?["items"].array ?? []).filter { $0["online"].bool }
+                let found = (try? await suite.data("players", query: ["limit": "50", "q": search]))?["items"].array ?? []
+                players = found.sorted { a, b in a["online"].bool && !b["online"].bool }
             }
             .confirmationDialog("Item endgültig löschen?", isPresented: $deleting, titleVisibility: .visible) {
                 Button("Löschen", role: .destructive) { Task { await act(["operation": .string("delete")], close: true) } }

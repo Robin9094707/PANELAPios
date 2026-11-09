@@ -21,6 +21,7 @@ final class PowerBotHarness {
         moderationViews();
         release1013();
         release1014();
+        release1015();
 
         OfflineInventory old = new OfflineInventory(inventory());
         assert old.editable();
@@ -119,6 +120,62 @@ final class PowerBotHarness {
         try { Automations.normalize(Map.of("name", "x", "trigger", Map.of("type", "interval", "minutes", 60),
             "actions", List.of(Map.of("type", "restart", "value", "60"))), false, Set.of()); throw new AssertionError("restart without rights"); }
         catch (AppApiManager.ApiError expected) { assert expected.code == 403; }
+    }
+
+    /** 10.15.0: lossless NBT round trip and every visual slot of an offline file, including armor and offhand. */
+    private static void release1015() throws Exception {
+        java.util.function.Function<String, Map<String, NbtTree.Tag>> item = id -> {
+            Map<String, NbtTree.Tag> map = new java.util.LinkedHashMap<>();
+            map.put("id", NbtTree.Tag.of("minecraft:" + id)); map.put("count", NbtTree.Tag.of(1));
+            Map<String, NbtTree.Tag> inner = new java.util.LinkedHashMap<>();
+            inner.put("id", NbtTree.Tag.of("minecraft:diamond"));
+            inner.put("count", NbtTree.Tag.of(64));
+            Map<String, NbtTree.Tag> entry = new java.util.LinkedHashMap<>();
+            entry.put("slot", NbtTree.Tag.of(0));
+            entry.put("item", NbtTree.Tag.compound(inner));
+            List<NbtTree.Tag> stored = new java.util.ArrayList<>();
+            stored.add(NbtTree.Tag.compound(entry));
+            Map<String, NbtTree.Tag> components = new java.util.LinkedHashMap<>();
+            components.put("minecraft:container", new NbtTree.Tag(NbtTree.LIST, new NbtTree.ListTag(NbtTree.COMPOUND, stored)));
+            map.put("components", NbtTree.Tag.compound(components));
+            return map;
+        };
+        Map<String, NbtTree.Tag> root = new java.util.LinkedHashMap<>();
+        root.put("DataVersion", NbtTree.Tag.of(4600));
+        Map<String, NbtTree.Tag> first = new java.util.LinkedHashMap<>(); first.put("Slot", NbtTree.Tag.of((byte) 3)); first.putAll(item.apply("shulker_box"));
+        root.put("Inventory", new NbtTree.Tag(NbtTree.LIST, new NbtTree.ListTag(NbtTree.COMPOUND, new java.util.ArrayList<>(List.of(NbtTree.Tag.compound(first))))));
+        root.put("EnderItems", new NbtTree.Tag(NbtTree.LIST, new NbtTree.ListTag(NbtTree.END, new java.util.ArrayList<>())));
+        root.put("equipment", NbtTree.Tag.compound(new java.util.LinkedHashMap<>(Map.of("head", NbtTree.Tag.compound(item.apply("diamond_helmet"))))));
+        List<NbtTree.Tag> pos = new java.util.ArrayList<>();
+        pos.add(new NbtTree.Tag(NbtTree.DOUBLE, 1.5d));
+        pos.add(new NbtTree.Tag(NbtTree.DOUBLE, 64d));
+        pos.add(new NbtTree.Tag(NbtTree.DOUBLE, -3d));
+        root.put("Pos", new NbtTree.Tag(NbtTree.LIST, new NbtTree.ListTag(NbtTree.DOUBLE, pos)));
+        byte[] bytes = NbtTree.write(new NbtTree.Root("", root, true));
+        assert java.util.Arrays.equals(bytes, NbtTree.write(NbtTree.read(bytes))) : "round trip changed bytes";
+        assert PlayerNameMatcher.score("Miss Caitlin", "MissCaitlyn") == 100;
+        assert PlayerNameMatcher.score("misscaitlyn", "MissCaitlyn") == 100;
+        assert PlayerNameMatcher.score("alpha craft", "AlphacraftMC") >= 70;
+        assert PlayerNameMatcher.score("MisCaitlym", "MissCaitlyn") > 0;
+        assert PlayerNameMatcher.score("Bob", "MissCaitlyn") == 0;
+        var ranked = PlayerNameMatcher.rank("Miss Caitlin", List.of("MissCaitlyn", "MissKitty", "Caitlin2"), 5);
+        assert ranked.get(0).name().equals("MissCaitlyn") && PlayerNameMatcher.unique(ranked).isPresent();
+        assert PlayerNameMatcher.unique(PlayerNameMatcher.rank("Steve", List.of("Steve1", "Steve2"), 5)).isEmpty();
+        var file = new PlayerInventoryFile(bytes);
+        assert file.modern() && file.get(39) != null && file.get(39).get("id").text().equals("minecraft:diamond_helmet");
+        assert file.get(3).get("components").compound().containsKey("minecraft:container");
+        var shulker = file.get(3);
+        file.set(3, null);
+        file.set(36, shulker);
+        file.set(41, file.get(39));
+        file.set(39, null);
+        var after = new PlayerInventoryFile(file.bytes());
+        assert after.get(3) == null && after.get(39) == null;
+        assert after.get(36).get("components").compound().get("minecraft:container").list().items().size() == 1 : "shulker content lost";
+        assert after.get(41).get("id").text().equals("minecraft:diamond_helmet");
+        assert after.firstEmpty() == 0 && after.items().keySet().equals(java.util.Set.of(36, 41));
+        var reread = NbtTree.read(after.bytes()).compound();
+        assert reread.get("Pos").list().items().size() == 3 && reread.get("DataVersion").number() == 4600;
     }
 
     private static void keywords() throws Exception {

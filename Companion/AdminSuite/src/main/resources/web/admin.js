@@ -173,7 +173,7 @@
       if (nameField) name = nameField.querySelector("input");
       var pass = S.input({ type: "password", autocomplete: "new-password", placeholder: fresh ? "Mindestens 12 Zeichen" : "Leer lassen = unverändert" });
       var enabled = row ? row.enabled !== false : true, rights = {}; (row ? row.permissions : ["data.overview", "data.players", "data.profile"]).forEach(function (p) { rights[p] = true; });
-      var filter = "", permsBox = h("div", { class: "stack", style: { gap: "10px", maxHeight: "46vh", overflow: "auto" } });
+      var filter = "", view = "all", original = Object.assign({}, rights), permsBox = h("div", { class: "stack perm-box" }), summary = h("div", { class: "perm-summary small" });
       var catalog = d.catalog || [];
       var GROUPS = [["*", "Vollzugriff"], ["data.", "Lesen"], ["action.", "Aktionen"], ["ticket.", "Tickets"], ["", "Weitere"]];
       // 10.0.0: the Suite sends a plain-language group and explanation per right – sort by area instead of by prefix.
@@ -186,17 +186,26 @@
       var presetBar = (d.presets || []).length ? h("div", { class: "row wrap", style: { gap: "6px" } }, h("span", { class: "muted small", text: "Rollen-Vorlage:" }), d.presets.map(function (p) {
         return S.btn(p.title, { size: "sm", title: p.explain, disabled: (p.id === "full" && !isOwner) || (row && row.owner), onClick: function () { rights = {}; p.permissions.forEach(function (x) { rights[x] = true; }); renderPerms(); S.toast("Vorlage „" + p.title + "“ übernommen – vor dem Speichern anpassbar", "ok", p.explain); } });
       })) : null;
+      function updateSummary() {
+        var on = Object.keys(rights).filter(function (k) { return rights[k]; });
+        var added = on.filter(function (k) { return !original[k]; }).length, removed = Object.keys(original).filter(function (k) { return original[k] && !rights[k]; }).length;
+        S.clear(summary).append(h("b", { text: (rights["*"] ? "Vollzugriff" : on.length + " Rechte aktiv") }),
+          added || removed ? h("span", { class: "muted", text: " · +" + added + " / −" + removed + " gegenüber vorher" }) : h("span", { class: "muted", text: " · unverändert" }));
+      }
       function renderPerms() {
-        S.clear(permsBox);
+        S.clear(permsBox); updateSummary();
         GROUPS.forEach(function (g) {
-          var items = catalog.filter(function (c) { var id = c.id; var match = g[0].indexOf("group:") === 0 ? (c.group || "Weitere") === g[0].slice(6) : g[0] === "*" ? id === "*" : g[0] === "" ? !/^(data\.|action\.|ticket\.)/.test(id) && id !== "*" : id.indexOf(g[0]) === 0; return match && (!filter || (c.title + " " + id + " " + (c.explain || "")).toLowerCase().indexOf(filter) >= 0); });
+          var items = catalog.filter(function (c) { var id = c.id; var match = g[0].indexOf("group:") === 0 ? (c.group || "Weitere") === g[0].slice(6) : g[0] === "*" ? id === "*" : g[0] === "" ? !/^(data\.|action\.|ticket\.)/.test(id) && id !== "*" : id.indexOf(g[0]) === 0;
+            var level = c.level || "read";
+            var shown = view === "all" || view === "on" && rights[c.id] || view === level;
+            return match && shown && (!filter || (c.title + " " + id + " " + (c.explain || "")).toLowerCase().indexOf(filter) >= 0); });
           if (!items.length) return;
           var all = h("button", { type: "button", class: "btn ghost sm right", text: "Alle" });
-          all.addEventListener("click", function () { var on = !items.every(function (c) { return rights[c.id]; }); items.forEach(function (c) { if (c.id !== "*" || isOwner) rights[c.id] = on; }); renderPerms(); });
-          permsBox.appendChild(h("div", { class: "perm-group" }, h("header", {}, g[1], h("span", { class: "muted tiny", text: items.filter(function (c) { return rights[c.id]; }).length + "/" + items.length }), g[0] === "*" || g[1] === "Vollzugriff" ? null : all),
+          all.addEventListener("click", function (e) { e.preventDefault(); var on = !items.every(function (c) { return rights[c.id]; }); items.forEach(function (c) { if (c.id !== "*" || isOwner) rights[c.id] = on; }); renderPerms(); });
+          permsBox.appendChild(h("details", { class: "perm-group", open: !!filter || view !== "all" || items.some(function (c) { return rights[c.id]; }) }, h("summary", {}, g[1], h("span", { class: "muted tiny perm-count", text: items.filter(function (c) { return rights[c.id]; }).length + "/" + items.length }), g[0] === "*" || g[1] === "Vollzugriff" ? null : all),
             h("div", {}, items.map(function (c) {
               var cb = h("input", { type: "checkbox", checked: !!rights[c.id], disabled: c.id === "*" && !isOwner || row && row.owner });
-              cb.addEventListener("change", function () { rights[c.id] = cb.checked; });
+              cb.addEventListener("change", function () { rights[c.id] = cb.checked; updateSummary(); var head = cb.closest(".perm-group"); if (head) { var counter = head.querySelector(".perm-count"); if (counter) counter.textContent = items.filter(function (x) { return rights[x.id]; }).length + "/" + items.length; } });
               return h("label", { class: "perm-row" }, cb, h("div", { class: "grow" }, h("div", { class: "row", style: { gap: "6px" } }, h("span", { text: c.title }), c.level && LEVEL[c.level] && c.level !== "read" ? S.badge(LEVEL[c.level][0], LEVEL[c.level][1]) : null),
                 c.explain ? h("p", { class: "perm-explain", text: c.explain }) : null, h("small", { text: c.id })));
             }))));
@@ -207,7 +216,8 @@
       var body = h("div", { class: "stack" }, row && row.owner ? S.notice("Hauptadmin-Zugang: hat immer Vollzugriff und kann nicht deaktiviert oder gelöscht werden.", "", "crown") : null,
         h("div", { class: "grid two" }, S.field("Benutzername", nameField || name), S.field(fresh ? "Passwort" : "Neues Passwort", pass)), S.strengthMeter(pass),
         h("div", { class: "row" }, h("b", { class: "grow", text: "Zugang aktiv" }), sw),
-        h("div", { class: "row" }, h("b", { class: "grow", text: "Rechte" }), h("div", { class: "search", style: { width: "min(260px, 50%)" } }, icon("search"), S.input({ placeholder: "Filtern", onInput: function (e) { filter = e.target.value.toLowerCase(); renderPerms(); } }))),
+        h("div", { class: "row wrap" }, h("b", { class: "grow", text: "Rechte" }), h("div", { class: "search", style: { width: "min(260px, 100%)" } }, icon("search"), S.input({ placeholder: "Rechte suchen", onInput: function (e) { filter = e.target.value.toLowerCase(); renderPerms(); } }))),
+        S.segmented ? S.segmented([["all", "Alle"], ["on", "Nur aktive"], ["read", "Lesen"], ["change", "Ändern"], ["critical", "Kritisch"]], view, function (v) { view = v; renderPerms(); }) : null, summary,
         grouped ? h("p", { class: "muted small", text: "Lesen = nur ansehen. Ändern = Aktion mit Bestätigung. Kritisch = kann Zugänge, Server oder Einstellungen verändern. Tipp: mit einer Rollen-Vorlage starten und dann anpassen." }) : null, presetBar, permsBox,
         S.notice("Speichern meldet alle Geräte dieses Benutzers ab, damit neue Rechte sofort gelten.", "", "info"));
       var actions = [];

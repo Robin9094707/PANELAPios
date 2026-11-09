@@ -1,3 +1,8 @@
+## Panel 5.8.0 und Admin Suite 10.15.0
+
+Invsee für Online- und Offline-Spieler mit zweitem Spieler daneben (verschieben, stapeln, tauschen inkl. Rüstung und Nebenhand), verlustfreie Item-Daten, korrekte Texturen für Truhen, Banner und Co., eine anpassbare Schnellzentrale, eine KI mit ungefähren Spielernamen und eine reparierte Rechteverwaltung im Webpanel. SentinelBridge 1.6.0 bleibt unverändert.
+[Update-Anleitung](UPDATE-5.8.0.md)
+
 ## Panel 5.7.0 und Admin Suite 10.14.0
 
 Inventare im Minecraft-Look mit Verschieben zwischen Spielern und Einbehaltungsablage (App, Web, `/sas ablage`), Smart-Neustart nur bei wenigen Spielern, Automationen (Wenn … dann …), ein überarbeiteter KI-Chat und korrekte Uhrzeiten in KI-Antworten. SentinelBridge 1.6.0 bleibt unverändert.

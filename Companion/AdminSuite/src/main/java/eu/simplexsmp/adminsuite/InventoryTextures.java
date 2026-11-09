@@ -149,26 +149,20 @@ final class InventoryTextures implements AutoCloseable {
 
     private static ZipFile open(Path path) throws IOException { return Files.isRegularFile(path) ? new ZipFile(path.toFile()) : null; }
 
+    /** 10.15.0: resource-pack aware rendering (model chain, entity items, first animation frame, foliage tint). */
     private static String icon(ZipFile custom, ZipFile vanilla, String item) {
-        for (ZipFile source : new ZipFile[]{custom, vanilla}) {
-            if (source == null) continue;
-            for (String candidate : new String[]{item, item + "_top", item + "_front", item + "_side"}) {
-                for (String folder : List.of("item", "block")) {
-                    ZipEntry entry = source.getEntry("assets/minecraft/textures/" + folder + "/" + candidate + ".png");
-                    if (entry == null || entry.getSize() > MAX_ICON) continue;
-                    try (InputStream input = source.getInputStream(entry)) {
-                        byte[] image = input.readNBytes(MAX_ICON + 1);
-                        if (image.length < 24 || image.length > MAX_ICON) continue;
-                        ByteBuffer header = ByteBuffer.wrap(image);
-                        if (header.getLong(0) != 0x89504e470d0a1a0aL || header.getInt(12) != 0x49484452) continue;
-                        int width = header.getInt(16), height = header.getInt(20);
-                        if (width < 1 || height < 1 || width > 512 || height > 1024) continue;
-                        return Base64.getEncoder().encodeToString(image);
-                    } catch (IOException ignored) { }
-                }
+        ItemIconRenderer renderer = new ItemIconRenderer(path -> {
+            for (ZipFile source : new ZipFile[]{custom, vanilla}) {
+                if (source == null) continue;
+                ZipEntry entry = source.getEntry(path);
+                if (entry == null || entry.getSize() > 1024 * 1024) continue;
+                try (InputStream input = source.getInputStream(entry)) { return input.readNBytes(1024 * 1024); }
+                catch (IOException ignored) { }
             }
-        }
-        return "";
+            return null;
+        });
+        byte[] image = renderer.render(item);
+        return image == null || image.length > MAX_ICON * 4 ? "" : Base64.getEncoder().encodeToString(image);
     }
 
     private static void replace(Path source, Path destination) throws IOException {

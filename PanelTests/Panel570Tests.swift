@@ -31,7 +31,7 @@ import XCTest
 
     func testLockerStatusAndReleaseNotes() {
         XCTAssertEqual(SuiteItemLockerView.statusText(.object(["status": .string("returned"), "toName": .string("Alex"), "resolvedBy": .string("Robin")])), "An Alex zurückgegeben · Robin")
-        XCTAssertEqual(WhatsNew.releases.first?.version, "5.7.0")
+        XCTAssertNotNil(WhatsNew.releases.first { $0.version == "5.7.0" })
         XCTAssertTrue(WhatsNew.shouldPresent(current: "5.7.0", lastSeen: "5.6.0", existingUser: true))
     }
 }

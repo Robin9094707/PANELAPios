@@ -18,6 +18,16 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.8.0", title: "Invsee wie im Spiel", summary: "Inventare von Online- und Offline-Spielern bearbeiten, Items zwischen zwei Spielern verschieben, echte Texturen, eine eigene Schnellzentrale und eine KI, die Spieler auch bei Tippfehlern findet. Alle Daten bleiben erhalten.", items: [
+            .init(symbol: "person.2.fill", title: "Zwei Spieler nebeneinander", detail: "Zweiten Spieler öffnen – online oder offline – und Items per Antippen verschieben, stapeln oder tauschen. Auf dem iPad nebeneinander."),
+            .init(symbol: "moon.zzz.fill", title: "Offline-Inventare voll bearbeitbar", detail: "Auch Rüstung, Nebenhand und Endertruhe. Shulker-Inhalte, Verzauberungen und alle Itemdaten werden vollständig mitgenommen."),
+            .init(symbol: "lock.shield.fill", title: "Nichts doppelt, nichts verloren", detail: "Jede Änderung prüft den aktuellen Stand, sichert die Spielerdatei und macht bei einem Fehler alles rückgängig. Die Ansicht aktualisiert sich von selbst."),
+            .init(symbol: "photo.fill", title: "Echte Texturen", detail: "Truhen, Banner, Betten, Köpfe, Schilde, Treppen und animierte Blöcke werden wie im Spiel angezeigt – auch mit eigenem Ressourcenpaket."),
+            .init(symbol: "info.circle.fill", title: "Item-Details", detail: "Gedrückt halten zeigt Verzauberungen, Haltbarkeit, Beschreibung und den Inhalt von Shulkerkisten."),
+            .init(symbol: "bolt.circle.fill", title: "Schnellzentrale", detail: "Eigene Kacheln für Neustart, Wartung, Chat, Ankündigungen, Automationen und Werkzeuge – einzeln anpassbar, auch im Webpanel."),
+            .init(symbol: "sparkles", title: "Schlauere KI", detail: "Findet Spieler auch bei anderer Schreibweise („Miss Caitlin“ → MissCaitlyn), fasst Verhalten und letzte Aktionen mit Uhrzeit zusammen und antwortet übersichtlicher."),
+            .init(symbol: "person.badge.key.fill", title: "Rechteverwaltung repariert", detail: "Viele Einzelrechte lassen sich wieder speichern; im Webpanel mit Filtern, Gruppen und Änderungsübersicht.")
+        ]),
         WhatsNewRelease(version: "5.7.0", title: "Inventare, Ablage & Automationen", summary: "Items zwischen Spielern verschieben, Gestohlenes sicher einbehalten, Neustarts nur bei leerem Server und eigene Wenn-dann-Regeln. Dazu ein schönerer KI-Chat. Alle Daten bleiben erhalten.", items: [
             .init(symbol: "square.grid.3x3.fill", title: "Inventar wie im Spiel", detail: "Live-Inventar und Endertruhe im echten Minecraft-Look mit Rüstung, Nebenhand und Hotbar – in App und Webpanel."),
             .init(symbol: "arrow.left.arrow.right", title: "Items verschieben", detail: "Ein Item antippen und an einen anderen Spieler geben – zum Beispiel Diebesgut von Spieler A zurück zu Spieler B. Menge und Grund wählbar."),

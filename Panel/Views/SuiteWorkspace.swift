@@ -111,6 +111,7 @@ struct SuiteToolDestination: View {
             case .locker: SuiteItemLockerView(suite: suite)
             case .smartRestart: SuiteSmartRestartView(suite: suite)
             case .automations: SuiteAutomationsView(suite: suite)
+            case .quickCenter: SuiteQuickCenterEditor(record: suite.connection)
             case .serverEvents: SuiteServerEventsView(suite: suite)
             case .assistant: SuiteAIAssistantView(suite: suite, panel: panel, server: server)
             case .diagnostics: SuiteDiagnosticsView(suite: suite)

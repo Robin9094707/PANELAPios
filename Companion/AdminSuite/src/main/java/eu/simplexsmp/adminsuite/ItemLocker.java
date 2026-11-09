@@ -125,6 +125,20 @@ final class ItemLocker implements Listener {
         return moved;
     }
 
+    /** 10.15.0: the stored stack of a held entry (for handing it to an offline player). */
+    ItemStack peek(String id) { return ItemStack.deserializeBytes(Base64.getDecoder().decode(held(id).data)); }
+
+    /** Marks a held entry as handed out after the caller stored the item in an offline player file. */
+    void markGiven(String id, UUID target, String targetName, String actor) {
+        Entry entry = held(id);
+        boolean owner = target.toString().equals(entry.fromId);
+        var next = new LinkedHashMap<>(entries);
+        next.put(id, entry.resolve(owner ? "returned" : "given", PowerBot.clean(actor, 64), targetName, 0, ""));
+        persist(next);
+        plugin.suiteItemHistory(target, "Aus Einbehaltungsablage erhalten (" + PowerBot.clean(actor, 64) + ", offline): " + entry.amount + "× " + entry.name);
+        plugin.suiteAudit(actor, "Einbehaltungsablage · ausgegeben", entry.amount + "× " + entry.name + " → " + targetName + " (offline)");
+    }
+
     void delete(String id, String actor) {
         Entry entry = held(id);
         var next = new LinkedHashMap<>(entries);
