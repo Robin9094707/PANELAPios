@@ -3,12 +3,13 @@ import Combine
 
 /// One directory for the home screen, Admin tab, direct accounts and Shortcuts.
 enum SuiteTool: String, CaseIterable, Identifiable, Codable {
-    case overview, advertising, players, tickets, events, adminLog, histories, staffChat, tasks
-    case assistant, diagnostics, lagMap, spark, crashes, console, operations, worldTrim, serverEvents, powerBot
+    case overview, briefing, powerBot, players, advertising, tickets, events, adminLog, histories, staffChat, tasks
+    case assistant, diagnostics, lagMap, spark, crashes, console, operations, worldTrim, serverEvents
     case discordStatus, scoreboard, discord, luckperms, lands, locks, commands
     case management, team, appSettings, settings, access, account, bark, quiet, memory, links, crossplay, functions
     case reports, bans, vpn, alts, ultrabans, statistics, menu, ticketSettings, online, dependencies
     case chat, restart, pairing
+    case locker, smartRestart, automations
     var id: String { rawValue }
     var title: String { metadata.0 }
     var symbol: String { metadata.1 }
@@ -18,12 +19,13 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
     private var metadata: (String, String, String, String, String) {
         switch self {
         case .overview: return ("Admin Suite", "shield.lefthalf.filled", "Übersicht", "", "")
+        case .briefing: return ("Rückblick", "sun.horizon.fill", "Übersicht & Verläufe", "", "")
         case .advertising: return ("Werbe-Zentrale", "megaphone.fill", "Kommunikation & Studio", "data.discord-ads", "ad-hub-v1")
         case .players: return ("Spieler", "person.2.fill", "Spieler & Rechte", "data.players", "")
         case .tickets: return ("Tickets", "ticket.fill", "Kommunikation & Studio", "data.tickets", "tickets-v1")
-        case .events: return ("Ereignisse", "bell.badge.fill", "Verläufe", "data.events", "events-v1")
-        case .adminLog: return ("Admin-Log", "list.bullet.clipboard.fill", "Verläufe", "data.admin-log", "admin-log-v1")
-        case .histories: return ("Verläufe verwalten", "archivebox.fill", "Verläufe", "", "history-management-v1")
+        case .events: return ("Ereignisse", "bell.badge.fill", "Übersicht & Verläufe", "data.events", "events-v1")
+        case .adminLog: return ("Admin-Log", "list.bullet.clipboard.fill", "Übersicht & Verläufe", "data.admin-log", "admin-log-v1")
+        case .histories: return ("Verläufe verwalten", "archivebox.fill", "Übersicht & Verläufe", "", "history-management-v1")
         case .staffChat: return ("Staff-Chat", "bubble.left.and.text.bubble.right.fill", "Kommunikation & Studio", "data.staff-chat", "staff-chat-v1")
         case .tasks: return ("Staff-Aufgaben", "checklist", "Kommunikation & Studio", "data.staff-tasks", "staff-tasks-v1")
         case .assistant: return ("KI-Assistent", "sparkles", "Server & Diagnose", "", "")
@@ -32,7 +34,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .spark: return ("Spark-Profiler", "flame.fill", "Server & Diagnose", "data.diagnostics", "spark-v1")
         case .crashes: return ("Abstürze", "bolt.trianglebadge.exclamationmark.fill", "Server & Diagnose", "data.diagnostics", "crash-manager-v1")
         case .console: return ("Diagnose-Konsole", "terminal.fill", "Server & Diagnose", "data.diagnostics", "diagnostics-v1")
-        case .powerBot: return ("PowerBot-Fallzentrale", "shield.lefthalf.filled", "Verläufe", "data.powerbot", "powerbot-v1")
+        case .powerBot: return ("PowerBot-Zentrale", "shield.lefthalf.filled", "Moderation & PowerBot", "data.powerbot", "powerbot-v1")
         case .serverEvents: return ("Event-Modus & Lockdown", "calendar.badge.clock", "Server & Diagnose", "data.server-events", "server-events-v1")
         case .operations: return ("Serverbetrieb & Neustart", "arrow.clockwise.circle.fill", "Server & Diagnose", "data.overview", "overview")
         case .worldTrim: return ("Welten-Trimmer", "scissors", "Server & Diagnose", "data.world-trim", "world-trim-v1")
@@ -55,11 +57,11 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .links: return ("Discord-Verknüpfungen", "link", "Einstellungen & Zugänge", "data.links", "links-v1")
         case .crossplay: return ("Geyser & Floodgate", "gamecontroller.fill", "Server & Diagnose", "data.crossplay", "crossplay-v1")
         case .functions: return ("Alle Funktionen", "square.grid.2x2.fill", "Weitere Funktionen", "", "")
-        case .reports: return ("Reports", "flag.fill", "Spieler & Rechte", "data.reports", "moderation-center-v1")
-        case .bans: return ("Banns & Freigaben", "hand.raised.fill", "Spieler & Rechte", "data.bans", "moderation-center-v1")
-        case .vpn: return ("VPN-Schutz", "network", "Spieler & Rechte", "data.vpn-whitelist", "moderation-center-v1")
-        case .alts: return ("Alt-Accounts", "person.2.badge.key.fill", "Spieler & Rechte", "data.alt-dashboard", "")
-        case .ultrabans: return ("Ultrabanns", "shield.slash.fill", "Spieler & Rechte", "data.ultrabans", "")
+        case .reports: return ("Reports", "flag.fill", "Moderation & PowerBot", "data.reports", "moderation-center-v1")
+        case .bans: return ("Banns & Freigaben", "hand.raised.fill", "Moderation & PowerBot", "data.bans", "moderation-center-v1")
+        case .vpn: return ("VPN-Schutz", "network", "Moderation & PowerBot", "data.vpn-whitelist", "moderation-center-v1")
+        case .alts: return ("Alt-Accounts", "person.2.badge.key.fill", "Moderation & PowerBot", "data.alt-dashboard", "")
+        case .ultrabans: return ("Ultrabanns", "shield.slash.fill", "Moderation & PowerBot", "data.ultrabans", "")
         case .statistics: return ("Statistiken", "chart.bar.xaxis", "Server & Diagnose", "data.statistics", "statistics")
         case .menu: return ("Java-/Bedrock-Adminmenüs", "gamecontroller.fill", "Weitere Funktionen", "action.menu.action", "")
         case .ticketSettings: return ("Ticket-Einstellungen", "ticket.fill", "Einstellungen & Zugänge", "data.ticket-settings", "tickets-v1")
@@ -68,10 +70,23 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .chat: return ("Serverchat", "bubble.left.and.bubble.right.fill", "Kommunikation & Studio", "data.chat", "public-chat-v1")
         case .restart: return ("Neustart planen", "arrow.clockwise.circle.fill", "Server & Diagnose", "data.operations", "restart-v1")
         case .pairing: return ("Kopplung & Verbindung", "key.horizontal.fill", "Einstellungen & Zugänge", "", "")
+        case .locker: return ("Einbehaltungsablage", "archivebox.fill", "Moderation & PowerBot", "data.inventory", "item-locker-v1")
+        case .smartRestart: return ("Smart-Neustart", "clock.arrow.2.circlepath", "Server & Diagnose", "data.operations", "smart-restart-v1")
+        case .automations: return ("Automationen", "wand.and.stars", "Server & Diagnose", "data.server-events", "automations-v1")
         }
     }
     func matches(_ query: String) -> Bool {
-        SuiteSearch.matches(query, in: title + " " + group + " " + rawValue + (self == .advertising ? " Werbung werben kopieren Anzeige Shortcut Kurzbefehle" : ""))
+        let extra: String
+        switch self {
+        case .advertising: extra = " Werbung werben kopieren Anzeige Shortcut Kurzbefehle"
+        case .powerBot: extra = " AutoMod Moderation Streit Mute Chatpause Fälle Systemanweisung KI"
+        case .briefing: extra = " Übersicht Nacht Zusammenfassung letzter Besuch Neuigkeiten"
+        case .locker: extra = " Items einbehalten gestohlen Diebstahl zurückgeben Inventar Ablage"
+        case .smartRestart: extra = " Neustart automatisch Intervall Spieler online Countdown"
+        case .automations: extra = " Wenn dann Regeln Ingame-Tag Zeitplan Auslöser Aktionen planen"
+        default: extra = ""
+        }
+        return SuiteSearch.matches(query, in: title + " " + group + " " + rawValue + extra)
     }
 }
 

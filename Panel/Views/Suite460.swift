@@ -839,10 +839,19 @@ struct SuitePlayerDossierView: View {
                             Label("Befehle", systemImage: "terminal")
                         }
                     }
+                    if suite.can("data.powerbot") && suite.features.contains("powerbot-cases-v2") {
+                        NavigationLink { SuitePowerBotPlayerView(suite: suite, player: data["player"].string, name: data["name"].string) } label: {
+                            Label("PowerBot-Akte", systemImage: "shield.lefthalf.filled")
+                        }
+                    }
                 }
             }
+            if search.isEmpty && data != .null && timeline && data["chatVisible"].bool {
+                // 5.6.0: chat, whispers, actions, combat, items and PowerBot decisions in one history.
+                SuitePlayerTimelinePreview(suite: suite, player: data["player"].string, name: data["name"].string)
+            }
             if search.isEmpty { SuiteSavedNBTSection(suite: suite, player: player) }
-            if data["chatVisible"].bool {
+            if data["chatVisible"].bool && (!timeline || !search.isEmpty) {
                 Section("Chatverlauf · neueste zuerst") {
                     if data["whispersVisible"].bool {
                         Picker("Nachrichten", selection: $chatKind) {
@@ -855,7 +864,7 @@ struct SuitePlayerDossierView: View {
                     ForEach(chatRows, id: \.["id"].string) { row in chatRow(row) }
                 }
             }
-            ForEach(data["sections"].array, id: \.["id"].string) { section in SuiteDossierSection(section: section, search: search) }
+            ForEach(data["sections"].array.filter { !timeline || $0["id"].string != "recent" }, id: \.["id"].string) { section in SuiteDossierSection(section: section, search: search) }
         }
         .panelScreen()
         .navigationTitle(data["name"].string.isEmpty ? "Steckbrief" : data["name"].string)
@@ -864,6 +873,7 @@ struct SuitePlayerDossierView: View {
         .refreshable { await load() }
         .errorAlert($error)
     }
+    private var timeline: Bool { suite.features.contains("player-timeline-v1") }
     private var chatRows: [JSON] {
         data["chatTimeline"].array.filter { row in
             (chatKind.isEmpty || row["kind"].string == chatKind) &&

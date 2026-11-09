@@ -386,7 +386,7 @@ struct SuitePlayerRankSection: View {
         if !rank["suffix"].string.isEmpty { LabeledContent("Suffix") { Text(SuiteMinecraftText.attributed(rank["suffix"].string)).font(.footnote.monospaced()) } }
         ForEach(rank["groups"].array, id: \.["key"].string) { group in
             SuiteRankGroupRow(group: group, primary: rank["primary"].string)
-                .swipeActions { Button("Entfernen", role: .destructive) { remove(group["group"].string) }.disabled(!canEdit) }
+                .swipeActions { Button("Entfernen") { remove(group["group"].string) }.tint(.red).disabled(!canEdit) }
         }
         Menu {
             ForEach(available, id: \.["name"].string) { group in

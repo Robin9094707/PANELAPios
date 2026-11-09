@@ -27,7 +27,7 @@ struct SuiteAIAssistantView: View {
     @State private var pending = ""
     @State private var showChats = false
     @State private var showOwner = false
-    @State private var deleting = false
+    @State private var revealJob = ""
     @State private var chatTitle = ""
     @State private var keepDays = 0
     @State private var draft: Data?
@@ -119,24 +119,39 @@ struct SuiteAIAssistantView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    Text(chatName.isEmpty ? "Privater KI-Chat" : chatName).font(.headline)
-                    if status == .null { ProgressView("KI-Zugang prüfen …") }
-                    else if !status["available"].bool { Label("KI momentan nicht verfügbar", systemImage: "sparkles.slash").foregroundStyle(.secondary) }
-                    else { Text(owner ? "Privat · ohne Tageslimit" : "Privat · \(status["used"].int) / \(status["limit"].int) heute").font(.caption).foregroundStyle(.secondary) }
+                    HStack(spacing: 10) {
+                        SuiteAIAvatar(size: 34)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(chatName.isEmpty ? "Privater KI-Chat" : chatName).font(.headline).lineLimit(1)
+                            if status == .null { Text("KI-Zugang prüfen …").font(.caption).foregroundStyle(.secondary) }
+                            else if !status["available"].bool { Label("KI momentan nicht verfügbar", systemImage: "sparkles.slash").font(.caption).foregroundStyle(.secondary) }
+                            else { Text(owner ? "Privat · ohne Tageslimit" : "Privat · \(status["used"].int) / \(status["limit"].int) heute").font(.caption).foregroundStyle(.secondary) }
+                        }
+                    }
                     if turns.isEmpty && pending.isEmpty {
-                        ForEach(examples, id: \.self) { example in Button(example) { input = example }.buttonStyle(.bordered).disabled(busy) }
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Wie kann ich helfen?").font(.title2.bold())
+                            Text("Frag nach Spielern, Chat, Tickets, Admin-Aktionen oder Diagnose. Schreibaktionen werden immer erst zur Freigabe vorgelegt.").font(.subheadline).foregroundStyle(.secondary)
+                            ForEach(examples, id: \.self) { example in
+                                Button { input = example } label: {
+                                    Label(example, systemImage: "sparkle").font(.subheadline).multilineTextAlignment(.leading)
+                                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                                        .background(Color.panelAccent.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+                                }.buttonStyle(.plain).disabled(busy)
+                            }
+                        }.padding(.vertical, 8).transition(.opacity)
                     }
                     ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
                         bubble(turn["question"].string, mine: true, at: turn["at"])
-                        bubble(turn["answer"].string, mine: false, at: turn["at"])
+                        bubble(turn["answer"].string, mine: false, at: turn["at"], animate: !revealJob.isEmpty && turn["job"].string == revealJob)
                         if !turn["job"].string.isEmpty && turn["job"].string != result["id"].string,
                            Double(turn["at"].int) / 1000 > Date().timeIntervalSince1970 - 1200 {
                             Button("Antwortdetails", systemImage: "list.bullet") { openResult(turn["job"].string) }
                                 .font(.caption).disabled(busy)
                         }
                     }
-                    if !pending.isEmpty { bubble(pending, mine: true, at: .null) }
-                    if busy && !pending.isEmpty { ProgressView("Die KI antwortet …").font(.callout) }
+                    if !pending.isEmpty { bubble(pending, mine: true, at: .null).transition(.move(edge: .bottom).combined(with: .opacity)) }
+                    if busy && !pending.isEmpty { SuiteTypingBubble().transition(.opacity) }
                     if result != .null { answer.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16)) }
                     Color.clear.frame(height: 1).id("assistant-bottom")
                 }
@@ -158,7 +173,12 @@ struct SuiteAIAssistantView: View {
                 ToolbarItem(placement: .topBarTrailing) { Button("Freigaben und Limits", systemImage: "checkmark.shield") { showOwner = true }.disabled(busy || recorder.recording) }
             }
         }
-        .sheet(isPresented: $showChats) { chatManager }
+        .sheet(isPresented: $showChats) {
+            SuiteAIChatManager(suite: suite, current: chatID,
+                select: { id in do { try await selectChat(id) } catch { self.error = error.localizedDescription } },
+                create: { do { try await createChat() } catch { self.error = error.localizedDescription } },
+                changed: { do { try await loadChats(); if !chatID.isEmpty { if chats.contains(where: { $0["id"].string == chatID }) { try await loadChat(chatID) } else { resetChat() } } } catch { } })
+        }
         .sheet(isPresented: $showOwner) {
             NavigationStack {
                 List { ownerControls }
@@ -173,14 +193,14 @@ struct SuiteAIAssistantView: View {
         return Text((try? AttributedString(markdown: text, options: options)) ?? AttributedString(text))
     }
 
-    private func bubble(_ text: String, mine: Bool, at: JSON) -> some View {
-        HStack(alignment: .bottom) {
-            if mine { Spacer(minLength: 40) }
+    private func bubble(_ text: String, mine: Bool, at: JSON, animate: Bool = false) -> some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            if mine { Spacer(minLength: 40) } else { SuiteAIAvatar() }
             VStack(alignment: .leading, spacing: 4) {
-                Text(mine ? "Du" : "Simplex KI").font(.caption.weight(.semibold))
+                Text(mine ? "Du" : "Simplex KI").font(.caption.weight(.semibold)).foregroundStyle(mine ? Color.primary : Color.panelAccent)
                 Group {
                     if mine { Text(text) }
-                    else { formattedAnswer(text.isEmpty ? "Keine Textantwort" : text) }
+                    else { SuiteRevealText(text: text.isEmpty ? "Keine Textantwort" : text, animate: animate) { formattedAnswer($0) } }
                 }
                 .textSelection(.enabled)
                 .environment(\.openURL, OpenURLAction { _ in .discarded })
@@ -192,8 +212,12 @@ struct SuiteAIAssistantView: View {
                     }
                 }.font(.caption2).foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(mine ? Color.panelAccent.opacity(0.22) : Color.secondary.opacity(0.13), in: RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 13).padding(.vertical, 9)
+            .background {
+                if mine { LinearGradient(colors: [Color.panelAccent.opacity(0.30), Color.panelSecondary.opacity(0.22)], startPoint: .topLeading, endPoint: .bottomTrailing) }
+                else { Color.secondary.opacity(0.12) }
+            }
+            .clipShape(UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: mine ? 18 : 6, bottomTrailingRadius: mine ? 6 : 18, topTrailingRadius: 18))
             if !mine { Spacer(minLength: 40) }
         }.frame(maxWidth: .infinity)
     }
@@ -231,47 +255,6 @@ struct SuiteAIAssistantView: View {
                 }
             }
         }.buttonStyle(.borderless).padding(.horizontal, 14).padding(.vertical, 8).background(.bar)
-    }
-
-    private var chatManager: some View {
-        NavigationStack {
-            Form {
-                Section("Deine privaten Chats") {
-                    Button("Neuer Chat", systemImage: "plus.bubble") { run { try await createChat(); showChats = false } }.disabled(busy)
-                    ForEach(chats, id: \.["id"].string) { row in
-                        Button {
-                            run { try await selectChat(row["id"].string); showChats = false }
-                        } label: {
-                            HStack { Text(row["title"].string); Spacer(); if chatID == row["id"].string { Image(systemName: "checkmark") } }
-                        }.disabled(busy)
-                    }
-                }
-                if !chatID.isEmpty {
-                    Section {
-                        TextField("Chatname", text: $chatTitle)
-                        Picker("Automatisch löschen", selection: $keepDays) {
-                            Text("Aus").tag(0)
-                            Text("Nach 1 Tag").tag(1)
-                            Text("Nach 7 Tagen").tag(7)
-                            Text("Nach 30 Tagen").tag(30)
-                        }
-                        Button("Speichern") { run { try await updateChat() } }.disabled(busy)
-                        Button("Chat löschen", role: .destructive) { deleting = true }.disabled(busy)
-                    } header: { Text("Aktiver Chat") } footer: { Text("Die Frist beginnt mit der letzten Aktivität in diesem Chat.") }
-                }
-            }
-            .navigationTitle("KI-Chats")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fertig") { showChats = false }.disabled(busy) } }
-            .confirmationDialog("Diesen Chat und offene Vorschläge löschen?", isPresented: $deleting, titleVisibility: .visible) {
-                Button("Chat löschen", role: .destructive) {
-                    let id = chatID
-                    run {
-                        _ = try await chatChange("delete", id: id)
-                        resetChat(); try await loadChats()
-                    }
-                }
-            }
-        }
     }
 
     private func speak(_ text: String) {
@@ -483,6 +466,7 @@ struct SuiteAIAssistantView: View {
             let row = try await suite.request("assistant/job", query: ["id": id], timeout: 12)
             if row["status"].string != "running" {
                 result = row
+                revealJob = row["id"].string
                 if threaded && !chatID.isEmpty { try await loadChat(chatID); try await loadChats() }
                 await refresh(); return
             }

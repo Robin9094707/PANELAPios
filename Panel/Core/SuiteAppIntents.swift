@@ -3,13 +3,16 @@ import Foundation
 
 enum SuiteShortcutTool: String, AppEnum {
     case overview, advertising, tickets, assistant, diagnostics, histories, settings, players, adminLog, staffChat, statistics, operations, reports, bans, events, tasks, chat, functions
+    case powerBot, briefing, automations, smartRestart, locker
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "Admin-Werkzeug"
     static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .overview: "Admin Suite", .advertising: "Werbe-Zentrale", .tickets: "Tickets",
         .assistant: "KI-Assistent", .diagnostics: "Diagnose", .histories: "Verläufe verwalten", .settings: "Suite-Einstellungen",
         .players: "Spieler", .adminLog: "Admin-Log", .staffChat: "Staff-Chat", .statistics: "Statistiken",
         .operations: "Serverbetrieb", .reports: "Reports", .bans: "Banns", .events: "Ereignisse",
-        .tasks: "Staff-Aufgaben", .chat: "Serverchat", .functions: "Alle Funktionen"
+        .tasks: "Staff-Aufgaben", .chat: "Serverchat", .functions: "Alle Funktionen",
+        .powerBot: "PowerBot-Zentrale", .briefing: "Rückblick",
+        .automations: "Automationen", .smartRestart: "Smart-Neustart", .locker: "Einbehaltungsablage"
     ]
 }
 
@@ -120,6 +123,30 @@ struct OpenSuiteAssistantIntent: AppIntent {
         return .result()
     }
 }
+/// 5.6.0: open the PowerBot centre (cases, players, settings) directly.
+struct OpenPowerBotIntent: AppIntent {
+    static var title: LocalizedStringResource = "PowerBot-Zentrale öffnen"
+    static var description = IntentDescription("Öffnet die PowerBot-Fälle mit Chatverlauf, Spielerverwaltung und Einstellungen.")
+    static var openAppWhenRun = true
+    @Parameter(title: "Server") var server: SuiteShortcutServer?
+    static var parameterSummary: some ParameterSummary { Summary("PowerBot-Zentrale öffnen") { \.$server } }
+    @MainActor func perform() async throws -> some IntentResult {
+        SuiteNavigationInbox.shared.request = SuiteLaunchRequest(tool: .powerBot, connection: try selectedConnection(server))
+        return .result()
+    }
+}
+/// 5.6.0: what happened since the last visit.
+struct OpenBriefingIntent: AppIntent {
+    static var title: LocalizedStringResource = "Rückblick öffnen"
+    static var description = IntentDescription("Zeigt neue Spieler, PowerBot-Eingriffe, Tickets, Reports und Serverprobleme seit deinem letzten Besuch.")
+    static var openAppWhenRun = true
+    @Parameter(title: "Server") var server: SuiteShortcutServer?
+    static var parameterSummary: some ParameterSummary { Summary("Rückblick öffnen") { \.$server } }
+    @MainActor func perform() async throws -> some IntentResult {
+        SuiteNavigationInbox.shared.request = SuiteLaunchRequest(tool: .briefing, connection: try selectedConnection(server))
+        return .result()
+    }
+}
 struct OpenAdvertisingHubIntent: AppIntent {
     static var title: LocalizedStringResource = "Werbeverwaltung öffnen"
     static var openAppWhenRun = true
@@ -146,6 +173,8 @@ struct SuiteAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: OpenSuiteAssistantIntent(), phrases: ["Öffne den KI-Assistenten in \(.applicationName)"], shortTitle: "KI-Assistent", systemImageName: "sparkles")
         AppShortcut(intent: OpenSuiteToolIntent(), phrases: ["Öffne die Verwaltung in \(.applicationName)"], shortTitle: "Admin Suite", systemImageName: "shield.lefthalf.filled")
+        AppShortcut(intent: OpenPowerBotIntent(), phrases: ["Öffne PowerBot in \(.applicationName)", "Zeige PowerBot-Fälle in \(.applicationName)"], shortTitle: "PowerBot", systemImageName: "shield.checkered")
+        AppShortcut(intent: OpenBriefingIntent(), phrases: ["Zeige den Rückblick in \(.applicationName)", "Was ist passiert in \(.applicationName)"], shortTitle: "Rückblick", systemImageName: "sun.horizon.fill")
         AppShortcut(intent: OpenAdvertisingHubIntent(), phrases: ["Öffne die Werbeverwaltung in \(.applicationName)"], shortTitle: "Werbeverwaltung", systemImageName: "megaphone.fill")
         AppShortcut(intent: PrepareAdvertisingIntent(), phrases: ["Bereite Werbung mit \(.applicationName) vor"], shortTitle: "Werbung vorbereiten", systemImageName: "doc.on.doc.fill")
     }

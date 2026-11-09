@@ -1,5 +1,53 @@
 [
   {
+    "version": "10.14.0",
+    "app": "5.7.0",
+    "title": "Inventare, Ablage & Automationen",
+    "items": [
+      {
+        "title": "Items verschieben & einbehalten",
+        "icon": "shieldCheck",
+        "text": "Inventare im Minecraft-Look, Items an andere Spieler geben und in der Einbehaltungsablage sichern – App, Web und /sas ablage."
+      },
+      {
+        "title": "Smart-Neustart & Automationen",
+        "icon": "bell",
+        "text": "Neustarts nur bei wenigen Spielern online und eigene Wenn-dann-Regeln für Ingame-Tage, Uhrzeiten und Spielerzahlen."
+      },
+      {
+        "title": "KI-Chat überarbeitet",
+        "icon": "chat",
+        "text": "Antwort-Animation, Chats durchsuchen, anpinnen und leeren. Uhrzeiten werden nicht mehr als IP ausgeblendet."
+      }
+    ],
+    "date": "2026-11-09",
+    "intro": "Items zwischen Spielern verschieben, Gestohlenes einbehalten, smarte Neustarts und Automationen."
+  },
+  {
+    "version": "10.13.0",
+    "app": "5.6.0",
+    "title": "PowerBot-Zentrale & Spielerverlauf",
+    "items": [
+      {
+        "title": "Fälle mit Chatverlauf",
+        "icon": "shieldCheck",
+        "text": "Jeder PowerBot-Fall speichert die betroffene Nachricht, die Begründung, die Bot-Antwort und den markierten Chatverlauf."
+      },
+      {
+        "title": "Strenge & Systemanweisungen",
+        "icon": "chat",
+        "text": "Gelassen, ausgewogen oder streng: kleine Sticheleien bleiben erlaubt, schwere Streits werden eingedämmt."
+      },
+      {
+        "title": "Spielerverlauf & Rückblick",
+        "icon": "bell",
+        "text": "Chat, Flüstern, Aktionen, Kämpfe und Items in einer Zeitleiste und ein Rückblick seit dem letzten Besuch."
+      }
+    ],
+    "date": "2026-11-09",
+    "intro": "Nachvollziehbare PowerBot-Entscheidungen, Spielerverwaltung und ein neuer Spielerverlauf."
+  },
+  {
     "version": "10.12.0",
     "app": "5.5.0",
     "title": "Moderation & Übersicht",

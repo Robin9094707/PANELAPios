@@ -137,7 +137,7 @@
   P.assistant = async function (param, query, alive) {
     var status = await S.api("assistant/status"); if (!alive()) return;
     var threaded = S.has("admin-assistant-chat-v1"), fromStaff = query && query.get("from") === "staff";
-    var chat = null, chats = [], pending = "", currentJob = "", draft = null, draftUrl = "", recorded = false;
+    var chat = null, chats = [], pending = "", currentJob = "", revealJob = "", draft = null, draftUrl = "", recorded = false;
     var stream = null, recorder = null, recorderTimer = null;
     var timeline = h("div", { class: "msgs", role: "log", "aria-label": "KI-Chatverlauf" });
     var chatList = h("select", { class: "input", "aria-label": "KI-Chat auswählen" });
@@ -203,14 +203,29 @@
             draw(); answer.scrollIntoView({ block: "nearest" });
           });
         } }) : null;
-        return h("div", { class: "msg" + (mine ? " mine" : "") }, h("div", { class: "bubble" },
+        var body = mine ? h("p", { text: text }) : S.prose(text || "Keine Textantwort");
+        // 10.14.0: a freshly received answer types itself in, word by word (skipped in performance mode).
+        if (!mine && job && job === revealJob && text && document.documentElement.getAttribute("data-perf") !== "lite"
+            && !(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+          var words = text.split(" "), shown = 0, live0 = h("p", { class: "reveal" }), finalBody = body;
+          body = live0; revealJob = "";
+          var step = Math.max(1, Math.ceil(words.length / 60));
+          var timer = setInterval(function () {
+            shown += step;
+            if (!alive() || shown >= words.length) { clearInterval(timer); if (live0.parentNode) live0.replaceWith(finalBody); return; }
+            live0.textContent = words.slice(0, shown).join(" ");
+            timeline.scrollTop = timeline.scrollHeight;
+          }, Math.max(12, Math.min(45, Math.round(1500 / Math.max(1, words.length / step)))));
+        }
+        return h("div", { class: "msg" + (mine ? " mine" : " ai") }, mine ? null : h("span", { class: "ai-avatar", "aria-hidden": "true" }, S.icon("sparkles")), h("div", { class: "bubble" },
           h("div", { class: "by" }, h("span", { text: mine ? "Du" : "Simplex KI" })),
-          mine ? h("p", { text: text }) : S.prose(text || "Keine Textantwort"),
+          body,
           h("div", { class: "row wrap" }, h("time", { class: "stamp", text: stamp }), extra,
             !mine && text ? S.btn("Kopieren", { size: "sm", onClick: function () { return S.copy(text, "Antwort"); } }) : null, details)));
       }
       rows.forEach(function (turn) { timeline.append(bubble(turn.question, true, turn.at), bubble(turn.answer, false, turn.at, turn.job)); });
-      if (pending) timeline.append(bubble(pending, true));
+      if (pending) timeline.append(bubble(pending, true), h("div", { class: "msg ai", role: "status", "aria-label": "Simplex KI denkt nach" },
+        h("span", { class: "ai-avatar", "aria-hidden": "true" }, S.icon("sparkles")), h("div", { class: "bubble typing" }, h("i"), h("i"), h("i"))));
       if (!rows.length && !pending) timeline.append(S.empty("sparkles", "Dein privater KI-Chat", "Stelle eine Frage oder nimm eine Sprachnachricht auf."));
       timeline.scrollTop = timeline.scrollHeight;
     }
@@ -232,6 +247,40 @@
       chat = null; result = null; currentJob = ""; pending = ""; outcomes = []; summary = "";
       if (!keepInput) { input.value = ""; discardAudio(); }
       draw(); renderTimeline();
+    }
+    /** 10.14.0: search (titles and messages), pin, rename, clear, auto-delete and delete in one dialog. */
+    function manageChats() {
+      var search = S.input({ placeholder: "Titel und Nachrichten durchsuchen", "aria-label": "Chats durchsuchen" });
+      var list = h("div", { class: "list chat-manager" }), timer = null, dlg;
+      async function refresh() {
+        var data = await S.api("assistant/chats", { query: search.value.trim() ? { q: search.value.trim() } : {}, quiet: true });
+        if (!alive()) return;
+        S.clear(list);
+        var rows = data.items || [];
+        if (!rows.length) { list.appendChild(S.empty("sparkles", "Keine Chats gefunden", "Suche nach Titel oder Inhalt.")); return; }
+        rows.forEach(function (row) {
+          async function act(operation, extra) {
+            try { await chatChange(operation, row.id, extra && extra.title || row.title, extra && "days" in extra ? extra.days : row.days); await refresh(); await loadChats();
+              if (chat && chat.id === row.id) { if (operation === "delete") resetChat(false); else await loadChat(row.id); } }
+            catch (e) { S.toast(e.message, "err"); }
+          }
+          var days = h("select", { class: "input sm", "aria-label": "Automatisch löschen" }, [[0, "Nie löschen"], [1, "1 Tag"], [7, "7 Tage"], [30, "30 Tage"]].map(function (o) {
+            return h("option", { value: o[0], selected: row.days === o[0], text: o[1] }); }));
+          days.addEventListener("change", function () { act("update", { days: Number(days.value) }); });
+          list.appendChild(h("div", { class: "item chat-row" + (chat && chat.id === row.id ? " current" : "") },
+            h("div", { class: "meta link", onClick: function () { dlg.close(); run(async function () { resetChat(false); await loadChat(row.id); }); } },
+              h("b", { text: (row.pinned ? "📌 " : "") + row.title }),
+              h("div", { class: "small muted", text: (row.match || row.preview || "") + (row.count ? " · " + row.count + " Nachrichten" : "") + " · " + S.ago(row.at) })),
+            h("div", { class: "row wrap" }, days,
+              S.btn(row.pinned ? "Lösen" : "Anpinnen", { size: "sm", onClick: function () { return act("pin"); } }),
+              S.btn("Umbenennen", { size: "sm", onClick: async function () { var name = await S.prompt("Chat umbenennen", "Name", row.title, "Speichern"); if (name !== null) await act("update", { title: name }); } }),
+              S.btn("Leeren", { size: "sm", onClick: async function () { if (await S.confirm("Verlauf leeren?", "Alle Nachrichten in „" + row.title + "“ werden entfernt. Der Chat bleibt erhalten.", "Leeren", true)) await act("clear"); } }),
+              S.btn("Löschen", { size: "sm", kind: "danger", onClick: async function () { if (await S.confirm("Chat löschen?", "„" + row.title + "“ und offene Vorschläge werden entfernt.", "Löschen", true)) await act("delete"); } }))));
+        });
+      }
+      search.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(refresh, 250); });
+      dlg = S.modal("KI-Chats verwalten", h("div", { class: "stack" }, search, list), [S.btn("Neuer Chat", { kind: "primary", icon: "plus", onClick: function () { dlg.close(); run(async function () { resetChat(false); await createChat(); }); } })], { icon: "sparkles", wide: true });
+      refresh();
     }
     async function createChat() {
       var row = await chatChange("create"); if (!alive()) return;
@@ -305,7 +354,7 @@
       for (var i = 0; i < 64 && alive(); i++) {
         var row = await S.api("assistant/job", { query: { id: job.id }, quiet: true }); if (!alive()) return;
         if (row.status !== "running") {
-          result = row; currentJob = row.id;
+          result = row; currentJob = row.id; revealJob = row.id;
           if (chat) { pending = ""; await loadChat(chat.id); await loadChats(); }
           draw(); status = await S.api("assistant/status", { quiet: true }); if (alive()) updateUsage();
           if (owner) await loadInbox();
@@ -416,10 +465,11 @@
     var availability = status.available ? null : S.notice("KI ist deaktiviert oder der OpenAI-Schlüssel fehlt.", "warn");
     var chatUI;
     if (threaded) {
-      chatControls.append(chatList, S.btn("Neuer Chat", { icon: "plus", onClick: function () {
+      S.add(chatControls, [chatList, S.btn("Neuer Chat", { icon: "plus", onClick: function () {
         if (recorder) return;
         return run(async function () { resetChat(false); await createChat(); });
-      } }), S.btn("Chat einstellen", { icon: "settings", onClick: function () {
+      } }), S.has("ai-chat-v2") ? S.btn("Chats verwalten", { icon: "list", onClick: function () { if (!recorder && !busy) manageChats(); } }) : null,
+      S.btn("Chat einstellen", { icon: "settings", onClick: function () {
         if (!chat || recorder) return;
         return run(async function () {
           var name = await S.prompt("Chatname", "Name dieses privaten Chats", chat.title, "Weiter");
@@ -439,7 +489,7 @@
           await chatChange("delete", chat.id); if (!alive()) return;
           resetChat(false); await loadChats(); if (owner) await loadInbox();
         });
-      } }));
+      } })]);
       chatUI = S.card(null, { cls: "pad-0 chat-card" }, chatControls, availability,
         h("div", { class: "chat assistant-chat" }, timeline, audioControls,
           h("div", { class: "composer" }, input, send)), h("div", { class: "assistant-chat-footer stack" }, usage, examples));

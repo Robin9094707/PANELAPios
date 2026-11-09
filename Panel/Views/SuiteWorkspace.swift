@@ -34,7 +34,7 @@ struct SuiteToolDirectoryView: View {
                         Text("Schnellzugriffe lange drücken, um Favoriten anzupassen.").font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).card()
                     }
-                    SuitePowerBotDigest(suite: suite)
+                    SuiteBriefingCard(suite: suite)
                     toolGroup("Schnellzugriffe", tools: tools.filter { favorites.split(separator: ",").contains(Substring($0.rawValue)) && allowed($0) })
                 }
                 ForEach(groups, id: \.self) { group in toolGroup(group, tools: tools.filter { $0.group == group }) }
@@ -107,6 +107,10 @@ struct SuiteToolDestination: View {
             case .staffChat: SuiteStaffChatView(suite: suite)
             case .tasks: SuiteStaffTasksView(suite: suite)
             case .powerBot: SuitePowerBotView(suite: suite)
+            case .briefing: SuiteBriefingView(suite: suite)
+            case .locker: SuiteItemLockerView(suite: suite)
+            case .smartRestart: SuiteSmartRestartView(suite: suite)
+            case .automations: SuiteAutomationsView(suite: suite)
             case .serverEvents: SuiteServerEventsView(suite: suite)
             case .assistant: SuiteAIAssistantView(suite: suite, panel: panel, server: server)
             case .diagnostics: SuiteDiagnosticsView(suite: suite)
@@ -334,7 +338,7 @@ struct SuiteShortcutHelpView: View {
         List {
             Section("Direkt vom Home-Bildschirm") {
                 Label("In Kurzbefehle einen neuen Kurzbefehl anlegen und nach „Simplex Panel“ suchen.", systemImage: "1.circle")
-                Label("„Admin-Werkzeug öffnen“ oder „Werbung vorbereiten“ wählen. Bei Werbung einen gespeicherten Werbe-Ort auswählen.", systemImage: "2.circle")
+                Label("„KI-Assistent öffnen“, „PowerBot-Zentrale öffnen“, „Rückblick öffnen“, „Admin-Werkzeug öffnen“ oder „Werbung vorbereiten“ wählen. Optional einen festen Server zuordnen.", systemImage: "2.circle")
                 Label("Im Kurzbefehl „Zum Home-Bildschirm“ wählen. Ein Tipp öffnet danach die passende Verwaltung bzw. kopiert die Werbung und öffnet den Ort.", systemImage: "3.circle")
                 ShortcutsLink()
             }

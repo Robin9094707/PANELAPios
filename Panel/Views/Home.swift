@@ -35,6 +35,7 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    if search.isEmpty { SuiteHomeBriefing() }
                     SuiteServerShortcuts(query: search)
                     if search.isEmpty { SuiteHomeEvents(refresh: iconRevision) }
                     quickMenu
@@ -199,29 +200,37 @@ struct HomeView: View {
         default: EmptyView()
         }
     }
-    /// 4.0 app menu on the start page: the most used places one tap away.
+    /// 5.6.0: the most used places one tap away; everything else sits under "Mehr".
     var quickMenu: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 10)], spacing: 10) {
             quickTile("Admin Suite", "shield.lefthalf.filled", Color.panelAccent) { suiteNavigation.request = SuiteLaunchRequest() }
+            quickTile("PowerBot", "shield.checkered", .red) { suiteNavigation.request = SuiteLaunchRequest(tool: .powerBot) }
+            quickTile("KI-Assistent", "sparkles", .purple) { suiteNavigation.request = SuiteLaunchRequest(tool: .assistant) }
+            quickTile("Rückblick", "sun.horizon.fill", .orange) { suiteNavigation.request = SuiteLaunchRequest(tool: .briefing) }
             quickTile("Werbung", "megaphone.fill", .orange) { suiteNavigation.request = SuiteLaunchRequest(tool: .advertising) }
             quickTile("Tickets", "ticket.fill", .mint) { suiteNavigation.request = SuiteLaunchRequest(tool: .tickets) }
             quickTile("Diagnose", "waveform.path.ecg", .green) { suiteNavigation.request = SuiteLaunchRequest(tool: .diagnostics) }
-            quickTile("Admin-Log", "list.bullet.clipboard.fill", .red) { suiteNavigation.request = SuiteLaunchRequest(tool: .adminLog) }
-            quickTile("Verläufe", "archivebox.fill", .indigo) { suiteNavigation.request = SuiteLaunchRequest(tool: .histories) }
             quickTile("Staff-Chat", "bubble.left.and.text.bubble.right.fill", .teal) { suiteNavigation.request = SuiteLaunchRequest(tool: .staffChat) }
-            quickTile("Kurzbefehle", "square.stack.3d.up.fill", .purple) { shortcutHelp = true }
-            quickTile("Übertragungen", "arrow.up.arrow.down.circle.fill", .blue) { transfers = true }
-            quickTile("Widgets", "square.grid.2x2.fill", .orange) { widgets = true }
-            quickTile("Setup-Link", "link.badge.plus", .indigo) { redeemSetup = true }
-            quickTile("Anpassen", "rectangle.3.group.fill", Color.panelSecondary) { editLayout = true }
-            quickTile("Einstellungen", "gearshape.fill", .gray) { settings = true }
+            quickTile("Kurzbefehle", "square.stack.3d.up.fill", .indigo) { shortcutHelp = true }
+            Menu {
+                Button("Admin-Log", systemImage: "list.bullet.clipboard.fill") { suiteNavigation.request = SuiteLaunchRequest(tool: .adminLog) }
+                Button("Verläufe verwalten", systemImage: "archivebox.fill") { suiteNavigation.request = SuiteLaunchRequest(tool: .histories) }
+                Button("Ereignisse", systemImage: "bell.badge.fill") { suiteNavigation.request = SuiteLaunchRequest(tool: .events) }
+                Divider()
+                Button("Übertragungen", systemImage: "arrow.up.arrow.down.circle.fill") { transfers = true }
+                Button("Widgets", systemImage: "square.grid.2x2.fill") { widgets = true }
+                Button("Setup-Link einlösen", systemImage: "link.badge.plus") { redeemSetup = true }
+                Button("Startseite anpassen", systemImage: "rectangle.3.group.fill") { editLayout = true }
+                Button("Einstellungen", systemImage: "gearshape.fill") { settings = true }
+            } label: { quickTileLabel("Mehr", "ellipsis.circle.fill", .gray) }.accessibilityIdentifier("homeQuickMore")
         }.accessibilityIdentifier("homeQuickMenu")
     }
+    func quickTileLabel(_ title: String, _ symbol: String, _ tint: Color) -> some View {
+        VStack(spacing: 6) { Image(systemName: symbol).font(.title3).foregroundStyle(tint); Text(title).font(.caption.weight(.semibold)).foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.8) }
+            .frame(maxWidth: .infinity, minHeight: 64).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(tint.opacity(0.18)) }
+    }
     func quickTile(_ title: String, _ symbol: String, _ tint: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 6) { Image(systemName: symbol).font(.title3).foregroundStyle(tint); Text(title).font(.caption.weight(.semibold)).foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.8) }
-                .frame(maxWidth: .infinity, minHeight: 64).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(tint.opacity(0.18)) }
-        }.buttonStyle(.plain)
+        Button(action: action) { quickTileLabel(title, symbol, tint) }.buttonStyle(.plain)
     }
     func fleetCount(_ title: String, count: Int, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) { Text(count, format: .number).font(.title.bold()).foregroundStyle(color); Text(title).font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)

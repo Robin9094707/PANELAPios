@@ -109,7 +109,7 @@ struct SuiteHistoryEntriesView: View {
                         if let date = SuitePlayerPresentation.date(row["time"] == .null ? row["at"] : row["time"]) { Text(date, format: .dateTime.day().month().hour().minute().second()).font(.caption2).foregroundStyle(.secondary) }
                     }
                 }.swipeActions {
-                    if canManage { Button("Löschen", role: .destructive) { selected = [row["id"].string]; Task { await prepare(all: false) } } }
+                    if canManage { Button("Löschen") { selected = [row["id"].string]; Task { await prepare(all: false) } }.tint(.red) }
                 }.contextMenu {
                     Button("Kopieren", systemImage: "doc.on.doc") { Clipboard.copy(SuiteHistoryText.title(row) + "\n" + SuiteHistoryText.detail(row)) }
                     if canManage { Button("Löschen …", systemImage: "trash", role: .destructive) { selected = [row["id"].string]; Task { await prepare(all: false) } } }

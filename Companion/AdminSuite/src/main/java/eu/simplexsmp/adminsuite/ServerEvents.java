@@ -117,7 +117,7 @@ final class ServerEvents {
         return text;
     }
 
-    private static String validateCommand(String input) {
+    static String validateCommand(String input) {
         String command = clean(input, 350).replaceFirst("^/", "");
         String root = command.split(" ", 2)[0].toLowerCase(Locale.ROOT);
         var registered = Bukkit.getCommandMap().getCommand(root);
@@ -191,6 +191,11 @@ final class ServerEvents {
         }
         plugin.suiteAudit(actor, "Event-Modus", operation + " " + AiAdmin.text(input, "name") + AiAdmin.text(input, "mode"));
         return Map.of("ok", true);
+    }
+
+    /** 10.14.0: event status and lockdown changes from automation rules. */
+    void automation(String operation, String value) throws IOException {
+        apply("Automation", operation.equals("status") ? Map.of("operation", "status", "name", value) : Map.of("operation", "lockdown", "mode", value), false);
     }
 
     boolean route(AppApiManager api, HttpExchange x, AppApiSecurity.Key key, String path, String method, long rev) throws Exception {

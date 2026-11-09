@@ -165,6 +165,9 @@ struct SuiteRestartView: View {
         List {
             Section("Neustartstatus") { if status["active"].bool { Label("Neustart in \(status["remaining"].int) Sekunden",systemImage:"timer");Text(status["reasonDE"].string).font(.caption);Button("Neustart abbrechen",role:.destructive){prepare(cancel:true)}.disabled(suite.scope != "full" || !suite.can("action.restart.apply") || model.busy) } else { Label("Kein Neustart geplant",systemImage:"checkmark.circle") } }
             Section("Countdown & Ankündigung") { Stepper("\(seconds) Sekunden",value:$seconds,in:1...60);TextField("Grund auf Deutsch (optional)",text:$reasonDE,axis:.vertical);TextField("Reason in English (optional)",text:$reasonEN,axis:.vertical);Text("Jeder Spieler erhält Countdown, Titel und Sounds passend zu seiner Sprache. Ohne Übersetzung wird der vorhandene Grund verwendet.").font(.caption).foregroundStyle(.secondary);Button("Neustart planen",systemImage:"arrow.clockwise.circle.fill"){prepare(cancel:false)}.disabled(status["active"].bool || suite.scope != "full" || !suite.can("action.restart.apply") || model.busy || reasonDE.count>200 || reasonEN.count>200) }
+            if suite.features.contains("smart-restart-v1") {
+                Section { NavigationLink { SuiteSmartRestartView(suite: suite) } label: { Label("Smart-Neustart: alle X Stunden bei wenigen Spielern", systemImage: "clock.arrow.2.circlepath") } }
+            }
             Section { Text("Der Server verwendet den bestehenden Paper-Neustart. Das Hosting muss den Server danach wieder starten können.").font(.caption).foregroundStyle(.secondary) }
         }.panelScreen().navigationTitle("Serverneustart").errorAlert($model.error)
             .task { while !Task.isCancelled { await load();do {try await Task.sleep(for:.seconds(2))}catch{break} } }

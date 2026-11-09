@@ -467,42 +467,96 @@ struct SuiteSessionsView: View {
     let suite: SuiteAPI
     @State private var data: JSON = .null
     @State private var renaming: (JSON, String)?
+    @State private var logout: SuiteSessionLogout?
+    @State private var busy = false
     @State private var name = ""
     @State private var error: String?
     var manage: Bool { data["manage"].bool }
-    var users: [String] { Array(Set(data["items"].array.map { $0["user"].string })).sorted { a, b in owner(a) != owner(b) ? owner(a) : a < b } }
-    func owner(_ user: String) -> Bool { data["items"].array.contains { $0["user"].string == user && $0["owner"].bool } }
+    /// Rows without an id cannot be addressed by the server and would collide as list identifiers.
+    var sessions: [JSON] { SuiteSessionList.unique(data["items"].array) }
+    var keys: [JSON] { SuiteSessionList.unique(data["keys"].array) }
+    var users: [String] { Array(Set(sessions.map { $0["user"].string })).sorted { a, b in owner(a) != owner(b) ? owner(a) : a < b } }
+    func owner(_ user: String) -> Bool { sessions.contains { $0["user"].string == user && $0["owner"].bool } }
     var body: some View {
         List {
             Section { Text(manage ? "Als Hauptadmin siehst du alle Geräte mit ungefährem Namen und IP. Gesperrte Geräte bleiben angemeldet, erhalten aber keine Daten, bis du sie freigibst." : "Unbekanntes Gerät? Sofort abmelden und dein Passwort ändern.").font(.footnote).foregroundStyle(.secondary) }
             ForEach(users, id: \.self) { user in
                 Section(user + (owner(user) ? " · Hauptadmin" : "")) {
-                    ForEach(data["items"].array.filter { $0["user"].string == user }, id: \.["id"].string) { row in SuiteSessionRow(row: row, kind: "session", manage: manage, own: row["user"].string == suite.account["username"].string) { op in await act(row, kind: "session", op) } }
+                    ForEach(sessions.filter { $0["user"].string == user }, id: \.["id"].string) { row in SuiteSessionRow(row: row, kind: "session", manage: manage, own: row["user"].string == suite.account["username"].string) { op in act(row, kind: "session", op) } }
                 }
             }
-            if manage && !data["keys"].array.isEmpty {
+            if manage && !keys.isEmpty {
                 Section("API-Schlüssel") {
-                    ForEach(data["keys"].array, id: \.["id"].string) { row in SuiteSessionRow(row: row, kind: "key", manage: manage, own: false) { op in await act(row, kind: "key", op) } }
+                    ForEach(keys, id: \.["id"].string) { row in SuiteSessionRow(row: row, kind: "key", manage: manage, own: false) { op in act(row, kind: "key", op) } }
                 }
             }
         }
         .panelScreen().navigationTitle(manage ? "Geräte & Sitzungen" : "Meine Geräte").task { await load() }.refreshable { await load() }.errorAlert($error)
+        .disabled(busy)
         .alert("Gerät umbenennen", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $name)
             Button("Abbrechen", role: .cancel) {}
             Button("Speichern") { if let target = renaming { Task { await send(target.0, kind: target.1, "rename") } } }
         }
+        // 5.6.0: the confirmation lives on the list, not inside the swiped row. A row-owned dialog vanished
+        // together with the closing swipe action and the reload afterwards could crash the list.
+        .confirmationDialog(logout?.question ?? "", isPresented: Binding(get: { logout != nil }, set: { if !$0 { logout = nil } }), titleVisibility: .visible, presenting: logout) { target in
+            Button(target.kind == "key" ? "Widerrufen" : "Abmelden", role: .destructive) { Task { await send(target.row, kind: target.kind, "logout") } }
+            Button("Abbrechen", role: .cancel) {}
+        } message: { target in
+            if target.current { Text("Das ist dieses Gerät. Danach musst du dich in der App neu anmelden.") }
+        }
     }
-    private func load() async { do { data = try await suite.request("sessions") } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } } }
-    private func act(_ row: JSON, kind: String, _ operation: String) async {
-        if operation == "rename" { name = row["label"].string; renaming = (row, kind); return }
-        await send(row, kind: kind, operation)
+    private func load() async {
+        do {
+            let next = try await suite.request("sessions")
+            withAnimation { data = next }
+        } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+    }
+    private func act(_ row: JSON, kind: String, _ operation: String) {
+        switch operation {
+        case "rename": name = row["label"].string; renaming = (row, kind)
+        case "logout": logout = SuiteSessionLogout(row: row, kind: kind, title: SuiteSessionRow.title(row, kind: kind))
+        default: Task { await send(row, kind: kind, operation) }
+        }
     }
     private func send(_ row: JSON, kind: String, _ operation: String) async {
+        guard !busy else { return }
+        busy = true; defer { busy = false }
         do {
             _ = try await suite.post("sessions/update", ["id": row["id"], "operation": .string(operation), "name": .string(name), "kind": .string(kind)])
-            Feedback.success(); await load()
+            Feedback.success()
+            // Signing out this very device ends the session; reloading would only fail with 401.
+            if operation == "logout" && kind == "session" && row["current"].bool {
+                withAnimation { data = SuiteSessionList.removing(row["id"].string, from: data) }
+                return
+            }
+            await load()
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+struct SuiteSessionLogout: Identifiable {
+    let row: JSON
+    let kind: String
+    let title: String
+    var id: String { kind + ":" + row["id"].string }
+    var current: Bool { kind == "session" && row["current"].bool }
+    var question: String { kind == "key" ? "Schlüssel „" + title + "“ widerrufen?" : "„" + title + "“ abmelden?" }
+}
+
+enum SuiteSessionList {
+    static func unique(_ rows: [JSON]) -> [JSON] {
+        var seen = Set<String>()
+        return rows.filter { row in
+            let id = row["id"].string
+            return !id.isEmpty && seen.insert(id).inserted
+        }
+    }
+    static func removing(_ id: String, from data: JSON) -> JSON {
+        var object = data.object
+        object["items"] = .array(data["items"].array.filter { $0["id"].string != id })
+        return .object(object)
     }
 }
 
@@ -511,14 +565,14 @@ struct SuiteSessionRow: View {
     let kind: String
     let manage: Bool
     let own: Bool
-    let perform: (String) async -> Void
-    @State private var confirm: String?
-    var title: String {
+    let perform: (String) -> Void
+    static func title(_ row: JSON, kind: String) -> String {
         for key in ["label", "deviceName"] where !row[key].string.isEmpty { return row[key].string }
         if row["kind"].string == "web" { return [row["browser"].string, row["os"].string].filter { !$0.isEmpty }.joined(separator: " · ") }
         if kind == "key" { return row["user"].string }
         return row["model"].string.isEmpty ? "App" : row["model"].string
     }
+    var title: String { Self.title(row, kind: kind) }
     var symbol: String { kind == "key" ? "key.horizontal.fill" : row["kind"].string == "web" ? "safari" : "iphone" }
     var online: Bool { Date().timeIntervalSince1970 * 1000 - row["seen"].double < 300_000 }
     var details: String {
@@ -542,20 +596,19 @@ struct SuiteSessionRow: View {
             Spacer(minLength: 0)
             if row["locked"].bool { Image(systemName: "lock.fill").foregroundStyle(.red).accessibilityLabel("Gesperrt") }
         }
+        .contentShape(Rectangle())
         .contextMenu { actions }
-        .swipeActions(edge: .trailing) { actions }
-        .confirmationDialog(confirm ?? "", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) {
-            Button(kind == "key" ? "Widerrufen" : "Abmelden", role: .destructive) { Task { await perform("logout") } }
-        }
+        // No `.destructive` role here: SwiftUI treats it as "row deleted" and hides the action immediately.
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) { actions }
     }
     @ViewBuilder private var actions: some View {
-        if manage || own { Button("Umbenennen", systemImage: "pencil") { Task { await perform("rename") } } }
-        if manage && !row["current"].bool {
-            Button(row["locked"].bool ? "Freigeben" : "Sperren", systemImage: row["locked"].bool ? "lock.open" : "lock") { Task { await perform(row["locked"].bool ? "unlock" : "lock") } }.tint(.orange)
-        }
         if (manage || own) && !(kind == "key" && row["current"].bool) {
-            Button(kind == "key" ? "Widerrufen" : "Abmelden", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { confirm = kind == "key" ? "Schlüssel „" + title + "“ widerrufen?" : "„" + title + "“ abmelden?" }
+            Button(kind == "key" ? "Widerrufen" : "Abmelden", systemImage: "rectangle.portrait.and.arrow.right") { perform("logout") }.tint(.red)
         }
+        if manage && !row["current"].bool {
+            Button(row["locked"].bool ? "Freigeben" : "Sperren", systemImage: row["locked"].bool ? "lock.open" : "lock") { perform(row["locked"].bool ? "unlock" : "lock") }.tint(.orange)
+        }
+        if manage || own { Button("Umbenennen", systemImage: "pencil") { perform("rename") }.tint(.blue) }
     }
 }
 

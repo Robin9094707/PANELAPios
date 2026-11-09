@@ -19,6 +19,8 @@ final class PowerBotHarness {
 
         keywords();
         moderationViews();
+        release1013();
+        release1014();
 
         OfflineInventory old = new OfflineInventory(inventory());
         assert old.editable();
@@ -55,6 +57,68 @@ final class PowerBotHarness {
         assert !AdminActivityLog.playerAdminRow(Map.of("source", "ingame", "admin", "alex", "playerAdmin", false), staff);
         for (String source : List.of("system", "console", "app", "discord"))
             assert !AdminActivityLog.playerAdminRow(Map.of("source", source, "admin", "alex", "playerAdmin", true), staff);
+    }
+
+    /** 10.13.0: unified player timeline, flag matching, severity thresholds, briefing groups and old log compatibility. */
+    private static void release1013() {
+        var flag = Map.<String, Object>of("id", "case-1", "at", PlayerTimeline.time("08.11.2026 20:00:05 x"), "kind", "warning",
+            "message", "Du bist SO schlecht!!", "reason", "Beleidigung", "detail", "Hinweis");
+        var blocked = Map.<String, Object>of("id", "case-2", "at", PlayerTimeline.time("08.11.2026 20:03:00 x"), "kind", "abuse",
+            "message", "", "reason", "", "detail", "Nachricht zurückgehalten");
+        var rows = PlayerTimeline.rows("Alex", List.of("08.11.2026 20:00:00 Alex: du bist so schlecht"),
+            List.of("08.11.2026 20:01:00 OUT → Sam [msg]: Hi"), List.of("08.11.2026 20:02:00 PowerBot · Nachricht zurückgehalten: x", "Legacy ohne Datum"),
+            List.of("08.11.2026 19:59:00 Alex traf Sam für 2,00 Schaden"), List.of("08.11.2026 20:04:00 Abgelegt: 3× diamond · world 1 / 2 / 3"),
+            List.of(flag, blocked), 50);
+        assert rows.size() == 7 : rows;
+        assert rows.get(0).get("category").equals("item") && rows.get(0).get("kind").equals("drop");
+        assert rows.get(1).get("category").equals("powerbot") && rows.get(1).get("case").equals("case-2");
+        var chat = rows.stream().filter(row -> row.get("category").equals("chat")).findFirst().orElseThrow();
+        assert Boolean.TRUE.equals(chat.get("flagged")) && chat.get("flagReason").equals("Beleidigung") && chat.get("case").equals("case-1");
+        assert rows.stream().anyMatch(row -> row.get("category").equals("action") && Boolean.TRUE.equals(row.get("flagged")));
+        assert rows.get(rows.size() - 1).get("text").equals("Legacy ohne Datum");
+        assert PlayerTimeline.rows("Alex", List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), 10).isEmpty();
+        assert PowerBot.atLeast("severe", "medium") && PowerBot.atLeast("medium", "medium") && !PowerBot.atLeast("low", "medium") && !PowerBot.atLeast("none", "low");
+        assert PowerBot.Evidence.parse(null).empty();
+        var proof = PowerBot.Evidence.parse(Map.of("message", "hi", "severity", "unknown", "context", List.of(Map.of("name", "Alex", "text", "hi", "highlight", true))));
+        assert proof.severity().isEmpty() && proof.context().size() == 1 && Boolean.TRUE.equals(proof.context().get(0).get("highlight"));
+        var summary = SuiteBriefing.summarizeEvents(List.of(Map.of("time", 10L, "type", "report", "title", "alt"),
+            Map.of("time", 200L, "type", "ticket-high", "title", "Ticket", "critical", true), Map.of("time", 300L, "type", "first-join", "title", "Neu")), 100);
+        assert summary.get("total").equals(2L) && summary.get("critical").equals(1L);
+        @SuppressWarnings("unchecked") var groups = (Map<String, Long>) summary.get("groups");
+        assert groups.get("tickets") == 1L && groups.get("joins") == 1L && !groups.containsKey("reports");
+    }
+
+    /** 10.14.0: clock times survive redaction, smart restart decisions and automation triggers. */
+    private static void release1014() {
+        assert AiAdmin.redact("Vanish um 09:36:12 Uhr bis 20:15").equals("Vanish um 09:36:12 Uhr bis 20:15");
+        assert AiAdmin.redact("IP 2001:db8::1 und fe80:0:0:0:1:2 und 10.0.0.1").equals("IP [IP entfernt] und [IP entfernt] und [IP entfernt]");
+        long hour = 3_600_000L, start = 1_000_000_000L;
+        var on = new SmartRestart.Settings(true, 6, 1, 60, 2, 0, true);
+        long due = SmartRestart.dueAt(start, 0, 6);
+        assert due == start + 6 * hour;
+        assert SmartRestart.dueAt(start, start + 5 * hour, 6) == start + 11 * hour;
+        assert SmartRestart.decide(on, due - 1, due, 0, due - 600_000, start).equals("interval");
+        assert SmartRestart.decide(on, due + 1, due, 3, 0, start).equals("players");
+        assert SmartRestart.decide(on, due + 1, due, 1, due, start).equals("stable");
+        assert SmartRestart.decide(on, due + 200_000, due, 1, due, start).equals("restart");
+        var forced = new SmartRestart.Settings(true, 6, 1, 60, 2, 2, true);
+        assert SmartRestart.decide(forced, due + 3 * hour, due, 20, 0, start).equals("force");
+        assert SmartRestart.decide(new SmartRestart.Settings(false, 6, 1, 60, 2, 0, true), due + hour, due, 0, due, start).equals("off");
+        var local = java.time.ZonedDateTime.of(2026, 11, 9, 20, 3, 0, 0, java.time.ZoneId.of("Europe/Berlin"));
+        assert Automations.due(Map.of("type", "daily", "time", "20:00"), Map.of(), 0, local, Map.of(), 0, null);
+        assert !Automations.due(Map.of("type", "daily", "time", "20:00"), Map.of("lastDate", "2026-11-09"), 0, local, Map.of(), 0, null);
+        assert Automations.due(Map.of("type", "game-day", "world", "world", "day", 10L, "everyDays", 0L), Map.of(), 0, local, Map.of("world", 12L), 0, null);
+        assert !Automations.due(Map.of("type", "game-day", "world", "world", "day", 10L, "everyDays", 0L), Map.of("lastRun", 5L, "lastDay", 12L), 0, local, Map.of("world", 13L), 0, null);
+        assert Automations.due(Map.of("type", "game-day", "world", "world", "day", 10L, "everyDays", 7L), Map.of("lastRun", 5L, "lastDay", 12L), 0, local, Map.of("world", 17L), 0, null);
+        assert !Automations.due(Map.of("type", "game-day", "world", "world", "day", 10L, "everyDays", 7L), Map.of("lastRun", 5L, "lastDay", 17L), 0, local, Map.of("world", 18L), 0, null);
+        assert Automations.due(Map.of("type", "players-above", "count", 5L), Map.of(), 100 * 60_000L, local, Map.of(), 6, false);
+        assert !Automations.due(Map.of("type", "players-above", "count", 5L), Map.of(), 100 * 60_000L, local, Map.of(), 6, true);
+        var rule = Automations.normalize(Map.of("name", "Spieltag", "trigger", Map.of("type", "interval", "minutes", 5),
+            "actions", List.of(Map.of("type", "broadcast", "value", "Hallo", "en", "Hello"))), false, Set.of("world"));
+        assert ((Map<?, ?>) rule.get("trigger")).get("minutes").equals(15L);
+        try { Automations.normalize(Map.of("name", "x", "trigger", Map.of("type", "interval", "minutes", 60),
+            "actions", List.of(Map.of("type", "restart", "value", "60"))), false, Set.of()); throw new AssertionError("restart without rights"); }
+        catch (AppApiManager.ApiError expected) { assert expected.code == 403; }
     }
 
     private static void keywords() throws Exception {

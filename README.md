@@ -1,3 +1,13 @@
+## Panel 5.7.0 und Admin Suite 10.14.0
+
+Inventare im Minecraft-Look mit Verschieben zwischen Spielern und Einbehaltungsablage (App, Web, `/sas ablage`), Smart-Neustart nur bei wenigen Spielern, Automationen (Wenn … dann …), ein überarbeiteter KI-Chat und korrekte Uhrzeiten in KI-Antworten. SentinelBridge 1.6.0 bleibt unverändert.
+[Update-Anleitung](UPDATE-5.7.0.md)
+
+## Panel 5.6.0 und Admin Suite 10.13.0
+
+Neue PowerBot-Zentrale mit Chatverlauf je Fall, Begründung und Bot-Antwort, Spielerverwaltung, einstellbarer Strenge und bearbeitbaren Systemanweisungen. Dazu der neue Spielerverlauf (Chat, Flüstern, Aktionen, Kämpfe, Items), ein Rückblick seit dem letzten Besuch, Kurzbefehle und der Fix für den Absturz beim Abmelden von Geräten. SentinelBridge 1.6.0 bleibt unverändert.
+[Update-Anleitung](UPDATE-5.6.0.md)
+
 ## Panel 5.5.0 und Admin Suite 10.12.0
 
 Quality-of-Life-Update für Flüstermoderation, Spielerchronik, Minecraft-Adminaktionen, Reportantworten und Bark.

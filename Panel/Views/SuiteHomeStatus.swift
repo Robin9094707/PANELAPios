@@ -4,11 +4,9 @@ struct SuiteHomeStatus: View {
     let panel: PanelAPI
     let server: Server
     @State private var summary: JSON = .null
-    @State private var suite: SuiteAPI?
     @State private var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if let suite { SuitePowerBotDigest(suite: suite) }
             if summary != .null {
                 Label("\(summary["online"].int) / \(summary["maxPlayers"].int) Spieler online", systemImage: "person.2.fill").font(.subheadline.bold()).accessibilityIdentifier("home-online-count-" + server.id)
                 if !summary["event"].string.isEmpty {
@@ -30,7 +28,6 @@ struct SuiteHomeStatus: View {
                 while !Task.isCancelled {
                     do {
                         _ = try await client.health()
-                        if suite == nil { suite = client }
                         let value = try await client.data("overview")
                         try Task.checkCancellation(); summary = value; error = nil
                     } catch {
