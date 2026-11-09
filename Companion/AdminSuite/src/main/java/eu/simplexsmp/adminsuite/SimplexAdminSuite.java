@@ -9183,6 +9183,23 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             "items", PlayerTimeline.rows(p.name, chat, privateChat, actions, combat, items, bot, 600),
             "chatVisible", publicChat, "whispersVisible", whispers, "flagsVisible", flags);
     }
+    /** 10.15.0: approximate player search (current and previous names) for the AI assistant. */
+    List<Map<String,Object>> fuzzyPlayers(String query, int limit) {
+        Map<String, PlayerProfile> byName = new LinkedHashMap<>();
+        for (PlayerProfile p : database.sortedProfiles()) {
+            byName.putIfAbsent(p.name, p);
+            synchronized (p.previousNames) { for (String old : p.previousNames) byName.putIfAbsent(old, p); }
+        }
+        List<Map<String,Object>> out = new ArrayList<>();
+        Set<UUID> seen = new HashSet<>();
+        for (var match : PlayerNameMatcher.rank(query, byName.keySet(), limit * 3)) {
+            PlayerProfile p = byName.get(match.name());
+            if (p == null || !seen.add(p.uuid)) continue;
+            out.add(appMap("id", p.uuid.toString(), "name", p.name, "matchedName", match.name(), "score", match.score(), "online", Bukkit.getPlayer(p.uuid) != null, "lastSeen", p.lastSeen));
+            if (out.size() >= limit) break;
+        }
+        return out;
+    }
     /** Players for the briefing: first joins and returning players since a point in time. */
     Map<String,Object> briefingPlayers(long since) {
         int fresh = 0, active = 0; List<String> names = new ArrayList<>();

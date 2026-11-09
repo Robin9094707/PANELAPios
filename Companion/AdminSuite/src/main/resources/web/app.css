@@ -956,3 +956,34 @@ div.mc-slot { cursor: default; width: 44px; flex: none; }
 :root[data-perf="full"] .item.link:hover { transform: translateX(2px); }
 :root[data-perf="full"] .btn:active { transform: scale(.97); }
 .list > .item { content-visibility: auto; contain-intrinsic-size: auto 64px; }
+
+/* ---------------------------------------------------------------- 10.15.0 invsee details */
+.mc-slot .mc-glint { position: absolute; inset: 2px; pointer-events: none; background: linear-gradient(120deg, transparent 20%, rgba(190, 120, 255, .55) 45%, transparent 70%); background-size: 250% 250%; mix-blend-mode: screen; }
+:root[data-perf="full"] .mc-slot .mc-glint { animation: glint 2.4s linear infinite; }
+@keyframes glint { from { background-position: 100% 100%; } to { background-position: 0 0; } }
+.mc-slot .mc-dur { position: absolute; left: 12%; right: 12%; bottom: 10%; height: 2px; background: #000; }
+.mc-slot .mc-dur span { display: block; height: 100%; }
+.mc-figure .avatar { width: 72px; height: 72px; font-size: 26px; }
+.mc-wrap > .stack { min-width: 0; }
+
+/* ---------------------------------------------------------------- 10.15.0 rights editor */
+.perm-box { max-height: min(62vh, 720px); overflow: auto; gap: 10px; padding-right: 4px; }
+.perm-group > summary { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface-2); font-weight: 600; font-size: 13px; cursor: pointer; list-style: none; }
+.perm-group > summary::-webkit-details-marker { display: none; }
+.perm-group > summary::before { content: "▸"; color: var(--muted); transition: transform .15s ease; }
+.perm-group[open] > summary::before { transform: rotate(90deg); }
+.perm-group > summary .btn { margin-left: auto; }
+.perm-summary { padding: 8px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.perm-row:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+
+/* ---------------------------------------------------------------- 10.15.0 Schnellzentrale */
+.quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.quick-tile { display: grid; justify-items: center; gap: 6px; padding: 14px 8px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--tile, var(--accent)) 35%, transparent);
+  background: color-mix(in srgb, var(--tile, var(--accent)) 12%, transparent); color: inherit; font-weight: 600; font-size: 13px; cursor: pointer; text-align: center; }
+.quick-tile svg { width: 22px; height: 22px; color: var(--tile, var(--accent)); }
+.quick-tile.add { --tile: #8d8d8d; border-style: dashed; }
+:root[data-perf="full"] .quick-tile { transition: transform .12s ease, background-color .2s ease; }
+:root[data-perf="full"] .quick-tile:hover { transform: translateY(-2px); }
+.quick-edit { align-items: center; flex-wrap: wrap; gap: 10px; }
+.quick-dot { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: #fff; flex: none; }
+.quick-dot svg { width: 18px; height: 18px; }

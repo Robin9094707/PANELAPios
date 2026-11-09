@@ -1,5 +1,29 @@
 [
   {
+    "version": "10.15.0",
+    "app": "5.8.0",
+    "title": "Invsee, Schnellzentrale & KI",
+    "items": [
+      {
+        "title": "Invsee wie im Spiel",
+        "icon": "shieldCheck",
+        "text": "Online- und Offline-Inventare inkl. Rüstung und Nebenhand, zweiter Spieler daneben, verschieben und tauschen ohne Duplikate, Shulker-Inhalte bleiben erhalten."
+      },
+      {
+        "title": "Schnellzentrale",
+        "icon": "bell",
+        "text": "Eigene Kacheln für Neustarts, Wartung, Chat, Ankündigungen und Automationen in App und Web."
+      },
+      {
+        "title": "KI versteht Namen",
+        "icon": "chat",
+        "text": "„Miss Caitlin“ findet MissCaitlyn. Mehr Kontext zu letzten Aktionen und Verhalten eines Spielers."
+      }
+    ],
+    "date": "2026-11-09",
+    "intro": "Invsee für Offline-Spieler, echte Texturen, Schnellzentrale und eine reparierte Rechteverwaltung im Web."
+  },
+  {
     "version": "10.14.0",
     "app": "5.7.0",
     "title": "Inventare, Ablage & Automationen",
@@ -78,8 +102,16 @@
     "title": "PowerBot-Stichwortregeln",
     "intro": "Eigene Prüfregeln pro Stichwort und aktuelle Ereignisse direkt auf der iPhone-Startseite.",
     "items": [
-      {"icon": "search", "title": "Stichwörter verwalten", "text": "Wörter und Phrasen hinzufügen, bearbeiten, suchen oder löschen. SMP ist vorgegeben."},
-      {"icon": "bell", "title": "Ereignisse auf der Startseite", "text": "Die fünf neuesten Ereignisse deiner sichtbaren Serververbindungen auf einen Blick."}
+      {
+        "icon": "search",
+        "title": "Stichwörter verwalten",
+        "text": "Wörter und Phrasen hinzufügen, bearbeiten, suchen oder löschen. SMP ist vorgegeben."
+      },
+      {
+        "icon": "bell",
+        "title": "Ereignisse auf der Startseite",
+        "text": "Die fünf neuesten Ereignisse deiner sichtbaren Serververbindungen auf einen Blick."
+      }
     ]
   },
   {

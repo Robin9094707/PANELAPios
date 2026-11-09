@@ -20,7 +20,7 @@
       var actions = manage ? [
         row.fromId ? S.btn("An " + row.fromName + " zurückgeben", { kind: "primary", icon: "refresh", onClick: function () { dlg.close(); return act(row, { operation: "give", target: row.fromId }, "Zurückgegeben."); } }) : null,
         S.btn("An Spieler geben …", { icon: "users", onClick: async function () {
-          var target = await S.pickOnlinePlayer("Item weitergeben", ""); if (!target) return;
+          var target = await (S.pickPlayer || S.pickOnlinePlayer)("Item weitergeben", ""); if (!target) return;
           dlg.close(); await act(row, { operation: "give", target: target.id }, "An " + target.name + " gegeben.");
         } }),
         S.btn("Notiz speichern", { onClick: function () { return act(row, { operation: "note", note: note.value }, "Notiz gespeichert."); } }),
@@ -191,5 +191,91 @@
             } catch (e) { fail(e); }
           } }) : S.notice("Ändern benötigt das Recht action.restart.apply.")))));
     S.every(15000, async function () { try { data = await S.api("smart-restart", { quiet: true }); if (alive()) drawStatus(); } catch (e) { /* keep last state */ } });
+  };
+
+  // ------------------------------------------------------------------ 10.15.0 Schnellzentrale (same tiles as the app)
+  var QUICK = [["tool", "Werkzeug öffnen", "grid"], ["restart", "Neustart mit Countdown", "refresh"], ["restart-cancel", "Neustart abbrechen", "x"],
+    ["smart-restart", "Smart-Neustart an/aus", "clock"], ["maintenance-on", "Wartung starten", "settings"], ["maintenance-off", "Wartung beenden", "check"],
+    ["chat-on", "Chat einschalten", "chat"], ["chat-off", "Chat ausschalten", "chat"], ["slowmode", "Chat-Slowmode", "clock"], ["announce", "Ankündigung senden", "send"],
+    ["save-worlds", "Welten speichern", "download"], ["automation", "Automation ausführen", "star"]];
+  var QUICK_VALUE = { restart: "Countdown in Sekunden (5–300)", slowmode: "Sekunden zwischen Nachrichten (0–120)", announce: "Nachricht", "maintenance-on": "Grund (optional)" };
+  var QUICK_COLOR = { restart: "E5484D", "maintenance-on": "E5484D", "chat-off": "E5484D", "restart-cancel": "30A46C", "maintenance-off": "30A46C", "chat-on": "30A46C", announce: "8E4EC6", automation: "8E4EC6", "smart-restart": "F76B15", slowmode: "F76B15" };
+  var QUICK_SYMBOL = { tool: "square.grid.2x2.fill", restart: "arrow.clockwise.circle.fill", "restart-cancel": "xmark.circle.fill", "smart-restart": "clock.arrow.2.circlepath", "maintenance-on": "wrench.and.screwdriver.fill", "maintenance-off": "checkmark.seal.fill", "chat-on": "bubble.left.and.bubble.right.fill", "chat-off": "bubble.left.and.exclamationmark.bubble.right.fill", slowmode: "tortoise.fill", announce: "megaphone.fill", "save-worlds": "externaldrive.fill", automation: "wand.and.stars" };
+  function quickIcon(kind) { var hit = QUICK.find(function (q) { return q[0] === kind; }); return hit ? hit[2] : "star"; }
+  async function runQuick(tile) {
+    function act(path, values) { return S.runAction(path, values, { title: tile.title }); }
+    switch (tile.kind) {
+      case "tool": S.go("#/" + (tile.value || "dashboard")); return;
+      case "restart": return act("server.restart", { action: "schedule", seconds: String(Math.max(5, Math.min(300, Number(tile.value) || 60))) });
+      case "restart-cancel": return act("server.restart", { action: "cancel" });
+      case "maintenance-on": return act("server.maintenance", { mode: "on", reason: tile.value || "" });
+      case "maintenance-off": return act("server.maintenance", { mode: "off" });
+      case "chat-on": return act("server.chat", { mode: "on" });
+      case "chat-off": return act("server.chat", { mode: "off" });
+      case "slowmode": return act("server.slowmode", { seconds: String(Math.max(0, Math.min(120, Number(tile.value) || 5))) });
+      case "announce": if (!tile.value) { S.toast("Für diese Kachel ist keine Nachricht hinterlegt.", "err"); return; } return act("server.announce", { message: tile.value });
+      case "save-worlds": return act("server.save", {});
+      case "smart-restart": {
+        var current = await S.api("smart-restart");
+        if (!await S.confirm(tile.title, "Smart-Neustart " + (current.settings.enabled ? "ausschalten?" : "einschalten?"), "Umschalten")) return;
+        await S.api("smart-restart", { body: { confirmed: true, enabled: !current.settings.enabled } }); S.toast("Smart-Neustart " + (current.settings.enabled ? "aus" : "an")); return;
+      }
+      case "automation":
+        if (!await S.confirm(tile.title, "Automation jetzt ausführen?", "Ausführen")) return;
+        await S.api("automations", { body: { confirmed: true, operation: "run", id: tile.value } }); S.toast("Automation ausgeführt"); return;
+    }
+  }
+  function quickEditor(tiles, onSave) {
+    tiles = JSON.parse(JSON.stringify(tiles || []));
+    var list = h("div", { class: "list" }), dlg;
+    function draw() {
+      S.clear(list);
+      if (!tiles.length) list.appendChild(S.empty("star", "Noch keine Kacheln", "Füge Neustart, Wartung, Ankündigung oder Werkzeuge hinzu."));
+      tiles.forEach(function (tile, index) {
+        var title = S.input({ value: tile.title, maxlength: 40, "aria-label": "Titel" }), value = S.input({ value: tile.value || "", placeholder: QUICK_VALUE[tile.kind] || "", "aria-label": "Wert" });
+        var kind = h("select", { class: "input" }, QUICK.map(function (q) { return h("option", { value: q[0], selected: q[0] === tile.kind, text: q[1] }); }));
+        var color = h("input", { type: "color", value: "#" + (tile.color || "0091FF"), "aria-label": "Farbe", style: { width: "44px", padding: 0 } });
+        title.addEventListener("input", function () { tile.title = title.value; });
+        value.addEventListener("input", function () { tile.value = value.value; });
+        color.addEventListener("input", function () { tile.color = color.value.slice(1).toUpperCase(); });
+        kind.addEventListener("change", function () { tile.kind = kind.value; tile.title = QUICK.find(function (q) { return q[0] === kind.value; })[1]; tile.symbol = QUICK_SYMBOL[kind.value] || ""; tile.color = QUICK_COLOR[kind.value] || "0091FF"; tile.value = kind.value === "restart" ? "60" : ""; draw(); });
+        list.appendChild(h("div", { class: "item quick-edit" }, h("span", { class: "quick-dot", style: { background: "#" + (tile.color || "0091FF") } }, S.icon(quickIcon(tile.kind))),
+          h("div", { class: "grid two grow" }, kind, title, QUICK_VALUE[tile.kind] || tile.kind === "tool" || tile.kind === "automation" ? value : h("span"), color),
+          h("div", { class: "row" },
+            S.btn("", { size: "sm icon", icon: "chevLeft", title: "Nach vorne", disabled: index === 0, onClick: function () { tiles.splice(index - 1, 0, tiles.splice(index, 1)[0]); draw(); } }),
+            S.btn("", { size: "sm icon", icon: "chevRight", title: "Nach hinten", disabled: index === tiles.length - 1, onClick: function () { tiles.splice(index + 1, 0, tiles.splice(index, 1)[0]); draw(); } }),
+            S.btn("", { size: "sm icon", icon: "trash", title: "Entfernen", onClick: function () { tiles.splice(index, 1); draw(); } }))));
+      });
+    }
+    draw();
+    dlg = S.modal("Schnellzentrale bearbeiten", h("div", { class: "stack" }, h("p", { class: "small muted", text: "Bei „Werkzeug öffnen“ als Wert die Seite eintragen (z. B. players, automations, smart-restart). Bei „Automation ausführen“ die Automations-ID. Die Kacheln erscheinen auch in der App." }), list,
+      h("div", { class: "row wrap" }, S.btn("Kachel hinzufügen", { icon: "plus", disabled: tiles.length >= 24, onClick: function () { tiles.push({ id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), kind: "restart", title: "Neustart mit Countdown", symbol: QUICK_SYMBOL.restart, color: QUICK_COLOR.restart, value: "60" }); draw(); } }),
+        !tiles.length ? S.btn("Empfohlene übernehmen", { onClick: function () { tiles = ["restart", "restart-cancel", "smart-restart", "maintenance-on", "maintenance-off", "chat-off", "chat-on", "save-worlds"].map(function (k, i) { return { id: "tile-" + Date.now() + "-" + i, kind: k, title: QUICK.find(function (q) { return q[0] === k; })[1], symbol: QUICK_SYMBOL[k], color: QUICK_COLOR[k] || "0091FF", value: k === "restart" ? "60" : "" }; }); draw(); } }) : null)),
+      [S.btn("Abbrechen", { onClick: function () { dlg.close(); } }), S.btn("Speichern", { kind: "primary", onClick: async function () {
+        try { await onSave(tiles.map(function (t) { return { id: t.id, kind: t.kind, title: (t.title || "").trim().slice(0, 40) || "Kachel", symbol: t.symbol || QUICK_SYMBOL[t.kind] || "", color: t.color || "", value: t.value || "" }; })); dlg.close(); }
+        catch (e) { fail(e); }
+      } })], { icon: "star", wide: true });
+  }
+  var baseDashboard = P.dashboard;
+  P.dashboard = async function (param, query, alive) {
+    await baseDashboard(param, query, alive); if (!alive() || !S.has("quick-center-v1")) return;
+    var prefs = {};
+    try { prefs = await S.api("shortcut-prefs", { quiet: true }); } catch (e) { return; }
+    if (!alive()) return;
+    var card;
+    function build() {
+      var tiles = Array.isArray(prefs.actions) ? prefs.actions : [];
+      card = S.card("Schnellzentrale", { icon: "star", sub: tiles.length ? "Antippen führt die Aktion nach Bestätigung aus" : "Neustart, Wartung, Ankündigung & Werkzeuge als Kachel" },
+        h("div", { class: "quick-grid" }, tiles.map(function (tile) {
+          return h("button", { type: "button", class: "quick-tile", style: "--tile:#" + (/^[0-9a-fA-F]{6}$/.test(tile.color || "") ? tile.color : "0091FF"), onClick: function () { runQuick(tile).catch(fail); } }, S.icon(quickIcon(tile.kind)), h("span", { text: tile.title }));
+        }), h("button", { type: "button", class: "quick-tile add", onClick: function () {
+          quickEditor(tiles, async function (next) { prefs = await S.api("shortcut-prefs", { body: { actions: next } }); S.toast("Schnellzentrale gespeichert"); var old = card; build(); old.replaceWith(card); });
+        } }, S.icon("plus"), h("span", { text: tiles.length ? "Bearbeiten" : "Einrichten" }))));
+      card.classList.add("quick-center");
+    }
+    build();
+    function add() { if (alive() && S.content && !S.content.querySelector(".quick-center")) { var anchor = S.content.querySelector(".workspace-shortcuts"); if (anchor) anchor.after(card); else S.content.prepend(card); } }
+    add(); var observer = new MutationObserver(add); observer.observe(S.content, { childList: true });
+    var previousLeave = S.onLeave; S.onLeave = function () { observer.disconnect(); if (previousLeave) previousLeave(); };
   };
 })(window.Simplex);

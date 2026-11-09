@@ -3,7 +3,7 @@ import Foundation
 
 enum SuiteShortcutTool: String, AppEnum {
     case overview, advertising, tickets, assistant, diagnostics, histories, settings, players, adminLog, staffChat, statistics, operations, reports, bans, events, tasks, chat, functions
-    case powerBot, briefing, automations, smartRestart, locker
+    case powerBot, briefing, automations, smartRestart, locker, quickCenter
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "Admin-Werkzeug"
     static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
         .overview: "Admin Suite", .advertising: "Werbe-Zentrale", .tickets: "Tickets",
@@ -12,7 +12,7 @@ enum SuiteShortcutTool: String, AppEnum {
         .operations: "Serverbetrieb", .reports: "Reports", .bans: "Banns", .events: "Ereignisse",
         .tasks: "Staff-Aufgaben", .chat: "Serverchat", .functions: "Alle Funktionen",
         .powerBot: "PowerBot-Zentrale", .briefing: "Rückblick",
-        .automations: "Automationen", .smartRestart: "Smart-Neustart", .locker: "Einbehaltungsablage"
+        .automations: "Automationen", .smartRestart: "Smart-Neustart", .locker: "Einbehaltungsablage", .quickCenter: "Schnellzentrale"
     ]
 }
 

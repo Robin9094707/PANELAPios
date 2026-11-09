@@ -16,7 +16,42 @@
     return h(opts.tag || "button", { type: "button", class: "mc-slot" + (opts.picked ? " picked" : "") + (opts.empty ? " empty" : ""),
       title: opts.title || "", "aria-label": opts.title || "", "aria-pressed": opts.picked ? "true" : null, onClick: opts.onClick },
       texture ? h("img", { src: "data:image/png;base64," + texture, alt: "" }) : item ? h("span", { class: "mc-abbr", text: (item.name || "?").slice(0, 2).toUpperCase() }) : opts.placeholder ? h("span", { class: "mc-ph", text: opts.placeholder }) : null,
-      item && item.amount > 1 ? h("small", { text: String(item.amount) }) : null);
+      item && item.amount > 1 ? h("small", { text: String(item.amount) }) : null,
+      item && item.enchanted ? h("i", { class: "mc-glint", "aria-hidden": "true" }) : null,
+      item && item.maxDurability > 0 && item.durability < item.maxDurability ? h("b", { class: "mc-dur", "aria-hidden": "true" },
+        h("span", { style: { width: Math.round(100 * item.durability / item.maxDurability) + "%", background: "hsl(" + Math.round(120 * item.durability / item.maxDurability) + ",90%,50%)" } })) : null);
+  };
+  /** 10.15.0: item details with enchantments, durability, lore and shulker contents. */
+  S.mcDetails = function (item, icons) {
+    var contents = {};
+    (item.contents || []).forEach(function (c) { contents[c.slot] = c; });
+    var grid = [];
+    for (var i = 0; i < 27; i++) grid.push(S.mcSlot(contents[i], contents[i] && icons[contents[i].material], { tag: "div", empty: !contents[i] }));
+    S.modal(item.name, h("div", { class: "stack" },
+      h("div", { class: "row" }, S.mcSlot(item, icons[item.material], { tag: "div" }), h("div", {}, h("b", { text: item.name }), h("div", { class: "small muted", text: item.amount + " / " + (item.max || 64) + " · " + item.material }))),
+      item.maxDurability ? S.kv([["Haltbarkeit", item.durability + " / " + item.maxDurability]]) : null,
+      (item.enchantments || []).length ? h("div", { class: "row wrap" }, item.enchantments.map(function (e) { return h("span", { class: "badge accent", text: e }); })) : null,
+      (item.lore || []).length ? h("div", { class: "small muted" }, item.lore.map(function (l) { return h("div", { text: l }); })) : null,
+      item.contents ? h("section", { class: "mc-panel" }, h("h3", { text: "Inhalt · " + item.contents.length + " Plätze belegt" }), h("div", { class: "mc-grid" }, grid)) : null), null, { icon: "box" });
+  };
+  S.pickPlayer = function (title, exclude) {
+    return new Promise(function (resolve) {
+      var done = false, dlg, list = h("div", { class: "list" });
+      var search = S.input({ placeholder: "Spieler suchen – online und offline", "aria-label": "Spieler suchen" }), timer;
+      async function load() {
+        var data = await S.api("data/players", { query: { limit: 50, q: search.value.trim() }, quiet: true });
+        S.clear(list);
+        var rows = (data.items || []).filter(function (r) { return r.id !== exclude; }).sort(function (a, b) { return (b.online ? 1 : 0) - (a.online ? 1 : 0); });
+        if (!rows.length) list.appendChild(S.empty("users", "Niemand gefunden", "Teil des Namens genügt."));
+        rows.slice(0, 40).forEach(function (row) {
+          list.appendChild(h("div", { class: "item link", onClick: function () { done = true; dlg.close(); resolve(row); } }, S.avatar(row.name, "sm"),
+            h("div", { class: "meta" }, h("b", { text: row.name })), h("span", { class: "badge " + (row.online ? "ok" : ""), text: row.online ? "Online" : "Offline" }), S.icon("chevRight", "chev")));
+        });
+      }
+      search.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(load, 250); });
+      dlg = S.modal(title, h("div", { class: "stack" }, search, list), null, { icon: "users", onClose: function () { if (!done) resolve(null); } });
+      load();
+    });
   };
   S.mcIcons = async function (materials, cache) {
     var needed = materials.filter(function (m) { return m && !(m in cache); });
@@ -45,128 +80,149 @@
     });
   };
 
+  /** 10.15.0: invsee for any player (online or offline) with a second player side by side. */
   P.inventory = async function (id, query, alive) {
     if (!S.has("visual-inventory-v1") || !S.can("data.inventory")) {
       S.mount(S.lockedPage("Inventar gesperrt", "data.inventory")); return;
     }
-    var offline = query.get("offline") === "true" && S.has("powerbot-v1");
-    var last = "", textureVersion = null, icons = {}, contents = {}, edit = false, transfer = false, pack = false, selected = null, swapping = false, busy = false, name = "";
+    var v2 = S.has("invsee-move-v1");
+    var sides = [{ player: id, name: "", revision: "", items: {}, editable: false, transfer: false, offline: false, error: "" }];
+    var icons = {}, textureVersion = null, pick = null, amount = 0, busy = false, pack = false;
     var status = h("div", { class: "muted small", role: "status" }), grid = h("div", { class: "mc-wrap" }), bar = h("div", { class: "mc-actionbar" }), packArea = h("div", { class: "stack" });
-    S.title(offline ? "Offline-Inventar" : "Live-Inventar", "Spieler", h("div", { class: "row wrap" },
-      h("a", { class: "btn ghost sm", href: "#/player/" + encodeURIComponent(id), text: "Zum Profil" }),
-      S.has("item-locker-v1") ? h("a", { class: "btn ghost sm", href: "#/locker", text: "Einbehaltungsablage" }) : null));
+    function heading() {
+      var second = S.btn(sides.length > 1 ? "Zweiten Spieler schließen" : "Zweiten Spieler öffnen", { icon: "users", onClick: async function () {
+        if (sides.length > 1) { sides.pop(); pick = null; heading(); draw(); return; }
+        var row = await S.pickPlayer("Zweiten Spieler wählen", id); if (!row || !alive()) return;
+        sides.push({ player: row.id, name: row.name, revision: "", items: {}, editable: false, transfer: false, offline: !row.online, error: "" });
+        heading(); await update();
+      } });
+      S.title("Invsee", "Spieler", h("div", { class: "row wrap" }, v2 ? second : null,
+        h("a", { class: "btn ghost sm", href: "#/player/" + encodeURIComponent(id), text: "Zum Profil" }),
+        S.has("item-locker-v1") ? h("a", { class: "btn ghost sm", href: "#/locker", text: "Einbehaltungsablage" }) : null));
+    }
+    heading();
     S.mount(h("div", { class: "stack" }, status, grid, bar, packArea));
-    async function apply(change, confirmText) {
+    status.textContent = "Item anklicken, dann Zielplatz anklicken – auch beim zweiten Spieler. Rechtsklick zeigt Details.";
+    async function send(body, done) {
       if (busy) return;
       busy = true;
-      try {
-        if (!confirmText || await S.confirm("Inventar ändern", confirmText, "Anwenden")) { await S.api(change.path, { body: change.body }); S.toast(change.done || "Inventar aktualisiert."); }
-      } catch (e) { fail(e); }
-      finally { selected = null; swapping = false; busy = false; await update(); }
+      try { var r = await S.api("invsee/move", { body: Object.assign({ confirmed: true }, body) }); S.toast(done || (r.moved + "× → " + r.target)); }
+      catch (e) { fail(e); }
+      finally { pick = null; amount = 0; busy = false; sides.forEach(function (s) { s.revision = ""; }); await update(); }
     }
-    async function move(destination) {
-      var item = contents[selected], slot = selected; if (!item) return;
-      var target = null;
-      if (destination === "player") { target = await S.pickOnlinePlayer("An Spieler geben", id); if (!target || !alive()) return; }
-      var amount = item.amount;
-      if (item.amount > 1) {
-        var value = await S.prompt("Menge", "Wie viele von " + item.amount + "?", String(item.amount), "Weiter", { type: "number", min: 1, max: item.amount });
-        if (value === null || !alive()) return;
-        amount = Math.max(1, Math.min(item.amount, Number(value) || item.amount));
-      }
-      var reason = await S.prompt("Grund", destination === "locker" ? "Warum wird das Item einbehalten?" : "Grund (optional)", "", destination === "locker" ? "Einlagern" : "Geben");
-      if (reason === null || !alive()) return;
-      await apply({ path: "invsee/transfer", done: destination === "locker" ? "In der Einbehaltungsablage gesichert." : "An " + target.name + " gegeben.",
-        body: { player: id, revision: last, slot: slot, amount: amount, destination: destination, target: target ? target.id : "", reason: reason, confirmed: true } });
+    function move(from, toSide, toSlot) {
+      var a = sides[from.side], b = sides[toSide], source = a.items[from.slot]; if (!source) return;
+      var target = toSlot >= 0 ? b.items[toSlot] : null;
+      var same = target && target.material === source.material && target.name === source.name;
+      var swap = !!target && !same;
+      if (swap && amount > 0 && amount < source.amount) { S.toast("Teilmengen nur auf freie oder gleiche Plätze.", "err"); return; }
+      var to = { player: b.player, slot: toSlot };
+      if (toSlot >= 0) to.revision = b.revision;
+      var body = { from: { player: a.player, slot: from.slot, revision: a.revision }, to: to, mode: swap ? "swap" : "move" };
+      if (amount > 0 && amount < source.amount) body.amount = amount;
+      return send(body);
     }
-    function slot(index, placeholder) {
-      var item = contents[index], label = item ? item.name + " × " + item.amount : "Leer";
-      return S.mcSlot(item, item && icons[item.material], { picked: selected === index, placeholder: placeholder, title: "Slot " + index + " · " + label, onClick: function () {
+    function slot(sideIndex, index, placeholder) {
+      var side = sides[sideIndex], item = side.items[index], label = item ? item.name + " × " + item.amount : "Leer";
+      var el = S.mcSlot(item, item && icons[item.material], { picked: pick && pick.side === sideIndex && pick.slot === index, placeholder: placeholder, title: side.name + " · Slot " + index + " · " + label, onClick: function () {
         if (busy) return;
-        if (swapping && selected != null) {
-          var from = selected; swapping = false;
-          if (from === index || from >= 36 && from <= 40 || index >= 36 && index <= 40) { status.textContent = "Ausrüstung lässt sich nicht tauschen."; selected = null; draw(); return; }
-          apply({ path: "invsee", body: { player: id, revision: last, offline: offline, from: from, to: index, confirmed: true } });
-          return;
+        if (pick) {
+          if (pick.side === sideIndex && pick.slot === index) { pick = null; draw(); return; }
+          if (!sides[pick.side].editable || !side.editable) { S.toast("Für diesen Spieler fehlt das Bearbeitungsrecht.", "err"); return; }
+          move(pick, sideIndex, index); return;
         }
-        selected = selected === index || !item ? null : index;
-        status.textContent = item ? "Slot " + index + " · " + label : "Leerer Slot";
-        draw();
+        if (item) { pick = { side: sideIndex, slot: index }; amount = 0; draw(); }
       } });
+      el.addEventListener("contextmenu", function (e) { if (item) { e.preventDefault(); S.mcDetails(item, icons); } });
+      return el;
     }
-    function range(a, b) { var out = []; for (var i = a; i < b; i++) out.push(slot(i)); return out; }
+    function range(sideIndex, a, b) { var out = []; for (var i = a; i < b; i++) out.push(slot(sideIndex, i)); return out; }
+    function panel(sideIndex) {
+      var side = sides[sideIndex];
+      return h("div", { class: "stack" },
+        h("div", { class: "row wrap" }, h("b", { text: side.name || "Spieler" }), h("span", { class: "badge " + (side.offline ? "" : "ok"), text: side.offline ? "Offline · Spielerdatei" : "Online · live" }),
+          side.error ? h("span", { class: "small", style: { color: "var(--danger, #ef4444)" }, text: side.error }) : null),
+        h("section", { class: "mc-panel" }, h("h3", { text: "Inventar" }),
+          h("div", { class: "mc-top" }, h("div", { class: "mc-armor" }, slot(sideIndex, 39, "⛑"), slot(sideIndex, 38, "👕"), slot(sideIndex, 37, "👖"), slot(sideIndex, 36, "👢")),
+            h("div", { class: "mc-figure", "aria-hidden": "true" }, S.avatar(side.name || "?", "lg")), h("div", { class: "mc-offhand" }, slot(sideIndex, 40, "🛡"))),
+          h("div", { class: "mc-grid" }, range(sideIndex, 9, 36)), h("div", { class: "mc-grid hotbar" }, range(sideIndex, 0, 9))),
+        h("section", { class: "mc-panel" }, h("h3", { text: "Endertruhe" }), h("div", { class: "mc-grid" }, range(sideIndex, 41, 68))));
+    }
     function draw() {
       S.clear(grid); S.clear(bar);
-      grid.append(
-        h("section", { class: "mc-panel" }, h("h3", { text: name ? "Inventar von " + name : "Inventar" }),
-          h("div", { class: "mc-top" }, h("div", { class: "mc-armor" }, slot(39, "⛑"), slot(38, "👕"), slot(37, "👖"), slot(36, "👢")),
-            h("div", { class: "mc-figure", "aria-hidden": "true" }, S.icon("user")), h("div", { class: "mc-offhand" }, slot(40, "🛡"))),
-          h("div", { class: "mc-grid" }, range(9, 36)), h("div", { class: "mc-grid hotbar" }, range(0, 9))),
-        h("section", { class: "mc-panel" }, h("h3", { text: "Endertruhe" }), h("div", { class: "mc-grid" }, range(41, 68))));
-      var item = selected != null && contents[selected];
+      sides.forEach(function (side, index) { grid.appendChild(panel(index)); });
+      var item = pick && sides[pick.side] && sides[pick.side].items[pick.slot];
       if (!item) return;
-      bar.append(h("div", { class: "row wrap" }, S.mcSlot(item, icons[item.material], { tag: "div" }), h("div", { class: "grow" }, h("b", { text: item.name }), h("div", { class: "small muted", text: item.amount + "× · Slot " + selected })),
-        swapping ? h("span", { class: "badge accent", text: "Zielslot wählen …" }) : null,
-        edit && (selected < 36 || selected > 40) && !swapping ? S.btn("Tauschen", { icon: "refresh", onClick: function () { swapping = true; draw(); } }) : null,
-        transfer && !offline && !swapping ? S.btn("An Spieler geben", { kind: "primary", icon: "users", onClick: function () { return move("player"); } }) : null,
-        transfer && !offline && !swapping ? S.btn("In Ablage", { icon: "box", onClick: function () { return move("locker"); } }) : null,
-        S.btn("", { icon: "x", size: "sm icon", title: "Auswahl aufheben", onClick: function () { selected = null; swapping = false; draw(); } })));
+      var side = sides[pick.side], other = pick.side === 0 ? 1 : 0;
+      var qty = item.amount > 1 ? S.input({ type: "number", min: 1, max: item.amount, value: amount || item.amount, style: { width: "84px" }, "aria-label": "Menge" }) : null;
+      if (qty) qty.addEventListener("input", function () { amount = Math.max(1, Math.min(item.amount, Number(qty.value) || item.amount)); });
+      bar.append(h("div", { class: "row wrap" }, S.mcSlot(item, icons[item.material], { tag: "div" }),
+        h("div", { class: "grow" }, h("b", { text: item.name }), h("div", { class: "small muted", text: side.name + " · Slot " + pick.slot + (side.offline ? " · offline" : "") + " · Zielplatz anklicken" })),
+        qty ? h("label", { class: "row", style: { gap: "6px" } }, h("span", { class: "small muted", text: "Menge" }), qty) : null,
+        S.btn("Details", { size: "sm", icon: "info", onClick: function () { S.mcDetails(item, icons); } }),
+        sides.length > 1 ? S.btn("Zu " + sides[other].name, { size: "sm", kind: "primary", onClick: function () { move(pick, other, -1); } }) : null,
+        side.transfer ? S.btn("In Ablage", { size: "sm", icon: "box", onClick: async function () {
+          var reason = await S.prompt("In Ablage legen", "Grund", "", "Einlagern"); if (reason === null) return;
+          var body = { from: { player: side.player, slot: pick.slot, revision: side.revision }, to: { player: "locker" }, reason: reason };
+          if (amount > 0 && amount < item.amount) body.amount = amount;
+          send(body, "In der Einbehaltungsablage gesichert.");
+        } }) : null,
+        S.btn("", { icon: "x", size: "sm icon", title: "Auswahl aufheben", onClick: function () { pick = null; draw(); } })));
     }
     function packControls(data) {
       S.clear(packArea);
       if (!pack && !data.status) return;
       var input = h("input", { type: "file", class: "input", "aria-label": "Java-Ressourcenpaket" });
-      var label = (data.custom ? "Eigenes ZIP + " : "") + (data.status || "");
-      packArea.appendChild(S.card("Ressourcenpaket", { sub: label },
+      packArea.appendChild(S.card("Ressourcenpaket", { sub: (data.custom ? "Eigenes ZIP + " : "") + (data.status || "") },
         pack ? h("div", { class: "row wrap" }, input, S.btn("ZIP importieren", { onClick: async function () {
           var file = input.files[0]; if (!file) return;
           if (file.size > 32 * 1024 * 1024) { S.toast("Maximal 32 MiB.", "err"); return; }
-          try { await S.api("invsee/pack", { body: file, type: "application/zip" }); textureVersion = null; await update(); }
-          catch (e) { fail(e); }
+          try { await S.api("invsee/pack", { body: file, type: "application/zip" }); textureVersion = null; await update(); } catch (e) { fail(e); }
         } }), data.custom ? S.btn("Vanilla verwenden", { onClick: async function () {
           if (!await S.confirm("Eigenes Paket entfernen", "Die Vorschau lädt wieder die Vanilla-Texturen.", "Entfernen", true)) return;
-          try { await S.api("invsee/pack", { query: { mode: "reset" }, body: { confirmed: true } }); textureVersion = null; await update(); }
-          catch (e) { fail(e); }
+          try { await S.api("invsee/pack", { query: { mode: "reset" }, body: { confirmed: true } }); textureVersion = null; await update(); } catch (e) { fail(e); }
         } }) : null) : null));
     }
     var updating = false;
     async function update() {
       if (!alive() || busy || updating) return;
       updating = true;
+      var changed = false, textures = textureVersion;
       try {
-        var data = await S.api("invsee", { query: { player: id, revision: last, offline: offline }, quiet: true, noRetry: true, timeout: 7000 });
-        if (!alive()) return;
-        var changed = !data.unchanged, permissionsChanged = edit !== data.editable || pack !== data.pack || transfer !== !!data.transfer;
-        if (data.name) name = data.name;
-        if (changed && selected != null) { selected = null; swapping = false; status.textContent = "Inventar wurde vom Spieler geändert. Bitte neu auswählen."; }
-        else if (changed) status.textContent = data.editable || data.transfer ? "Item anklicken, um es zu tauschen, weiterzugeben oder einzubehalten." : "Nur Ansicht";
-        edit = data.editable; pack = data.pack; transfer = !!data.transfer;
-        if (changed) {
-          contents = {};
-          (data.slots || []).forEach(function (item) { contents[item.slot] = item; });
-          last = data.revision;
+        for (var i = 0; i < sides.length; i++) {
+          var side = sides[i];
+          try {
+            var params = { player: side.player, revision: side.revision, offline: v2 ? "auto" : String(query.get("offline") === "true") };
+            if (v2) params.v2 = 1;
+            var data = await S.api("invsee", { query: params, quiet: true, noRetry: true, timeout: 8000 });
+            if (!alive() || sides[i] !== side) return;
+            if (side.editable !== data.editable || side.transfer !== !!data.transfer) changed = true;
+            side.editable = data.editable; side.transfer = !!data.transfer; side.offline = !!data.offline; side.error = "";
+            if (data.name) side.name = data.name;
+            if (i === 0) pack = data.pack;
+            if (!data.unchanged) {
+              side.items = {}; (data.slots || []).forEach(function (item) { side.items[item.slot] = item; });
+              side.revision = data.revision; changed = true;
+              if (pick && pick.side === i) pick = null;
+            }
+            textures = data.textures;
+          } catch (e) { side.error = e.message; side.items = {}; side.revision = ""; side.editable = false; changed = true; }
         }
-        var needed = Array.from(new Set(Object.values(contents).map(function (item) { return item.material; })));
-        if (textureVersion !== data.textures || needed.some(function (material) { return !(material in icons); })) {
-          if (textureVersion !== data.textures) icons = {};
-          var images = await S.api("invsee/icons", { query: { items: needed.slice(0, 70).join(",") }, quiet: true, timeout: 10000 });
+        var needed = [];
+        sides.forEach(function (side) { Object.values(side.items).forEach(function (item) { needed.push(item.material); (item.contents || []).forEach(function (c) { needed.push(c.material); }); }); });
+        needed = Array.from(new Set(needed));
+        if (textureVersion !== textures || needed.some(function (m) { return !(m in icons); })) {
+          if (textureVersion !== textures) icons = {};
+          await S.mcIcons(needed, icons);
+          var info = await S.api("invsee/icons", { query: { items: "" }, quiet: true }).catch(function () { return {}; });
           if (!alive()) return;
-          Object.assign(icons, images.icons || {});
-          needed.forEach(function (material) { if (!(material in icons)) icons[material] = ""; });
-          textureVersion = data.textures;
-          packControls(images);
-          changed = true;
+          textureVersion = textures; packControls(info); changed = true;
         }
-        if (changed || permissionsChanged) draw();
-      } catch (e) {
-        if (!alive()) return;
-        status.textContent = e.message;
-        last = ""; contents = {}; selected = null; edit = false; transfer = false;
-        draw();
+        if (changed) draw();
       } finally { updating = false; }
     }
     await update();
-    if (alive() && !offline) S.every(2000, update);
+    if (alive()) S.every(3000, update);
   };
 
   P["player-devices"] = async function (id, query, alive) {

@@ -7,6 +7,7 @@ struct SuiteServerShortcuts: View {
     @ObservedObject private var preferences = SuiteQuickAccess.shared
     @ObservedObject private var navigation = SuiteNavigationInbox.shared
     @State private var editing = false
+    @State private var quickCenter: SuiteConnection?
     var records: [SuiteConnection] {
         connections.values.filter { record in
             !preferences.isHidden(record.id) && (query.isEmpty || SuiteSearch.matches(query, in: preferences.name(record, store: store) + " " + record.endpoint) || preferences.tools(for: record.id).contains { $0.matches(query) })
@@ -23,6 +24,7 @@ struct SuiteServerShortcuts: View {
                 ForEach(records) { record in serverCard(record) }
             }
             .sheet(isPresented: $editing) { SuiteServerShortcutSettings().environmentObject(store) }
+            .sheet(item: $quickCenter) { SuiteQuickCenterEditor(record: $0) }
             .onChange(of: navigation.request?.id) { _, id in if id != nil { editing = false } }
         }
     }
@@ -38,6 +40,7 @@ struct SuiteServerShortcuts: View {
             if preferences.tools(for: record.id).isEmpty {
                 Button("Schnellzugriffe auswählen") { editing = true }
             }
+            if !preferences.actions(for: record.id).isEmpty { SuiteQuickCenterRow(record: record) }
         }.padding(preferences.compact(record.id) ? 10 : 16).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
     }
     func serverHeader(_ record: SuiteConnection) -> some View {
@@ -48,6 +51,8 @@ struct SuiteServerShortcuts: View {
                 Image(systemName: "star.fill").font(.caption).foregroundStyle(.orange).accessibilityLabel("Standardserver")
             }
             Spacer()
+            Button("Schnellzentrale bearbeiten", systemImage: "bolt.circle") { quickCenter = record }
+                .labelStyle(.iconOnly).accessibilityLabel(title + " · Schnellzentrale bearbeiten")
             Button("Admin Suite öffnen", systemImage: "chevron.right") { open(.overview, record) }
                 .labelStyle(.iconOnly).accessibilityLabel(title + " · Admin Suite öffnen")
         }

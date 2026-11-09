@@ -304,6 +304,30 @@ final class PanelHub {
         return new LinkedHashMap<>();
     }
 
+    /** 10.15.0: Schnellzentrale – up to 24 freely editable tiles that open a tool or run a confirmed action. */
+    static final Set<String> QUICK_KINDS = Set.of("tool", "restart", "restart-cancel", "smart-restart", "maintenance-on", "maintenance-off",
+        "chat-on", "chat-off", "slowmode", "announce", "save-worlds", "automation");
+    static List<Map<String, Object>> quickActions(Object value) {
+        if (!(value instanceof List<?> list) || list.size() > 24) throw new IllegalArgumentException("Schnellzentrale: höchstens 24 Kacheln");
+        List<Map<String, Object>> out = new ArrayList<>();
+        Set<String> ids = new HashSet<>();
+        for (Object raw : list) {
+            if (!(raw instanceof Map<?, ?> map)) throw new IllegalArgumentException("Schnellzentrale: ungültige Kachel");
+            var tile = AppApiManager.object(map);
+            String id = String.valueOf(tile.getOrDefault("id", "")), kind = String.valueOf(tile.getOrDefault("kind", "")),
+                title = String.valueOf(tile.getOrDefault("title", "")).strip(), symbol = String.valueOf(tile.getOrDefault("symbol", "")),
+                color = String.valueOf(tile.getOrDefault("color", "")), param = String.valueOf(tile.getOrDefault("value", ""));
+            if (!id.matches("[A-Za-z0-9-]{1,40}") || !ids.add(id)) throw new IllegalArgumentException("Schnellzentrale: ungültige ID");
+            if (!QUICK_KINDS.contains(kind)) throw new IllegalArgumentException("Schnellzentrale: unbekannte Aktion " + kind);
+            if (title.isEmpty() || title.length() > 40 || title.codePoints().anyMatch(Character::isISOControl)) throw new IllegalArgumentException("Schnellzentrale: Titel 1–40 Zeichen");
+            if (!symbol.matches("[a-z0-9.]{0,60}")) throw new IllegalArgumentException("Schnellzentrale: ungültiges Symbol");
+            if (!color.isEmpty() && !color.matches("[a-fA-F0-9]{6}")) throw new IllegalArgumentException("Schnellzentrale: ungültige Farbe");
+            if (param.length() > 300 || param.codePoints().anyMatch(Character::isISOControl)) throw new IllegalArgumentException("Schnellzentrale: Wert zu lang");
+            out.add(SimplexAdminSuite.appMap("id", id, "kind", kind, "title", title, "symbol", symbol, "color", color, "value", param));
+        }
+        return out;
+    }
+
     synchronized Map<String, Object> saveShortcutPrefs(String owner, Map<String, Object> patch) throws IOException {
         Map<String, Object> nextValues = new LinkedHashMap<>(shortcutPrefs(owner));
         for (var entry : patch.entrySet()) {
@@ -349,6 +373,7 @@ final class PanelHub {
                         throw new IllegalArgumentException("Schnellzugriffe ungültig");
                     value = List.copyOf(new LinkedHashSet<>(list));
                 }
+                case "actions" -> value = quickActions(value);
                 default -> throw new IllegalArgumentException("Unbekannte Einstellung: " + key);
             }
             nextValues.put(key, value);
