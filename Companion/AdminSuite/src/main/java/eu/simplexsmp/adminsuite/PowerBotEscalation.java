@@ -38,7 +38,10 @@ final class PowerBotEscalation {
         final String id;
         final long started;
         final LinkedHashMap<String, String> players = new LinkedHashMap<>();
+        /** Players the latest analysis marked as actively escalating – only they are eligible for a pause. */
         final Set<String> involved = new LinkedHashSet<>();
+        /** Everyone who was marked at some point (shown to staff, never used for a pause). */
+        final Set<String> everInvolved = new LinkedHashSet<>();
         long lastSeen, calmedAt, warnedAt, mutedAt, reviewedAt;
         int stage, analyses;
         String severity = "", reason = "", kind = "conflict";
@@ -69,8 +72,11 @@ final class PowerBotEscalation {
             disputes.put(dispute.id, dispute);
         }
         dispute.players.putAll(participants);
+        // The latest analysis decides who is eligible: someone who stopped or now calms things down drops out.
+        dispute.involved.clear();
         dispute.involved.addAll(involved);
         dispute.involved.retainAll(dispute.players.keySet());
+        dispute.everInvolved.addAll(dispute.involved);
         dispute.lastSeen = now;
         dispute.analyses++;
         dispute.kind = kind == null || kind.isBlank() ? dispute.kind : kind;
@@ -127,6 +133,12 @@ final class PowerBotEscalation {
         return dispute == null ? Set.of() : Set.copyOf(dispute.players.keySet());
     }
 
+    /** True when staff ended this dispute (or it is unknown) – pending AI results must not act on it any more. */
+    synchronized boolean dismissed(String id) {
+        Dispute dispute = disputes.get(id);
+        return dispute == null || dispute.dismissed;
+    }
+
     /** Live and recent disputes for app and web panel, newest first. */
     synchronized List<Map<String, Object>> rows(long now) {
         expire(now);
@@ -135,7 +147,8 @@ final class PowerBotEscalation {
         Collections.reverse(list);
         for (Dispute d : list) {
             List<Map<String, Object>> people = new ArrayList<>();
-            d.players.forEach((id, name) -> people.add(SimplexAdminSuite.appMap("player", id, "name", name, "involved", d.involved.contains(id))));
+            d.players.forEach((id, name) -> people.add(SimplexAdminSuite.appMap("player", id, "name", name, "involved", d.involved.contains(id),
+                "wasInvolved", d.everInvolved.contains(id))));
             rows.add(SimplexAdminSuite.appMap("id", d.id, "kind", d.kind, "started", d.started, "lastSeen", d.lastSeen, "stage", d.stage,
                 "stageTitle", stageTitle(d.stage), "next", next(d.stage), "severity", d.severity, "reason", d.reason, "analyses", d.analyses,
                 "live", d.live(now), "dismissed", d.dismissed, "players", people, "calmedAt", d.calmedAt, "warnedAt", d.warnedAt, "mutedAt", d.mutedAt,

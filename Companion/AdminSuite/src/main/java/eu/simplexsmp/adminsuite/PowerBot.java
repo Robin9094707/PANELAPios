@@ -610,7 +610,8 @@ final class PowerBot implements AutoCloseable {
     }
 
     private void applyDeepReview(UUID player, String name, String dispute, String decision, String confidence, String reason, Evidence proof) {
-        if (!escalates()) return;
+        // Staff may have ended the dispute (and lifted its pauses) while the review was running.
+        if (!escalates() || escalation.dismissed(dispute)) return;
         Evidence detail = new Evidence(proof.message(), reason.isBlank() ? proof.reason() : reason, "", proof.severity(), proof.context(), false);
         String label = switch (decision) { case "long" -> "Längere Chatpause"; case "short" -> "Kurze Chatpause"; case "warn" -> "Persönliche Warnung"; default -> "Kein weiterer Eingriff"; };
         try { record("deep-review", player.toString(), name, "Streit", "Tiefenprüfung: " + label + " (Sicherheit " + confidence + ")", 0, List.of(), detail, dispute); }

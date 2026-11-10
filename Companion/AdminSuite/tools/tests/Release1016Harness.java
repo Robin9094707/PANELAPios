@@ -44,13 +44,14 @@ final class Release1016Harness {
         p = esc.observe(now + 60_000, "conflict", people, Set.of("a", "b"), Set.of(), "high", "", t);
         check(p.step() == PowerBotEscalation.Step.NONE, "grace period after the warning");
         p = esc.observe(now + 80_000, "conflict", people, Set.of("a"), Set.of(), "high", "", t);
-        check(p.step() == PowerBotEscalation.Step.MUTE_SHORT && p.mute().containsAll(List.of("a", "b")), "short pause for everyone involved");
+        check(p.step() == PowerBotEscalation.Step.MUTE_SHORT && p.mute().equals(List.of("a")), "short pause only for who still escalates – Sam stopped");
         p = esc.observe(now + 100_000, "conflict", people, Set.of("a"), Set.of(), "high", "", t);
         check(p.step() == PowerBotEscalation.Step.NONE, "no review while the pause runs");
         p = esc.observe(now + 175_000, "conflict", people, Set.of("a"), Set.of(), "high", "", t);
         check(p.step() == PowerBotEscalation.Step.DEEP_REVIEW && p.deep().contains("a"), "continuing after the pause → deep review");
         var rows = esc.rows(now + 175_000);
         check(rows.size() == 1 && ((Number) rows.get(0).get("stage")).intValue() == 4 && Boolean.TRUE.equals(rows.get(0).get("live")), "dispute row");
+        check(!esc.dismissed(p.dispute()) && esc.dismiss(p.dispute()) && esc.dismissed(p.dispute()) && esc.dismissed("unknown"), "dismissed disputes block pending AI results");
         check(!esc.active(now + 175_000 + PowerBotEscalation.IDLE + 1), "disputes end after ten quiet minutes");
 
         PowerBotEscalation severe = new PowerBotEscalation();
