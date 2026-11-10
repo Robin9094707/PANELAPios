@@ -5,24 +5,30 @@
   var kindNames = { mute: "AutoMod-Mute", conflict: "Konflikt", help: "Hilferuf", security: "Cheat-Hinweis", outage: "KI pausiert",
     recovery: "KI wieder erreichbar", settings: "Einstellungen geändert", abuse: "Chatnachricht blockiert", advertising: "Werbung blockiert",
     "keyword-warning": "Stichwortprüfung · Warnung", "keyword-block": "Stichwortprüfung · blockiert",
-    warning: "Warnhinweis", reviewed: "Nachträgliche Prüfung", deescalation: "KI hat deeskaliert", "ai-action": "KI-Aktion ausgeführt", "server-event": "Wichtiges Serverereignis" };
+    warning: "Warnhinweis", reviewed: "Nachträgliche Prüfung", deescalation: "KI hat deeskaliert", "ai-action": "KI-Aktion ausgeführt", "server-event": "Wichtiges Serverereignis",
+    "dispute-warning": "Streit-Warnung im Chat", "deep-review": "Tiefenprüfung", provocation: "Pöbeln erkannt", "whisper-block": "Flüstern zurückgehalten", pardon: "Zähler zurückgesetzt" };
+  var stages = ["Beobachtet", "Beruhigt", "Verwarnt", "Kurze Chatpause", "Tiefenprüfung"];
   var labels = { enabled: "PowerBot", moderation: "KI-Moderation", whispers: "Flüsternachrichten prüfen", advertising: "Eigenwerbung blockieren",
     "auto-mute": "AutoMod-Mutes", "linked-mutes": "Bestätigte Alt-Konten einschließen", "public-chat": "Öffentliche Chat-KI",
     proactive: "Proaktiv deeskalieren", discord: "Discord-Relay", "notify-staff": "Staff benachrichtigen",
-    "security-hints": "Cheat-Hinweise sammeln", "staff-device-context": "Geräteinfos für Staff-KI", "critical-alerts": "Kritische Meldungen" };
+    "security-hints": "Cheat-Hinweise sammeln", "staff-device-context": "Geräteinfos für Staff-KI", "critical-alerts": "Kritische Meldungen",
+    "conflict-actions": "Streits eindämmen (Chatpausen)", escalation: "Eskalationsleiter: warnen → kurze Pause → Tiefenprüfung" };
+  function remaining(ms) { var s = Math.max(0, Math.round(ms / 1000)); return s >= 60 ? Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") + " min" : s + " s"; }
 
   P.powerbot = async function (id, query, alive) {
     if (!S.has("powerbot-v1") || !S.can("data.powerbot")) { S.mount(S.lockedPage("PowerBot gesperrt", "data.powerbot")); return; }
     if (id === "keywords") { await keywordRules(alive); return; }
     var filter = query.get("filter") || "important", version = 0, busy = false;
-    var options = h("details", {}), head = h("div", {}), rows = h("div", { class: "stack" });
+    var options = h("details", {}), head = h("div", {}), live = h("div", { class: "stack" }), rows = h("div", { class: "stack" });
     S.title("PowerBot-Fallzentrale", "Moderation");
     S.mount(h("div", { class: "stack" },
       S.card("Chatmoderation und Teamübergabe", { icon: "shieldCheck" }, head),
       options,
-      S.segmented([["important", "Wichtig"], ["open", "Offen"], ["mutes", "Mutes"], ["all", "Alles"]], filter,
+      live,
+      S.segmented([["important", "Wichtig"], ["open", "Offen"], ["conflicts", "Streits"], ["mutes", "Chatpausen"], ["all", "Alles"]], filter,
         function (value) { filter = value; load().catch(fail); }),
       rows));
+    var timer = setInterval(function () { if (!alive()) { clearInterval(timer); return; } if (!busy && !document.hidden) load().catch(function () {}); }, 10000);
     function fail(error) { if (alive()) S.toast(error.message, "err"); }
     async function change(operation, fields, title, detail) {
       if (busy) return;
@@ -44,14 +50,24 @@
         var input = switches[field[0]] = h("input", { type: "checkbox", checked: !!data.flags[field[0]] });
         return h("label", { class: "row" }, input, field[1]);
       });
-      var notes = h("textarea", { class: "input", rows: 4, maxLength: 500, placeholder: "Optionale Moderationsrichtlinien", "aria-label": "Moderationsrichtlinien" });
+      var notes = h("textarea", { class: "input", rows: 4, maxLength: 2000, placeholder: "Optionale Moderationsrichtlinien", "aria-label": "Moderationsrichtlinien" });
       notes.value = data.guidelines || "";
+      var esc = data.escalation || {}, numbers = {};
+      function number(key, label, min, max, value) {
+        numbers[key] = h("input", { type: "number", class: "input", min: min, max: max, value: value, "aria-label": label });
+        return h("label", { class: "stack" }, label, numbers[key]);
+      }
+      var ladder = S.has("powerbot-escalation-v1") ? h("div", { class: "grid two" },
+        number("analysisInterval", "Kontextanalyse alle … Nachrichten", 5, 50, esc.analysisInterval || 15),
+        number("disputeMuteSeconds", "Kurze Chatpause im Streit (Sekunden)", 30, 600, esc.disputeMuteSeconds || 60),
+        number("conflictMuteMinutes", "Längere Pause nach Tiefenprüfung (Minuten)", 1, 30, esc.excessiveMuteMinutes || data.conflictMuteMinutes || 5)) : null;
       options.replaceChildren(h("summary", { class: "btn", text: "PowerBot einstellen" }), S.card(null, { icon: "settings" },
-        h("div", { class: "grid two" }, inputs), notes,
+        h("div", { class: "grid two" }, inputs.filter(function (input) { return input; })), ladder, notes,
         S.btn("Einstellungen speichern", { kind: "primary", onClick: function () {
-          var flags = {};
-          Object.keys(switches).forEach(function (key) { flags[key] = switches[key].checked; });
-          return change("settings", { flags: flags, guidelines: notes.value }, "Einstellungen übernehmen?", "Die Regeln gelten sofort für den Server.");
+          var flags = {}, body = {};
+          Object.keys(switches).forEach(function (key) { if (key in (data.flags || {})) flags[key] = switches[key].checked; });
+          Object.keys(numbers).forEach(function (key) { var v = Number(numbers[key].value); if (isFinite(v) && v > 0) body[key] = v; });
+          return change("settings", Object.assign({ flags: flags, guidelines: notes.value }, body), "Einstellungen übernehmen?", "Die Regeln gelten sofort für den Server.");
         } })));
     }
     async function load() {
@@ -64,6 +80,7 @@
         data.canSettings && S.has("powerbot-keywords-v1") ?
           h("a", { class: "btn sm", href: "#/powerbot/keywords", text: "Stichwortregeln" }) : null));
       settings(data);
+      drawLive(data);
       rows.replaceChildren();
       if (!(data.items || []).length) rows.appendChild(S.card("Keine Einträge", { icon: "check" }));
       (data.items || []).forEach(function (row) {
@@ -84,6 +101,35 @@
             row.assignee ? S.badge("Übernommen von " + row.assignee, "accent") : null),
           buttons.length ? h("div", { class: "row wrap" }, buttons) : null));
       });
+    }
+    function drawLive(data) {
+      live.replaceChildren();
+      var disputes = (data.disputes || []).filter(function (d) { return d.live; });
+      var mutes = data.activeMutes || [];
+      var last = data.escalation && data.escalation.lastAnalysis;
+      if (disputes.length) live.appendChild(S.card("Laufende Streits", { icon: "chat", sub: "PowerBot schlichtet stufenweise: beruhigen → warnen → kurze Chatpause → Tiefenprüfung" },
+        disputes.map(function (d) {
+          var people = (d.players || []).map(function (p) { return p.name + (p.involved ? " ●" : ""); }).join(", ");
+          var steps = h("div", { class: "row wrap" }, stages.slice(1).map(function (title, index) {
+            return S.badge(title, index + 1 < d.stage ? "ok" : index + 1 === d.stage ? "warn" : "info");
+          }));
+          return h("div", { class: "item stack" },
+            h("div", { class: "meta" }, h("b", { text: (d.kind === "provocation" ? "Pöbeln" : "Streit") + " · " + (d.stageTitle || stages[d.stage] || "") }),
+              h("small", { text: people + " · seit " + S.date(d.started) + (d.reason ? " · " + d.reason : "") })),
+            steps, h("small", { class: "muted", text: d.next || "" }),
+            data.manage ? h("div", { class: "row wrap" },
+              S.btn("Streit beenden", { size: "sm", onClick: function () { return change("dispute-dismiss", { id: d.id }, "Streit beenden?", "PowerBot beginnt bei neuem Streit wieder mit dem Beruhigen."); } }),
+              S.btn("Beenden & Pausen aufheben", { size: "sm", onClick: function () { return change("dispute-dismiss", { id: d.id, lift: true }, "Streit beenden und Chatpausen aufheben?", "Alle Pausen dieses Streits enden sofort."); } })) : null);
+        })));
+      if (mutes.length) live.appendChild(S.card("Aktive Chatpausen", { icon: "lock", sub: mutes.length + " laufend · vorzeitig aufheben möglich" },
+        mutes.map(function (m) {
+          return h("div", { class: "item row wrap" },
+            h("div", { class: "meta grow" }, h("b", { text: m.name || "Unbekannt" }), h("small", { text: (m.reason || m.detail || "") + " · noch " + remaining(m.remainingMs) })),
+            data.manage ? S.btn("Aufheben", { size: "sm", onClick: function () { return change("revoke", { id: m.id }, "Chatpause aufheben?", (m.name || "Der Spieler") + " kann sofort wieder schreiben."); } }) : null);
+        })));
+      if (last && last.at) live.appendChild(h("small", { class: "muted", text: "Letzte Kontextanalyse " + S.date(last.at) + " · " + (last.lines || 0) + " Nachrichten · Ergebnis: " +
+        ({ none: "ruhig", answer: "Antwort", conflict: "Streit", help: "Hilferuf", provocation: "Pöbeln", failed: "nicht erreichbar" }[last.kind] || last.kind) +
+        " · alle " + ((data.escalation || {}).analysisInterval || 15) + " Nachrichten, bei Pöbeln sofort" }));
     }
     await load();
   };

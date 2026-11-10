@@ -18,6 +18,16 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.9.0", title: "PowerBot schlichtet & Disconnect-Forensik", summary: "PowerBot greift bei Streits stufenweise ein und erkennt Pöbeln in Sekunden. Verbindungsabbrüche werden bis auf die Netzwerkebene analysiert – auch wenn sie als „Disconnected“ gemeldet werden. Alle Daten und Funktionen bleiben erhalten.", items: [
+            .init(symbol: "flame.fill", title: "Streits stufenweise schlichten", detail: "Erst beruhigen, dann öffentlich und persönlich warnen, danach 1 Minute Chatpause für die Beteiligten. Opfer und Unbeteiligte werden nie stummgeschaltet."),
+            .init(symbol: "magnifyingglass.circle.fill", title: "Tiefenprüfung", detail: "Hört es nicht auf oder übertreibt jemand, holt sich PowerBot mehr Kontext (längerer Chat, Verlauf der letzten 24 Stunden) und entscheidet über 5 Minuten Pause."),
+            .init(symbol: "megaphone.fill", title: "Pöbeln in Sekunden erkannt", detail: "Gerichtete Beleidigungen lösen sofort eine KI-Prüfung aus – auch wenn niemand zurückschreibt. Zusätzlich wird der Chat alle 15 Nachrichten im Zusammenhang analysiert."),
+            .init(symbol: "speaker.wave.2.fill", title: "Laufende Streits & Chatpausen", detail: "Die PowerBot-Zentrale zeigt jede Stufe live, Pausen mit Countdown und lässt sie vorzeitig aufheben – einzeln oder für den ganzen Streit."),
+            .init(symbol: "eye.trianglebadge.exclamationmark", title: "Verdeckte Disconnects", detail: "„Disconnected“ heißt nicht mehr automatisch freiwillig: Wer schloss die Verbindung, war der Client bis zuletzt aktiv, kam er sofort zurück, gab es TCP-Verluste?"),
+            .init(symbol: "chart.bar.doc.horizontal.fill", title: "Wahrscheinlichste Ursachen", detail: "Jede Welle bekommt gewichtete Ursachen – etwa DDoS-Filter beim Hoster, feste Verbindungsdauer, regelmäßige Aufgabe, Plugin oder Paketverlust – mit nächstem Schritt."),
+            .init(symbol: "antenna.radiowaves.left.and.right", title: "Live-Netzwerk", detail: "Jede Verbindung in Echtzeit mit Ping, RTT, Neuübertragungen, Datenrate und Client-Version – so siehst du, wer zuerst stockt."),
+            .init(symbol: "sparkles", title: "KI springt ein", detail: "Bleibt eine Welle unklar oder verdeckt, startet die KI-Analyse automatisch mit allen Spuren, Hypothesen und der Netzwerk-Konfiguration.")
+        ]),
         WhatsNewRelease(version: "5.8.0", title: "Invsee wie im Spiel", summary: "Inventare von Online- und Offline-Spielern bearbeiten, Items zwischen zwei Spielern verschieben, echte Texturen, eine eigene Schnellzentrale und eine KI, die Spieler auch bei Tippfehlern findet. Alle Daten bleiben erhalten.", items: [
             .init(symbol: "person.2.fill", title: "Zwei Spieler nebeneinander", detail: "Zweiten Spieler öffnen – online oder offline – und Items per Antippen verschieben, stapeln oder tauschen. Auf dem iPad nebeneinander."),
             .init(symbol: "moon.zzz.fill", title: "Offline-Inventare voll bearbeitbar", detail: "Auch Rüstung, Nebenhand und Endertruhe. Shulker-Inhalte, Verzauberungen und alle Itemdaten werden vollständig mitgenommen."),

@@ -1,6 +1,6 @@
 name: SimplexAdminSuite
 main: eu.simplexsmp.adminsuite.SimplexAdminSuite
-version: 10.15.0
+version: 10.16.0
 api-version: '26.2'
 author: RJ
 website: https://simplexsmp.eu
@@ -22,6 +22,7 @@ softdepend:
   - SimplexHomes
   - LuckPerms
   - SimplexTrimmer
+  - ViaVersion
 commands:
   joinnotify:
     description: Manage Discord join notifications about yourself

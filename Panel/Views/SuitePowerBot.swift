@@ -35,6 +35,9 @@ struct SuitePowerBotView: View {
             if section == "players" && v2 {
                 SuitePowerBotPlayersSection(suite: suite, query: search, manage: data["manage"].bool)
             } else {
+                if suite.features.contains("powerbot-escalation-v1") {
+                    PowerBotLiveSections(data: data) { operation, fields in await change(operation, fields) }
+                }
                 Section {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -81,6 +84,12 @@ struct SuitePowerBotView: View {
         .task(id: filter + "|" + search) {
             if !search.isEmpty { do { try await Task.sleep(for: .milliseconds(300)) } catch { return } }
             await load()
+            // 5.9.0: running disputes and chat pauses change quickly – refresh while the centre is open.
+            guard suite.features.contains("powerbot-escalation-v1") else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                if !busy { await load() }
+            }
         }
         .refreshable { await load() }
         .disabled(busy)
@@ -144,6 +153,8 @@ private struct PowerBotStatusHeader: View {
                     stat("Streits", data["stats"]["conflicts"].int, "flame.fill", .orange)
                     stat("Beruhigt", data["stats"]["deescalations"].int, "bubble.left.and.text.bubble.right.fill", .green)
                     stat("Chatpausen", data["stats"]["mutes"].int, "speaker.slash.fill", .red)
+                    if data["stats"]["disputeWarnings"] != .null { stat("Verwarnt", data["stats"]["disputeWarnings"].int, "exclamationmark.triangle.fill", .orange) }
+                    if data["stats"]["deepReviews"] != .null { stat("Tiefenprüfung", data["stats"]["deepReviews"].int, "magnifyingglass", .purple) }
                     stat("Spieler", data["stats"]["players"].int, "person.2.fill", Color.panelAccent)
                 }
                 Text("Letzte 24 Stunden").font(.caption2).foregroundStyle(.secondary)
@@ -536,10 +547,13 @@ struct SuitePowerBotSettingsView: View {
     @State private var systemPrompt = ""
     @State private var assistantPrompt = ""
     @State private var conflictMinutes = 5
+    @State private var analysisInterval = 15
+    @State private var disputeSeconds = 60
     @State private var loaded = false
     @State private var saving = false
     @State private var error: String?
     var v2: Bool { suite.features.contains("powerbot-cases-v2") }
+    var ladder: Bool { suite.features.contains("powerbot-escalation-v1") }
 
     var body: some View {
         Form {
@@ -565,11 +579,14 @@ struct SuitePowerBotSettingsView: View {
                                 VStack(alignment: .leading, spacing: 2) { Text(title); Text(detail).font(.caption).foregroundStyle(.secondary) }
                             }
                         }
-                        if group == "Eingreifen" && v2 && flags["conflict-actions"]?.bool == true {
+                        if group == "Eingreifen" && v2 && !ladder && flags["conflict-actions"]?.bool == true {
                             Stepper("Chatpause bei schwerem Streit: \(conflictMinutes) Min.", value: $conflictMinutes, in: 1...30)
                         }
                     }
                 }
+            }
+            if ladder && flags["conflict-actions"]?.bool == true {
+                PowerBotEscalationSettingsSection(interval: $analysisInterval, pauseSeconds: $disputeSeconds, longMinutes: $conflictMinutes)
             }
             if v2 {
                 promptSection("Systemanweisung · Moderation", text: $systemPrompt, fallback: initial["defaultSystemPrompt"].string,
@@ -601,6 +618,8 @@ struct SuitePowerBotSettingsView: View {
             systemPrompt = initial["systemPrompt"].string
             assistantPrompt = initial["assistantPrompt"].string
             conflictMinutes = max(1, min(30, initial["conflictMuteMinutes"].int == 0 ? 5 : initial["conflictMuteMinutes"].int))
+            analysisInterval = max(5, min(50, initial["escalation"]["analysisInterval"].int == 0 ? 15 : initial["escalation"]["analysisInterval"].int))
+            disputeSeconds = max(30, min(600, initial["escalation"]["disputeMuteSeconds"].int == 0 ? 60 : initial["escalation"]["disputeMuteSeconds"].int))
             loaded = true
         }
         .disabled(saving)
@@ -626,6 +645,10 @@ struct SuitePowerBotSettingsView: View {
             body["systemPrompt"] = .string(systemPrompt)
             body["assistantPrompt"] = .string(assistantPrompt)
             body["conflictMuteMinutes"] = .number(Double(conflictMinutes))
+        }
+        if ladder {
+            body["analysisInterval"] = .number(Double(analysisInterval))
+            body["disputeMuteSeconds"] = .number(Double(disputeSeconds))
         }
         do { _ = try await suite.post("powerbot", body); Feedback.success(); await saved(); dismiss() }
         catch { self.error = error.localizedDescription }

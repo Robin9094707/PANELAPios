@@ -363,6 +363,9 @@ struct SuiteDiagnosticsView: View {
         Section("Werkzeuge") {
             NavigationLink { SuiteFullDiagnosisView(suite: suite, canRun: canRun, aiAvailable: aiAvailable) } label: { Label(fullLabel, systemImage: "stethoscope") }
             NavigationLink { SuiteDiagnosticsDisconnectsView(suite: suite, canManage: canManage, canRun: canRun, aiAvailable: aiAvailable) } label: { Label("Disconnects & Vorfälle", systemImage: "wifi.exclamationmark") }
+            if suite.features.contains("disconnect-forensics-v1") {
+                NavigationLink { SuiteNetworkLiveView(suite: suite) } label: { Label("Live-Netzwerk: jede Verbindung in Echtzeit", systemImage: "antenna.radiowaves.left.and.right") }
+            }
             NavigationLink { SuiteLagMapView(suite: suite, canRun: canRun, aiAvailable: aiAvailable) } label: { Label("Lag-Karte: Entities, Chunks & Hotspots", systemImage: "map.fill") }
             NavigationLink { SuiteSparkView(suite: suite, canRun: canRun, canManage: canManage, aiAvailable: aiAvailable) } label: { Label(data["spark"]["available"].bool ? "Spark-Profiler & Analyse" : "Spark-Profil analysieren", systemImage: "flame.fill") }
             NavigationLink { SuiteCrashesView(suite: suite, canRun: canRun, aiAvailable: aiAvailable) } label: { Label("Abstürze", systemImage: "bolt.trianglebadge.exclamationmark") }
@@ -518,11 +521,21 @@ struct SuiteDisconnectRow: View {
                 Spacer()
                 Text(SuiteDiagnostics.ago(row["at"].double)).font(.caption2).foregroundStyle(.secondary)
             }
-            Text(row["categoryTitle"].string).font(.caption.weight(.semibold)).foregroundStyle(row["involuntary"].bool ? Color.red : Color.secondary)
+            HStack(spacing: 6) {
+                Text(row["categoryTitle"].string).font(.caption.weight(.semibold)).foregroundStyle(row["involuntary"].bool ? Color.red : Color.secondary)
+                if row["refined"].bool { Text("gemeldet: " + row["reportedTitle"].string).font(.caption2).foregroundStyle(.secondary) }
+            }
             Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            if row["rejoinMs"].double >= 0 && row["rejoinMs"] != .null {
+                Label("Nach " + SuiteDiagnostics.duration(row["rejoinMs"].double) + " wieder da", systemImage: "arrow.uturn.left.circle").font(.caption2).foregroundStyle(.orange)
+            }
+            SuiteDisconnectForensicsDetail(row: row)
             if !trace["source"].string.isEmpty {
                 DisclosureGroup("Paketspur · \(trace["inbound"].int) rein / \(trace["outbound"].int) raus") {
-                    if !trace["exception"].string.isEmpty { LabeledContent("Netty-Fehler", value: trace["exception"].string) }
+                    if !trace["closeSide"].string.isEmpty { LabeledContent("Geschlossen", value: DisconnectForensicsPresentation.closeSide(trace["closeSide"].string)) }
+                    if !trace["exception"].string.isEmpty { LabeledContent("Netty-Fehler", value: trace["exceptionDetail"].string.isEmpty ? trace["exception"].string : trace["exceptionDetail"].string) }
+                    if trace["lastInboundAgeMs"] != .null && trace["lastInboundAgeMs"].int >= 0 { LabeledContent("Letztes Paket vom Client", value: "\(trace["lastInboundAgeMs"].int) ms vor Ende") }
+                    if trace["tcp"]["rtt"] != .null { LabeledContent("TCP", value: "RTT \(trace["tcp"]["rtt"].int) ms · \(trace["tcpDelta"]["totalRetrans"].int) Neuübertr. · \(trace["tcpDelta"]["lost"].int) verloren") }
                     LabeledContent("Letztes KeepAlive IN", value: trace["keepaliveInAgeMs"].int < 0 ? "–" : "\(trace["keepaliveInAgeMs"].int) ms zuvor")
                     LabeledContent("Letztes KeepAlive OUT", value: trace["keepaliveOutAgeMs"].int < 0 ? "–" : "\(trace["keepaliveOutAgeMs"].int) ms zuvor")
                     ForEach(Array(trace["recent"].array.enumerated()), id: \.offset) { _, packet in
@@ -548,9 +561,12 @@ struct SuiteDiagnosticsIncidentView: View {
         List {
             if data == .null { ProgressView() } else {
                 verdictSection
+                SuiteDisconnectHypothesesSection(verdict: verdict)
+                SuiteDisconnectPatternSection(verdict: verdict)
                 stateSection
                 Section { SuiteAIBox(suite: suite, target: "incident:" + id, initial: data["ai"], available: aiAvailable, canRun: canRun) } header: { Text("KI-Einschätzung") } footer: { Text("Kurze Auswertung der Daten und der letzten Konsolenzeilen – ohne IP-Adressen.") }
                 recordsSection
+                SuiteNetworkEnvironmentSection(environment: data["environment"])
                 logsSection
             }
         }
@@ -1179,6 +1195,8 @@ struct SuiteDiagnosticsSettingsView: View {
     @State private var aiEnabled = true
     @State private var aiAutoCritical = true
     @State private var aiAutoCrash = true
+    @State private var aiAutoUnclear = true
+    @State private var tcpSampling = true
     @State private var liveLog = true
     @State private var saving = false
     @State private var error: String?
@@ -1195,11 +1213,13 @@ struct SuiteDiagnosticsSettingsView: View {
                 Toggle("Diagnose aktiv", isOn: $enabled)
                 Toggle("Auch legitime Wellen melden", isOn: $notifyLegit)
                 Toggle("Konsole für Absturzberichte sichern", isOn: $liveLog)
+                if settings["tcpSampling"] != .null { Toggle("TCP-Werte aller Verbindungen messen", isOn: $tcpSampling) }
             }
             Section {
                 Toggle("KI-Analysen erlauben", isOn: $aiEnabled)
                 Toggle("Kritische Vorfälle automatisch prüfen", isOn: $aiAutoCritical)
                 Toggle("Abstürze automatisch prüfen", isOn: $aiAutoCrash)
+                if settings["aiAutoUnclear"] != .null { Toggle("Unklare und verdeckte Wellen automatisch prüfen", isOn: $aiAutoUnclear) }
                 Stepper("\(aiPerHour) Analysen pro Stunde", value: $aiPerHour, in: 0...120)
             } header: { Text("KI (vorhandener OpenAI-Schlüssel)") } footer: { Text("Gesendet werden nur kurze, IP-bereinigte Auszüge.") }
         }
@@ -1222,14 +1242,19 @@ struct SuiteDiagnosticsSettingsView: View {
         aiAutoCritical = settings["aiAutoCritical"].bool
         aiAutoCrash = settings["aiAutoCrash"].bool
         liveLog = settings["liveLog"].bool
+        aiAutoUnclear = settings["aiAutoUnclear"] == .null ? true : settings["aiAutoUnclear"].bool
+        tcpSampling = settings["tcpSampling"] == .null ? true : settings["tcpSampling"].bool
     }
     func save() async {
         saving = true
         defer { saving = false }
         let share = String(format: "%.2f", waveShare)
-        let body: [String: JSON] = ["burstWindow": .string(String(burstWindow)), "burstMin": .string(String(burstMin)), "waveShare": .string(share), "spikeMs": .string(String(spikeMs)),
+        var body: [String: JSON] = ["burstWindow": .string(String(burstWindow)), "burstMin": .string(String(burstMin)), "waveShare": .string(share), "spikeMs": .string(String(spikeMs)),
                                     "flappingCount": .string(String(flappingCount)), "aiPerHour": .string(String(aiPerHour)), "enabled": .string(String(enabled)), "notifyLegit": .string(String(notifyLegit)),
                                     "aiEnabled": .string(String(aiEnabled)), "aiAutoCritical": .string(String(aiAutoCritical)), "aiAutoCrash": .string(String(aiAutoCrash)), "liveLog": .string(String(liveLog))]
+        // 5.9.0 settings are only sent to suites that know them (older suites reject unknown keys).
+        if settings["aiAutoUnclear"] != .null { body["aiAutoUnclear"] = .string(String(aiAutoUnclear)) }
+        if settings["tcpSampling"] != .null { body["tcpSampling"] = .string(String(tcpSampling)) }
         do { _ = try await suite.post("diagnostics/settings", body); dismiss() }
         catch { self.error = error.localizedDescription }
     }

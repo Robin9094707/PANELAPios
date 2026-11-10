@@ -1,3 +1,8 @@
+## Panel 5.9.0 und Admin Suite 10.16.0
+
+PowerBot schlichtet Streits stufenweise (beruhigen, warnen, 1 Minute Chatpause für die Beteiligten, Tiefenprüfung mit mehr Kontext und 5 Minuten für wer unnötig eskaliert), erkennt Pöbeln in Sekunden und analysiert den Chat alle 15 Nachrichten. Die Disconnect-Forensik schaut hinter „Disconnected“: wer schloss, Stille vor dem Ende, Rückkehrzeit, TCP-Verluste, Muster und gewichtete Ursachen pro Welle, Live-Netzwerk und automatische KI-Analyse. SentinelBridge 1.6.0 bleibt unverändert.
+[Update-Anleitung](UPDATE-5.9.0.md)
+
 ## Panel 5.8.0 und Admin Suite 10.15.0
 
 Invsee für Online- und Offline-Spieler mit zweitem Spieler daneben (verschieben, stapeln, tauschen inkl. Rüstung und Nebenhand), verlustfreie Item-Daten, korrekte Texturen für Truhen, Banner und Co., eine anpassbare Schnellzentrale, eine KI mit ungefähren Spielernamen und eine reparierte Rechteverwaltung im Webpanel. SentinelBridge 1.6.0 bleibt unverändert.

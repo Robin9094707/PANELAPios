@@ -10,7 +10,7 @@ import org.bukkit.entity.Player;
 
 /** Main thread creates visibility snapshots; Netty never reads Bukkit world/player state. */
 final class SuitePacketGuard {
-    private static final String HANDLER="simplex_suite_visibility";
+    private static final String HANDLER="simplex_suite_visibility",BYTES="simplex_suite_bytes";
     private final SimplexAdminSuite plugin;
     private final Map<UUID,Snapshot> snapshots=new ConcurrentHashMap<>();
     private final Map<UUID,Channel> channels=new ConcurrentHashMap<>();
@@ -41,12 +41,24 @@ final class SuitePacketGuard {
             if(channel==null)throw new IllegalStateException("NMS connection channel unavailable");
             UUID id=p.getUniqueId();channels.put(id,channel);
             PacketTrace trace=plugin.getConfig().getBoolean("diagnostics.packet-metadata",true)?new PacketTrace():null;
-            if(trace!=null)diagnostics.put(id,trace);
+            if(trace!=null){diagnostics.put(id,trace);trace.meta(DisconnectForensics.transport(channel),DisconnectForensics.networkGroup(plugin,channel.remoteAddress()));}
             channel.eventLoop().execute(()->{
                 try{
                     if(!channel.isActive())return;
                     if(channel.pipeline().get(HANDLER)!=null)channel.pipeline().remove(HANDLER);
+                    if(channel.pipeline().get(BYTES)!=null)channel.pipeline().remove(BYTES);
                     if(channel.pipeline().get("packet_handler")==null)throw new IllegalStateException("packet_handler unavailable");
+                    // 10.16.0: wire-level byte counter at the very head (sees compressed/encrypted frames, never decodes them).
+                    if(trace!=null)channel.pipeline().addFirst(BYTES,new ChannelDuplexHandler(){
+                        @Override public void channelRead(ChannelHandlerContext ctx,Object message)throws Exception{
+                            if(message instanceof io.netty.buffer.ByteBuf buf)trace.bytes(true,buf.readableBytes(),System.currentTimeMillis());
+                            super.channelRead(ctx,message);
+                        }
+                        @Override public void write(ChannelHandlerContext ctx,Object message,ChannelPromise promise)throws Exception{
+                            if(message instanceof io.netty.buffer.ByteBuf buf)trace.bytes(false,buf.readableBytes(),System.currentTimeMillis());
+                            super.write(ctx,message,promise);
+                        }
+                    });
                     channel.pipeline().addBefore("packet_handler",HANDLER,new ChannelDuplexHandler(){
                         @Override public void channelRead(ChannelHandlerContext ctx,Object message)throws Exception{
                             if(trace!=null)trace.packet(true,message.getClass().getSimpleName(),System.currentTimeMillis());
@@ -61,8 +73,25 @@ final class SuitePacketGuard {
                             super.write(ctx,filtered,promise);
                         }
                         @Override public void exceptionCaught(ChannelHandlerContext ctx,Throwable cause)throws Exception{
-                            if(trace!=null)trace.failure(cause.getClass().getSimpleName());
+                            if(trace!=null)trace.failure(cause.getClass().getSimpleName(),DisconnectForensics.describe(cause));
                             super.exceptionCaught(ctx,cause);
+                        }
+                        @Override public void close(ChannelHandlerContext ctx,ChannelPromise promise)throws Exception{
+                            if(trace!=null)trace.closed("server",System.currentTimeMillis(),DisconnectForensics.callers(Thread.currentThread().getStackTrace()));
+                            super.close(ctx,promise);
+                        }
+                        @Override public void channelInactive(ChannelHandlerContext ctx)throws Exception{
+                            if(trace!=null)trace.closed("remote",System.currentTimeMillis(),List.of());
+                            super.channelInactive(ctx);
+                        }
+                        @Override public void channelWritabilityChanged(ChannelHandlerContext ctx)throws Exception{
+                            if(trace!=null)trace.writability(ctx.channel().isWritable(),ctx.channel().bytesBeforeWritable());
+                            super.channelWritabilityChanged(ctx);
+                        }
+                        @Override public void userEventTriggered(ChannelHandlerContext ctx,Object event)throws Exception{
+                            String type=event==null?"":event.getClass().getSimpleName();
+                            if(trace!=null&&(type.contains("Idle")||type.contains("Timeout")))trace.failure(type,"Netty-Ereignis");
+                            super.userEventTriggered(ctx,event);
                         }
                     });
                 }catch(RuntimeException e){channels.remove(id,channel);if(trace!=null)diagnostics.remove(id,trace);warn("Injection: "+e.getMessage());}
@@ -70,11 +99,19 @@ final class SuitePacketGuard {
         }catch(ReflectiveOperationException|RuntimeException e){warn("Connection: "+e.getClass().getSimpleName()+" "+e.getMessage());}
     }
     Map<String,Object> trace(UUID id,long now){PacketTrace trace=diagnostics.get(id);return trace==null?Map.of():trace.snapshot(now);}
+    /** 10.16.0: kernel TCP statistics for every open connection (epoll only), sampled on each channel's event loop. */
+    void sampleTcp(){
+        for(var entry:channels.entrySet()){
+            PacketTrace trace=diagnostics.get(entry.getKey());Channel c=entry.getValue();
+            if(trace==null||!c.isActive())continue;
+            try{c.eventLoop().execute(()->{if(c.isActive()){trace.tcp(DisconnectForensics.tcpInfo(c));trace.writability(c.isWritable(),c.bytesBeforeWritable());}});}catch(RuntimeException ignored){}
+        }
+    }
     void quit(Player p){UUID id=p.getUniqueId();snapshots.remove(id);
         PacketTrace trace=diagnostics.get(id);
         if(trace!=null&&plugin.isEnabled())Bukkit.getScheduler().runTaskLater(plugin,()->diagnostics.remove(id,trace),40L);
-Channel c=channels.remove(id);if(c!=null)c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});}
-    void stop(){for(Channel c:channels.values())c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);});channels.clear();snapshots.clear();diagnostics.clear();}
+Channel c=channels.remove(id);if(c!=null)c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);if(c.pipeline().get(BYTES)!=null)c.pipeline().remove(BYTES);});}
+    void stop(){for(Channel c:channels.values())c.eventLoop().execute(()->{if(c.pipeline().get(HANDLER)!=null)c.pipeline().remove(HANDLER);if(c.pipeline().get(BYTES)!=null)c.pipeline().remove(BYTES);});channels.clear();snapshots.clear();diagnostics.clear();}
     private void warn(String message){if(warned.add(message))plugin.getLogger().warning("[Packet guard] "+message+". Native Paper hidePlayer remains active; unsupported packet filtering is not claimed.");}
     private static Channel findChannel(Object value,int depth,Set<Object> seen)throws IllegalAccessException{
         if(value instanceof Channel c)return c;if(value==null||depth>5||!seen.add(value))return null;

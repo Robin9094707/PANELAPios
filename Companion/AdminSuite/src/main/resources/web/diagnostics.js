@@ -4,7 +4,7 @@
   "use strict";
   var S = window.Simplex, h = S.h, icon = S.icon, P = S.pages = S.pages || {};
 
-  var TABS = [["live", "Live"], ["disconnects", "Disconnects"], ["lag", "Lag-Karte"], ["spark", "Spark"], ["crashes", "Abstürze"], ["full", "Volldiagnose"], ["console", "Konsole"]];
+  var TABS = [["live", "Live"], ["disconnects", "Disconnects"], ["network", "Live-Netzwerk"], ["lag", "Lag-Karte"], ["spark", "Spark"], ["crashes", "Abstürze"], ["full", "Volldiagnose"], ["console", "Konsole"]];
   var TONE = { ok: "ok", warn: "warn", crit: "danger", info: "info", critical: "danger", warning: "warn" };
   var VERDICT = { legit: ["Legitim", "ok"], problem: ["Fehler erkannt", "danger"], unclear: ["Unklar", "warn"] };
   var SEVERITY = { critical: ["Kritisch", "danger"], warning: ["Dringlich", "warn"], info: ["Hinweis", "info"] };
@@ -93,6 +93,7 @@
     switch (tab) {
       case "incident": body = await incident(id, ctx); break;
       case "disconnects": body = await disconnects(ctx, query); break;
+      case "network": body = await network(ctx); break;
       case "lag": body = await lag(ctx, query.get("refresh") === "1"); break;
       case "spark": body = id ? await sparkDetail(id, ctx) : await spark(ctx); break;
       case "crashes": case "crash": body = id ? await crashDetail(id, ctx) : await crashes(ctx); break;
@@ -103,6 +104,7 @@
     }
     if (!alive()) return;
     S.mount(h("div", { class: "stack" }, head, body));
+    if (tab === "network") S.every(3000, async function () { try { var fresh = await network(ctx, true); if (!alive()) return; var old = document.querySelector(".diag-network"); if (old && fresh) old.replaceWith(fresh); } catch (e) { /* next tick */ } });
     if (tab === "live") S.every(5000, async function () { try { var next = await api("overview", { query: { range: 600 }, quiet: true }); if (!alive()) return; ctx.ov = next; var fresh = live(ctx); var old = document.querySelector(".diag-live"); if (old) old.replaceWith(fresh); } catch (e) { /* next tick */ } });
   };
 
@@ -158,23 +160,59 @@
     catSel.addEventListener("change", function () { go({ category: catSel.value }); });
     var filters = h("div", { class: "row wrap" }, S.searchBox("Spieler oder Meldung", function (v) { go({ q: v }); }, state.q), catSel,
       S.segmented([["", "Alle"], ["java", "Java"], ["bedrock", "Bedrock"]], state.platform, function (v) { go({ platform: v }); }));
-    function packetTrace(trace) {
-      if (!trace || !trace.source) return "–";
-      return h("details", {}, h("summary", { text: trace.inbound + " rein / " + trace.outbound + " raus" }),
-        h("p", { text: trace.exception || "Kein Netty-Fehler aufgezeichnet" }),
+    function packetTrace(trace, r) {
+      if (!trace || !trace.source) return (r && (r.signals || []).length) ? h("div", {}, r.signals.map(function (x) { return h("div", { class: "tiny", text: "• " + x }); })) : "–";
+      return h("details", {}, h("summary", { text: trace.inbound + " rein / " + trace.outbound + " raus" + (trace.closeSide ? " · " + (CLOSE[trace.closeSide] || trace.closeSide) : "") }),
+        r && (r.signals || []).length ? h("div", { class: "stack" }, r.signals.map(function (x) { return h("div", { class: "small", text: "• " + x }); })) : null,
+        h("p", { text: trace.exceptionDetail || trace.exception || "Kein Netty-Fehler aufgezeichnet" }),
         h("p", { text: "Letztes KeepAlive IN / OUT: " + (trace.keepaliveInAgeMs < 0 ? "–" : trace.keepaliveInAgeMs + " ms") + " / " + (trace.keepaliveOutAgeMs < 0 ? "–" : trace.keepaliveOutAgeMs + " ms") }),
         (trace.recent || []).map(function (packet) { return h("div", { class: "mono tiny", text: packet.direction + " · " + packet.type + " · " + packet.ageMs + " ms" }); }));
     }
     var table = h("div", { class: "table-wrap" }, h("table", { class: "table" }, h("thead", {}, h("tr", {}, ["Zeit", "Spieler", "Grund", "Meldung", "Ping", "Sitzung", "Ort", "TPS / Tick", "Paketspur"].map(function (t) { return h("th", { text: t }); }))),
       h("tbody", {}, (d.items || []).map(function (r) {
         return h("tr", {}, h("td", { class: "small", text: S.ago(r.at) }), h("td", {}, h("a", { href: "#/player/" + r.uuid, text: r.name }), " ", S.badge(r.platform === "bedrock" ? "Bedrock" : "Java", r.platform === "bedrock" ? "info" : "")),
-          h("td", {}, S.badge(r.categoryTitle, r.involuntary ? "danger" : "")), h("td", { class: "small mono", text: r.message || (r.kickCause ? r.kickCause : "–") }), h("td", { class: "small", text: r.ping >= 0 ? r.ping + " ms" : "–" }),
-          h("td", { class: "small", text: r.sessionMs ? S.dur(r.sessionMs) : "–" }), h("td", { class: "small", text: r.world ? r.world + " " + r.blockX + " / " + r.blockZ : "–" }), h("td", { class: "small", text: fmt(r.tps) + " / " + fmt(r.msptMax, 0) + " ms" }), h("td", { class: "small" }, packetTrace(r.packetTrace)));
+          h("td", {}, S.badge(r.categoryTitle, r.involuntary ? "danger" : ""), r.refined ? h("div", { class: "tiny muted", text: "gemeldet: " + r.reportedTitle }) : null, r.rejoinMs >= 0 ? h("div", { class: "tiny muted", text: "zurück nach " + S.dur(r.rejoinMs) }) : null), h("td", { class: "small mono", text: r.message || (r.kickCause ? r.kickCause : "–") }), h("td", { class: "small", text: r.ping >= 0 ? r.ping + " ms" : "–" }),
+          h("td", { class: "small", text: r.sessionMs ? S.dur(r.sessionMs) : "–" }), h("td", { class: "small", text: r.world ? r.world + " " + r.blockX + " / " + r.blockZ : "–" }), h("td", { class: "small", text: fmt(r.tps) + " / " + fmt(r.msptMax, 0) + " ms" }), h("td", { class: "small" }, packetTrace(r.packetTrace, r)));
       }))));
     return h("div", { class: "stack" },
       S.card("Vorfälle", { icon: "bell", sub: "Mehrere Disconnects in kurzer Zeit oder viele Spieler gleichzeitig – mit Einschätzung legitim oder Fehler" }, (d.incidents || []).length ? incidentList(d.incidents) : S.empty("check", "Keine Vorfälle", "Bisher keine Disconnect-Welle erkannt.")),
       S.card("Letzte 24 Stunden", { icon: "chart", sub: "Grau = alle Trennungen, rot = unfreiwillige (Timeout, Abbruch, Paketfehler)" }, hist),
       S.card("Einzelne Trennungen", { icon: "wifi", sub: (d.items || []).length + " Einträge · Gründe aus Kick, Quit-Grund und Konsole" }, filters, (d.items || []).length ? table : S.empty("search", "Keine Treffer", "Filter anpassen.")));
+  }
+
+  var CLOSE = { remote: "von außen geschlossen", server: "vom Server geschlossen", exception: "Netzwerkfehler" };
+  function patternRows(p) {
+    var per = p.periodicity || {};
+    return [["Gleichzeitig (3 s, Java)", p.sync], ["Zeitspanne", S.dur(p.spreadMs || 0)], ["Nur Java betroffen", p.javaOnly ? "ja – Bedrock blieb verbunden" : "nein"],
+      ["Wieder verbunden (≤ 3 min)", p.rejoinKnown ? p.rejoined + " von " + p.rejoinKnown : "noch offen"], ["Geschlossen von außen / Server / Fehler", (p.remoteClose || 0) + " / " + (p.serverClose || 0) + " / " + (p.exceptionClose || 0)],
+      ["Client bis zuletzt aktiv", p.activeUntilClose || 0], ["Client vorher eingefroren", p.frozen || 0], ["TCP-Verlust", p.retrans || 0], ["Sitzungsdauer-Streuung", Math.round((p.sessionVariation || 0) * 100) + " %"],
+      ["Netzbereiche", p.networkGroups ? p.networkGroups + (p.topNetworkGroupCount > 1 ? " (größter: " + p.topNetworkGroupCount + " Spieler)" : "") : "–"],
+      ["Regelmäßig", per.periodic ? "alle ~" + per.intervalMinutes + " min" + (per.next ? " · nächste ~" + new Date(per.next).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "") : per.sameMinute ? "immer um :" + String(per.minute).padStart(2, "0") : "nein"]];
+  }
+  function environmentCard(env) {
+    return S.card("Server-Netzwerk & Plugins", { icon: "settings", sub: "Proxy: " + (env.proxy || "–") },
+      h("div", {}, (env.checks || []).map(function (c) { return h("div", { class: "right-row" }, S.badge(c.value, c.status === "warn" ? "warn" : c.status === "ok" ? "ok" : "info"), h("div", { class: "grow" }, h("b", { text: c.title }), h("small", { class: "muted", text: " " + c.hint }))); })),
+      (env.plugins || []).length ? h("div", { class: "stack" }, h("b", { text: "Plugins, die Verbindungen berühren" }), env.plugins.map(function (p) { return h("small", { text: p.name + " " + p.version + " – " + p.note }); })) : null,
+      (env.recommended || []).length ? h("div", { class: "stack" }, h("b", { text: "Optional für noch tiefere Analysen" }), env.recommended.map(function (p) { return h("small", { text: p.name + ": " + p.why }); })) : null);
+  }
+  async function network(ctx, partial) {
+    var d = await api("network", { quiet: !!partial });
+    var STATE = { ok: ["Stabil", "ok"], unstable: ["Wackelig", "warn"], congested: ["Puffer voll", "danger"], stall: ["Stockt", "danger"] };
+    var table = h("div", { class: "table-wrap" }, h("table", { class: "table" }, h("thead", {}, h("tr", {}, ["Spieler", "Zustand", "Ping / RTT", "TCP-Verlust", "Daten rein / raus", "Letztes Paket", "Verbunden", "Client", "Netz"].map(function (t) { return h("th", { text: t }); }))),
+      h("tbody", {}, (d.items || []).map(function (r) {
+        var st = STATE[r.state] || [r.state, ""], c = r.client || {};
+        return h("tr", {}, h("td", {}, h("a", { href: "#/player/" + r.uuid, text: r.name }), " ", S.badge(r.platform === "bedrock" ? "Bedrock" : "Java", r.platform === "bedrock" ? "info" : "")),
+          h("td", {}, S.badge(st[0], st[1])), h("td", { class: "small", text: r.ping + " ms" + (r.rtt ? " / " + r.rtt + " ms" : "") }),
+          h("td", { class: "small", text: r.traced ? (r.retrans || 0) + " Neuübertr. · " + (r.lost || 0) + " verloren" + (r.unacked ? " · " + r.unacked + " offen" : "") : "–" }),
+          h("td", { class: "small", text: S.bytes(r.rateInBps || 0) + "/s · " + S.bytes(r.rateOutBps || 0) + "/s" }),
+          h("td", { class: "small", text: r.lastInboundAgeMs >= 0 ? S.dur(r.lastInboundAgeMs) : "–" }), h("td", { class: "small", text: r.connectionAgeMs ? S.dur(r.connectionAgeMs) : "–" }),
+          h("td", { class: "small", text: [c.brandLabel, c.version].filter(Boolean).join(" · ") || "–" }), h("td", { class: "small mono", text: r.networkGroup ? r.networkGroup + (r.groupSize > 1 ? " ×" + r.groupSize : "") : "–" }));
+      }))));
+    var body = h("div", { class: "stack diag-network" },
+      d.hint ? h("div", { class: "notice danger", text: d.hint }) : null,
+      S.card("Live-Netzwerk", { icon: "wifi", sub: d.online + " Verbindungen · aktualisiert alle 3 s · TCP-Werte vom Kernel (epoll), keine IP-Adressen" }, (d.items || []).length ? table : S.empty("users", "Niemand online", "")),
+      d.environment ? environmentCard(d.environment) : null);
+    return body;
   }
 
   async function incident(id, ctx) {
@@ -190,12 +228,22 @@
         h("div", { class: "row wrap" }, S.badge(verdict[0], verdict[1]), S.badge(sev[0], sev[1]), v.dominantTitle ? S.badge(v.dominantTitle) : null),
         h("p", { text: v.cause }), (v.steps || []).length ? h("ol", {}, v.steps.map(function (s) { return h("li", { text: s }); })) : null,
         h("div", { class: "muted small" }, (v.evidence || []).map(function (e) { return h("div", { text: "• " + e }); })),
+        v.hidden ? h("div", { class: "notice warn", text: "Diese Spieler wurden als „Disconnected“ gemeldet, die Spuren zeigen aber einen unfreiwilligen Abbruch." }) : null,
         S.kv([["TPS", fmt(st.tps)], ["Längster Tick 30 s", fmt(st.msptMax30s, 0) + " ms"], ["RAM", S.bytes(st.heapUsed) + " / " + S.bytes(st.heapMax)], ["GC", fmt(st.gcMsPerMinute, 0) + " ms/min"], ["CPU", pct(st.cpu)], ["Online danach", st.online], ["Watchdog", st.watchdog ? "ja" : "nein"]])),
-      S.card("KI-Einschätzung", { icon: "sparkles", sub: "Kurze Auswertung der Daten oben und der letzten Konsolenzeilen (ohne IP-Adressen)" }, aiBox("incident:" + i.id, i.ai, ctx.ai, ctx.canRun)),
+      (v.hypotheses || []).length ? S.card("Wahrscheinlichste Ursachen", { icon: "search", sub: "Gewichtet aus Paketspur, Rückkehrzeit, Gleichzeitigkeit, Plattform, Sitzungsdauer und früheren Wellen" },
+        h("div", { class: "stack" }, v.hypotheses.map(function (x) {
+          return h("div", { class: "stack", style: { gap: "4px" } }, h("div", { class: "row wrap" }, h("b", { class: "grow", text: x.title }), S.badge(x.confidence + " %", x.confidence >= 60 ? "danger" : x.confidence >= 40 ? "warn" : "info")),
+            h("div", { class: "bar" }, h("i", { style: { width: Math.max(4, x.confidence) + "%" } })),
+            h("small", { class: "muted", text: (x.why || []).join(" · ") }), h("small", { text: "→ " + x.step }));
+        }))) : null,
+      v.patterns ? S.card("Muster der Welle", { icon: "chart" }, S.kv(patternRows(v.patterns))) : null,
+      S.card("KI-Einschätzung", { icon: "sparkles", sub: "Auswertung aller Spuren, Hypothesen, Umgebung und Konsolenzeilen (ohne IP-Adressen). Startet bei unklaren Wellen automatisch." }, aiBox("incident:" + i.id, i.ai, ctx.ai, ctx.canRun)),
       (i.records || []).length ? S.card("Betroffene Spieler", { icon: "users" }, h("div", {}, i.records.map(function (r) {
-        return h("div", { class: "right-row" }, S.badge(r.platform === "bedrock" ? "Bedrock" : "Java", r.platform === "bedrock" ? "info" : ""), h("div", { class: "grow" }, h("a", { href: "#/player/" + r.uuid }, h("b", { text: r.name })),
-          h("small", { class: "muted", text: " " + r.categoryTitle + " · " + (r.message || "–") + " · Ping " + r.ping + " ms · " + (r.world || "") + " " + r.blockX + " / " + r.blockZ })), h("small", { text: new Date(r.at).toLocaleTimeString("de-DE") }));
+        return h("details", { class: "right-row" }, h("summary", {}, S.badge(r.platform === "bedrock" ? "Bedrock" : "Java", r.platform === "bedrock" ? "info" : ""), " ", h("a", { href: "#/player/" + r.uuid }, h("b", { text: r.name })),
+          h("small", { class: "muted", text: " " + r.categoryTitle + (r.refined ? " (gemeldet: " + r.reportedTitle + ")" : "") + " · " + (r.message || "–") + " · Ping " + r.ping + " ms · " + new Date(r.at).toLocaleTimeString("de-DE") })),
+          h("div", { class: "stack small" }, (r.signals || []).map(function (x) { return h("div", { text: "• " + x }); })));
       }))) : null,
+      i.environment ? environmentCard(i.environment) : null,
       (i.logs || []).length ? S.card("Konsole rund um den Vorfall", { icon: "terminal" }, logList(i.logs)) : null);
   }
 
@@ -393,7 +441,8 @@
       h("div", { class: "grid two" }, num("burstWindow", "Fenster für mehrere Disconnects (s)", "5–120", 5, 120), num("burstMin", "Ab so vielen Spielern", "2–50", 2, 50), num("waveShare", "Welle ab Anteil der Spieler", "0,15–0,95", 0.15, 0.95, 0.05),
         num("waveWindow", "Fenster für Wellen (s)", "10–300", 10, 300), num("spikeMs", "Lag-Spitze ab (ms)", "250–20000", 250, 20000), num("flappingCount", "Instabil ab Trennungen in 10 min", "2–20", 2, 20), num("aiPerHour", "KI-Analysen pro Stunde", "0–120", 0, 120)),
       h("div", { class: "stack", style: { gap: "10px" } }, flag("enabled", "Diagnose aktiv"), flag("notifyLegit", "Auch legitime Wellen per Bark melden"), flag("aiEnabled", "KI-Analysen erlauben"), flag("aiAutoCritical", "Kritische Vorfälle automatisch mit KI prüfen"),
-        flag("aiAutoCrash", "Abstürze automatisch mit KI prüfen"), flag("liveLog", "Konsole laufend für Absturzberichte sichern"), flag("sparkImportAll", "Auch Spark-Profile aus der Konsole analysieren")),
+        flag("aiAutoCrash", "Abstürze automatisch mit KI prüfen"), flag("liveLog", "Konsole laufend für Absturzberichte sichern"), flag("sparkImportAll", "Auch Spark-Profile aus der Konsole analysieren"),
+        "aiAutoUnclear" in s ? flag("aiAutoUnclear", "Unklare und verdeckte Wellen automatisch mit KI prüfen") : null, "tcpSampling" in s ? flag("tcpSampling", "TCP-Werte (RTT, Verlust) aller Verbindungen messen") : null),
       h("div", { class: "row" }, S.btn("Speichern", { kind: "primary", icon: "check", onClick: async function () { var body = {}; Object.keys(inputs).forEach(function (k) { body[k] = String(inputs[k].value); }); var r = await api("settings", { body: body }); S.toast(r.title); S.reload(); } })),
       S.notice("Bark-Hinweise für Disconnect-Wellen, Abstürze und Server-Hänger aktiviert jedes Teammitglied selbst unter Benachrichtigungen (App: Sicherheitszentrale → Bark).", "", "bell"));
   }

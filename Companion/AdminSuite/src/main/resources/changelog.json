@@ -1,5 +1,29 @@
 [
   {
+    "version": "10.16.0",
+    "app": "5.9.0",
+    "title": "PowerBot-Eskalation & Disconnect-Forensik",
+    "items": [
+      {
+        "title": "PowerBot schlichtet stufenweise",
+        "icon": "shieldCheck",
+        "text": "Beruhigen, öffentlich und persönlich warnen, 1 Minute Chatpause für die Beteiligten, danach Tiefenprüfung mit mehr Kontext und 5 Minuten für wer unnötig eskaliert. Pöbeln wird in Sekunden erkannt, der Chat alle 15 Nachrichten im Kontext analysiert."
+      },
+      {
+        "title": "Disconnect-Forensik",
+        "icon": "bell",
+        "text": "Wer die Verbindung schloss, Stille vor dem Ende, Rückkehrzeit, TCP-Neuübertragungen, Gleichzeitigkeit und Regelmäßigkeit – „Disconnected“-Wellen werden nicht mehr als freiwillig abgehakt."
+      },
+      {
+        "title": "Live-Netzwerk & Ursachen",
+        "icon": "chat",
+        "text": "Jede Verbindung live mit RTT, Verlust und Datenrate; gewichtete Ursachen pro Welle und automatische KI-Analyse, wenn die Heuristik unsicher ist."
+      }
+    ],
+    "date": "2026-11-10",
+    "intro": "Ein großes PowerBot-Update mit Eskalationsleiter und eine tiefe Analyse für Verbindungsabbrüche."
+  },
+  {
     "version": "10.15.0",
     "app": "5.8.0",
     "title": "Invsee, Schnellzentrale & KI",
