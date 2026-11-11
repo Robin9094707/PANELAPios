@@ -1,5 +1,19 @@
 [
   {
+    "version": "10.16.1",
+    "app": "5.9.0",
+    "title": "Fix: Massen-Disconnect beim Verlassen",
+    "items": [
+      {
+        "title": "Java-Spieler bleiben verbunden",
+        "icon": "shieldCheck",
+        "text": "Verließ ein Java-Spieler den Server, wurden alle anderen Java-Spieler getrennt. Ursache war der Paket-Guard: Er hielt während der Beitrittsprüfung die Team-Zuordnung zurück, ließ beim Verlassen aber das Entfernen aus dem Team durch – Java-Clients brechen dann mit einem Protokollfehler ab. Der Guard merkt sich jetzt pro Verbindung, was er zurückgehalten hat."
+      }
+    ],
+    "date": "2026-11-11",
+    "intro": "Wichtiger Fix für Verbindungsabbrüche. Nur die JAR austauschen, die App bleibt 5.9.0."
+  },
+  {
     "version": "10.16.0",
     "app": "5.9.0",
     "title": "PowerBot-Eskalation & Disconnect-Forensik",

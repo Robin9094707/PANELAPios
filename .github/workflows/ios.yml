@@ -145,7 +145,7 @@ jobs:
       - name: Upload the JAR as an individual file
         uses: actions/upload-artifact@v7.0.2
         with:
-          path: Companion/AdminSuite/target/SimplexAdminSuite-10.16.0.jar
+          path: Companion/AdminSuite/target/SimplexAdminSuite-10.16.1.jar
           archive: false
           if-no-files-found: error
           retention-days: 30
@@ -160,7 +160,7 @@ jobs:
           python3 tools/package-source.py
           cp ../../docs/Simplex-Admin-Recovery.pdf target/
           cd target
-          sha256sum SimplexAdminSuite-10.16.0.jar SimplexAdminSuite-10.16.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-10.16.1.jar SimplexAdminSuite-10.16.1-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
       - name: Build and test SimplexSentinelBridge (Geyser extension) against the real Geyser API
         working-directory: Companion/SentinelBridge
         run: |
@@ -174,8 +174,8 @@ jobs:
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-10.16.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-10.16.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-10.16.1.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-10.16.1-source.zip
             Companion/AdminSuite/target/Simplex-Admin-Recovery.pdf
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
@@ -235,7 +235,7 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
-          Simplex Panel 5.9.0 / Admin Suite 10.16.0: PowerBot escalation ladder for chat disputes (calm, public and personal warning, one-minute pause for the players involved, deep review with more context and a five-minute pause for whoever keeps escalating), hostile chat detected within seconds, context analysis every 15 messages, live disputes and active pauses with early lifting in app and web; disconnect forensics that looks behind "Disconnected" (who closed the connection, inbound silence, rejoin time, kernel TCP retransmissions, simultaneity, Java-only waves, equal session length, periodic waves), ranked causes per wave, a live network view, network configuration and plugin checks, and automatic AI analysis for unclear or hidden waves. All data stays compatible. SentinelBridge 1.6.0 unchanged. See UPDATE-5.9.0.md.
+          Simplex Panel 5.9.0 / Admin Suite 10.16.1: fixes every Java player being disconnected when another Java player leaves (the packet guard withheld scoreboard-team joins during the join check and later let the team leave through, which Java clients reject with a protocol error). PowerBot escalation ladder for chat disputes (calm, public and personal warning, one-minute pause for the players involved, deep review with more context and a five-minute pause for whoever keeps escalating), hostile chat detected within seconds, context analysis every 15 messages, live disputes and active pauses with early lifting in app and web; disconnect forensics that looks behind "Disconnected" (who closed the connection, inbound silence, rejoin time, kernel TCP retransmissions, simultaneity, Java-only waves, equal session length, periodic waves), ranked causes per wave, a live network view, network configuration and plugin checks, and automatic AI analysis for unclear or hidden waves. All data stays compatible. SentinelBridge 1.6.0 unchanged. See UPDATE-5.9.0.md.
 
           Simplex Panel 5.8.0 / Admin Suite 10.15.0: invsee for online and offline players with a second player side by side, moving, stacking and swapping including armor and offhand, lossless item data (shulker contents, enchantments), duplicate-safe commits with backup and rollback, resource-pack aware item textures (chests, banners, beds, heads, shields, animated blocks), item details, a customizable Schnellzentrale in app and web, an AI that finds players by approximate names and summarizes recent behavior, and a fixed rights editor. SentinelBridge 1.6.0 unchanged. See UPDATE-5.8.0.md.
 
