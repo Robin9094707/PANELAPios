@@ -2,6 +2,13 @@
 
 Die App-Anbindung ist optional und standardmäßig aus. Sie verwendet die vorhandenen Suite-Dienste und dieselben Profile, Strafen, Alt-Verknüpfungen, Discord-Verbindungen, OpenAI-Konfiguration und Inventar-Snapshots. Kein Datenordner wird umbenannt und keine vorhandene Integration wird neu eingerichtet.
 
+## Kurz: Koppeln ab 10.18.0 / App 5.11.0
+
+1. `/sas app status` – zeigt Adresse, Port, Fingerabdruck und testet den Port.
+2. Port muss beim Hoster diesem Server zugewiesen sein (Netzwerk/Ports); sonst `/sas app enable <Port>` mit einem zugewiesenen Port.
+3. `/sas app setup <Name>` und Link auf dem iPhone öffnen – oder Adresse + Anmeldung in der App eintragen. Den Fingerabdruck muss niemand abtippen: Die App zeigt ihn einmal zum Bestätigen.
+4. Optional `/sas app address <IP>:<Port>`, damit Setup-Links immer vollständig sind.
+
 ## Installation und Kopplung
 
 1. Server geordnet stoppen. Die vorhandene 8.2.0-JAR und den vollständigen Ordner `plugins/SimplexAdminSuite` sichern. Externe Datenbanken/Pluginabhängigkeiten gehören bei Bedarf ebenfalls zum Serverbackup.

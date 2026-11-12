@@ -145,7 +145,7 @@ jobs:
       - name: Upload the JAR as an individual file
         uses: actions/upload-artifact@v7.0.2
         with:
-          path: Companion/AdminSuite/target/SimplexAdminSuite-10.17.0.jar
+          path: Companion/AdminSuite/target/SimplexAdminSuite-10.18.0.jar
           archive: false
           if-no-files-found: error
           retention-days: 30
@@ -160,7 +160,7 @@ jobs:
           python3 tools/package-source.py
           cp ../../docs/Simplex-Admin-Recovery.pdf target/
           cd target
-          sha256sum SimplexAdminSuite-10.17.0.jar SimplexAdminSuite-10.17.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-10.18.0.jar SimplexAdminSuite-10.18.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
       - name: Build and test SimplexSentinelBridge (Geyser extension) against the real Geyser API
         working-directory: Companion/SentinelBridge
         run: |
@@ -174,8 +174,8 @@ jobs:
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-10.17.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-10.17.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-10.18.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-10.18.0-source.zip
             Companion/AdminSuite/target/Simplex-Admin-Recovery.pdf
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
@@ -235,6 +235,8 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
+          Simplex Panel 5.11.0 / Admin Suite 10.18.0: simpler pairing – the app checks the address itself, shows an unknown or changed certificate once for confirmation (no typing of fingerprints), accepts publicly valid certificates of a domain without a fingerprint and explains unreachable ports and proxy errors (502) in plain words; old setup links keep working after a server move. Suite: /sas app status as a pairing checklist with a port self-test, /sas app address <IP:Port>, complete setup links without editing the config, unauthenticated /v1/ping. Contains 5.10.0 / 10.17.0, 5.9.0 / 10.16.1. SentinelBridge 1.6.0 unchanged. See UPDATE-5.11.0.md.
+
           Simplex Panel 5.10.0 / Admin Suite 10.17.0: chat break (/chat) for Java and Bedrock players – mute the public chat for 30 minutes, 3 hours, 24 hours or until turned back on, with a native Java dialog (inventory fallback) and native Floodgate forms with icons and a preview; no chat from players or plugins and no chat sounds, full-name mentions and whispers optional, hints for players who write or mention a muted player (from six letters of the name), English/German by locale; staff manage chat breaks in the app and web panel; fixed Java players joining invisible or staying invisible after vanish; nicer player preference menu with icons, sounds and effects. Includes 5.9.0 / 10.16.1. SentinelBridge 1.6.0 unchanged. See UPDATE-5.10.0.md.
 
           Simplex Panel 5.9.0 / Admin Suite 10.16.1: fixes every Java player being disconnected when another Java player leaves (the packet guard withheld scoreboard-team joins during the join check and later let the team leave through, which Java clients reject with a protocol error). PowerBot escalation ladder for chat disputes (calm, public and personal warning, one-minute pause for the players involved, deep review with more context and a five-minute pause for whoever keeps escalating), hostile chat detected within seconds, context analysis every 15 messages, live disputes and active pauses with early lifting in app and web; disconnect forensics that looks behind "Disconnected" (who closed the connection, inbound silence, rejoin time, kernel TCP retransmissions, simultaneity, Java-only waves, equal session length, periodic waves), ranked causes per wave, a live network view, network configuration and plugin checks, and automatic AI analysis for unclear or hidden waves. All data stays compatible. SentinelBridge 1.6.0 unchanged. See UPDATE-5.9.0.md.

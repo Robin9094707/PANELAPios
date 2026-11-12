@@ -39,4 +39,37 @@ final class PinnedHTTPTests: XCTestCase {
         catch { XCTAssertTrue(RequestFailure.isCancellation(error)) }
         XCTAssertLessThan(Date().timeIntervalSince(cancelled), 1)
     }
+    // MARK: 5.11.0 simpler pairing
+    func testProbeFindsSelfSignedCertificateAndSuite() async throws {
+        let result = await SuiteProbe.run(URL(string: "https://127.0.0.1:49383")!, timeout: 5)
+        XCTAssertTrue(result.reachable)
+        XCTAssertEqual(result.fingerprint, pin)
+        XCTAssertFalse(result.publiclyTrusted)
+        XCTAssertEqual(result.status, 200)
+        XCTAssertTrue(result.suite)
+    }
+    func testPairingKeepsMatchingPinAndOffersAnUnknownCertificate() async throws {
+        let url = URL(string: "https://127.0.0.1:49383")!
+        let kept = try await SuitePairing.pin(for: url, entered: pin.uppercased())
+        XCTAssertEqual(kept, pin)
+        do { _ = try await SuitePairing.pin(for: url, entered: String(repeating: "0", count: 64)); XCTFail("Changed certificate accepted silently") }
+        catch let offer as SuiteCertificateOffer { XCTAssertEqual(offer.fingerprint, pin); XCTAssertEqual(offer.previous, String(repeating: "0", count: 64)) }
+        do { _ = try await SuitePairing.pin(for: url, entered: ""); XCTFail("Unknown certificate accepted silently") }
+        catch let offer as SuiteCertificateOffer { XCTAssertEqual(offer.fingerprint, pin); XCTAssertTrue(offer.previous.isEmpty) }
+    }
+    func testPairingExplainsClosedPortAndProxyErrors() async throws {
+        do { _ = try await SuitePairing.pin(for: URL(string: "https://127.0.0.1:1")!, entered: "", timeout: 3); XCTFail("Closed port accepted") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("zugewiesen"), error.localizedDescription) }
+        do { _ = try await SuitePairing.pin(for: URL(string: "https://127.0.0.1:49383/gateway")!, entered: pin); XCTFail("Proxy error ignored") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("502"), error.localizedDescription) }
+    }
+    func testPairingDecisionRules() throws {
+        let other = String(repeating: "a", count: 64)
+        XCTAssertEqual(try SuitePairing.decide(SuiteProbeResult(reachable: true, fingerprint: pin, publiclyTrusted: false), entered: pin), pin)
+        XCTAssertEqual(try SuitePairing.decide(SuiteProbeResult(reachable: true, fingerprint: other, publiclyTrusted: true), entered: pin), "", "A public certificate needs no pin")
+        XCTAssertThrowsError(try SuitePairing.decide(SuiteProbeResult(reachable: true, fingerprint: other, publiclyTrusted: false), entered: pin)) { XCTAssertTrue($0 is SuiteCertificateOffer) }
+        XCTAssertEqual(SuiteProbe.status(Data("HTTP/1.1 502 Bad Gateway\r\n".utf8)), 502)
+        XCTAssertNil(SuiteProbe.status(Data("HTTP/1.1 50".utf8)))
+        XCTAssertEqual(SuiteCertificateOffer(fingerprint: pin, previous: "").grouped.split(separator: " ").count, 8)
+    }
 }

@@ -149,6 +149,8 @@ struct SuiteSetupRedeemView: View {
     @State private var error: String?
     @State private var protect = true
     @State private var finished = false
+    @State private var certificate: SuiteCertificateOffer?
+    @State private var confirmedPin: String?
     var link: SuiteSetupLink? { SuiteSetupLink.parse(text) }
     var body: some View {
         NavigationStack {
@@ -180,6 +182,7 @@ struct SuiteSetupRedeemView: View {
                 }
             }.panelScreen().navigationTitle("Setup-Link").navigationBarTitleDisplayMode(.inline).errorAlert($error)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button(finished ? "Fertig" : "Abbrechen") { dismiss() }.disabled(busy) } }
+                .suiteCertificatePrompt($certificate) { value in confirmedPin = value; Task { await redeem() } }
                 .task { if let initial, text.isEmpty { text = "panel://setup?e=" + (initial.endpoint.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "") + "&f=" + initial.fingerprint + "&c=" + initial.code + "&u=" + initial.username + "&n=" + (initial.name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "") } }
         }.interactiveDismissDisabled(busy)
     }
@@ -187,7 +190,9 @@ struct SuiteSetupRedeemView: View {
         guard let link else { return }
         busy = true; defer { busy = false }
         do {
-            let url = try SuiteAPI.endpoint(link.endpoint), pin = try SuiteAPI.pin(link.fingerprint)
+            let url = try SuiteAPI.endpoint(link.endpoint)
+            // 5.11.0: a link with an old fingerprint (server moved) or a domain with a public certificate still works.
+            let pin = try await SuitePairing.pin(for: url, entered: confirmedPin ?? link.fingerprint)
             var record: SuiteConnection
             if let panel, let server {
                 record = SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: url.absoluteString, fingerprint: pin, serverIdentity: "")
@@ -203,9 +208,10 @@ struct SuiteSetupRedeemView: View {
             record.displayName = server?.name ?? (link.name.isEmpty ? record.displayName : link.name)
             try SuiteConnections.shared.save(record, token: api.sessionToken)
             if protect { store.biometricLock = true }
-            Feedback.success(); finished = true; text = ""
+            Feedback.success(); finished = true; text = ""; confirmedPin = nil
             await done()
-        } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+        } catch let offer as SuiteCertificateOffer { certificate = offer }
+        catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
     }
 }
 

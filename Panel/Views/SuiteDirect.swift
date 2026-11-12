@@ -12,21 +12,24 @@ struct SuiteDirectLoginView: View {
     @State private var error: String?
     @State private var setup = false
     @State private var pending: SuitePendingLogin?
+    @State private var certificate: SuiteCertificateOffer?
     var body: some View {
         NavigationStack { Form {
-            Section("Server") { TextField("https://Server-IP:Port", text: $endpoint).keyboardType(.URL); TextField("SHA-256-Fingerabdruck", text: $fingerprint, axis: .vertical).font(.caption.monospaced()) }
+            Section("Server") { TextField("https://Server-IP:Port", text: $endpoint).keyboardType(.URL); TextField("Fingerabdruck (optional)", text: $fingerprint, axis: .vertical).font(.caption.monospaced()) }
             if existing == nil { Section { Button { setup = true } label: { Label("Lieber per Setup-Link einrichten", systemImage: "link.badge.plus") } } footer: { Text("Mit einem einmaligen Link vom Hauptadmin musst du nichts eintippen.") } }
             Section("App-Zugang") { TextField("Minecraft-Benutzername", text: $username).disabled(existing != nil); SecureField("Passwort", text: $password) }
-            Section { Text("Den Fingerabdruck erhältst du vom Hauptadmin mit /sas app fingerprint. Bei einem öffentlich gültigen HTTPS-Zertifikat kann er leer bleiben.").font(.footnote).foregroundStyle(.secondary); Button { Task { await login() } } label: { if busy { ProgressView("Anmelden …") } else { Label("Anmelden & speichern", systemImage: "lock.shield") } }.disabled(busy || endpoint.isEmpty || username.isEmpty || password.isEmpty) }
+            Section { Text("Den Fingerabdruck musst du nicht eintippen: Die App prüft die Adresse und zeigt ein unbekanntes Zertifikat einmal zum Bestätigen (Vergleich: /sas app fingerprint).").font(.footnote).foregroundStyle(.secondary); Button { Task { await login() } } label: { if busy { ProgressView("Anmelden …") } else { Label("Anmelden & speichern", systemImage: "lock.shield") } }.disabled(busy || endpoint.isEmpty || username.isEmpty || password.isEmpty) }
             if SuitePasskeySignInButton.possible(endpoint: endpoint, fingerprint: fingerprint) { Section { SuitePasskeySignInButton(endpoint: endpoint, fingerprint: fingerprint) { code in await passkey(code) } } footer: { Text("Mit Face ID oder Touch ID über die Domain des Webpanels anmelden (Admin Suite 9.8).") } }
         }.textInputAutocapitalization(.never).autocorrectionDisabled().navigationTitle("Admin Suite anmelden").toolbar { Button("Schließen") { dismiss() }.disabled(busy) }.errorAlert($error).task { if let existing { endpoint = existing.endpoint; fingerprint = existing.fingerprint; username = existing.panel.replacingOccurrences(of: "suite-direct:", with: "") } }
             .sheet(isPresented: $setup) { SuiteSetupRedeemView { dismiss() } }
-            .sheet(item: $pending) { login in SuiteSecondStepView(api: login.api, challenge: login.challenge) { value in await complete(login.api, login.record, value) } } }.interactiveDismissDisabled(busy)
+            .sheet(item: $pending) { login in SuiteSecondStepView(api: login.api, challenge: login.challenge) { value in await complete(login.api, login.record, value) } }
+            .suiteCertificatePrompt($certificate) { value in fingerprint = value; Task { await login() } } }.interactiveDismissDisabled(busy)
     }
     func login() async {
         busy = true; defer { busy = false }
         do {
-            let url = try SuiteAPI.endpoint(endpoint), pin = try SuiteAPI.pin(fingerprint)
+            let url = try SuiteAPI.endpoint(endpoint)
+            let pin = try await SuitePairing.pin(for: url, entered: fingerprint); fingerprint = pin
             let name = username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             var record = existing ?? SuiteConnection(panel: "suite-direct:" + name, server: UUID().uuidString, endpoint: url.absoluteString, fingerprint: pin, serverIdentity: "")
             record.endpoint = url.absoluteString; record.fingerprint = pin
@@ -35,7 +38,8 @@ struct SuiteDirectLoginView: View {
             do { token = try await api.login(username: name, password: password) }
             catch let challenge as SuiteLoginChallenge { password = ""; pending = SuitePendingLogin(api: api, record: record, challenge: challenge); return }
             try await finish(api, record, token); password = ""
-        } catch { self.error = error.localizedDescription }
+        } catch let offer as SuiteCertificateOffer { certificate = offer }
+        catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
     }
     func finish(_ api: SuiteAPI, _ record: SuiteConnection, _ token: String) async throws {
         var record = record

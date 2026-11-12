@@ -165,14 +165,15 @@ struct SuiteConnectionView: View {
     @State private var remove = false
     @State private var setup = false
     @State private var pending: SuitePendingLogin?
+    @State private var certificate: SuiteCertificateOffer?
     var existing: SuiteConnection? { SuiteConnections.shared.get(panel, server) }
     var body: some View {
         NavigationStack {
             Form {
                 Section { Text(server.name).font(.headline); Text("Dieser Zugang gilt nur für diesen Server in diesem Panel-Account.").font(.footnote).foregroundStyle(.secondary) }
                 Section { Button { setup = true } label: { Label("Mit Setup-Link koppeln", systemImage: "link.badge.plus") }.disabled(panel.demo).accessibilityIdentifier("suite-setup-link") } footer: { Text("Einmaliger Link vom Hauptadmin (Admin Suite 9.7.0): Adresse, Fingerabdruck und Anmeldung werden automatisch übernommen.") }
-                Section("HTTPS-Verbindung") { TextField("https://Server-IP:Port", text: $endpoint).keyboardType(.URL); Picker("Anmelden mit", selection: $passwordLogin) { Text("Bestehendem Schlüssel").tag(false); Text("Benutzer & Passwort").tag(true) }; if passwordLogin { TextField("Minecraft-Benutzername", text: $username); SecureField("Passwort", text: $password) } else { SecureField("Admin-Suite-API-Schlüssel", text: $token) }; TextField("SHA-256-Fingerabdruck", text: $fingerprint, axis: .vertical).font(.footnote.monospaced()) }.textInputAutocapitalization(.never).autocorrectionDisabled()
-                Section { Text("Bei direkt erzeugtem Zertifikat den Fingerabdruck aus /sas app fingerprint eintragen. Bei öffentlich gültigem HTTPS-Zertifikat darf er leer bleiben. Ein geänderter Fingerabdruck wird niemals automatisch akzeptiert.").font(.footnote).foregroundStyle(.secondary) }
+                Section("HTTPS-Verbindung") { TextField("https://Server-IP:Port", text: $endpoint).keyboardType(.URL); Picker("Anmelden mit", selection: $passwordLogin) { Text("Bestehendem Schlüssel").tag(false); Text("Benutzer & Passwort").tag(true) }; if passwordLogin { TextField("Minecraft-Benutzername", text: $username); SecureField("Passwort", text: $password) } else { SecureField("Admin-Suite-API-Schlüssel", text: $token) }; TextField("Fingerabdruck (optional)", text: $fingerprint, axis: .vertical).font(.footnote.monospaced()) }.textInputAutocapitalization(.never).autocorrectionDisabled()
+                Section { Text("Adresse und Port zeigt /sas app status in der Serverkonsole. Den Fingerabdruck musst du nicht eintippen: Die App prüft die Adresse und zeigt ein unbekanntes Zertifikat einmal zum Bestätigen. Ein geändertes Zertifikat wird nie ohne deine Bestätigung angenommen.").font(.footnote).foregroundStyle(.secondary) }
                 Section { Button { Task { await connect() } } label: { if busy { ProgressView("Prüfen …") } else { Label("Prüfen & sicher speichern", systemImage: "checkmark.shield") } }.disabled(busy || endpoint.isEmpty || (passwordLogin ? username.isEmpty || password.isEmpty : token.isEmpty) || panel.demo) }
                 if passwordLogin && SuitePasskeySignInButton.possible(endpoint: endpoint, fingerprint: fingerprint) && !panel.demo { Section { SuitePasskeySignInButton(endpoint: endpoint, fingerprint: fingerprint) { code in await passkey(code) } } footer: { Text("Admin Suite 9.8: Anmeldung mit Face ID oder Touch ID über die eingetragene Domain.") } }
                 if existing != nil { Section { Button("Lokale Kopplung entfernen", role: .destructive) { remove = true }.disabled(busy) } }
@@ -180,14 +181,17 @@ struct SuiteConnectionView: View {
                 .task { if let record = existing { endpoint = record.endpoint; fingerprint = record.fingerprint; token = (try? Vault.read(record.id)) ?? "" } }
                 .sheet(isPresented: $setup) { SuiteSetupRedeemView(panel: panel, server: server) { await saved() } }
                 .sheet(item: $pending) { login in SuiteSecondStepView(api: login.api, challenge: login.challenge) { value in await complete(login.api, login.record, value) } }
+                .suiteCertificatePrompt($certificate) { value in fingerprint = value; Task { await connect() } }
                 .confirmationDialog("Kopplung auf diesem Gerät entfernen?", isPresented: $remove, titleVisibility: .visible) { Button("Entfernen", role: .destructive) { if let record = existing { SuiteConnections.shared.remove(record) }; Task { await saved(); dismiss() } } } message: { Text("Der Schlüssel bleibt serverseitig gültig, bis du ihn mit /sas app revoke widerrufst.") }
         }.interactiveDismissDisabled(busy)
     }
     func connect() async {
         busy = true; defer { busy = false }
         do {
-            let url = try SuiteAPI.endpoint(endpoint); let pin = try SuiteAPI.pin(fingerprint)
+            let url = try SuiteAPI.endpoint(endpoint)
             guard passwordLogin || ((token.hasPrefix("sas_") || token.hasPrefix("sasu_")) && token.count <= 160 && !token.contains(where: \.isWhitespace)) else { throw PanelError(message: "Gib den mit /sas app create erzeugten App-Schlüssel ein.") }
+            // 5.11.0: check the address first; a new self-signed certificate is shown once for confirmation.
+            let pin = try await SuitePairing.pin(for: url, entered: fingerprint); fingerprint = pin
             var record = SuiteConnection(panel: panel.base.absoluteString, server: server.id, endpoint: url.absoluteString, fingerprint: pin, serverIdentity: "", displayName: server.name)
             if let existing { record.id = existing.id; record.useForModeration = existing.useForModeration }
             let api = try SuiteAPI(record, token: passwordLogin ? "" : token)
@@ -196,7 +200,8 @@ struct SuiteConnectionView: View {
                 catch let challenge as SuiteLoginChallenge { password = ""; pending = SuitePendingLogin(api: api, record: record, challenge: challenge); return }
             }
             try await finish(api, record, token)
-        } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }
+        } catch let offer as SuiteCertificateOffer { certificate = offer }
+        catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }
     }
     /// Saves the verified connection; shared by key, password (+ second step) and passkey sign-in.
     func finish(_ api: SuiteAPI, _ record: SuiteConnection, _ value: String) async throws {

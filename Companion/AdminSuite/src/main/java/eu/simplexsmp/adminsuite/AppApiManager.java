@@ -168,6 +168,8 @@ final class AppApiManager {
         try{
             String ip=clientIp(x),requestPath=x.getRequestURI().getPath(),requestMethod=x.getRequestMethod();
             if(!rate("ip:"+ip,240))throw new ApiError(429,"Zu viele Anfragen. Bitte kurz warten.");
+            // 10.18.0: unauthenticated reachability check for pairing; tells the app that the Suite itself answered.
+            if((requestMethod.equals("GET")||requestMethod.equals("HEAD"))&&requestPath.equals("/v1/ping")){send(x,200,SimplexAdminSuite.appMap("service","simplex-admin-suite","apiVersion",1));return;}
             // 9.8.0: the browser panel shares this port. Static files only; data stays behind /v1 authentication.
             if((requestMethod.equals("GET")||requestMethod.equals("HEAD"))&&web.serves(requestPath)){web.serve(x,requestPath);return;}
             if(!sameOrigin(x))throw new ApiError(403,"Browserzugriff ist nicht freigegeben.");
@@ -417,7 +419,7 @@ final class AppApiManager {
                         String username=AppUsers.username(req.text("username"));
                         if(req.text("operation").equals("cancel")){security.users.cancelSetup(username);result=SimplexAdminSuite.appMap("ok",true,"title","Setup-Link widerrufen","description","Ein noch nicht eingelöster Link für "+username+" ist ungültig.");}
                         else{int minutes;try{minutes=req.text("minutes").isBlank()?60:Integer.parseInt(req.text("minutes"));}catch(NumberFormatException e){throw new IllegalArgumentException("Gültigkeit in Minuten angeben");}
-                            String code=security.users.setupCode(username,minutes,System.currentTimeMillis());String endpoint=req.text("endpoint").isBlank()?plugin.getConfig().getString("app-api.public-address",""):req.text("endpoint");
+                            String code=security.users.setupCode(username,minutes,System.currentTimeMillis());String endpoint=req.text("endpoint").isBlank()?setupEndpoint():req.text("endpoint");
                             String link=setupLink(endpoint,code,username);onMain(rev,()->{plugin.suiteAudit(actor(key).auditName(),"Setup-Link erstellt",username+" · "+minutes+" min");return null;});
                             result=SimplexAdminSuite.appMap("ok",true,"title","Setup-Link erstellt","description","Einmalig gültig für "+minutes+" Minuten. Nur an "+username+" weitergeben.","link",link,"code",code,"fingerprint",fingerprint,"expiresAt",System.currentTimeMillis()+minutes*60_000L,"username",username);}
                     }else if(req.path.equals("luckperms.edit")){result=onMain(rev,()->hub.luckPerms.apply(req.values,actor(key).auditName()));
@@ -685,9 +687,9 @@ final class AppApiManager {
             case "reload"->{plugin.reloadConfig();reload();sender.sendMessage("§aApp-API wird neu geladen. Kein Serverneustart nötig.");}
             case "create"->{if(args.length<2)throw new IllegalArgumentException("/sas app create <Name-ohne-Leerzeichen> [read|manage|full]");var issued=security.issue(args[1],args.length>2?args[2]:"read");sender.sendMessage("§eEinmaliger API-Schlüssel für "+issued.key().label()+" ("+issued.key().scope()+"). Nicht teilen:");sender.sendMessage(issued.token());sender.sendMessage("§7Widerrufen: /sas app revoke "+issued.key().id());plugin.expansionAudit(sender.getName(),null,"App-Schlüssel erzeugt",issued.key().id()+" · "+issued.key().scope());}
             case "user"->{if(args.length<3)throw new IllegalArgumentException("/sas app user <Minecraft-Name> <Passwort (12+ Zeichen)> [Recht1,Recht2 oder *]");security.users.save(args[1],args[2],new HashSet<>(Arrays.asList((args.length>3?args[3]:"data.overview,data.players,data.profile").split(","))),true);sender.sendMessage("§aApp-Benutzer gespeichert. Passwort wird nur gehasht gespeichert; bestehende API-Schlüssel bleiben gültig.");}
-            case "setup"->{if(args.length<2)throw new IllegalArgumentException("/sas app setup <Benutzer> [Minuten, Standard 60]");int minutes=args.length>2?Integer.parseInt(args[2]):60;String user=AppUsers.username(args[1]);String code=security.users.setupCode(user,minutes,System.currentTimeMillis());String link=setupLink(plugin.getConfig().getString("app-api.public-address",""),code,user);
+            case "setup"->{if(args.length<2)throw new IllegalArgumentException("/sas app setup <Benutzer> [Minuten, Standard 60]");int minutes=args.length>2?Integer.parseInt(args[2]):60;String user=AppUsers.username(args[1]);String code=security.users.setupCode(user,minutes,System.currentTimeMillis());String link=setupLink(setupEndpoint(),code,user);
                 // Shown only to the executing operator/console, never broadcast.
-                sender.sendMessage("§aEinmaliger Setup-Link für "+user+" ("+minutes+" min). Nicht öffentlich teilen:");if(!link.isBlank())sender.sendMessage(link);else{sender.sendMessage("§7Code: §f"+code);sender.sendMessage("§7Fingerabdruck: §f"+fingerprint);sender.sendMessage("§7Tipp: app-api.public-address setzen, dann entsteht ein vollständiger Link.");}
+                sender.sendMessage("§aEinmaliger Setup-Link für "+user+" ("+minutes+" min). Nicht öffentlich teilen:");if(!link.isBlank())sender.sendMessage(link);else{sender.sendMessage("§7Code: §f"+code);sender.sendMessage("§7Fingerabdruck: §f"+fingerprint);sender.sendMessage("§7Tipp: §f/sas app address <IP>:"+apiPort()+" §7einmal ausführen, dann entsteht ein vollständiger Link.");}
                 plugin.expansionAudit(sender.getName(),null,"Setup-Link erstellt",user+" · "+minutes+" min");}
             case "keys"->{for(var key:security.keys())sender.sendMessage(key.id()+" · "+key.label()+" · "+key.scope());}
             case "domain"->{String domain=AccountApi.validateDomain(args.length>1?args[1]:"");plugin.getConfig().set("app-api.public-domain",domain);plugin.saveConfig();sender.sendMessage(domain.isEmpty()?"§aDomain entfernt. Webpanel bleibt unter https://Server-IP:Port erreichbar; Passkeys sind ohne Domain aus.":"§aDomain gespeichert: https://"+domain+"/ · DNS und ein gültiges HTTPS-Zertifikat (z. B. Reverse-Proxy) einrichten, dann funktionieren Passkeys.");plugin.expansionAudit(sender.getName(),null,"Webpanel-Domain",domain.isEmpty()?"entfernt":domain);}
@@ -698,8 +700,23 @@ final class AppApiManager {
             case "users"->{for(var row:security.users.list())sender.sendMessage("§f"+row.get("username")+(Boolean.TRUE.equals(row.get("owner"))?" §6[Hauptadmin]":"")+" §7· "+(Boolean.TRUE.equals(row.get("enabled"))?"aktiv":"deaktiviert")+" · 2FA "+(Boolean.TRUE.equals(row.get("mfa"))?"an":"aus")+" · "+row.get("sessions")+" Geräte");}
             case "revoke"->{if(args.length<2)throw new IllegalArgumentException("/sas app revoke <Schlüssel-ID>");security.revoke(args[1]);sender.sendMessage("§aSchlüssel widerrufen.");plugin.expansionAudit(sender.getName(),null,"App-Schlüssel widerrufen",args[1]);}
             case "fingerprint"->sender.sendMessage("SHA-256: "+(fingerprint.isBlank()?"Noch kein aktives TLS-Zertifikat":fingerprint));
-            default->{sender.sendMessage("§bSimplex Panel API · "+status);sender.sendMessage("§7/sas app enable <Port> | disable | create <Name> [read|manage|full] | user <Name> <Passwort> [Rechte] | setup <Benutzer> [Minuten] | users | keys | revoke <ID> | domain [host] | fingerprint | reload");sender.sendMessage("§7Benutzer: rename <alt> <neu> | user-enable <Name> | user-disable <Name> | user-logout <Name> | public-name <Name> [Anzeigename]");sender.sendMessage("§7Notfall (nur Serverkonsole): owner-reset [Name] | user-reset <Name> | owner-transfer <Name> | unlock <Name> | recovery");sender.sendMessage("§7Webpanel: "+webAddress());if(!fingerprint.isBlank())sender.sendMessage("SHA-256: "+fingerprint);}
+            case "address"->{String address=AppPairing.normalizeAddress(args.length>1?args[1]:"",apiPort());plugin.getConfig().set("app-api.public-address",address);plugin.saveConfig();
+                sender.sendMessage(address.isEmpty()?"§aÖffentliche App-Adresse entfernt.":"§aApp-Adresse gespeichert: §fhttps://"+address+" §7· Setup-Links enthalten sie ab jetzt automatisch.");plugin.expansionAudit(sender.getName(),null,"App-Adresse",address.isEmpty()?"entfernt":address);}
+            case "status"->status(sender);
+            default->{status(sender);sender.sendMessage("§7/sas app status | enable <Port> | address <IP:Port> | disable | create <Name> [read|manage|full] | user <Name> <Passwort> [Rechte] | setup <Benutzer> [Minuten] | users | keys | revoke <ID> | domain [host] | fingerprint | reload");sender.sendMessage("§7Benutzer: rename <alt> <neu> | user-enable <Name> | user-disable <Name> | user-logout <Name> | public-name <Name> [Anzeigename]");sender.sendMessage("§7Notfall (nur Serverkonsole): owner-reset [Name] | user-reset <Name> | owner-transfer <Name> | unlock <Name> | recovery");sender.sendMessage("§7Webpanel: "+webAddress());if(!fingerprint.isBlank())sender.sendMessage("SHA-256: "+fingerprint);}
         }}catch(Exception e){sender.sendMessage("§cApp-API: "+e.getMessage());}return true;
+    }
+    int apiPort(){return plugin.getConfig().getInt("app-api.port",39093);}
+    /** 10.18.0: address for setup links without editing the config (saved address, host IP + port, then the web domain). */
+    String setupEndpoint(){try{return AppPairing.setupEndpoint(plugin.getConfig().getString("app-api.public-address",""),System.getenv("SERVER_IP"),apiPort(),accounts.webUrl());}catch(IllegalArgumentException e){return "";}}
+    /** 10.18.0: /sas app status as a pairing checklist plus a self-test of the port on the server itself. */
+    void status(CommandSender sender){
+        boolean enabled=plugin.getConfig().getBoolean("app-api.enabled",false);String transport=plugin.getConfig().getString("app-api.transport","tls");int port=apiPort();
+        String address;try{address=AppPairing.appAddress(plugin.getConfig().getString("app-api.public-address",""),System.getenv("SERVER_IP"),port);}catch(IllegalArgumentException e){address="https://<Server-IP>:"+port;}
+        sender.sendMessage("§bSimplex Panel API · "+status);
+        for(String line:AppPairing.checklist(enabled,active(),transport,address,port,fingerprint,accounts.webUrl()))sender.sendMessage(line);
+        if(enabled&&active()){String bind=plugin.getConfig().getString("app-api.bind","0.0.0.0");
+            setup.submit(()->{boolean ok=AppPairing.listening(bind,port,2000);Bukkit.getScheduler().runTask(plugin,()->sender.sendMessage(ok?"§a✓ Selbsttest: Port "+port+" antwortet auf dem Server. Kommt die App trotzdem nicht durch, ist der Port beim Hoster nicht weitergeleitet.":"§c✗ Selbsttest: Port "+port+" antwortet nicht einmal auf dem Server. §f/sas app reload §7oder einen anderen Port mit §f/sas app enable <Port>§7."));});}
     }
     /** Browser address of the panel: the configured domain, otherwise the public address or bind/port. */
     String webAddress(){
