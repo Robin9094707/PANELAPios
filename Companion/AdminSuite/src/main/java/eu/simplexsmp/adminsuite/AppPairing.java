@@ -14,13 +14,18 @@ import java.util.Locale;
 final class AppPairing {
     private AppPairing() {}
 
-    /** host or host:port, optionally with https:// and a trailing slash. Returns host:port, or "" for empty input. */
+    /**
+     * host or host:port, optionally with https:// and a trailing slash. A bare host gets the API port; a saved
+     * https:// URL without port keeps the implicit 443 (e.g. a reverse proxy domain). Returns "" for empty input.
+     */
     static String normalizeAddress(String input, int defaultPort) {
-        String value = input == null ? "" : input.trim().replaceFirst("(?i)^https://", "").replaceAll("/+$", "");
+        String raw = input == null ? "" : input.trim();
+        boolean url = raw.regionMatches(true, 0, "https://", 0, 8);
+        String value = raw.replaceFirst("(?i)^https://", "").replaceAll("/+$", "");
         if (value.isEmpty()) return "";
         if (!value.matches("[A-Za-z0-9.-]{1,253}(:[0-9]{2,5})?")) throw new IllegalArgumentException("Format: Host oder Host:Port, z. B. 123.45.67.89:12000");
         int colon = value.lastIndexOf(':');
-        if (colon < 0) return value.toLowerCase(Locale.ROOT) + ":" + defaultPort;
+        if (colon < 0) return value.toLowerCase(Locale.ROOT) + (url ? "" : ":" + defaultPort);
         int port = Integer.parseInt(value.substring(colon + 1));
         if (port < 1 || port > 65535) throw new IllegalArgumentException("Port 1–65535 erforderlich");
         return value.substring(0, colon).toLowerCase(Locale.ROOT) + ":" + port;
@@ -45,10 +50,11 @@ final class AppPairing {
      * Address used inside a setup link. The direct address with the pinned certificate comes first because it does
      * not depend on a proxy; the web domain is the last resort (the app accepts its public certificate on its own).
      */
-    static String setupEndpoint(String publicAddress, String serverIpEnv, int port, String webUrl) {
+    static String setupEndpoint(String publicAddress, String serverIpEnv, int port, String webUrl, String transport) {
         String saved = normalizeAddress(publicAddress, port);
         if (!saved.isEmpty()) return "https://" + saved;
-        String ip = hostIp(serverIpEnv);
+        // Proxy transport listens on loopback only: the direct address can never answer the app.
+        String ip = "proxy".equals(transport) ? "" : hostIp(serverIpEnv);
         if (!ip.isEmpty()) return "https://" + ip + ":" + port;
         String web = webUrl == null ? "" : webUrl.trim().replaceAll("/+$", "");
         return web.startsWith("https://") ? web : "";

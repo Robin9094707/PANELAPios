@@ -708,7 +708,7 @@ final class AppApiManager {
     }
     int apiPort(){return plugin.getConfig().getInt("app-api.port",39093);}
     /** 10.18.0: address for setup links without editing the config (saved address, host IP + port, then the web domain). */
-    String setupEndpoint(){try{return AppPairing.setupEndpoint(plugin.getConfig().getString("app-api.public-address",""),System.getenv("SERVER_IP"),apiPort(),accounts.webUrl());}catch(IllegalArgumentException e){return "";}}
+    String setupEndpoint(){try{return AppPairing.setupEndpoint(plugin.getConfig().getString("app-api.public-address",""),System.getenv("SERVER_IP"),apiPort(),accounts.webUrl(),plugin.getConfig().getString("app-api.transport","tls"));}catch(IllegalArgumentException e){return "";}}
     /** 10.18.0: /sas app status as a pairing checklist plus a self-test of the port on the server itself. */
     void status(CommandSender sender){
         boolean enabled=plugin.getConfig().getBoolean("app-api.enabled",false);String transport=plugin.getConfig().getString("app-api.transport","tls");int port=apiPort();

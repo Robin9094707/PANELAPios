@@ -25,10 +25,14 @@ public final class Release1180Harness {
         check(AppPairing.appAddress("", "", 12000).equals("https://<Server-IP>:12000"), "placeholder without IP");
         check(AppPairing.appAddress("1.2.3.4:5000", "88.99.10.11", 12000).equals("https://1.2.3.4:5000"), "saved address wins");
 
-        check(AppPairing.setupEndpoint("1.2.3.4:5000", "88.99.10.11", 12000, "https://admin.example.eu/").equals("https://1.2.3.4:5000"), "saved address first");
-        check(AppPairing.setupEndpoint("", "88.99.10.11", 12000, "https://admin.example.eu/").equals("https://88.99.10.11:12000"), "direct address before domain");
-        check(AppPairing.setupEndpoint("", "0.0.0.0", 12000, "https://admin.example.eu/").equals("https://admin.example.eu"), "domain as last resort");
-        check(AppPairing.setupEndpoint("", "", 12000, "").isEmpty(), "no address: code only");
+        check(AppPairing.setupEndpoint("1.2.3.4:5000", "88.99.10.11", 12000, "https://admin.example.eu/", "tls").equals("https://1.2.3.4:5000"), "saved address first");
+        check(AppPairing.setupEndpoint("", "88.99.10.11", 12000, "https://admin.example.eu/", "tls").equals("https://88.99.10.11:12000"), "direct address before domain");
+        check(AppPairing.setupEndpoint("", "0.0.0.0", 12000, "https://admin.example.eu/", "tls").equals("https://admin.example.eu"), "domain as last resort");
+        check(AppPairing.setupEndpoint("", "", 12000, "", "tls").isEmpty(), "no address: code only");
+        check(AppPairing.setupEndpoint("", "88.99.10.11", 12000, "https://admin.example.eu/", "proxy").equals("https://admin.example.eu"), "proxy transport never offers the loopback backend");
+        check(AppPairing.normalizeAddress("https://admin.example.eu", 39093).equals("admin.example.eu"), "saved https URL keeps implicit 443");
+        check(AppPairing.setupEndpoint("https://admin.example.eu/", "", 39093, "", "tls").equals("https://admin.example.eu"), "existing domain setup address unchanged");
+        check(AppPairing.normalizeAddress("admin.example.eu", 39093).equals("admin.example.eu:39093"), "bare host gets the API port");
 
         List<String> off = AppPairing.checklist(false, false, "tls", "https://<Server-IP>:12000", 12000, "", "");
         check(off.size() == 1 && off.get(0).contains("/sas app enable"), "disabled explains enable");
