@@ -28,6 +28,8 @@ final class QualityOfLifeManager implements Listener {
     private final Map<UUID,Boolean> mapOriginal=new HashMap<>();
     private final Set<UUID> metadataOwned=new HashSet<>();
     private final Map<UUID,Set<String>> hiddenNames=new ConcurrentHashMap<>();
+    /** 10.17.0: what the packet filter hid per viewer last tick, to re-send players that became visible again. */
+    private final Map<UUID,Set<UUID>> packetHidden=new HashMap<>();
     private Object mapApi;
     private Class<?> webApiType;
     private BukkitTask timer;
@@ -48,14 +50,34 @@ final class QualityOfLifeManager implements Listener {
         ticks++;plugin.refreshDiscordInvites();probes.purgeClosed();
         List<Player> online=new ArrayList<>(Bukkit.getOnlinePlayers());
         for(Player p:online){boolean hidden=plugin.adminRuntime.vanished(p)||plugin.completeStealth(p);if(hidden){p.setMetadata("vanished",new FixedMetadataValue(plugin,true));metadataOwned.add(p.getUniqueId());}else clearMetadata(p);}
-        for(Player viewer:online){Set<String> hidden=new HashSet<>();Set<UUID> ids=new HashSet<>();Set<Integer> entities=new HashSet<>();
-            for(Player target:online)if(!target.equals(viewer)&&(plugin.adminRuntime.vanished(target)||!viewer.canSee(target)||plugin.discordAdminHidden(target)&&!plugin.has(viewer,"simplexadminsuite.admin"))){hidden.add(target.getName().toLowerCase(Locale.ROOT));ids.add(target.getUniqueId());entities.add(target.getEntityId());}
-            hiddenNames.put(viewer.getUniqueId(),Set.copyOf(hidden));packets.snapshot(viewer,ids,entities,hidden);
+        List<Player[]> resend=new ArrayList<>();
+        for(Player viewer:online){Set<String> hidden=new HashSet<>(),tabHidden=new HashSet<>();Set<UUID> ids=new HashSet<>();Set<Integer> entities=new HashSet<>();
+            for(Player target:online){
+                if(target.equals(viewer))continue;
+                // 10.17.0: only the Suite's own hiding goes into the packet filter. Players hidden by other plugins are
+                // already hidden natively by Paper; filtering them too dropped their spawn packets once they were shown again
+                // (Java players joined invisibly or stayed invisible after vanish).
+                boolean suiteHidden=plugin.adminRuntime.vanished(target)||plugin.discordAdminHidden(target)&&!plugin.has(viewer,"simplexadminsuite.admin");
+                String lower=target.getName().toLowerCase(Locale.ROOT);
+                if(suiteHidden){hidden.add(lower);ids.add(target.getUniqueId());entities.add(target.getEntityId());}
+                if(suiteHidden||!viewer.canSee(target))tabHidden.add(lower);
+            }
+            hiddenNames.put(viewer.getUniqueId(),Set.copyOf(tabHidden));
+            Set<UUID> before=packetHidden.getOrDefault(viewer.getUniqueId(),Set.of());
+            packets.snapshot(viewer,ids,entities,hidden);
+            packetHidden.put(viewer.getUniqueId(),Set.copyOf(ids));
+            for(UUID gone:before)if(!ids.contains(gone)){Player target=Bukkit.getPlayer(gone);if(target!=null&&!target.equals(viewer))resend.add(new Player[]{viewer,target});}
         }
+        // Packets sent while a player was still in the filter are lost; hiding and showing again re-sends tab entry and entity.
+        for(Player[] pair:resend)resync(pair[0],pair[1]);
         if(ticks%Math.max(1,Math.min(30,plugin.getConfig().getInt("nameplates.refresh-seconds",2)))==0)names.tick();
         syncMap();
     }
     void visibilityChanged(Player player){if(player==null||!running)return;if(plugin.adminRuntime.vanished(player)||plugin.completeStealth(player)){player.setMetadata("vanished",new FixedMetadataValue(plugin,true));metadataOwned.add(player.getUniqueId());}else clearMetadata(player);tick();}
+    private void resync(Player viewer,Player target){
+        if(!viewer.isOnline()||!target.isOnline()||!viewer.canSee(target))return;
+        try{viewer.hidePlayer(plugin,target);viewer.showPlayer(plugin,target);}catch(RuntimeException e){plugin.getLogger().fine("Sichtbarkeit konnte nicht neu gesendet werden: "+e.getMessage());}
+    }
     void prepareReveal(Player player){
         packets.reveal(player.getUniqueId(),player.getEntityId(),player.getName());
         String name=player.getName().toLowerCase(Locale.ROOT);
@@ -125,7 +147,11 @@ final class QualityOfLifeManager implements Listener {
     }
     @EventHandler(priority=EventPriority.MONITOR) public void join(PlayerJoinEvent e){packets.join(e.getPlayer());Bukkit.getScheduler().runTaskLater(plugin,()->{if(e.getPlayer().isOnline()){tick();probes.joined(e.getPlayer());}},1L);scheduleAuto(e.getPlayer(),0);}
     private void scheduleAuto(Player p,int tries){Bukkit.getScheduler().runTaskLater(plugin,()->{if(!p.isOnline()||plugin.isBedrockClient(p)||!plugin.getConfig().getBoolean("client-security.probes.auto-on-join",true))return;if(plugin.adminRuntime.blocked(p)||!packets.available(p.getUniqueId())){if(tries<200)scheduleAuto(p,tries+1);}else probes.auto(p);},tries==0?2L:10L);}
-    @EventHandler(priority=EventPriority.MONITOR) public void quit(PlayerQuitEvent e){names.clear(e.getPlayer());probes.quit(e.getPlayer());packets.quit(e.getPlayer());clearMetadata(e.getPlayer());hiddenNames.remove(e.getPlayer().getUniqueId());restoreMap(e.getPlayer().getUniqueId());}
+    @EventHandler(priority=EventPriority.MONITOR) public void quit(PlayerQuitEvent e){names.clear(e.getPlayer());probes.quit(e.getPlayer());packets.quit(e.getPlayer());clearMetadata(e.getPlayer());hiddenNames.remove(e.getPlayer().getUniqueId());restoreMap(e.getPlayer().getUniqueId());
+        UUID id=e.getPlayer().getUniqueId();packetHidden.remove(id);for(Set<UUID> set:packetHidden.values())if(set.contains(id)){packetHidden.replaceAll((k,v)->{if(!v.contains(id))return v;Set<UUID> copy=new HashSet<>(v);copy.remove(id);return Set.copyOf(copy);});break;}
+        packets.forget(id,e.getPlayer().getName());}
+    /** 10.17.0: before the server announces a joining player, no viewer may still filter that player from an earlier session. */
+    @EventHandler(priority=EventPriority.LOWEST) public void forgetOnJoin(PlayerJoinEvent e){packets.forget(e.getPlayer().getUniqueId(),e.getPlayer().getName());}
     @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true) public void target(EntityTargetLivingEntityEvent e){if(e.getTarget() instanceof Player p&&(plugin.adminRuntime.vanished(p)||plugin.completeStealth(p)))e.setCancelled(true);}
     List<String> complete(CommandSender sender,String feature,String[] args){
         String permission=feature.equals("bluemap")?"simplexadminsuite.bluemap":feature.equals("names")?"simplexadminsuite.nickname":"simplexadminsuite.clientcheck";

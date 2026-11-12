@@ -1251,3 +1251,8 @@ powerbot:
   # Leave empty to use the built-in system prompts; the app and web panel can edit them.
   system-prompt: ''
   assistant-prompt: ''
+
+# 10.17.0 Chat-Ruhe (/chat): players mute the public chat for themselves.
+chat-silence:
+  # dialog = native Java dialog (Paper, Minecraft 1.21.6+), inventory = chest menu. Bedrock always uses native Floodgate forms.
+  java-menu: dialog

@@ -1,6 +1,6 @@
 name: SimplexAdminSuite
 main: eu.simplexsmp.adminsuite.SimplexAdminSuite
-version: 10.16.1
+version: 10.17.0
 api-version: '26.2'
 author: RJ
 website: https://simplexsmp.eu
@@ -67,6 +67,10 @@ commands:
     description: Your profile, statistics, language, feedback and sidebar settings.
     aliases: [profile, profil, simplexprofil, settings, einstellungen]
     usage: /profil [settings|history|stats|feedback]
+  simplexchat:
+    description: Chat break – mute the public chat for yourself (temporarily or until you turn it on). Chat-Ruhe.
+    usage: /chat [an|aus [30m|3h|24h|dauerhaft]|flüstern an|aus|erwähnungen an|aus|status] · /chat [on|off|whispers|mentions|status]
+    aliases: [chat, chatruhe, chatbreak, mutechat, chatmute, ruhe, stumm]
   feedback:
     description: Send feedback to the server team or read replies.
     usage: /feedback [message]

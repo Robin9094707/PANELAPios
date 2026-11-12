@@ -18,6 +18,15 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.10.0", title: "Chat-Ruhe", summary: "Spieler können den Chat für sich stummschalten – mit /chat, auf Java und Bedrock. Du siehst in der App, wer das getan hat, und hilfst beim Stummschalten oder Aufheben. Dazu ein Fix für unsichtbare Spieler. Alle Daten bleiben erhalten.", items: [
+            .init(symbol: "bell.slash.fill", title: "Chat für sich stummschalten", detail: "Mit /chat für 30 Minuten, 3 Stunden, 24 Stunden oder dauerhaft. Keine Chatnachrichten von Spielern und Plugins, keine Chat-Töne."),
+            .init(symbol: "gamecontroller.fill", title: "Native Menüs mit Vorschau", detail: "Java bekommt einen echten Minecraft-Dialog (sonst ein Inventarmenü), Bedrock ein natives Formular mit Symbolen – auf Deutsch oder Englisch."),
+            .init(symbol: "at", title: "Erwähnungen & Flüstern", detail: "Erwähnungen mit vollem Namen und Flüsternachrichten kommen weiter an – beides lässt sich zusätzlich stummschalten."),
+            .init(symbol: "info.bubble.fill", title: "Hinweise für alle", detail: "Wer schreibt, obwohl der Chat stumm ist, sieht den Weg zurück. Wer einen stummen Spieler erwähnt, erfährt es – schon ab sechs Buchstaben des Namens."),
+            .init(symbol: "person.2.badge.gearshape.fill", title: "Verwalten in App & Web", detail: "Neue Seite „Chat-Ruhe“: sehen, wer den Chat stummgeschaltet hat, und Spielern beim Stummschalten oder Aufheben helfen."),
+            .init(symbol: "eye.fill", title: "Unsichtbare Spieler behoben", detail: "Java-Spieler traten manchmal unsichtbar bei oder blieben nach dem Vanish unsichtbar. Die Sichtbarkeit wird jetzt zuverlässig neu gesendet."),
+            .init(symbol: "slider.horizontal.3", title: "Schöneres Präferenzmenü", detail: "Das Spieler-Profilmenü hat passende Symbole, Töne und Effekte – und die Chat-Ruhe direkt in den Einstellungen.")
+        ]),
         WhatsNewRelease(version: "5.9.0", title: "PowerBot schlichtet & Disconnect-Forensik", summary: "PowerBot greift bei Streits stufenweise ein und erkennt Pöbeln in Sekunden. Verbindungsabbrüche werden bis auf die Netzwerkebene analysiert – auch wenn sie als „Disconnected“ gemeldet werden. Alle Daten und Funktionen bleiben erhalten.", items: [
             .init(symbol: "flame.fill", title: "Streits stufenweise schlichten", detail: "Erst beruhigen, dann öffentlich und persönlich warnen, danach 1 Minute Chatpause für die Beteiligten. Opfer und Unbeteiligte werden nie stummgeschaltet."),
             .init(symbol: "magnifyingglass.circle.fill", title: "Tiefenprüfung", detail: "Hört es nicht auf oder übertreibt jemand, holt sich PowerBot mehr Kontext (längerer Chat, Verlauf der letzten 24 Stunden) und entscheidet über 5 Minuten Pause."),

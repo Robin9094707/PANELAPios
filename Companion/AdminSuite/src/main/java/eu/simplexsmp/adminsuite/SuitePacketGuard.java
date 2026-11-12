@@ -23,6 +23,8 @@ final class SuitePacketGuard {
     private final Set<UUID> departed=ConcurrentHashMap.newKeySet();
     private volatile boolean guardEnabled=true;
     ClientProbeManager probes;
+    /** 10.16.0: per-player chat break filter; null while the module is not loaded. */
+    volatile ChatSilence chat;
     record Snapshot(Set<UUID> uuids,Set<Integer> entityIds,Set<String> names){static final Snapshot EMPTY=new Snapshot(Set.of(),Set.of(),Set.of());}
     SuitePacketGuard(SimplexAdminSuite p){plugin=p;}
     void snapshot(Player p,Set<UUID> ids,Set<Integer> entities,Set<String> names){guardEnabled=plugin.getConfig().getBoolean("admin-update.vanish.packet-guard",true);if(departed.contains(p.getUniqueId()))return;snapshots.put(p.getUniqueId(),new Snapshot(Set.copyOf(ids),Set.copyOf(entities),Set.copyOf(names)));if(!channels.containsKey(p.getUniqueId()))attach(p);}
@@ -38,6 +40,16 @@ final class SuitePacketGuard {
         Set<Integer> entities=new HashSet<>(snapshot.entityIds());entities.remove(entityId);
         Set<String> names=new HashSet<>(snapshot.names());names.remove(lower);
         return new Snapshot(Set.copyOf(ids),Set.copyOf(entities),Set.copyOf(names));
+    }
+    /** 10.17.0: a player who left (or is joining again) must never stay in another viewer's hidden set. */
+    void forget(UUID target,String name){
+        String lower=name==null?"":name.toLowerCase(Locale.ROOT);
+        snapshots.replaceAll((viewer,s)->s.uuids().contains(target)||s.names().contains(lower)?forgotten(s,target,lower):s);
+    }
+    static Snapshot forgotten(Snapshot snapshot,UUID target,String lower){
+        Set<UUID> ids=new HashSet<>(snapshot.uuids());ids.remove(target);
+        Set<String> names=new HashSet<>(snapshot.names());names.remove(lower);
+        return new Snapshot(Set.copyOf(ids),snapshot.entityIds(),Set.copyOf(names));
     }
     void join(Player p){departed.remove(p.getUniqueId());attach(p);}
     private void attach(Player p){
@@ -73,6 +85,9 @@ final class SuitePacketGuard {
                             super.channelRead(ctx,message);
                         }
                         @Override public void write(ChannelHandlerContext ctx,Object message,ChannelPromise promise)throws Exception{
+                            ChatSilence silence=chat;
+                            if(silence!=null){boolean allowed=true;try{allowed=silence.allowOutgoing(id,message);}catch(RuntimeException e){warn("Chat break "+message.getClass().getSimpleName()+": "+e.getClass().getSimpleName());}
+                                if(!allowed){ReferenceCountUtil.release(message);promise.trySuccess();return;}}
                             Object filtered=message;Snapshot snapshot=guardEnabled?snapshots.getOrDefault(id,Snapshot.EMPTY):Snapshot.EMPTY;TeamLedger teams=ctx.channel().attr(TEAMS).get();
                             // 10.16.1: hand team memberships to the client as soon as the player is visible again (e.g. after the join check).
                             if(teams!=null&&teams.pending())try{for(Object join:teams.release(snapshot.names()))ctx.write(join);}catch(RuntimeException e){warn("Team release: "+e.getClass().getSimpleName());}

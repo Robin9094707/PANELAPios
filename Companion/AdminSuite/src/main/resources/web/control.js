@@ -278,4 +278,92 @@
     add(); var observer = new MutationObserver(add); observer.observe(S.content, { childList: true });
     var previousLeave = S.onLeave; S.onLeave = function () { observer.disconnect(); if (previousLeave) previousLeave(); };
   };
+
+  // ------------------------------------------------------------------ 10.17.0 Chat-Ruhe
+  var SILENCE_PRESETS = [[30, "30 Minuten"], [180, "3 Stunden"], [1440, "24 Stunden"], [0, "Dauerhaft"]];
+  function silenceUntil(row) {
+    if (!row.active) return "Chat sichtbar";
+    if (!row.until) return "dauerhaft – bis der Spieler ihn einschaltet";
+    var left = Math.max(1, Math.round((row.until - Date.now()) / 60000)), hours = Math.floor(left / 60), mins = left % 60;
+    return "noch " + (hours ? hours + " Std." + (mins ? " " + mins + " Min." : "") : mins + " Min.") + " · bis " + S.date(row.until);
+  }
+  function silenceBy(row) {
+    if (!row.by) return "";
+    if (row.by === "self") return "vom Spieler selbst";
+    if (row.by === "expired") return "automatisch abgelaufen";
+    return "vom Team (" + String(row.by).replace(/^staff:/, "").replace(/^Simplex Panel\//, "") + ")";
+  }
+  P["chat-silence"] = async function (param, query, alive) {
+    if (!S.has("chat-silence-v1") || !S.can("data.chat-silence")) { S.mount(S.lockedPage("Chat-Ruhe gesperrt", "data.chat-silence")); return; }
+    var data, search = "", filter = "active", area = h("div", { class: "stack" }), list = h("div", { class: "list" }), kpis = h("div", { class: "grid kpis" });
+    function kpi(label, value, ic, hint) { return h("section", { class: "card kpi" }, h("div", { class: "ico" }, S.icon(ic)), h("div", { class: "label", text: label }), h("div", { class: "value", text: String(value) }), hint ? h("div", { class: "hint small muted", text: hint }) : null); }
+    async function send(body, done) {
+      try { data = await S.api("chat-silence", { body: Object.assign({ confirmed: true }, body) }); S.toast(data.notice || done); paint(); }
+      catch (e) { fail(e); }
+    }
+    function editor(target, row) {
+      var minutes = 180, whispers = row ? !!row.whispers : false, mentions = row ? !!row.mentions : false, notify = true, dlg;
+      var presets = S.segmented(SILENCE_PRESETS.map(function (p) { return [String(p[0]), p[1]]; }), String(minutes), function (v) { minutes = Number(v); });
+      var body = h("div", { class: "stack" },
+        h("p", { class: "muted", text: "Für Spieler, die nicht wissen, wie es geht. " + target.name + " sieht danach keine Chatnachrichten und keine Chat-Töne mehr – Erwähnungen mit vollem Namen und Flüsternachrichten kommen an, solange sie nicht ebenfalls stummgeschaltet sind." }),
+        S.field("Dauer", presets),
+        h("label", { class: "check" }, S.sw(whispers, function (v) { whispers = v; }), h("span", { text: "Flüsternachrichten ebenfalls stummschalten" })),
+        h("label", { class: "check" }, S.sw(mentions, function (v) { mentions = v; }), h("span", { text: "Erwähnungen ebenfalls stummschalten" })),
+        h("label", { class: "check" }, S.sw(notify, function (v) { notify = v; }), h("span", { text: "Spieler im Spiel informieren (Deutsch/Englisch nach Sprache)" })));
+      dlg = S.modal("Chat-Ruhe für " + target.name, body, [
+        S.btn("Abbrechen", { onClick: function () { dlg.close(); } }),
+        S.btn("Stummschalten", { kind: "primary", icon: "bellOff", onClick: async function () { dlg.close(); await send({ operation: "mute", player: target.id, minutes: minutes, whispers: whispers, mentions: mentions, notify: notify }, "Gespeichert."); } })], { icon: "bellOff" });
+    }
+    function options(row) {
+      var whispers = !!row.whispers, mentions = !!row.mentions, dlg;
+      dlg = S.modal("Optionen für " + row.name, h("div", { class: "stack" },
+        h("p", { class: "muted", text: "Gilt nur während einer Chat-Ruhe." }),
+        h("label", { class: "check" }, S.sw(whispers, function (v) { whispers = v; }), h("span", { text: "Flüsternachrichten stummschalten" })),
+        h("label", { class: "check" }, S.sw(mentions, function (v) { mentions = v; }), h("span", { text: "Erwähnungen stummschalten" }))), [
+        S.btn("Abbrechen", { onClick: function () { dlg.close(); } }),
+        S.btn("Speichern", { kind: "primary", onClick: async function () { dlg.close(); await send({ operation: "options", player: row.player, whispers: whispers, mentions: mentions }, "Gespeichert."); } })], { icon: "settings" });
+    }
+    function paint() {
+      if (!alive()) return;
+      S.clear(kpis); S.clear(list);
+      var rows = (data.items || []).filter(function (r) { return filter === "all" || (filter === "active" ? r.active : !r.active); })
+        .filter(function (r) { return !search || String(r.name).toLowerCase().indexOf(search.toLowerCase()) >= 0; });
+      kpis.append(kpi("Chat stummgeschaltet", data.active, "bellOff", "Spieler mit aktiver Chat-Ruhe"),
+        kpi("Davon online", (data.items || []).filter(function (r) { return r.active && r.online; }).length, "users"),
+        kpi("Spieler online", data.online, "activity"),
+        kpi("Plugin-Filter", data.packetFilter === "idle" ? "bereit" : data.packetFilter, "shieldCheck", "Kanäle mit aktivem Nachrichtenfilter"));
+      rows.forEach(function (r) {
+        var badges = h("div", { class: "row wrap", style: { gap: "6px" } },
+          S.badge(r.active ? "Chat stumm" : "Chat sichtbar", r.active ? "warn" : "ok", r.active ? "bellOff" : "bell"),
+          r.online ? S.badge(r.bedrock ? "Online · Bedrock" : "Online · Java", "info") : S.badge("Offline", ""),
+          r.whispers ? S.badge("Flüstern stumm", "") : null, r.mentions ? S.badge("Erwähnungen stumm", "") : null);
+        var actions = data.manage ? h("div", { class: "row wrap", style: { gap: "6px" } },
+          r.active ? S.btn("Aufheben", { kind: "primary", icon: "bell", size: "sm", onClick: async function () {
+            if (!await S.confirm("Chat für " + r.name + " wieder einschalten?", "Der Spieler sieht danach wieder alle Chatnachrichten und wird im Spiel informiert.", "Einschalten")) return;
+            await send({ operation: "unmute", player: r.player }, "Aufgehoben.");
+          } }) : S.btn("Stummschalten", { icon: "bellOff", size: "sm", onClick: function () { editor({ id: r.player, name: r.name }, r); } }),
+          S.btn("Optionen", { size: "sm", icon: "settings", onClick: function () { options(r); } })) : null;
+        list.append(h("div", { class: "item" }, S.avatar(r.name), h("div", { class: "meta grow" }, h("b", { text: r.name }),
+          h("div", { class: "small muted", text: silenceUntil(r) + (silenceBy(r) ? " · " + silenceBy(r) : "") + (r.since ? " · " + S.ago(r.since) : "") }), badges), actions));
+      });
+      if (!rows.length) list.append(S.empty("bell", filter === "active" ? "Niemand hat den Chat stummgeschaltet" : "Keine Einträge", "Spieler nutzen im Spiel /chat – oder du hilfst ihnen hier."));
+    }
+    S.title("Chat-Ruhe", "Spieler, die den Chat für sich stummgeschaltet haben · im Spiel /chat",
+      S.can("chat-silence.manage") ? S.btn("Spieler stummschalten", { kind: "primary", icon: "bellOff", onClick: async function () {
+        var target = await (S.pickPlayer || S.pickOnlinePlayer)("Chat-Ruhe setzen", ""); if (!target) return;
+        editor(target, (data.items || []).find(function (r) { return r.player === target.id; }));
+      } }) : null);
+    area.append(kpis,
+      S.card("Spieler", { icon: "bellOff", cls: "pad-list", sub: "Aktive Chat-Ruhen und gespeicherte Optionen. Spieler verwalten das selbst mit /chat (Java: Dialog oder Menü, Bedrock: natives Formular)." },
+        h("div", { class: "stack" }, h("div", { class: "row wrap" }, S.searchBox("Spieler suchen …", function (q) { search = q; paint(); }, search),
+          S.segmented([["active", "Aktiv"], ["inactive", "Nur Optionen"], ["all", "Alle"]], filter, function (v) { filter = v; paint(); })), list)),
+      S.card("So funktioniert es", { icon: "info" }, h("div", { class: "stack small" },
+        h("p", { text: "Während der Chat-Ruhe erhält der Spieler keine Chatnachrichten anderer Spieler und Plugins und keine Chat-Töne. Action-Bar, Titel und Antworten auf eigene Befehle bleiben sichtbar." }),
+        h("p", { text: "Erwähnungen mit vollem Namen kommen an (der Spieler kann sie per Klick bzw. /chat erwähnungen aus stummschalten). Schreibt der Spieler selbst in den Chat, erscheint ein Hinweis mit dem Weg zurück." }),
+        h("p", { text: "Wer einen stummgeschalteten Spieler erwähnt – auch mit mindestens sechs Buchstaben des Namens –, erhält einen Hinweis. Flüsternachrichten werden abgelehnt, wenn der Spieler sie stummgeschaltet hat." }))));
+    S.mount(area);
+    data = await S.api("chat-silence"); if (!alive()) return;
+    paint();
+    S.every(15000, async function () { try { data = await S.api("chat-silence", { quiet: true }); paint(); } catch (e) { /* keep last state */ } });
+  };
 })(window.Simplex);

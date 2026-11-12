@@ -1,5 +1,29 @@
 [
   {
+    "version": "10.17.0",
+    "app": "5.10.0",
+    "title": "Chat-Ruhe & Sichtbarkeit",
+    "items": [
+      {
+        "title": "Chat-Ruhe für Spieler",
+        "icon": "bellOff",
+        "text": "Mit /chat schalten Java- und Bedrock-Spieler den Chat für sich stumm – 30 Min., 3 Std., 24 Std. oder dauerhaft. Keine Nachrichten, keine Chat-Töne; Erwähnungen und Flüstern optional."
+      },
+      {
+        "title": "Verwalten in App & Web",
+        "icon": "users",
+        "text": "Sehen, wer den Chat stummgeschaltet hat, und Spielern beim Stummschalten oder Aufheben helfen."
+      },
+      {
+        "title": "Sichtbarkeit repariert",
+        "icon": "eye",
+        "text": "Java-Spieler traten manchmal unsichtbar bei oder blieben nach Vanish unsichtbar – behoben."
+      }
+    ],
+    "date": "2026-11-12",
+    "intro": "Spieler können den Chat für sich stummschalten, Admins helfen in App und Web. Dazu ein Fix für unsichtbare Spieler."
+  },
+  {
     "version": "10.16.1",
     "app": "5.9.0",
     "title": "Fix: Massen-Disconnect beim Verlassen",

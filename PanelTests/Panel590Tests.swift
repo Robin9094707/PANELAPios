@@ -4,7 +4,7 @@ import XCTest
 /// 5.9.0: PowerBot escalation and disconnect forensics presentation.
 @MainActor final class Panel590Tests: XCTestCase {
     func testReleaseNotes() {
-        XCTAssertEqual(WhatsNew.releases.first?.version, "5.9.0")
+        XCTAssertTrue(WhatsNew.releases.contains { $0.version == "5.9.0" })
         XCTAssertTrue(WhatsNew.shouldPresent(current: "5.9.0", lastSeen: "5.8.0", existingUser: true))
     }
 
