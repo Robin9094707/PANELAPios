@@ -183,6 +183,8 @@ player-data:
 diagnostics:
   console-retention-days: 30
   packet-metadata: true
+  # 10.16.0: kernel TCP statistics (RTT, retransmissions, loss) of every connection every 5 s (epoll transport only).
+  tcp-sampling: true
   enabled: true
   # Mehrere Disconnects in kurzer Zeit werden zu einem Vorfall (Bark-Ereignis "disconnect-wave").
   burst:
@@ -207,6 +209,8 @@ diagnostics:
     enabled: true
     auto-critical: true
     auto-crash: true
+    # 10.16.0: also analyse unclear incidents and hidden waves ("Disconnected" that were not voluntary) automatically.
+    auto-unclear: true
     max-per-hour: 20
   spark:
     # Auch Spark-Profile, die in der Konsole gestartet wurden, automatisch analysieren.
@@ -1194,7 +1198,7 @@ staff-chat:
 emergency-restart:
   notify-crash: true # critical Bark notice after an unexpected stop (subscribers choose sleep/work override)
 # app-api.owner-name: 'Robin'           # your name for the main key in staff chat and admin log
-# app-api.public-address: 'host:39093'  # used for complete setup links from the console
+# app-api.public-address: 'host:39093'  # used for complete setup links; easiest: /sas app address <IP>:<Port>
 
 # Optional 9.8.0 additions. Existing keys, users and sessions stay valid; nothing has to be changed.
 # The web panel is served on the same HTTPS port as the app API (https://<Server-IP>:<app-api.port>/).
@@ -1236,6 +1240,19 @@ powerbot:
   # Short chat pause (minutes) for the player driving a severe dispute. Disable with conflict-actions: false.
   conflict-actions: true
   conflict-mute-minutes: 5
+  # 10.16.0: escalation ladder for disputes and "Pöbeln": calm → public and personal warning → short chat pause
+  # (dispute-mute-seconds) for the players marked as involved → deep review with more context and a longer pause
+  # (conflict-mute-minutes) for whoever keeps escalating unnecessarily. Staff can lift every pause early.
+  escalation: true
+  dispute-mute-seconds: 60
+  # Regular context analysis of the public chat every N messages (5-50); insults are checked within seconds.
+  analysis-interval: 15
+  analysis-max-per-hour: 180
   # Leave empty to use the built-in system prompts; the app and web panel can edit them.
   system-prompt: ''
   assistant-prompt: ''
+
+# 10.17.0 Chat-Ruhe (/chat): players mute the public chat for themselves.
+chat-silence:
+  # dialog = native Java dialog (Paper, Minecraft 1.21.6+), inventory = chest menu. Bedrock always uses native Floodgate forms.
+  java-menu: dialog

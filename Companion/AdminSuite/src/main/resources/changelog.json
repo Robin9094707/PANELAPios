@@ -1,5 +1,67 @@
 [
   {
+    "version": "10.17.0",
+    "app": "5.10.0",
+    "title": "Chat-Ruhe & Sichtbarkeit",
+    "items": [
+      {
+        "title": "Chat-Ruhe für Spieler",
+        "icon": "bellOff",
+        "text": "Mit /chat schalten Java- und Bedrock-Spieler den Chat für sich stumm – 30 Min., 3 Std., 24 Std. oder dauerhaft. Keine Nachrichten, keine Chat-Töne; Erwähnungen und Flüstern optional."
+      },
+      {
+        "title": "Verwalten in App & Web",
+        "icon": "users",
+        "text": "Sehen, wer den Chat stummgeschaltet hat, und Spielern beim Stummschalten oder Aufheben helfen."
+      },
+      {
+        "title": "Sichtbarkeit repariert",
+        "icon": "eye",
+        "text": "Java-Spieler traten manchmal unsichtbar bei oder blieben nach Vanish unsichtbar – behoben."
+      }
+    ],
+    "date": "2026-11-12",
+    "intro": "Spieler können den Chat für sich stummschalten, Admins helfen in App und Web. Dazu ein Fix für unsichtbare Spieler."
+  },
+  {
+    "version": "10.16.1",
+    "app": "5.9.0",
+    "title": "Fix: Massen-Disconnect beim Verlassen",
+    "items": [
+      {
+        "title": "Java-Spieler bleiben verbunden",
+        "icon": "shieldCheck",
+        "text": "Verließ ein Java-Spieler den Server, wurden alle anderen Java-Spieler getrennt. Ursache war der Paket-Guard: Er hielt während der Beitrittsprüfung die Team-Zuordnung zurück, ließ beim Verlassen aber das Entfernen aus dem Team durch – Java-Clients brechen dann mit einem Protokollfehler ab. Der Guard merkt sich jetzt pro Verbindung, was er zurückgehalten hat."
+      }
+    ],
+    "date": "2026-11-11",
+    "intro": "Wichtiger Fix für Verbindungsabbrüche. Nur die JAR austauschen, die App bleibt 5.9.0."
+  },
+  {
+    "version": "10.16.0",
+    "app": "5.9.0",
+    "title": "PowerBot-Eskalation & Disconnect-Forensik",
+    "items": [
+      {
+        "title": "PowerBot schlichtet stufenweise",
+        "icon": "shieldCheck",
+        "text": "Beruhigen, öffentlich und persönlich warnen, 1 Minute Chatpause für die Beteiligten, danach Tiefenprüfung mit mehr Kontext und 5 Minuten für wer unnötig eskaliert. Pöbeln wird in Sekunden erkannt, der Chat alle 15 Nachrichten im Kontext analysiert."
+      },
+      {
+        "title": "Disconnect-Forensik",
+        "icon": "bell",
+        "text": "Wer die Verbindung schloss, Stille vor dem Ende, Rückkehrzeit, TCP-Neuübertragungen, Gleichzeitigkeit und Regelmäßigkeit – „Disconnected“-Wellen werden nicht mehr als freiwillig abgehakt."
+      },
+      {
+        "title": "Live-Netzwerk & Ursachen",
+        "icon": "chat",
+        "text": "Jede Verbindung live mit RTT, Verlust und Datenrate; gewichtete Ursachen pro Welle und automatische KI-Analyse, wenn die Heuristik unsicher ist."
+      }
+    ],
+    "date": "2026-11-10",
+    "intro": "Ein großes PowerBot-Update mit Eskalationsleiter und eine tiefe Analyse für Verbindungsabbrüche."
+  },
+  {
     "version": "10.15.0",
     "app": "5.8.0",
     "title": "Invsee, Schnellzentrale & KI",

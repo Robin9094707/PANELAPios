@@ -18,7 +18,7 @@ import XCTest
     func testQuickCenterToolAndReleaseNotes() {
         XCTAssertEqual(SuiteLaunchRequest.parse(SuiteLaunchRequest(tool: .quickCenter).url)?.tool, .quickCenter)
         XCTAssertNotNil(SuiteShortcutTool(rawValue: "quickCenter"))
-        XCTAssertEqual(WhatsNew.releases.first?.version, "5.8.0")
+        XCTAssertTrue(WhatsNew.releases.contains { $0.version == "5.8.0" })
         XCTAssertTrue(WhatsNew.shouldPresent(current: "5.8.0", lastSeen: "5.7.0", existingUser: true))
     }
 

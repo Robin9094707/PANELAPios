@@ -136,7 +136,7 @@ private final class PinnedHTTPTransfer: @unchecked Sendable {
                 guard let self else { return }
                 switch state {
                 case .ready: self.send()
-                case .failed(let error), .waiting(let error): self.finish(.failure(self.pinRejected ? PanelError(message: "Zertifikatsfingerabdruck stimmt nicht überein. Kopplung prüfen; es wird keine Verbindung mit einem anderen Zertifikat zugelassen.") : error))
+                case .failed(let error), .waiting(let error): self.finish(.failure(self.pinRejected ? PanelError(message: "Das Zertifikat des Servers hat sich geändert (Fingerabdruck stimmt nicht). In „Suite verbinden“ auf „Prüfen & sicher speichern“ tippen – die App zeigt das neue Zertifikat zum Bestätigen.") : error))
                 case .cancelled: if self.continuation != nil { self.finish(.failure(CancellationError())) }
                 default: break
                 }

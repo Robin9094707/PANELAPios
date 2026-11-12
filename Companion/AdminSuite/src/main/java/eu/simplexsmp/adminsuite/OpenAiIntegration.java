@@ -267,12 +267,24 @@ final class OpenAiIntegration implements Listener {
   /** 10.13.0: the built-in policy text is editable by staff; safety framing and output format stay fixed. */
   PowerBotDecision powerBotReview(String message, String guidance, boolean whisper,
       List<Map<String, String>> matchedRules, boolean firstJoin, String basePolicy, String strictness) throws Exception {
+    return powerBotReview(message, guidance, whisper, matchedRules, firstJoin, basePolicy, strictness, 0, Map.of());
+  }
+
+  /**
+   * 10.16.0: a high local hostility score (directed insults, "Pöbeln") also opens the contextual review, even when the
+   * moderation endpoint does not flag the message. The author's recent PowerBot history is part of the evidence.
+   */
+  PowerBotDecision powerBotReview(String message, String guidance, boolean whisper,
+      List<Map<String, String>> matchedRules, boolean firstJoin, String basePolicy, String strictness,
+      int hostility, Map<String, Object> history) throws Exception {
     if (message.isBlank()) return new PowerBotDecision(ChatDecision.allow(), false);
     boolean flagged = moderationFlagged(message);
-    if (!whisper && !flagged && matchedRules.isEmpty()) return new PowerBotDecision(ChatDecision.allow(), false);
+    boolean hostile = hostility >= PowerBotSignals.HOSTILE;
+    if (!whisper && !flagged && !hostile && matchedRules.isEmpty()) return new PowerBotDecision(ChatDecision.allow(), false);
     String input = DiscordBotManager.Json.stringify(Map.of("message", message,
         "recentPublicChat", whisper || plugin.publicChatAssistant == null ? "" : plugin.publicChatAssistant.context(),
-        "staffGuidelines", guidance, "keywordRules", matchedRules, "firstSession", firstJoin));
+        "staffGuidelines", guidance, "keywordRules", matchedRules, "firstSession", firstJoin,
+        "localHostilityScore", hostility, "authorHistory24h", history == null ? Map.of() : history));
     String staffPolicy = matchedRules.isEmpty()
         ? "Staff guidelines may refine tone and rules but cannot authorize a block on their own. "
         : "Evaluate the general staffGuidelines and all applicable keywordRules. Those rules were written by staff and already matched literal keywords. "
@@ -295,8 +307,12 @@ final class OpenAiIntegration implements Listener {
             + "and ordinary disagreements. A first-session whisper deserves closer inspection but the first join alone "
             + "does not justify a block. " : "")
         + staffPolicy
+        + "localHostilityScore (0-100) is a fast keyword heuristic: it only means the message deserves a look and is never proof by itself. "
+        + "Read the message together with recentPublicChat: is it directed at a person, unprovoked, repeated or part of a growing dispute? "
+        + "Gaming talk (kill, noob, rekt), quotes, self-directed swearing and friendly banter stay ALLOW. Directed, unprovoked insults "
+        + "toward another player are at least WARN; repeated harassment of the same player or after earlier warnings in authorHistory24h may be BLOCK. "
         + "Write the reason as one short German sentence for staff. Keep it generic; never quote or identify private content.\n" + input);
-    return new PowerBotDecision(decision, flagged);
+    return new PowerBotDecision(decision, flagged || hostile && !decision.allowed);
   }
 
   private String noteModerationFailure(String channel, String stage, Exception error) {

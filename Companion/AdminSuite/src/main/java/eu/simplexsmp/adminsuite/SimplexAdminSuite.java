@@ -266,6 +266,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     volatile PowerBot powerBot;
     ServerEvents serverEvents;
     SmartRestart smartRestart;
+    ChatSilence chatSilence;
     Automations automations;
     PublicChatAssistant publicChatAssistant;
     OpenAiIntegration openAiIntegration() { return openAi; }
@@ -523,6 +524,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         catch (java.io.IOException error) { getLogger().warning("PowerBot: " + error.getMessage()); }
         publicChatAssistant = new PublicChatAssistant(this);
         try { serverEvents = new ServerEvents(this); } catch (Exception error) { getLogger().warning("Event-Modus konnte nicht geladen werden: " + error.getClass().getSimpleName()); }
+        try { chatSilence = new ChatSilence(this); Bukkit.getPluginManager().registerEvents(chatSilence, this); chatSilence.start(); register("simplexchat"); if (qualityOfLife != null) qualityOfLife.packets.chat = chatSilence; }
+        catch (Exception error) { chatSilence = null; getLogger().warning("Chat-Ruhe konnte nicht geladen werden; vorhandene Datei bleibt erhalten: " + error.getMessage()); }
         try { smartRestart = new SmartRestart(this); } catch (Exception error) { getLogger().warning("Smart-Neustart konnte nicht geladen werden: " + error.getMessage()); }
         try { automations = new Automations(this); } catch (Exception error) { getLogger().warning("Automationen konnten nicht geladen werden: " + error.getMessage()); }
         try { appApi = new AppApiManager(this); appApi.reload(); } catch (Exception error) { getLogger().warning("Optionale App-API bleibt aus: " + error.getClass().getSimpleName()); }
@@ -548,6 +551,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         Bukkit.getServicesManager().unregisterAll(this);
         if (community != null) community.stop();
         if (powerBot != null) powerBot.close();
+        if (chatSilence != null) chatSilence.stop();
         if (liveInventory != null) liveInventory.close();
         if (publicChatAssistant != null) publicChatAssistant.close();
         if (diagnostics != null) { try { diagnostics.stop(); } catch (Throwable error) { getLogger().warning("Diagnose konnte nicht sauber beendet werden: " + error.getClass().getSimpleName()); } }
@@ -795,6 +799,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return handlePasswordCommand(sender, label, Arrays.copyOfRange(args, 1, args.length));
         }
         if (rootCommand.equals("simplexprofile") || rootCommand.equals("feedback")) return community.command(sender, rootCommand, args);
+        if (rootCommand.equals("simplexchat")) { if (chatSilence == null) sender.sendMessage(prefix() + "Chat-Ruhe nicht verfügbar."); else chatSilence.command(sender, args); return true; }
         if (rootCommand.equals("ticket")) { if (tickets == null) sender.sendMessage(prefix() + "Ticketsystem nicht verfügbar."); else tickets.command(sender, args); return true; }
         if (rootCommand.equals("discord")) return args.length == 0 ? discordInvite.show(sender) : discordInvite.set(sender, args);
         if (sender instanceof Player && adminSecurity != null && adminSecurity.isLocked((Player) sender)) {
@@ -1884,6 +1889,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (root.equals("connection")) return connectionDiagnostics.complete(sender, args);
         if ((root.equals("sas") || root.equals("simplexadmin")) && args.length > 1 && args[0].equalsIgnoreCase("connection"))
             return connectionDiagnostics.complete(sender, Arrays.copyOfRange(args, 1, args.length));
+        if(root.equals("simplexchat")) return chatSilence == null ? List.of() : chatSilence.complete(sender, args);
         if(root.equals("simplexprofile")) return args.length==1?filter(List.of("settings","history","stats","feedback"),args[0]):List.of();
         if(root.equals("feedback")) return List.of();
         if(root.equals("ticket")) return tickets == null ? List.of() : tickets.complete(sender, args);
@@ -1917,7 +1923,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         }
         if (!has(sender, "simplexadminsuite.admin")) return Collections.emptyList();
         if (moderationControl != null) { List<String> suggestions = moderationControl.complete(sender, args); if (suggestions != null) return suggestions; }
-        if (args.length >= 1 && args[0].equalsIgnoreCase("app")) return args.length == 2 ? filter(Arrays.asList("status", "enable", "disable", "reload", "create", "user", "users", "setup", "keys", "revoke", "domain", "fingerprint", "owner-reset", "user-reset", "owner-transfer", "unlock", "recovery", "rename", "user-enable", "user-disable", "user-logout", "public-name"), args[1]) : Collections.emptyList();
+        if (args.length >= 1 && args[0].equalsIgnoreCase("app")) return args.length == 2 ? filter(Arrays.asList("status", "enable", "disable", "reload", "create", "user", "users", "setup", "keys", "revoke", "domain", "address", "fingerprint", "owner-reset", "user-reset", "owner-transfer", "unlock", "recovery", "rename", "user-enable", "user-disable", "user-logout", "public-name"), args[1]) : Collections.emptyList();
         if (args.length == 1) return filter(Arrays.asList("powerbot", "ablage", "detectors", "detektoren", "securityhub", "checkwhitelist", "emergency", "restartplan", "geoinfo", "bluemap", "names", "clientcheck", "checkhacks", "checklang", "delivery", "shop", "branding", "connection", "links", "serverstats", "commands", "befehle", "moderationplus", "banmode", "restrict", "deviceblock", "osblock", "adminlog", "chatstyle", "modlog", "suiteconfig", "menü", "items", "checkban", "checkmute", "xraybait", "setdiscord", "adminupdate", "adminrights", "watch", "relay", "vpn", "power", "laginspector", "statusdesign", "fun", "qol", "aufgaben", "planer", "incidents", "health", "makros", "bulk", "timeline", "bedrock", "java", "online", "spieler", "welten", "trimmer", "warps", "regeln", "umfragen", "punkte", "chatfilter", "antispam", "updates", "check", "channels", "clientsecurity", "discordstatus", "status", "steuerung", "chat", "spy", "sicherheit", "stealth", "afk", "startnachrichten", "operations", "leitstelle", "alts", "altlink", "altignore", "altban", "ultraban", "ultraunban", "ultrareset", "slowmode", "commandlock", "commandspy", "duty", "watchlist", "announcement", "diagnostics", "deviceinfo", "devicediagnostics", "export", "wartung", "maintenance", "report", "reports", "staff", "staffmsg", "tp", "tplast", "bring", "freeze", "unfreeze", "heal", "feed", "gamemode", "vanish", "invsee", "homes", "homeadmin", "ban", "tempban", "unban", "mute", "tempmute", "unmute", "kick", "warn", "warnungen", "clearwarnings", "notes", "recht", "suche", "cleardata", "datenloeschen", "snapshot", "password", "app", "reload", "help"), args[0]);
         String sub = args[0].toLowerCase(Locale.ROOT);
         if (args.length == 2 && Set.of("adminrights","checkban","checkmute","xraybait").contains(sub)) return filter(database.names(), args[1]);
@@ -2384,6 +2390,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             Bukkit.getScheduler().runTask(this, () -> completePending(player, pending, entered));
             return;
         }
+        // 10.17.0: a player with a chat break cannot write publicly; the notice explains how to turn it off.
+        if (chatSilence != null && chatSilence.blockOwnChat(player)) { event.setCancelled(true); return; }
         PlayerProfile profile = database.touch(player);
         PowerBot automod = powerBot;
         boolean usePowerBot = automod != null && !automod.bypass(player);
@@ -2633,6 +2641,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                     "Your private-message permission is currently disabled on this server.")));
             profile.addAction("Blocked private-message command: " + msg);
             database.save(profile);
+            return;
+        }
+        if (privateMessage && chatSilence != null && chatSilence.whisper(player, whisperRecipients(player, msg), whisperText(msg))) {
+            event.setCancelled(true);
             return;
         }
         if (!privateMessage) {
@@ -6892,6 +6904,18 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if (!isPubliclyHidden(online)) count++;
         }
         return count;
+    }
+
+    /** 10.17.0 chat break helpers. */
+    List<UUID> whisperRecipients(Player sender, String command) { return adminSpy == null ? List.of() : adminSpy.recipients(sender, adminSpy.whisper(command)); }
+    String whisperText(String command) { var whisper = adminSpy == null ? null : adminSpy.whisper(command); return whisper == null ? "" : whisper.text(); }
+    boolean chatSilenceBypass(Player player) { return adminSecurity != null && (adminSecurity.isLocked(player) || adminSecurity.isPasswordChangePending(player.getUniqueId())); }
+    boolean chatSilenceHidden(Player target, Player viewer) { return isPubliclyHidden(target) && !has(viewer, "simplexadminsuite.admin") || !viewer.canSee(target); }
+    String chatSilenceFilterStatus() {
+        if (qualityOfLife == null) return "unavailable";
+        int online = 0, active = 0;
+        for (Player p : Bukkit.getOnlinePlayers()) { online++; if (qualityOfLife.packets.available(p.getUniqueId())) active++; }
+        return online == 0 ? "idle" : active + "/" + online;
     }
 
     boolean discordAdminHidden(Player player) {

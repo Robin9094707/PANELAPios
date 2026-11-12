@@ -175,9 +175,11 @@ enum SuiteDevice {
             if Task.isCancelled || error.code == .cancelled { throw CancellationError() }
             if error.code == .timedOut { throw PanelError(message: "Zeitlimit beim Verbinden mit der Admin Suite erreicht. Prüfe die Erreichbarkeit und versuche es erneut.") }
             if [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(error.code) { throw PanelError(message: "Admin Suite ist nicht erreichbar. Prüfe Netzwerk, Serveradresse und Port und versuche es erneut.") }
-            if [.serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot, .secureConnectionFailed, .cancelled].contains(error.code) { throw PanelError(message: "HTTPS-Verbindung konnte nicht bestätigt werden. Prüfe Adresse, Port und den SHA-256-Fingerabdruck aus /sas app fingerprint. Ein geändertes Zertifikat wird nicht automatisch akzeptiert.") }
+            if [.serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot, .secureConnectionFailed, .cancelled].contains(error.code) { throw PanelError(message: "HTTPS-Verbindung konnte nicht bestätigt werden. In „Suite verbinden“ auf „Prüfen & sicher speichern“ tippen – die App prüft die Adresse und zeigt ein neues Zertifikat zum Bestätigen.") }
             throw error
         }
+        // 5.11.0: a gateway error comes from a proxy in front of the Suite, never from the Suite itself.
+        if let http = response as? HTTPURLResponse, [502, 504, 521, 522, 523].contains(http.statusCode) { throw PanelError(message: "Der Proxy vor der Admin Suite erreicht sie nicht (Fehler \(http.statusCode)). Läuft die App-API? /sas app status zeigt Port und Adresse; das Ziel im Proxy muss https://<Server-IP>:<API-Port> sein.") }
         try PanelAPI.validate(data, response: response)
         guard data.count <= limit else { throw PanelError(message: "Suite-Antwort zu groß.") }
         return data

@@ -20,6 +20,7 @@
       { id: "tickets", label: "Tickets", icon: "ticket", perm: "data.tickets", badge: "tickets" },
       { id: "staff-chat", label: "Staff-Chat", icon: "team", perm: "data.staff-chat", feature: "staff-chat-v1" },
       { id: "chat", label: "Serverchat", icon: "chat", perm: "data.chat" },
+      { id: "chat-silence", label: "Chat-Ruhe", icon: "bellOff", perm: "data.chat-silence", feature: "chat-silence-v1" },
       { id: "moderation", label: "Moderation", icon: "gavel", perm: "data.reports" },
       { id: "locker", label: "Einbehaltungsablage", icon: "box", perm: "data.inventory", feature: "item-locker-v1" }
     ] },

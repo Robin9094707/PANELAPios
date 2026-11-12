@@ -47,7 +47,8 @@ enum PowerBotPresentation {
         "keyword-warning": "Stichwort · Hinweis", "keyword-block": "Stichwort · blockiert",
         "warning": "Hinweis an Spieler", "reviewed": "Nachträglich beanstandet", "deescalation": "KI hat beruhigt",
         "ai-action": "KI-Aktion ausgeführt", "server-event": "Serverereignis", "whisper-block": "Flüstern zurückgehalten",
-        "pardon": "Zähler zurückgesetzt"]
+        "pardon": "Zähler zurückgesetzt", "dispute-warning": "Streit-Warnung im Chat", "deep-review": "Tiefenprüfung",
+        "provocation": "Pöbeln erkannt"]
     static func title(_ kind: String) -> String { kinds[kind] ?? kind }
     static func symbol(_ kind: String) -> String {
         switch kind {
@@ -63,6 +64,9 @@ enum PowerBotPresentation {
         case "warning", "keyword-warning", "reviewed": return "exclamationmark.bubble.fill"
         case "deescalation": return "bubble.left.and.text.bubble.right.fill"
         case "pardon": return "arrow.counterclockwise.circle.fill"
+        case "dispute-warning": return "exclamationmark.triangle.fill"
+        case "deep-review": return "magnifyingglass.circle.fill"
+        case "provocation": return "megaphone.fill"
         default: return "shield.lefthalf.filled"
         }
     }
@@ -70,7 +74,8 @@ enum PowerBotPresentation {
         if severity == "severe" { return .red }
         switch kind {
         case "mute", "abuse", "keyword-block", "whisper-block", "advertising", "outage": return .red
-        case "conflict", "warning", "keyword-warning", "reviewed", "security": return .orange
+        case "conflict", "warning", "keyword-warning", "reviewed", "security", "dispute-warning", "provocation": return .orange
+        case "deep-review": return .purple
         case "help": return .pink
         case "deescalation", "recovery", "pardon": return .green
         default: return .accentColor
@@ -96,7 +101,8 @@ enum PowerBotPresentation {
         ("Eingreifen", [("advertising", "Fremdwerbung blockieren", "Werbung für andere Server sofort zurückhalten."),
                         ("auto-mute", "Automatische Chatpause", "Nach wiederholten Verstößen in 20 Minuten 10 Minuten Chatpause."),
                         ("linked-mutes", "Bestätigte Alts einschließen", "Chatpausen gelten auch für bestätigte Zweitkonten."),
-                        ("conflict-actions", "Schwere Streits eindämmen", "Nur bei schweren Streits erhält der Verursacher eine kurze Chatpause.")]),
+                        ("conflict-actions", "Streits eindämmen", "PowerBot darf Beteiligten von echten Streits Chatpausen geben."),
+                        ("escalation", "Eskalationsleiter", "Beruhigen → warnen → kurze Chatpause → Tiefenprüfung mit längerer Pause. Opfer werden nie stummgeschaltet.")]),
         ("Öffentlicher Chat", [("public-chat", "Chat-KI im Spiel", "Antwortet auf !ki und kann deeskalieren."),
                                ("proactive", "Proaktiv beruhigen", "Bei echten Streits selbstständig eine ruhige Nachricht senden."),
                                ("discord", "Discord einbeziehen", "Auch den Discord-Relay moderieren und Hinweise spiegeln.")]),

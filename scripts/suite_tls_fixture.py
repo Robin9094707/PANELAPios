@@ -5,6 +5,8 @@ from pathlib import Path
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version='HTTP/1.1'
     def do_GET(self):
+        if self.path=='/v1/ping':self.reply(200,{'service':'simplex-admin-suite','apiVersion':1});return
+        if self.path=='/gateway/v1/ping':self.reply(502,{'message':'Synthetic proxy without backend'});return
         if self.headers.get('Authorization')!='Bearer synthetic-tls-token':
             self.reply(401,{'message':'Synthetic key missing'});return
         if self.path=='/v1/health':self.reply(200,{'serverId':'synthetic-tls-server','apiVersion':1,'scope':'read','version':'8.3.0'})

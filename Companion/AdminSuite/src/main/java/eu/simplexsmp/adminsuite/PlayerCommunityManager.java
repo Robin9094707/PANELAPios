@@ -208,10 +208,17 @@ final class PlayerCommunityManager implements Listener {
             t(p, "Einstellungen", "Settings"),
             t(
                 p,
-                "Sprache • Scoreboard • Beitrittsmeldungen",
-                "Language • scoreboard • join messages"),
+                "Sprache • Scoreboard • Beitrittsmeldungen • Chat-Ruhe",
+                "Language • scoreboard • join messages • chat break"),
             Material.COMPARATOR,
             () -> settings(p)));
+    if (plugin.chatSilence != null)
+      rows.add(
+          b(
+              t(p, "Chat-Ruhe", "Chat break"),
+              chatSilenceDetail(p),
+              Material.BELL,
+              () -> plugin.chatSilence.open(p, () -> open(p))));
     rows.add(
         b(
             t(p, "Verwarnungen & Strafverlauf", "Warnings & punishment history"),
@@ -245,66 +252,120 @@ final class PlayerCommunityManager implements Listener {
     show(p, t(p, "Mein Simplex-Profil", "My Simplex profile"), rows, 0, false);
   }
 
+  private String chatSilenceDetail(Player p) {
+    if (plugin.chatSilence == null) return "";
+    var state = plugin.chatSilence.state(p.getUniqueId());
+    return plugin.chatSilence.silenced(p)
+        ? t(p, "Aktiv – ", "Active – ") + plugin.chatSilence.remaining(p, state) + t(p, " • /chat an", " • /chat on")
+        : t(p, "Chat für dich stummschalten: 30 Min., 3 Std., 24 Std. oder dauerhaft", "Mute the chat for yourself: 30 min, 3 h, 24 h or until you turn it on");
+  }
+
+  private String state(Player p, boolean on) {
+    return on ? t(p, "✔ AN", "✔ ON") : t(p, "✖ AUS", "✖ OFF");
+  }
+
   private void settings(Player p) {
     Preferences pref = preferences.getOrDefault(p.getUniqueId(), Preferences.defaults());
-    show(
-        p,
-        t(p, "Profil-Einstellungen", "Profile settings"),
-        List.of(
-            b(
-                t(p, "Sprache: ", "Language: ") + pref.language,
-                t(p, "Auto → Deutsch → Englisch", "Auto → German → English"),
-                Material.BOOK,
-                () -> {
-                  String next =
-                      switch (pref.language) {
-                        case "auto" -> "de";
-                        case "de" -> "en";
-                        default -> "auto";
-                      };
-                  set(p, new Preferences(next, pref.scoreboard, pref.joins));
-                  settings(p);
-                }),
-            b(
-                t(p, "Scoreboard: ", "Scoreboard: ")
-                    + (pref.scoreboard ? t(p, "AN", "ON") : t(p, "AUS", "OFF")),
-                t(p, "Aus: nur der Titel Simplex SMP", "Off: only the Simplex SMP title"),
-                Material.ITEM_FRAME,
-                () -> {
-                  set(p, new Preferences(pref.language, !pref.scoreboard, pref.joins));
-                  plugin.refreshPlayerBoard(p);
-                  settings(p);
-                }),
-            b(
-                t(p, "Beitrittsmeldungen: ", "Join messages: ")
-                    + (pref.joins ? t(p, "AN", "ON") : t(p, "AUS", "OFF")),
-                t(p, "Beitreten und Verlassen im Chat", "Join and leave messages in chat"),
-                Material.OAK_DOOR,
-                () -> {
-                  set(p, new Preferences(pref.language, pref.scoreboard, !pref.joins));
-                  settings(p);
-                }),
-            b(
-                t(p, "Zurück", "Back"),
-                t(
-                    p,
-                    "Einstellungen werden automatisch gespeichert",
-                    "Settings are saved automatically"),
-                Material.ARROW,
-                () -> open(p))),
-        0,
-        false);
+    String language =
+        switch (pref.language) {
+          case "de" -> "Deutsch";
+          case "en" -> "English";
+          default -> t(p, "Automatisch (Spielsprache)", "Automatic (game language)");
+        };
+    List<Button> rows = new ArrayList<>();
+    rows.add(
+        b(
+            t(p, "Sprache: ", "Language: ") + language,
+            t(p, "Tippen: Automatisch → Deutsch → Englisch", "Tap: automatic → German → English"),
+            Material.BOOK,
+            () -> {
+              String next =
+                  switch (pref.language) {
+                    case "auto" -> "de";
+                    case "de" -> "en";
+                    default -> "auto";
+                  };
+              set(p, new Preferences(next, pref.scoreboard, pref.joins));
+              settings(p);
+            }));
+    rows.add(
+        b(
+            t(p, "Scoreboard: ", "Scoreboard: ") + state(p, pref.scoreboard),
+            t(p, "Aus: nur der Titel Simplex SMP", "Off: only the Simplex SMP title"),
+            pref.scoreboard ? Material.ITEM_FRAME : Material.GLOW_ITEM_FRAME,
+            () -> {
+              set(p, new Preferences(pref.language, !pref.scoreboard, pref.joins));
+              plugin.refreshPlayerBoard(p);
+              settings(p);
+            }));
+    rows.add(
+        b(
+            t(p, "Beitrittsmeldungen: ", "Join messages: ") + state(p, pref.joins),
+            t(p, "Beitreten und Verlassen im Chat", "Join and leave messages in chat"),
+            pref.joins ? Material.OAK_DOOR : Material.IRON_DOOR,
+            () -> {
+              set(p, new Preferences(pref.language, pref.scoreboard, !pref.joins));
+              settings(p);
+            }));
+    if (plugin.chatSilence != null) {
+      boolean muted = plugin.chatSilence.silenced(p);
+      rows.add(
+          b(
+              t(p, "Chat-Ruhe: ", "Chat break: ") + (muted ? t(p, "● AKTIV", "● ACTIVE") : state(p, false)),
+              chatSilenceDetail(p),
+              muted ? Material.BELL : Material.NOTE_BLOCK,
+              () -> plugin.chatSilence.open(p, () -> settings(p))));
+    }
+    rows.add(
+        b(
+            t(p, "Zurück", "Back"),
+            t(p, "Einstellungen werden automatisch gespeichert", "Settings are saved automatically"),
+            Material.ARROW,
+            () -> open(p)));
+    show(p, t(p, "Profil-Einstellungen", "Profile settings"), rows, 0, false);
   }
 
   private void set(Player p, Preferences pref) {
     preferences.put(p.getUniqueId(), pref);
     dirty = true;
-    p.sendMessage(
-        "§a"
-            + t(
-                p,
-                "Einstellungen übernommen. Speicherung läuft automatisch.",
-                "Settings applied. Saving automatically."));
+    String text = t(p, "✔ Einstellung gespeichert", "✔ Setting saved");
+    try { p.sendActionBar(net.kyori.adventure.text.Component.text(text, net.kyori.adventure.text.format.NamedTextColor.GREEN)); }
+    catch (RuntimeException ignored) { p.sendMessage("§a" + text); }
+    chime(p, true);
+    try {
+      p.spawnParticle(Particle.HAPPY_VILLAGER, p.getLocation().add(0, 2.1, 0), 6, 0.3, 0.15, 0.3, 0.01);
+    } catch (RuntimeException ignored) {
+    }
+  }
+
+  /** Soft confirmation sounds for player preference menus (Java and Bedrock). */
+  private void chime(Player p, boolean positive) {
+    try {
+      if (positive) {
+        p.playSound(p.getLocation(), "minecraft:block.note_block.chime", SoundCategory.MASTER, 0.55f, 1.5f);
+        p.playSound(p.getLocation(), "minecraft:entity.experience_orb.pickup", SoundCategory.MASTER, 0.25f, 1.7f);
+      } else p.playSound(p.getLocation(), "minecraft:item.book.page_turn", SoundCategory.MASTER, 0.6f, 1.1f);
+    } catch (RuntimeException ignored) {
+    }
+  }
+
+  private static String bedrockIcon(Button row) {
+    return switch (row.icon) {
+      case BOOK, WRITABLE_BOOK -> "textures/items/book_writable";
+      case ITEM_FRAME, GLOW_ITEM_FRAME -> "textures/items/item_frame";
+      case OAK_DOOR -> "textures/items/door_wood";
+      case IRON_DOOR -> "textures/items/door_iron";
+      case COMPARATOR -> "textures/ui/icon_setting";
+      case BELL -> "textures/ui/mute_on";
+      case NOTE_BLOCK -> "textures/ui/mute_off";
+      case CHEST -> "textures/blocks/chest_front";
+      case SHIELD -> "textures/ui/permissions_member_star";
+      case MAP -> "textures/items/map_filled";
+      case PAPER -> "textures/items/paper";
+      case ARROW -> "textures/ui/arrow_left";
+      case YELLOW_DYE -> "textures/ui/WarningGlyph";
+      default -> MenuStyle.icon(row.title);
+    };
   }
 
   private void history(Player p) {
@@ -1244,6 +1305,7 @@ final class PlayerCommunityManager implements Listener {
       for (Button row : buttons.subList(start, end))
         form.button(
             row.title + (row.detail.isBlank() ? "" : "\n" + shortText(row.detail, 65)),
+            admin ? MenuStyle.icon(row.title) : bedrockIcon(row),
             r ->
                 plugin.runAdminTask(
                     () -> {
@@ -1277,17 +1339,25 @@ final class PlayerCommunityManager implements Listener {
               "§cCould not open the form. Please try again."));
       return;
     }
+    if (!admin) chime(p, false);
     Holder h = new Holder(p.getUniqueId(), admin);
     Inventory inv = LiveMenus.create(h, 54, "§0" + shortText(title, 45));
     h.inventory = inv;
     ItemStack filler = item(Material.GRAY_STAINED_GLASS_PANE, " ", "");
     for (int i = 0; i < 54; i++) inv.setItem(i, filler);
-    inv.setItem(
-        4,
+    ItemStack head =
         item(
             Material.PLAYER_HEAD,
             title,
-            admin ? "Administration" : "Simplex SMP • " + p.getName()));
+            admin ? "Administration" : "Simplex SMP • " + p.getName());
+    if (!admin && head.getItemMeta() instanceof org.bukkit.inventory.meta.SkullMeta skull) {
+      try {
+        skull.setOwningPlayer(p);
+        head.setItemMeta(skull);
+      } catch (RuntimeException ignored) {
+      }
+    }
+    inv.setItem(4, head);
     int n = 0;
     for (Button row : buttons.subList(start, end)) {
       int slot = 10 + (n / 7) * 9 + n % 7;

@@ -43,7 +43,9 @@ final class AiAdmin {
         Map.entry("restart", new Source("data.operations", "Aktueller Neustart-Countdown")),
         Map.entry("reports", new Source("data.reports", "Gemeldete Vorfälle, Name oder Stichwort")),
         Map.entry("events", new Source("data.events", "Moderationsereignisse, Warnungen, Schutz- und Filterereignisse")),
-        Map.entry("disconnects", new Source("data.diagnostics", "Disconnects mit Kategorie und Verbindungsdaten")),
+        Map.entry("disconnects", new Source("data.diagnostics", "Einzelne Disconnects mit Kategorie, ursprünglicher Meldung, Rückkehrzeit und forensischen Spuren")),
+        Map.entry("disconnect-waves", new Source("data.diagnostics", "Disconnect-Wellen und Vorfälle mit Einschätzung, Mustern (gleichzeitig, nur Java, Rückkehr, Regelmäßigkeit) und wahrscheinlichsten Ursachen")),
+        Map.entry("powerbot-live", new Source(PowerBot.VIEW, "Gerade laufende Streits mit Eskalationsstufe und Beteiligten sowie aktive Chatpausen mit Restzeit")),
         Map.entry("worlds", new Source("data.worlds", "Geladene Welten")),
         Map.entry("plugins", new Source("data.plugins", "Plugin-Namen und Versionen")),
         Map.entry("player-activity", new Source("data.profile", "Verhalten und letzte Aktionen EINES Spielers: Chat, Befehle, Beitritte, Kämpfe, Items, PowerBot-Hinweise mit Uhrzeit; Name im query-Feld, ungefähre Schreibweise reicht")),
@@ -392,7 +394,9 @@ final class AiAdmin {
                         return List.<Map<String,Object>>of(fields);
                     }).orElseGet(List::of);
             }
-            case "disconnects"->plugin.diagnostics==null?List.of():select(objects(plugin.diagnostics.assistantDisconnects(l.query).get("items"),500),"",from,to,25,"id","at","uuid","name","platform","categoryTitle","message","sessionMs","ping","tps","msptMax","packetTrace");
+            case "disconnects"->plugin.diagnostics==null?List.of():select(objects(plugin.diagnostics.assistantDisconnects(l.query).get("items"),500),"",from,to,25,"id","at","uuid","name","platform","categoryTitle","reportedTitle","message","sessionMs","rejoinMs","ping","tps","msptMax","signals");
+            case "disconnect-waves"->plugin.diagnostics==null?List.of():select(plugin.diagnostics.assistantIncidents(),l.query,from,to,10,"id","at","title","verdict","severity","cause","causes","patterns","resolved");
+            case "powerbot-live"->plugin.powerBot==null?List.of():plugin.powerBot.assistantLive();
             case "players"->{if(l.query.isBlank())yield List.of();
                 var found=take(plugin.appApiData("players",l.query.equalsIgnoreCase("online")?Map.of("filter","online","limit","20"):Map.of("q",l.query,"limit","20")),20,"id","name","online","client","lastSeen");
                 yield found.isEmpty()&&!l.query.equalsIgnoreCase("online")?plugin.fuzzyPlayers(l.query,8).stream().map(c->project(c,"id","name","matchedName","online","lastSeen")).toList():found;}

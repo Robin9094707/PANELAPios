@@ -622,13 +622,14 @@ struct SuiteAddressView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var notice = ""
+    @State private var certificate: SuiteCertificateOffer?
     var body: some View {
         Form {
             Section {
                 TextField("https://admin.example.eu oder https://IP:Port", text: $endpoint).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                TextField("SHA-256-Fingerabdruck (bei gültigem Zertifikat leer)", text: $fingerprint, axis: .vertical).font(.footnote.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
+                TextField("Fingerabdruck (optional)", text: $fingerprint, axis: .vertical).font(.footnote.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
             } header: { Text("Neue Adresse") } footer: {
-                Text("Bei einer Domain mit gültigem HTTPS-Zertifikat (z. B. über einen Reverse-Proxy) bleibt der Fingerabdruck leer. Die Anmeldung bleibt erhalten; die Serveridentität wird geprüft.")
+                Text("Die App prüft die Adresse selbst: Bei einer Domain mit gültigem Zertifikat braucht es keinen Fingerabdruck, ein eigenes Zertifikat zeigt sie einmal zum Bestätigen. Die Anmeldung bleibt erhalten; die Serveridentität wird geprüft.")
             }
             Section {
                 Button { Task { await save() } } label: { HStack { Spacer(); if busy { ProgressView() } else { Text("Prüfen & speichern").bold() }; Spacer() } }.disabled(busy || endpoint.isEmpty)
@@ -637,20 +638,23 @@ struct SuiteAddressView: View {
         }
         .panelScreen().navigationTitle("Adresse ändern").navigationBarTitleDisplayMode(.inline).errorAlert($error)
         .task { if endpoint.isEmpty { endpoint = suite.connection.endpoint; fingerprint = suite.connection.fingerprint } }
+        .suiteCertificatePrompt($certificate) { value in fingerprint = value; Task { await save() } }
     }
     private func save() async {
         busy = true; defer { busy = false }
         do {
             var record = suite.connection
-            record.endpoint = try SuiteAPI.endpoint(endpoint).absoluteString
-            record.fingerprint = try SuiteAPI.pin(fingerprint)
+            let url = try SuiteAPI.endpoint(endpoint)
+            record.endpoint = url.absoluteString
+            record.fingerprint = try await SuitePairing.pin(for: url, entered: fingerprint); fingerprint = record.fingerprint
             let probe = try SuiteAPI(record, token: suite.sessionToken)
             let health = try await probe.health()
             guard suite.connection.serverIdentity.isEmpty || health["serverId"].string == suite.connection.serverIdentity else { throw PanelError(message: "Unter dieser Adresse antwortet ein anderer Server. Nicht gespeichert.") }
             record.serverIdentity = health["serverId"].string
             try SuiteConnections.shared.save(record, token: suite.sessionToken)
             notice = "Gespeichert. Beim nächsten Öffnen nutzt die App " + record.endpoint + "."; Feedback.success()
-        } catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
+        } catch let offer as SuiteCertificateOffer { certificate = offer }
+        catch { if !RequestFailure.isCancellation(error) { self.error = error.localizedDescription } }
     }
 }
 
