@@ -34,9 +34,19 @@ enum Demo {
             ["name": "paper-global.yml", "is_file": true, "size": 4218], ["name": "server.jar", "is_file": true, "size": 54218512]]) }
         if path.hasSuffix("system-backups") {
             // UltraServers rotation: 6-hourly today, then one per day.
-            let now = Date().timeIntervalSince1970, slot = floor(now / 21_600) * 21_600
-            let stamps = (0..<4).map { slot - Double($0) * 21_600 } + (1...4).map { slot - Double($0) * 86_400 - 64_800 }
-            return try! JSON.from(["data": stamps.enumerated().map { ["id": "auto-\($0.offset + 1)", "created_at": ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: $0.element)), "size": 12_700_000_000 + $0.offset * 9_000_000] as [String: Any] }])
+            let now: Double = Date().timeIntervalSince1970
+            let slot: Double = (now / 21_600).rounded(.down) * 21_600
+            var stamps: [Double] = []
+            for index in 0..<4 { stamps.append(slot - Double(index) * 21_600) }
+            for day in 1...4 { stamps.append(slot - Double(day) * 86_400 - 64_800) }
+            let formatter = ISO8601DateFormatter()
+            var rows: [[String: Any]] = []
+            for (index, stamp) in stamps.enumerated() {
+                let created: String = formatter.string(from: Date(timeIntervalSince1970: stamp))
+                let size: Int = 12_700_000_000 + index * 9_000_000
+                rows.append(["id": "auto-\(index + 1)", "created_at": created, "size": size])
+            }
+            return try! JSON.from(["data": rows])
         }
         if path.hasSuffix("/players") { return try! JSON.from(["data": ["online": [["name": "Robin", "uuid": "5d2f1c3e-7a8b-4c9d-8e0f-1a2b3c4d5e6f"], ["name": ".Steve2277", "uuid": "00000000-0000-0000-0009-01f5a3c2b1d4"]], "ops": [["name": "Robin"]], "whitelist": [["name": "Robin"], ["name": ".Steve2277"]], "banned": [["name": "Griefer", "reason": "Griefing", "source": "Robin"]], "banned_ips": [], "offline": [["name": "Alex", "last_seen": "2026-11-12T20:15:00Z"]], "max": 60]]) }
         if path.hasSuffix("/subdomain") { return try! JSON.from(["success": true, "data": ["domains": [["id": 1, "domain": "ultramc.gg"], ["id": 2, "domain": "mcserver.icu"]], "subdomains": [["id": 7, "subdomain": "simplex", "domain_id": 1, "record_type": "SRV", "port": 25565]]]]) }
