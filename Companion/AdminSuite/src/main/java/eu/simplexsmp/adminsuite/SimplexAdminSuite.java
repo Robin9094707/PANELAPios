@@ -16062,7 +16062,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                     String oldName = oldTeam == null ? "" : String.valueOf(oldTeam.getClass().getMethod("getName").invoke(oldTeam));
                     originalNametagTeams.put(key, oldName);
                 }
-                String teamName = "sasafk" + target.getUniqueId().toString().replace("-", "").substring(0, 10);
+                String teamName = VisualIdentityManager.teamName(target.getUniqueId());
                 Object team = scoreboard.getClass().getMethod("getTeam", String.class).invoke(scoreboard, teamName);
                 if (team == null) team = scoreboard.getClass().getMethod("registerNewTeam", String.class).invoke(scoreboard, teamName);
                 String nicknamePart = hasNickname ? visualName + " &8| &r" : "";
@@ -16105,7 +16105,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             String key = viewer.getUniqueId() + "|" + target.getUniqueId(); String oldName = originalNametagTeams.remove(key);
             try {
                 Object scoreboard = viewer.getClass().getMethod("getScoreboard").invoke(viewer);
-                String teamName = "sasafk" + target.getUniqueId().toString().replace("-", "").substring(0, 10);
+                String teamName = VisualIdentityManager.teamName(target.getUniqueId());
                 Object team = scoreboard.getClass().getMethod("getTeam", String.class).invoke(scoreboard, teamName);
                 if (team != null) team.getClass().getMethod("removeEntry", String.class).invoke(team, target.getName());
                 if (oldName != null && !oldName.isBlank()) { Object oldTeam = scoreboard.getClass().getMethod("getTeam", String.class).invoke(scoreboard, oldName); if (oldTeam != null) oldTeam.getClass().getMethod("addEntry", String.class).invoke(oldTeam, target.getName()); }

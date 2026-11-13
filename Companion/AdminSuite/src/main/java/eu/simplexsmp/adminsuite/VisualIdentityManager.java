@@ -9,7 +9,7 @@ import org.bukkit.scoreboard.Team;
 /** Owns player-list names and nametags only. Chat display names belong to the chat plugin. */
 final class VisualIdentityManager {
     private final SimplexAdminSuite plugin;
-    private final Map<UUID,String> originals=new HashMap<>(), expected=new HashMap<>();
+    private final Map<UUID,String> originals=new HashMap<>(), expected=new HashMap<>(), requestedNames=new HashMap<>();
     private final Set<UUID> externalListOwners=new HashSet<>();
     private final Map<Scoreboard,Map<UUID,OriginalTeam>> boards=new IdentityHashMap<>();
     private final Map<Scoreboard,Map<UUID,List<String>>> appliedTeams=new IdentityHashMap<>();
@@ -17,6 +17,28 @@ final class VisualIdentityManager {
     private final Map<UUID,String> diagnostics=new HashMap<>();
     private record OriginalTeam(String name,String prefix,String suffix,boolean foreign) { }
     VisualIdentityManager(SimplexAdminSuite p){plugin=p;}
+
+    /** Prefix of every nametag team the suite owns (kept for data/diagnostic compatibility). */
+    static final String TEAM_PREFIX="sasafk";
+    /**
+     * 10.19.0: collision-free team name per player. Up to 10.18.0 the name used the first ten hex digits of the UUID.
+     * Floodgate/Bedrock UUIDs all start with {@code 0000000000}, so every Bedrock player shared one team and the
+     * nametags (and the player list where it falls back to team decoration) swapped prefixes and suffixes every tick.
+     * The new name hashes the complete UUID (SHA-256, 40 bits) and stays within the 16-character legacy team limit.
+     */
+    static String teamName(UUID id){
+        try{
+            byte[] hash=java.security.MessageDigest.getInstance("SHA-256").digest(id.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder out=new StringBuilder(TEAM_PREFIX);
+            for(int i=0;i<5;i++)out.append(String.format(Locale.ROOT,"%02x",hash[i]&0xff));
+            return out.toString();
+        }catch(java.security.NoSuchAlgorithmException impossible){
+            String hex=id.toString().replace("-","");
+            return TEAM_PREFIX+hex.substring(hex.length()-10);
+        }
+    }
+    /** Old (≤ 10.18.0) team name, only used to clean up stale shared teams after the update. */
+    static String legacyTeamName(UUID id){return TEAM_PREFIX+id.toString().replace("-","").substring(0,10);}
 
     void apply(Player target){
         if(target==null)return;
@@ -33,8 +55,14 @@ final class VisualIdentityManager {
             if(managesPlayerList()){
                 originals.putIfAbsent(id,target.getPlayerListName());
                 String previous=expected.get(id);
-                if(previous!=null&&!previous.equals(target.getPlayerListName())){externalListOwners.add(id);expected.remove(id);originals.remove(id);diagnostics.put(id,"External player-list owner observed; Suite yields until reconnect.");}
-                if(!externalListOwners.contains(id)){if(!name.equals(target.getPlayerListName()))target.setPlayerListName(name);expected.put(id,name);}
+                if(previous!=null&&!previous.equals(target.getPlayerListName())&&!sameVisible(previous,target.getPlayerListName())){externalListOwners.add(id);expected.remove(id);originals.remove(id);requestedNames.remove(id);diagnostics.put(id,"External player-list owner observed; Suite yields until reconnect.");}
+                if(!externalListOwners.contains(id)){
+                    // Paper re-serialises the list name (hex colours, resets); compare with the value it reads back,
+                    // otherwise the suite mistakes its own update for a foreign plugin and gives up the list.
+                    String requested=requestedNames.get(id);
+                    if(!name.equals(requested)||!Objects.equals(previous,target.getPlayerListName())){target.setPlayerListName(name);requestedNames.put(id,name);}
+                    expected.put(id,target.getPlayerListName());
+                }
             }else restoreList(target);
             // Never decorate Player.displayName: chat formatters already add prefix/suffix.
             Set<Scoreboard> visited=Collections.newSetFromMap(new IdentityHashMap<>());
@@ -55,7 +83,9 @@ final class VisualIdentityManager {
         Team current=board.getEntryTeam(entry);OriginalTeam original=managed.get(id);
         boolean afk=plugin.expansionIsAfk(target)&&plugin.getConfig().getBoolean("afk.show-above-name",true);
         if(!plugin.getConfig().getBoolean("nameplates.manage-nametags",true)||(!afk&&prefix.isBlank()&&suffix.isBlank())){restoreTeam(board,target);return;}
-        String own="sasafk"+id.toString().replace("-","").substring(0,10);
+        String own=teamName(id);
+        if(current!=null&&isSuiteTeam(current)&&!current.getName().equals(own)){leaveStaleTeam(current,entry);current=board.getEntryTeam(entry);}
+        if(original!=null&&!original.foreign&&isSuiteName(original.name)){original=new OriginalTeam("","","",false);managed.put(id,original);}
         if(current!=null&&!current.getName().equals(own)&&(original==null||!original.foreign||!original.name.equals(current.getName()))){
             if(!plugin.getConfig().getBoolean("nameplates.decorate-foreign-teams",false)){
                 if(original!=null)restoreTeam(board,target);
@@ -68,9 +98,11 @@ final class VisualIdentityManager {
         Team team;
         if(original!=null&&original.foreign){team=board.getTeam(original.name);if(team==null||!team.hasEntry(entry)||team.getEntries().size()!=1){managed.remove(id);return;}}
         else{
-            if(original==null){original=new OriginalTeam(current==null?"":current.getName(),"","",false);managed.put(id,original);}
+            if(original==null){original=new OriginalTeam(current==null||isSuiteTeam(current)?"":current.getName(),"","",false);managed.put(id,original);}
             team=board.getTeam(own);if(team==null)team=board.registerNewTeam(own);
             if(!team.hasEntry(entry))team.addEntry(entry);
+            // A suite team belongs to exactly one player. Anything else in it is a leftover and would share the tag.
+            for(String other:new ArrayList<>(team.getEntries()))if(!other.equals(entry))team.removeEntry(other);
         }
         String pre=plugin.color((afk?"&7[AFK] &r":"")+spaced(prefix));String suf=plugin.color(spacedSuffix(suffix));
         if(!pre.equals(team.getPrefix()))team.setPrefix(pre);
@@ -105,22 +137,48 @@ final class VisualIdentityManager {
         List<Map<String,Object>> out=new ArrayList<>();
         for(Player p:Bukkit.getOnlinePlayers()){String prefix=normalize(plugin.expansionLuckPermsPrefix(p)),suffix=normalize(plugin.expansionLuckPermsSuffix(p));org.bukkit.ChatColor c=lastColor(plugin.color(prefix));
             Team team=p.getScoreboard().getEntryTeam(p.getName());
-            out.add(SimplexAdminSuite.appMap("id",p.getUniqueId().toString(),"name",p.getName(),"prefix",SimplexAdminSuite.stripFormatting(plugin.color(prefix)),"suffix",SimplexAdminSuite.stripFormatting(plugin.color(suffix)),"rawPrefix",prefix,"rawSuffix",suffix,"color",c==null?"":c.name().toLowerCase(Locale.ROOT),"team",team==null?"":team.getName(),"managed",team!=null&&team.getName().startsWith("sasafk"),"status",diagnostics.getOrDefault(p.getUniqueId(),"OK"),"bedrock",plugin.isBedrockClient(p)));}
+            out.add(SimplexAdminSuite.appMap("id",p.getUniqueId().toString(),"name",p.getName(),"prefix",SimplexAdminSuite.stripFormatting(plugin.color(prefix)),"suffix",SimplexAdminSuite.stripFormatting(plugin.color(suffix)),"rawPrefix",prefix,"rawSuffix",suffix,"color",c==null?"":c.name().toLowerCase(Locale.ROOT),"team",team==null?"":team.getName(),"managed",team!=null&&team.getName().equals(teamName(p.getUniqueId())),"sharedTeam",team!=null&&isSuiteTeam(team)&&team.getEntries().size()>1,"status",diagnostics.getOrDefault(p.getUniqueId(),"OK"),"bedrock",plugin.isBedrockClient(p)));}
         out.sort(Comparator.comparing(m->String.valueOf(m.get("name")),String.CASE_INSENSITIVE_ORDER));return out;
     }
     static String spaced(String s){return s==null||s.isBlank()?"":s+(Character.isWhitespace(s.charAt(s.length()-1))?"":" ");}
     static String spacedSuffix(String s){return s==null||s.isBlank()?"":(Character.isWhitespace(s.charAt(0))?"":" ")+s;}
-    private void restoreList(Player p){String old=originals.remove(p.getUniqueId()),last=expected.remove(p.getUniqueId());if(old!=null&&Objects.equals(last,p.getPlayerListName()))p.setPlayerListName(old);}
+    static boolean isSuiteName(String name){return name!=null&&name.startsWith(TEAM_PREFIX);}
+    private static boolean isSuiteTeam(Team team){return team!=null&&isSuiteName(team.getName());}
+    /** Same text once colour codes are removed – Paper may re-order or drop redundant codes when it stores a list name. */
+    static boolean sameVisible(String a,String b){return a!=null&&b!=null&&SimplexAdminSuite.stripFormatting(a).equals(SimplexAdminSuite.stripFormatting(b));}
+    private static void leaveStaleTeam(Team team,String entry){
+        try{team.removeEntry(entry);if(team.getEntries().isEmpty())team.unregister();}catch(RuntimeException ignored){}
+    }
+    /**
+     * Removes entries from suite teams that are not that player's current team (e.g. the old shared
+     * {@code sasafk0000000000} Bedrock team) and drops empty leftovers. Foreign teams are never touched.
+     */
+    void sweep(Scoreboard board){
+        Map<String,String> owners=new HashMap<>();
+        for(Player p:Bukkit.getOnlinePlayers())owners.put(p.getName(),teamName(p.getUniqueId()));
+        sweep(board,owners);
+    }
+    /** @param owners entry name → the suite team that entry must be in */
+    static void sweep(Scoreboard board,Map<String,String> owners){
+        for(Team team:new ArrayList<>(board.getTeams())){
+            if(!isSuiteTeam(team))continue;
+            try{
+                for(String entry:new ArrayList<>(team.getEntries())){String owner=owners.get(entry);if(owner==null||!owner.equals(team.getName()))team.removeEntry(entry);}
+                if(team.getEntries().isEmpty())team.unregister();
+            }catch(RuntimeException ignored){}
+        }
+    }
+    private void restoreList(Player p){requestedNames.remove(p.getUniqueId());String old=originals.remove(p.getUniqueId()),last=expected.remove(p.getUniqueId());if(old!=null&&Objects.equals(last,p.getPlayerListName()))p.setPlayerListName(old);}
     private void restoreTeam(Scoreboard board,Player p){
         Map<UUID,OriginalTeam> m=boards.get(board);if(m==null)return;OriginalTeam old=m.remove(p.getUniqueId());if(old==null)return;
-        Team current=board.getEntryTeam(p.getName());String own="sasafk"+p.getUniqueId().toString().replace("-","").substring(0,10);
+        Team current=board.getEntryTeam(p.getName());String own=teamName(p.getUniqueId());
         Map<UUID,List<String>> rendered=appliedTeams.get(board);List<String> last=rendered==null?null:rendered.remove(p.getUniqueId());
         if(old.foreign){if(current!=null&&current.getName().equals(old.name)&&current.getEntries().size()==1&&last!=null&&current.getPrefix().equals(last.get(0))&&current.getSuffix().equals(last.get(1))){current.setPrefix(old.prefix);current.setSuffix(old.suffix);}return;}
-        if(current!=null&&current.getName().equals(own)){current.removeEntry(p.getName());if(current.getEntries().isEmpty())current.unregister();Team before=board.getTeam(old.name);if(before!=null)before.addEntry(p.getName());}
+        if(current!=null&&isSuiteTeam(current)){current.removeEntry(p.getName());if(current.getEntries().isEmpty())current.unregister();Team before=old.name.isEmpty()||isSuiteName(old.name)?null:board.getTeam(old.name);if(before!=null)before.addEntry(p.getName());}
     }
     void clear(Player p){externalListOwners.remove(p.getUniqueId());restoreList(p);for(Scoreboard b:new ArrayList<>(boards.keySet()))restoreTeam(b,p);boards.entrySet().removeIf(e->e.getValue().isEmpty());appliedTeams.entrySet().removeIf(e->e.getValue().isEmpty());diagnostics.remove(p.getUniqueId());}
-    void stop(){for(Player p:Bukkit.getOnlinePlayers())clear(p);boards.clear();appliedTeams.clear();warnings.clear();}
-    void tick(){Set<Scoreboard> active=Collections.newSetFromMap(new IdentityHashMap<>());for(Player p:Bukkit.getOnlinePlayers()){active.add(p.getScoreboard());apply(p);}for(Scoreboard board:new ArrayList<>(boards.keySet()))if(!active.contains(board)){for(UUID id:new ArrayList<>(boards.get(board).keySet())){Player p=Bukkit.getPlayer(id);if(p!=null)restoreTeam(board,p);}boards.remove(board);appliedTeams.remove(board);}}
+    void stop(){for(Player p:Bukkit.getOnlinePlayers())clear(p);requestedNames.clear();boards.clear();appliedTeams.clear();warnings.clear();}
+    void tick(){Set<Scoreboard> active=Collections.newSetFromMap(new IdentityHashMap<>());for(Player p:Bukkit.getOnlinePlayers())active.add(p.getScoreboard());for(Scoreboard board:active)sweep(board);for(Player p:Bukkit.getOnlinePlayers())apply(p);for(Scoreboard board:new ArrayList<>(boards.keySet()))if(!active.contains(board)){for(UUID id:new ArrayList<>(boards.get(board).keySet())){Player p=Bukkit.getPlayer(id);if(p!=null)restoreTeam(board,p);}boards.remove(board);appliedTeams.remove(board);}}
     String diagnostic(Player p){return "Chat display management: removed (owned by chat plugin)\nList: "+p.getPlayerListName()+"\nDisplay: "+p.getDisplayName()+"\nLP prefix: "+plugin.expansionLuckPermsPrefix(p)+"\nLP suffix: "+plugin.expansionLuckPermsSuffix(p)+"\n"+diagnostics.getOrDefault(p.getUniqueId(),"No observed overwrite.")+"\nCandidates (not proof): "+candidates();}
     private String candidates(){return Arrays.stream(Bukkit.getPluginManager().getPlugins()).filter(p->p.isEnabled()&&p!=plugin).map(p->p.getName()).filter(n->n.toLowerCase(Locale.ROOT).matches(".*(tab|score|name|chat|essentials).*" )).sorted().reduce((a,b)->a+", "+b).orElse("unknown");}
     private void conflict(Player p,String kind,String message){diagnostics.put(p.getUniqueId(),message);String key=p.getUniqueId()+"|"+kind;long now=System.currentTimeMillis();if(plugin.getConfig().getBoolean("nameplates.log-conflicts",false)&&now-warnings.getOrDefault(key,0L)>60000){warnings.put(key,now);plugin.getLogger().warning("[Names] "+p.getName()+": "+message);}}

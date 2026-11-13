@@ -80,7 +80,7 @@ final class PluginUploadRegressionTests: XCTestCase {
     }
     @MainActor func withHost(_ host: Host, _ action: (PluginUpdateCandidate, PluginUpdateFiles) async throws -> Void) async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubProtocol.self]
-        let api = PanelAPI(base: URL(string: "https://kineticpanel.net")!, key: "fixture-token", session: URLSession(configuration: config))
+        let api = PanelAPI(base: URL(string: "https://panel.ultraservers.com")!, key: "fixture-token", session: URLSession(configuration: config))
         StubProtocol.handler = { try host.respond($0) }; defer { StubProtocol.handler = nil }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

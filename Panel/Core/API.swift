@@ -29,7 +29,8 @@ final class PanelAPI {
     var provider: PanelProvider { amp == nil ? .pterodactyl : .amp }
     var widgetSecret: String { key }
     private let key: String
-    var isKinetic: Bool { base.host?.lowercased() == "kineticpanel.net" || base.host?.lowercased().hasSuffix(".kineticpanel.net") == true }
+    /// UltraServers (panel.ultraservers.com): Pterodactyl client API plus provider extensions (automatic backups, Player Manager, subdomains …).
+    var isUltraServers: Bool { amp == nil && UltraServers.matches(base) }
     let demo: Bool
     private let session: URLSession
     init(base: URL, key: String, demo: Bool = false, session: URLSession? = nil, amp: AMPAPI? = nil) {
@@ -169,7 +170,7 @@ final class PanelAPI {
             let data = try await Task.detached { try Data(contentsOf: file, options: .mappedIfSafe) }.value
             try await amp.write(server: server, path: pathJoin(directory, file.lastPathComponent), data: data); return
         }
-        // Kinetic signs the destination directory at the panel endpoint too.
+        // Some panels sign the destination directory at the panel endpoint too.
         let signed: String
         do { signed = try await request("servers/\(server)/files/upload", query: ["directory": directory]).attributes["url"].string }
         catch { throw PanelError(message: "Upload-Freigabe für \(directory): \(error.localizedDescription)") }

@@ -18,6 +18,15 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.12.0", title: "UltraServers", summary: "Die App ist jetzt auf UltraServers zugeschnitten: automatische Backups, Player Manager, Subdomains, Reverse Proxy und Installer direkt in der App. Kinetic-Funktionen wurden entfernt. Alle Konten, Server und Einstellungen bleiben erhalten.", items: [
+            .init(symbol: "clock.arrow.2.circlepath", title: "Automatische Backups", detail: "Die 6-stündlichen Backups von UltraServers mit letztem und nächstem Zeitpunkt, nach Tagen sortiert – herunterladen oder wiederherstellen."),
+            .init(symbol: "person.2.badge.gearshape.fill", title: "Player Manager", detail: "Online, Operatoren, Whitelist, Banns und bekannte Spieler – mit OP, Whitelist, Kick, Bann und Entbannen per Tipp."),
+            .init(symbol: "link", title: "Subdomains & Reverse Proxy", detail: "Subdomains anlegen und löschen, Web-Plugins wie Dynmap oder BlueMap mit SSL unter einer eigenen Domain erreichbar machen."),
+            .init(symbol: "puzzlepiece.extension.fill", title: "Plugin- und Modpack-Installer", detail: "Plugins und Modpacks über UltraServers suchen und mit einer bestimmten Version installieren."),
+            .init(symbol: "slider.horizontal.3", title: "Config-Editor für server.properties", detail: "Schalter, Auswahlen und Zahlenfelder – auf jedem Panel. Kommentare und unveränderte Zeilen bleiben exakt erhalten."),
+            .init(symbol: "square.and.arrow.down.on.square", title: "Datenbank-Import", detail: "MySQL-Datenbanken von einem anderen Host direkt übernehmen."),
+            .init(symbol: "tag.fill", title: "Admin Suite 10.19.0: Tags korrigiert", detail: "Präfixe und Suffixe über den Köpfen und in der Tabliste vertauschen sich nicht mehr – besonders bei Bedrock-Spielern.")
+        ]),
         WhatsNewRelease(version: "5.10.0", title: "Chat-Ruhe", summary: "Spieler können den Chat für sich stummschalten – mit /chat, auf Java und Bedrock. Du siehst in der App, wer das getan hat, und hilfst beim Stummschalten oder Aufheben. Dazu ein Fix für unsichtbare Spieler. Alle Daten bleiben erhalten.", items: [
             .init(symbol: "bell.slash.fill", title: "Chat für sich stummschalten", detail: "Mit /chat für 30 Minuten, 3 Stunden, 24 Stunden oder dauerhaft. Keine Chatnachrichten von Spielern und Plugins, keine Chat-Töne."),
             .init(symbol: "gamecontroller.fill", title: "Native Menüs mit Vorschau", detail: "Java bekommt einen echten Minecraft-Dialog (sonst ein Inventarmenü), Bedrock ein natives Formular mit Symbolen – auf Deutsch oder Englisch."),

@@ -231,7 +231,8 @@ import Combine
     func refreshPlayers(api: PanelAPI, server: Server) async {
         if api.demo { return }
         if state == "offline" { players = PlayerSnapshot(online: 0, maximum: playerCapacity, names: [], source: "Server offline"); return }
-        if (api.isKinetic || api.amp != nil), let result = try? await api.request("servers/\(server.id)/players"), let decoded = PlayerSnapshot.decode(result) { players = decoded; if let maximum = decoded.maximum { playerCapacity = maximum }; playerIssue = nil; return }
+        if api.isUltraServers, let result = try? await api.request("servers/\(server.id)/players"), let decoded = UltraPlayerList.decode(result).snapshot ?? PlayerSnapshot.decode(result) { players = decoded; if let maximum = decoded.maximum { playerCapacity = maximum }; playerIssue = nil; return }
+        if api.amp != nil, let result = try? await api.request("servers/\(server.id)/players"), let decoded = PlayerSnapshot.decode(result) { players = decoded; if let maximum = decoded.maximum { playerCapacity = maximum }; playerIssue = nil; return }
         if state == "running" && connected { do { try await sendCommand("list", api: api, server: server); playerIssue = nil } catch { playerIssue = error.localizedDescription } }
     }
     func queryPlayerValue(player: String, field: String, api: PanelAPI, server: Server) async throws -> String {

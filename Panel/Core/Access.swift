@@ -40,7 +40,6 @@ import SwiftUI
             default: action = "update"
             }; return (p[1], "file." + action)
         case "backups":
-            if tail == "export" { return nil } // Provider-specific authorization, including exact 403 caching.
             let action = tail == "download" ? "download" : tail == "restore" ? "restore" : tail == "lock" || method == "DELETE" ? "delete" : read ? "read" : "create"
             return (p[1], "backup." + action)
         case "databases": group = "database"

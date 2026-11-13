@@ -44,7 +44,7 @@ struct BackupInfo {
             guard candidate.hasPrefix("https://") || candidate.hasPrefix("/") else { continue }
             return url.absoluteString
         }
-        throw PanelError(message: "Der Provider hat keinen Download-Link geliefert. Manche Backup-Speicher erlauben nur Wiederherstellung oder einen separaten Export. Aktualisiere die Liste oder verwende, falls verfügbar, ‚Export vorbereiten‘.")
+        throw PanelError(message: "Der Provider hat keinen Download-Link geliefert. Manche Backup-Speicher erlauben nur Wiederherstellung oder einen separaten Export. Aktualisiere die Liste oder lade das Backup im Web-Panel herunter.")
     }
 }
 @MainActor extension PanelAPI {

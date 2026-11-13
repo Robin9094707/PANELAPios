@@ -95,6 +95,8 @@ final class AppPairing {
         lines.add("§7Am einfachsten: §f/sas app setup <Name> §7und den Link auf dem iPhone öffnen.");
         if (!proxy) {
             lines.add("§eWichtig: §7Port §f" + port + " §7muss beim Hoster §fdiesem Server zugewiesen §7sein (Netzwerk / Ports / Allocations). Sonst meldet die App „nicht erreichbar“.");
+            // 10.19.0: UltraServers filters non-game traffic (Gcore L7) unless the allocation is created for HTTP plugins.
+            lines.add("§7UltraServers: Netzwerk → Allocation → §fCreate§7 und den Haken für §fHTTP-/Voice-/Votifier-Plugins§7 setzen, sonst blockt der DDoS-Schutz die App-Verbindung.");
             if (address.contains("<Server-IP>")) lines.add("§7IP fest eintragen (für vollständige Setup-Links): §f/sas app address <IP>:" + port);
         }
         if (!domainUrl.isBlank() && !proxy) lines.add("§7Domain " + domainUrl.replaceAll("/+$", "") + ": §7nur über einen Reverse-Proxy mit Ziel §fhttps://<Server-IP>:" + port + "§7. Meldet die App 502, zeigt der Proxy auf das falsche Ziel.");

@@ -83,7 +83,7 @@ jobs:
           fixture_pid=$!
           trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
           # Focused regression checks, a real pinned TLS fixture and three short UI navigation checks.
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -only-testing:PanelTests/Panel460Tests -only-testing:PanelTests/Panel480Tests -only-testing:PanelTests/Panel490Tests -only-testing:PanelTests/Panel491Tests -only-testing:PanelTests/Panel560Tests -only-testing:PanelTests/Panel570Tests -only-testing:PanelTests/Panel580Tests -only-testing:PanelTests/Panel590Tests -only-testing:PanelTests/Panel5100Tests -only-testing:PanelTests/PinnedHTTPTests -only-testing:PanelUITests/PanelUITests/test490HomeShortcutsAndHelpLaunch -only-testing:PanelUITests/PanelUITests/test491SpecificServerShortcutsAndSelectablePicker -only-testing:PanelUITests/PanelUITests/test491FailedServerCanRetryWithoutBlockingOtherServers -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -only-testing:PanelTests/Panel460Tests -only-testing:PanelTests/Panel480Tests -only-testing:PanelTests/Panel490Tests -only-testing:PanelTests/Panel491Tests -only-testing:PanelTests/Panel560Tests -only-testing:PanelTests/Panel570Tests -only-testing:PanelTests/Panel580Tests -only-testing:PanelTests/Panel590Tests -only-testing:PanelTests/Panel5100Tests -only-testing:PanelTests/Panel5120Tests -only-testing:PanelTests/MinecraftTests -only-testing:PanelTests/PinnedHTTPTests -only-testing:PanelUITests/PanelUITests/test490HomeShortcutsAndHelpLaunch -only-testing:PanelUITests/PanelUITests/test491SpecificServerShortcutsAndSelectablePicker -only-testing:PanelUITests/PanelUITests/test491FailedServerCanRetryWithoutBlockingOtherServers -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
       - name: Extract UI test screenshots
         if: always()
         run: |
@@ -145,7 +145,7 @@ jobs:
       - name: Upload the JAR as an individual file
         uses: actions/upload-artifact@v7.0.2
         with:
-          path: Companion/AdminSuite/target/SimplexAdminSuite-10.18.0.jar
+          path: Companion/AdminSuite/target/SimplexAdminSuite-10.19.0.jar
           archive: false
           if-no-files-found: error
           retention-days: 30
@@ -160,7 +160,7 @@ jobs:
           python3 tools/package-source.py
           cp ../../docs/Simplex-Admin-Recovery.pdf target/
           cd target
-          sha256sum SimplexAdminSuite-10.18.0.jar SimplexAdminSuite-10.18.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-10.19.0.jar SimplexAdminSuite-10.19.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
       - name: Build and test SimplexSentinelBridge (Geyser extension) against the real Geyser API
         working-directory: Companion/SentinelBridge
         run: |
@@ -174,8 +174,8 @@ jobs:
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-10.18.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-10.18.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-10.19.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-10.19.0-source.zip
             Companion/AdminSuite/target/Simplex-Admin-Recovery.pdf
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
@@ -235,6 +235,8 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
+          Simplex Panel 5.12.0 / Admin Suite 10.19.0: move to UltraServers – automatic backups (every 6 hours, about 2 weeks) with last/next time, download and restore; Player Manager (online, ops, whitelist, bans, IP bans, known players) with one-tap actions; subdomains, reverse proxy with SSL/Let's Encrypt, plugin and modpack installer, database import and a lossless server.properties editor for every panel; all Kinetic-specific features removed. Suite: fixes swapped prefixes/suffixes above heads and in the player list (all Floodgate/Bedrock players shared one scoreboard team because the team name used the first ten UUID digits; Paper's re-encoded list names were mistaken for a foreign plugin), cleans up old shared teams automatically, and explains the UltraServers allocation checkbox for HTTP plugins in /sas app status. All data stays compatible. SentinelBridge 1.6.0 unchanged. See UPDATE-5.12.0.md.
+
           Simplex Panel 5.11.0 / Admin Suite 10.18.0: simpler pairing – the app checks the address itself, shows an unknown or changed certificate once for confirmation (no typing of fingerprints), accepts publicly valid certificates of a domain without a fingerprint and explains unreachable ports and proxy errors (502) in plain words; old setup links keep working after a server move. Suite: /sas app status as a pairing checklist with a port self-test, /sas app address <IP:Port>, complete setup links without editing the config, unauthenticated /v1/ping. Contains 5.10.0 / 10.17.0, 5.9.0 / 10.16.1. SentinelBridge 1.6.0 unchanged. See UPDATE-5.11.0.md.
 
           Simplex Panel 5.10.0 / Admin Suite 10.17.0: chat break (/chat) for Java and Bedrock players – mute the public chat for 30 minutes, 3 hours, 24 hours or until turned back on, with a native Java dialog (inventory fallback) and native Floodgate forms with icons and a preview; no chat from players or plugins and no chat sounds, full-name mentions and whispers optional, hints for players who write or mention a muted player (from six letters of the name), English/German by locale; staff manage chat breaks in the app and web panel; fixed Java players joining invisible or staying invisible after vanish; nicer player preference menu with icons, sounds and effects. Includes 5.9.0 / 10.16.1. SentinelBridge 1.6.0 unchanged. See UPDATE-5.10.0.md.
