@@ -29,8 +29,8 @@ import XCTest
     }
 
     func testReleaseNotes() {
-        XCTAssertEqual(WhatsNew.releases.first?.version, "5.10.0")
-        XCTAssertGreaterThanOrEqual(WhatsNew.releases.first?.items.count ?? 0, 6)
+        XCTAssertEqual(WhatsNew.release(for: "5.10.0")?.version, "5.10.0")
+        XCTAssertGreaterThanOrEqual(WhatsNew.release(for: "5.10.0")?.items.count ?? 0, 6)
         XCTAssertTrue(WhatsNew.shouldPresent(current: "5.10.0", lastSeen: "5.9.0", existingUser: true))
     }
 }

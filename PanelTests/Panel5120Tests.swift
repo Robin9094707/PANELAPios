@@ -127,6 +127,8 @@ import XCTest
         XCTAssertNil(ServerAccess.requirement("servers/abc/system-backups"), "provider extensions decide their own permissions")
         XCTAssertEqual(ServerAccess.requirement("servers/abc/backups/x/export", method: "POST")?.permission, "backup.create")
         XCTAssertEqual(WhatsNew.release(for: "5.12.0")?.title, "UltraServers")
+        XCTAssertEqual(WhatsNew.releases.first?.version, "5.12.0")
+        XCTAssertTrue(WhatsNew.shouldPresent(current: "5.12.0", lastSeen: "5.11.0", existingUser: true))
         let demo = Demo.response("servers/simplex1/system-backups")
         XCTAssertEqual(SystemBackup.decode(demo).count, 8)
         XCTAssertFalse(SystemBackupSummary(SystemBackup.decode(demo)).overdue)
