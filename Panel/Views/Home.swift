@@ -322,8 +322,9 @@ struct AddPanelView: View {
                 }
                 Section("Anbieter") { Picker("Panel", selection: $provider) { ForEach(PanelProvider.allCases) { Text($0.title).tag($0) } }.disabled(busy) }
                 Section {
-                    TextField("Name, z. B. Kinetic", text: $name)
+                    TextField("Name, z. B. UltraServers", text: $name)
                     TextField("https://panel.example.com", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("panelURL")
+                    if provider != .amp && url.isEmpty { Button("UltraServers-Panel eintragen", systemImage: "bolt.horizontal.circle") { url = UltraServers.panelURL; if name.isEmpty { name = UltraServers.name } }.font(.footnote) }
                     if provider == .amp {
                         TextField("AMP-Benutzername", text: $username).textInputAutocapitalization(.never).autocorrectionDisabled()
                         SecureField("AMP-Passwort", text: $key).privacySensitive()

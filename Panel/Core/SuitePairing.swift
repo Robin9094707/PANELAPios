@@ -57,7 +57,7 @@ enum SuitePairing {
     }
     static func unreachable(host: String, port: Int, explicitPort: Bool) -> String {
         if explicitPort {
-            return "Unter \(host):\(port) antwortet nichts. In der Serverkonsole /sas app status eingeben: Port und Adresse müssen übereinstimmen, und Port \(port) muss beim Hoster diesem Server zugewiesen sein (Netzwerk / Ports). Die IP ist die des Servers aus dem Hoster-Panel."
+            return "Unter \(host):\(port) antwortet nichts. In der Serverkonsole /sas app status eingeben: Port und Adresse müssen übereinstimmen, und Port \(port) muss beim Hoster diesem Server zugewiesen sein (Netzwerk / Ports). Die IP ist die des Servers aus dem Hoster-Panel. Bei UltraServers die Allocation mit Haken für HTTP-Plugins anlegen, sonst filtert der DDoS-Schutz die Verbindung."
         }
         return "Unter \(host) antwortet nichts. Meist fehlt der Port: https://<Server-IP>:<API-Port> eintragen – /sas app status in der Serverkonsole zeigt beides."
     }

@@ -26,11 +26,11 @@ final class PlayerPermissionFixTests: XCTestCase {
         XCTAssertTrue(PermissionCatalog.decode(.null).isEmpty)
     }
     func testBackupLinksSupportProviderEnvelopesAndRejectUnsafeResponses() throws {
-        let base = URL(string: "https://kineticpanel.net")!
+        let base = URL(string: "https://panel.ultraservers.com")!
         for text in [#"{"attributes":{"url":"https://node.example.com/a?token=secret"}}"#, #"{"data":{"download_url":"https://node.example.com/a?token=secret"}}"#, #"{"data":{"attributes":{"download":{"url":"https://node.example.com/a?token=secret"}}}}"#] {
             XCTAssertEqual(try BackupInfo.downloadURL(JSON.parse(text), base: base), "https://node.example.com/a?token=secret")
         }
-        XCTAssertEqual(try BackupInfo.downloadURL(JSON.parse(#"{"url":"/signed/archive?token=secret"}"#), base: base), "https://kineticpanel.net/signed/archive?token=secret")
+        XCTAssertEqual(try BackupInfo.downloadURL(JSON.parse(#"{"url":"/signed/archive?token=secret"}"#), base: base), "https://panel.ultraservers.com/signed/archive?token=secret")
         for text in [#"{"message":"export queued"}"#, #"{"url":"http://unsafe.example/a"}"#, #"{"url":"https://user:pass@example.com/a"}"#] { XCTAssertThrowsError(try BackupInfo.downloadURL(JSON.parse(text), base: base)) }
         let denied = HTTPURLResponse(url: base, statusCode: 403, httpVersion: nil, headerFields: nil)!
         XCTAssertThrowsError(try PanelAPI.validate(Data(#"{"message":"Backup downloads disabled by storage"}"#.utf8), response: denied)) { error in XCTAssertTrue(error.localizedDescription.contains("Backup downloads disabled by storage")) }
@@ -66,7 +66,7 @@ final class PlayerPermissionFixTests: XCTestCase {
         record.state = "paused"
         let data = try JSONEncoder().encode(record)
         XCTAssertNil(try JSONDecoder().decode(TransferRecord.self, from: data).source)
-        let api = PanelAPI(base: URL(string: "https://kineticpanel.net")!, key: "", demo: true)
+        let api = PanelAPI(base: URL(string: "https://panel.ultraservers.com")!, key: "", demo: true)
         let source = try XCTUnwrap(DownloadSource.legacy(context: record.context, filename: record.filename, api: api, servers: Demo.servers.map { Server(data: $0) }))
         XCTAssertEqual(source.resource, "/plugins/Test/config.yml"); XCTAssertEqual(source.server, "simplex1")
         record.source = source

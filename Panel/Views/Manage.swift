@@ -31,7 +31,12 @@ struct ManageView: View {
                 NavigationLink { MinecraftPropertiesView(api: api, server: server) } label: { Label("Minecraft & Welt-Einstellungen", systemImage: "globe") }.requiresAccess(api, server.id, "file.read-content")
             }
             }
-            if api.isKinetic { Section("Provider-Funktionen") { NavigationLink { ProviderHub(api: api, server: server) } label: { Label("Kinetic-Erweiterungen", systemImage: "sparkles") } } }
+            if api.isUltraServers || api.demo {
+            Section("UltraServers") {
+                NavigationLink { UltraServersHub(api: api, server: server, live: live) } label: { Label("UltraServers-Funktionen", systemImage: "bolt.horizontal.circle.fill") }.accessibilityIdentifier("ultraServersHub")
+                NavigationLink { SystemBackupsView(api: api, server: server) } label: { Label("Automatische Backups (alle 6 Std.)", systemImage: "clock.arrow.2.circlepath") }
+            }
+            }
             if api.amp != nil { Section("AMP") { NavigationLink { AMPManageView(api: api, server: server) } label: { Label("Instanz, Einstellungen & Aufgaben", systemImage: "server.rack") } } }
             if api.amp == nil {
             Section("Server verwalten") {
@@ -76,7 +81,7 @@ struct ResourcesView: View {
     @State private var operation: Operation?
     @State private var detail: DetailItem?
     @State private var userEditor: DetailItem?
-    var prefix: String { "servers/\(server.id)/" + (kind == .network && api.isKinetic ? "allocations" : kind.path) }
+    var prefix: String { "servers/\(server.id)/" + kind.path }
     var body: some View {
         List {
             if !loaded { ProgressView("Laden …") }
@@ -112,8 +117,8 @@ struct ResourcesView: View {
             Button("Passwort anzeigen", systemImage: "key") { Task { do { let result = try await api.list(prefix, query: ["include": "password"]); detail = DetailItem(data: result.first(where: { $0["id"].string == id }) ?? .null) } catch { self.error = error.localizedDescription } } }.requiresAccess(api, server.id, "database.view_password")
             Button("Passwort erneuern", systemImage: "arrow.clockwise", role: .destructive) { operation = Operation(title: "Datenbankpasswort erneuern", detail: "Plugins und Anwendungen müssen anschließend das neue Passwort verwenden.", path: prefix + "/\(id)/rotate-password", destructive: true, submit: "Erneuern") }.requiresRequest(api, prefix + "/\(id)/rotate-password", method: "POST")
         case .network:
-            Button("Notiz bearbeiten", systemImage: "pencil") { operation = Operation(title: "Port-Notiz", path: prefix + "/\(id)", method: api.isKinetic ? "PATCH" : "POST", fields: [Field(key: "notes", label: "Notiz", value: row["notes"].string)]) }.requiresRequest(api, prefix + "/\(id)", method: api.isKinetic ? "PATCH" : "POST")
-            if !row["is_default"].bool { Button("Als primär festlegen", systemImage: "star") { operation = Operation(title: "Primären Port ändern", path: prefix + "/\(id)" + (api.isKinetic ? "" : "/primary"), method: api.isKinetic ? "PATCH" : "POST", fixed: api.isKinetic ? ["primary": .bool(true)] : [:], submit: "Festlegen") }.requiresRequest(api, prefix + "/\(id)" + (api.isKinetic ? "" : "/primary"), method: api.isKinetic ? "PATCH" : "POST") }
+            Button("Notiz bearbeiten", systemImage: "pencil") { operation = Operation(title: "Port-Notiz", path: prefix + "/\(id)", fields: [Field(key: "notes", label: "Notiz", value: row["notes"].string)]) }.requiresRequest(api, prefix + "/\(id)", method: "POST")
+            if !row["is_default"].bool { Button("Als primär festlegen", systemImage: "star") { operation = Operation(title: "Primären Port ändern", detail: api.isUltraServers ? "UltraServers: Port-Änderungen wirken nach einem Neustart. Stoppe den Server am besten vorher." : "", path: prefix + "/\(id)/primary", submit: "Festlegen") }.requiresRequest(api, prefix + "/\(id)/primary", method: "POST") }
         case .users:
             Button("Berechtigungen bearbeiten", systemImage: "person.badge.key") { userEditor = DetailItem(data: row) }.requiresRequest(api, prefix + "/\(id)", method: "POST")
         }

@@ -32,6 +32,17 @@ enum Demo {
             ["name": "plugins", "is_file": false, "size": 0, "modified_at": "2026-10-19T20:37:00Z"],
             ["name": "world", "is_file": false, "size": 0], ["name": "server.properties", "is_file": true, "size": 1924],
             ["name": "paper-global.yml", "is_file": true, "size": 4218], ["name": "server.jar", "is_file": true, "size": 54218512]]) }
+        if path.hasSuffix("system-backups") {
+            // UltraServers rotation: 6-hourly today, then one per day.
+            let now = Date().timeIntervalSince1970, slot = floor(now / 21_600) * 21_600
+            let stamps = (0..<4).map { slot - Double($0) * 21_600 } + (1...4).map { slot - Double($0) * 86_400 - 64_800 }
+            return try! JSON.from(["data": stamps.enumerated().map { ["id": "auto-\($0.offset + 1)", "created_at": ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: $0.element)), "size": 12_700_000_000 + $0.offset * 9_000_000] as [String: Any] }])
+        }
+        if path.hasSuffix("/players") { return try! JSON.from(["data": ["online": [["name": "Robin", "uuid": "5d2f1c3e-7a8b-4c9d-8e0f-1a2b3c4d5e6f"], ["name": ".Steve2277", "uuid": "00000000-0000-0000-0009-01f5a3c2b1d4"]], "ops": [["name": "Robin"]], "whitelist": [["name": "Robin"], ["name": ".Steve2277"]], "banned": [["name": "Griefer", "reason": "Griefing", "source": "Robin"]], "banned_ips": [], "offline": [["name": "Alex", "last_seen": "2026-11-12T20:15:00Z"]], "max": 60]]) }
+        if path.hasSuffix("/subdomain") { return try! JSON.from(["success": true, "data": ["domains": [["id": 1, "domain": "ultramc.gg"], ["id": 2, "domain": "mcserver.icu"]], "subdomains": [["id": 7, "subdomain": "simplex", "domain_id": 1, "record_type": "SRV", "port": 25565]]]]) }
+        if path.hasSuffix("/proxy") { return try! JSON.from(["data": [["id": 3, "domain": "map.simplexsmp.eu", "port": 8123, "ssl": true]]]) }
+        if path.hasSuffix("/plugins") || path.hasSuffix("/modpacks") { return try! JSON.from(["data": [["id": "essentialsx", "name": "EssentialsX", "description": "Grundbefehle, Homes und Kits", "downloads": 12_400_000], ["id": "luckperms", "name": "LuckPerms", "description": "Rechteverwaltung", "downloads": 9_800_000]]]) }
+        if path.hasSuffix("plugins/versions") || path.hasSuffix("modpacks/versions") { return try! JSON.from(["data": [["id": "2.21.2", "name": "2.21.2", "game_versions": ["1.21.10", "1.21.9"], "loaders": ["paper"]]]]) }
         if path.hasSuffix("backups") { return wrap([
             ["uuid": "backup-1", "name": "Before update", "is_successful": true, "is_locked": true, "bytes": 12814000000, "completed_at": "2026-10-19T19:00:00Z", "created_at": "2026-10-19T18:58:00Z"],
             ["uuid": "backup-2", "name": "Daily backup", "is_successful": true, "is_locked": false, "bytes": 12714000000, "completed_at": "2026-10-18T03:00:00Z", "created_at": "2026-10-18T02:58:00Z"]]) }

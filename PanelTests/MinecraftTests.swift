@@ -22,16 +22,16 @@ final class MinecraftTests: XCTestCase {
     @MainActor func testDatabaseCredentialsAndPropertyVariants() throws {
         let db = DatabaseInfo(value: try JSON.parse(#"{"name":"s1_game","host":{"address":"db.example.net","port":3307},"relationships":{"password":{"data":{"attributes":{"password":"fixture-secret"}}}}}"#))
         XCTAssertEqual(db.host, "db.example.net"); XCTAssertEqual(db.port, "3307"); XCTAssertEqual(db.password, "fixture-secret")
-        let first = MinecraftPropertiesView.decode(try JSON.parse(#"{"data":{"properties":{"max-players":60,"online-mode":true,"level-name":"world"}}}"#))
-        XCTAssertEqual(first["max-players"], .number(60)); XCTAssertEqual(first["online-mode"], .bool(true))
-        let second = MinecraftPropertiesView.decode(try JSON.parse(#"[{"key":"difficulty","value":"normal"}]"#))
-        XCTAssertEqual(second["difficulty"], .string("normal"))
+        let file = ServerProperties.parse("#Minecraft server properties\nmax-players=60\nonline-mode=true\nlevel-name=world\n")
+        XCTAssertEqual(file.values["max-players"], "60"); XCTAssertEqual(file.values["online-mode"], "true")
+        XCTAssertEqual(ServerProperties.kind("max-players", value: "60"), .integer)
+        XCTAssertEqual(ServerProperties.kind("difficulty", value: "normal"), .choice(["peaceful", "easy", "normal", "hard"]))
     }
     @MainActor func testWorkspacePersistsFavoritesWithoutChangingExistingAccounts() throws {
         let suite = "PanelTests." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite)); defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(Data("existing-account-fixture".utf8), forKey: "profiles")
-        let api = PanelAPI(base: URL(string: "https://kineticpanel.net")!, key: "fixture")
+        let api = PanelAPI(base: URL(string: "https://panel.ultraservers.com")!, key: "fixture")
         let other = PanelAPI(base: URL(string: "https://another.example")!, key: "fixture")
         let server = Server(data: Demo.servers[0])
         let workspace = WorkspaceStore(defaults: defaults)

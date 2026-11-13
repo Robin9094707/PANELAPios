@@ -28,9 +28,6 @@ struct WorldsView: View {
                     NavigationLink { WorldDetailView(api: api, server: server, root: path) } label: { Label(row["name"].string, systemImage: "globe") }
                 }
             }
-            if api.isKinetic {
-                Section("Mod-Kompatibilität") { NavigationLink { ProviderCollection(api: api, server: server, title: "Gesperrte Mods", path: "minecraft/mods/blacklisted") } label: { Label("Vom Provider gesperrte Mods", systemImage: "shield.lefthalf.filled") } }
-            }
         }.panelScreen().navigationTitle("Java-Welten").task { await load() }.refreshable { await load() }.errorAlert($error)
     }
     func load() async {

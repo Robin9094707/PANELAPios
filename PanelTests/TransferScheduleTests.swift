@@ -38,7 +38,7 @@ final class TransferScheduleTests: XCTestCase {
         clock.observe(response); XCTAssertNotNil(clock.synced); XCTAssertEqual(clock.offset, 60, accuracy: 2)
     }
     func testWidgetSnapshotKeepsSeparateFreshnessWithoutSecrets() throws {
-        var record = WidgetServer(panel: "https://kineticpanel.net", serverID: "abc", name: "Minecraft")
+        var record = WidgetServer(panel: "https://panel.ultraservers.com", serverID: "abc", name: "Minecraft")
         record.online = 2; record.maximum = 60; record.playersUpdated = Date(timeIntervalSince1970: 100); record.updated = Date(timeIntervalSince1970: 200)
         let data = try JSONEncoder().encode(record)
         let decoded = try JSONDecoder().decode(WidgetServer.self, from: data)
