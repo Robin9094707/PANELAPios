@@ -21,8 +21,18 @@ floodgate:
   snapshot-page-size: 15
   report-page-size: 16
 
+# 10.20.0: LiteBans wird abgelöst. Die Suite liest LiteBans' Daten einmal ein (App/Webpanel → Bann-Zentrale →
+# LiteBans-Migration), schaltet LiteBans beim Start ab und übernimmt /ban, /tempban, /unban, /mute, /kick, /warn.
+litebans-migration:
+  disable-litebans: true
+  take-over-commands: true
+  # /pardon gehört normalerweise Vanilla; nur auf true setzen, wenn /pardon ebenfalls die Suite nutzen soll.
+  take-over-pardon: false
+  # Optionaler Pfad zur H2-Datei, falls sie nicht unter plugins/LiteBans/litebans.mv.db liegt.
+  h2-file: ''
+
 punishments:
-  # auto = LiteBans, falls vorhanden; sonst das interne System.
+  # auto = internes System (LiteBans ist seit 10.20.0 abgelöst, siehe litebans-migration).
   # Weitere Werte: internal, litebans, commands
   provider: auto
   default-temp-duration: '1d'
@@ -47,6 +57,13 @@ messages:
     Reason: {reason}
     Remaining: {remaining}
   internal-mute: 'You are muted. Reason: {reason}. Remaining: {remaining}.'
+  # 10.20.0: blocked alternative accounts (deutscher Text unter player-languages.de.messages.internal-alt-ban-login).
+  internal-alt-ban-login: |-
+    This account is blocked as an alternative account.
+    Linked ban: {main}
+    Reason: {reason}
+    Remaining: {remaining}
+    Reference: {case}
   frozen: 'You have been frozen by staff.'
   unfrozen: 'You are no longer frozen.'
   healed: 'You have been healed and fed by staff.'

@@ -1,5 +1,34 @@
 [
   {
+    "version": "10.20.0",
+    "app": "5.13.0",
+    "title": "Bann-Zentrale & LiteBans-Ablösung",
+    "items": [
+      {
+        "title": "Bann-Zentrale",
+        "icon": "shield",
+        "text": "Alle Sperren als Fälle: Hauptkonto plus gesperrte Alt-Konten, mit Suche, Filtern und Verlauf."
+      },
+      {
+        "title": "Nur dieses Konto oder alle",
+        "icon": "unlock",
+        "text": "Im Spielerprofil sehen, ob Hauptbann oder Alt-Konto – und einzeln oder den ganzen Fall entsperren."
+      },
+      {
+        "title": "IP-Fehlbanns aufheben",
+        "icon": "wifi",
+        "text": "Alles, was an einer gemeinsamen IP hängt, mit einem Schritt aufheben und die IP ausschließen."
+      },
+      {
+        "title": "LiteBans übernommen",
+        "icon": "download",
+        "text": "LiteBans wird abgeschaltet; Banns, Mutes und Warnungen pro Fall auswählen und übernehmen – fortsetzbar nach Abbruch."
+      }
+    ],
+    "date": "2026-11-15",
+    "intro": "Ein eigener Bannbereich mit Haupt- und Alt-Konten, sauberem Entsperren und der Ablösung von LiteBans."
+  },
+  {
     "version": "10.17.0",
     "app": "5.10.0",
     "title": "Chat-Ruhe & Sichtbarkeit",

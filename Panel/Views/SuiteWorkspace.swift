@@ -113,6 +113,7 @@ struct SuiteToolDestination: View {
             case .automations: SuiteAutomationsView(suite: suite)
             case .quickCenter: SuiteQuickCenterEditor(record: suite.connection)
             case .chatSilence: SuiteChatSilenceView(suite: suite)
+            case .banCenter: SuiteBanCenterView(suite: suite)
             case .serverEvents: SuiteServerEventsView(suite: suite)
             case .assistant: SuiteAIAssistantView(suite: suite, panel: panel, server: server)
             case .diagnostics: SuiteDiagnosticsView(suite: suite)

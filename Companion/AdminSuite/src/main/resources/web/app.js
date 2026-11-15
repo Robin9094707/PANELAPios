@@ -22,6 +22,7 @@
       { id: "chat", label: "Serverchat", icon: "chat", perm: "data.chat" },
       { id: "chat-silence", label: "Chat-Ruhe", icon: "bellOff", perm: "data.chat-silence", feature: "chat-silence-v1" },
       { id: "moderation", label: "Moderation", icon: "gavel", perm: "data.reports" },
+      { id: "ban-center", label: "Bann-Zentrale", icon: "shield", perm: "data.ban-center", feature: "ban-center-v1" },
       { id: "locker", label: "Einbehaltungsablage", icon: "box", perm: "data.inventory", feature: "item-locker-v1" }
     ] },
     { group: "Server", items: [
@@ -65,7 +66,7 @@
   /** 9.9.0: the phone tab bar and hidden menu entries follow the account's appearance settings. */
   function tabs() { var p = S.prefs && S.prefs.tabs; var list = (p && p.length ? p : TABS.slice(0, 4)).filter(function (id) { return navItem(id); }).slice(0, 4); return list.concat(["more"]); }
   function hiddenItem(id) { return !!(S.prefs && (S.prefs.hidden || []).indexOf(id) >= 0) && ["dashboard", "appearance", "security"].indexOf(id) < 0; }
-  var ALIASES = { player: "players", ticket: "tickets", function: "functions" };
+  var ALIASES = { player: "players", ticket: "tickets", function: "functions", "ban-migration": "ban-center" };
   S.nav = NAV;
 
   function navItem(id) { for (var g = 0; g < NAV.length; g++) for (var i = 0; i < NAV[g].items.length; i++) if (NAV[g].items[i].id === id) return NAV[g].items[i]; return null; }

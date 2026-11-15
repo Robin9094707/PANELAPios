@@ -18,6 +18,15 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.13.0", title: "Bann-Zentrale", summary: "Alle Sperren an einem Ort: Hauptbanns und gesperrte Alt-Konten, Freigabe einzeln oder für den ganzen Fall, IP-Fehlbanns mit einem Tipp aufheben – und LiteBans wird abgelöst und übernommen. Alle bestehenden Banns und Daten bleiben erhalten.", items: [
+            .init(symbol: "shield.slash.fill", title: "Bann-Zentrale", detail: "Jeder Fall zeigt das Hauptkonto und alle zugehörigen Alt-Konten mit Grund, Dauer, Herkunft und IP – filterbar und durchsuchbar."),
+            .init(symbol: "person.2.slash", title: "Hauptbann oder Alt-Konto", detail: "Im Spielerprofil siehst du sofort, ob jemand selbst gebannt ist oder als Alt-Konto eines anderen Spielers gesperrt wurde."),
+            .init(symbol: "lock.open.fill", title: "Nur dieses Konto oder alle", detail: "Beim Entsperren wählst du: nur dieses Alt-Konto oder den ganzen Fall mit Hauptbann, Alt-Gruppe und IP-Sperre."),
+            .init(symbol: "wifi.exclamationmark", title: "IP-Fehlbanns aufheben", detail: "Sind wegen einer gemeinsamen IP plötzlich alle gesperrt, hebst du alles an dieser IP auf und schließt sie dauerhaft aus."),
+            .init(symbol: "arrow.down.doc.fill", title: "LiteBans-Migration", detail: "LiteBans wird abgeschaltet. Pro Fall und Konto auswählen, was übernommen wird – Banns an der geteilten IP 82.165.45.159 werden standardmäßig nicht übernommen. Bricht die Migration ab, einfach fortsetzen."),
+            .init(symbol: "clock.arrow.circlepath", title: "Verlauf", detail: "Aufgehobene, abgelaufene und alte LiteBans-Sperren bleiben im Verlauf sichtbar – auch im Spielerprofil."),
+            .init(symbol: "globe", title: "Auch im Webpanel", detail: "Die Bann-Zentrale und die Migration gibt es responsiv im Webpanel der Admin Suite 10.20.0.")
+        ]),
         WhatsNewRelease(version: "5.12.0", title: "UltraServers", summary: "Die App ist jetzt auf UltraServers zugeschnitten: automatische Backups, Player Manager, Subdomains, Reverse Proxy und Installer direkt in der App. Kinetic-Funktionen wurden entfernt. Alle Konten, Server und Einstellungen bleiben erhalten.", items: [
             .init(symbol: "clock.arrow.2.circlepath", title: "Automatische Backups", detail: "Die 6-stündlichen Backups von UltraServers mit letztem und nächstem Zeitpunkt, nach Tagen sortiert – herunterladen oder wiederherstellen."),
             .init(symbol: "person.2.badge.gearshape.fill", title: "Player Manager", detail: "Online, Operatoren, Whitelist, Banns und bekannte Spieler – mit OP, Whitelist, Kick, Bann und Entbannen per Tipp."),

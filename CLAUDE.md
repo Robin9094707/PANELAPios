@@ -2,12 +2,12 @@
 
 Arbeitssprache mit dem Besitzer: **Deutsch**. Nutzertexte in App, Plugin und Doku sind Deutsch (Plugin-Spielertexte teils DE/EN).
 
-## Aktueller Stand (13.11.2026)
+## Aktueller Stand (15.11.2026)
 
 | Komponente | Version | Ort |
 | --- | --- | --- |
-| iOS-App „Simplex Panel“ | **5.12.0** (Build 53) | `Panel/`, `Shared/`, `PanelWidgets/`, `project.yml` |
-| Paper-Plugin „Simplex Admin Suite“ | **10.19.0** | `Companion/AdminSuite/` |
+| iOS-App „Simplex Panel“ | **5.13.0** (Build 54) | `Panel/`, `Shared/`, `PanelWidgets/`, `project.yml` |
+| Paper-Plugin „Simplex Admin Suite“ | **10.20.0** | `Companion/AdminSuite/` |
 | Geyser-Extension „SentinelBridge“ | 1.6.0 (unverändert seit 4.6.0) | `Companion/SentinelBridge/` |
 
 Hoster: **UltraServers** (`https://panel.ultraservers.com`, Pterodactyl-Client-API mit `ptlc_`-Schlüsseln). Kinetic wurde in 5.12.0 vollständig entfernt – nicht wieder einbauen.
@@ -62,6 +62,10 @@ POST servers/{id}/databases/import
 Nicht per API gefunden (nur Web-Panel, App verlinkt): Version wechseln/Game Switch, Server-Splitter, SFTP-Import, Config-Editor-Backend, MTR, Tickets.
 
 Hinweis für die Admin-Suite-App-API bei UltraServers: Allocation mit Haken für HTTP-/Voice-/Votifier-Plugins anlegen, sonst filtert der Gcore-DDoS-Schutz.
+
+## Bann-Zentrale & LiteBans (10.20.0 / 5.13.0)
+
+LiteBans ist abgelöst (`litebans-migration.disable-litebans`, Standard an): `LiteBansMigration.java` liest per API/MySQL/H2-Datei einen Snapshot, schaltet LiteBans ab, `BanCommands.java` übernimmt /ban usw. (leitet an `/sas …` weiter). Fälle = gleiche Zeit/Grund/Ersteller; ausgeschlossene IPs (82.165.45.159) werden nie übernommen. `SimplexAdminSuite.BanCenterCore` baut Fälle aus Profil-Feldern `internal-punishments.ban.{case,role,main,…}` + Ultra-Gruppen; `BanCenterApi.java` = `/v1/ban-center`, `/v1/ban-center/player`, `/v1/ban-migration`. Web: `web/bans.js`. App: `SuiteBanCenter.swift`, `SuiteBanMigration.swift`, `SuiteBanCenterModel.swift`. Konsole: `/sas bans`. Test-Paper-Server lokal: Paper 26.3 über fill.papermc.io, Temurin 25.
 
 ## Zuletzt behoben (10.19.0)
 

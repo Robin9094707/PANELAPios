@@ -181,6 +181,8 @@
       ["Sitzungen", p.activity ? S.num(p.activity.sessions) : null], ["Geräte", p.deviceCount], ["Mögliche Alts", p.altCount], ["Frühere Namen", (p.previousNames || []).join(", ")],
       ["Letzter Ort", p.lastLocation ? fmtLoc(p.lastLocation) : null]]));
     var cards = [head];
+    // 10.20.0: main ban or blocked alt account, whole case and lift options right in the profile.
+    if (S.has("ban-center-v1") && S.can("data.ban-center") && S.banStatusCard) cards.push(S.banStatusCard(p.id));
     // 10.0.0: quick access to rank (LuckPerms) and access locks of this player.
     var quick = h("div", { class: "row wrap" },
       S.has("powerbot-v1") && S.can("data.snapshots") && S.can("data.snapshot-content") ? h("a", { class: "btn sm", href: "#/snapshots/" + p.id, text: "Inventar-Snapshots" }) : null,
@@ -585,6 +587,7 @@
             : await S.api("data/bans", { query: { source: /^minecraft-/.test(source) && !S.has("bans-sources-v2") ? "minecraft" : source, q: q } }); if (!alive()) return; S.clear(body);
           if (/^minecraft-/.test(source) && !S.has("bans-sources-v2")) bans.items = (bans.items || []).filter(function (b) { return b.source === source; });
           var canRemove = S.can("action.bans.remove");
+          if (S.has("ban-center-v1") && S.can("data.ban-center")) body.appendChild(S.notice(h("span", {}, "Neu: Die Bann-Zentrale zeigt alle Suite-Banns mit Haupt- und Alt-Konten, IP-Fehlbanns und Verlauf. ", h("a", { href: "#/ban-center", text: "Öffnen →" })), "info", "shield"));
           body.appendChild(h("div", { class: "stack" }, S.segmented([["internal", "Suite"], ["client", "Client-Sperren"], ["minecraft-profile", "Minecraft"], ["minecraft-ip", "IP"], ["litebans", "LiteBans"]], source, function (v) { source = v; show(); }),
             bans.available === false ? S.notice(bans.message || "LiteBans ist nicht verfügbar.", "warn", "info") : null,
             S.card(null, { cls: "pad-0" }, h("div", { class: "list" }, (bans.items || []).length ? bans.items.map(function (b) {

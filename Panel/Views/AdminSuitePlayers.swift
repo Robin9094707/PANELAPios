@@ -235,6 +235,9 @@ struct SuitePlayerView: View {
                 LabeledContent("Warnungen", value: current["warnings"].string)
             }
             quickActionSection
+            if suite.features.contains(SuiteBanText.feature) && suite.can(SuiteBanText.viewPermission) {
+                SuitePlayerBanSection(suite: suite, player: player)
+            }
             if suite.features.contains("moderation-qol-v1") && suite.can("ai.assistant.use") {
                 SuitePlayerAssistantLink(suite: suite, player: player)
             }

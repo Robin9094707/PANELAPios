@@ -1,3 +1,8 @@
+## Panel 5.13.0 und Admin Suite 10.20.0
+
+Großes Sperren-Update: Bann-Zentrale in App und Webpanel mit Hauptbanns und gesperrten Alt-Konten, Entsperren nur eines Kontos oder des ganzen Falls direkt im Spielerprofil, IP-Fehlbanns mit einem Schritt aufheben – und LiteBans wird abgeschaltet und mit Auswahl pro Fall übernommen (die geteilte IP 82.165.45.159 wird nie übernommen). Enthält alles aus 5.12.0 / 10.19.0. SentinelBridge 1.6.0 bleibt unverändert.
+[Update-Anleitung](UPDATE-5.13.0.md)
+
 ## Panel 5.12.0 und Admin Suite 10.19.0
 
 Umzug zu UltraServers: automatische Backups (alle 6 Stunden) mit Download und Wiederherstellung, Player Manager, Subdomains, Reverse Proxy, Plugin- und Modpack-Installer, Datenbank-Import und ein Config-Editor für `server.properties` – alle Kinetic-Sonderfunktionen sind entfernt. Admin Suite 10.19.0 behebt vertauschte Präfixe/Suffixe über den Köpfen und in der Tabliste (vor allem bei Bedrock-Spielern). Enthält alles aus 5.11.0 / 10.18.0. SentinelBridge 1.6.0 bleibt unverändert.

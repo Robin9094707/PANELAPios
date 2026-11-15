@@ -283,6 +283,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     CommandRights commandRights;
     UnifiedAdminMenu unifiedMenu;
     ModerationOverview moderationOverview;
+    /** 10.20.0: Bann-Zentrale and the one-time LiteBans migration. */
+    BanCenterCore banCenter;
+    LiteBansMigration liteBansMigration;
     XrayBaitManager xrayBait;
     DiscordInvite discordInvite;
     private BukkitTask autoSnapshotTask;
@@ -528,6 +531,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         catch (Exception error) { chatSilence = null; getLogger().warning("Chat-Ruhe konnte nicht geladen werden; vorhandene Datei bleibt erhalten: " + error.getMessage()); }
         try { smartRestart = new SmartRestart(this); } catch (Exception error) { getLogger().warning("Smart-Neustart konnte nicht geladen werden: " + error.getMessage()); }
         try { automations = new Automations(this); } catch (Exception error) { getLogger().warning("Automationen konnten nicht geladen werden: " + error.getMessage()); }
+        try { startBanCenter(); } catch (Exception error) { getLogger().warning("Bann-Zentrale konnte nicht geladen werden: " + error.getMessage()); }
         try { appApi = new AppApiManager(this); appApi.reload(); } catch (Exception error) { getLogger().warning("Optionale App-API bleibt aus: " + error.getClass().getSimpleName()); }
         if (getConfig().getBoolean("ad-hub.enabled", getConfig().getBoolean("discord-ads.enabled", true))) startAdHub();
         getLogger().info("Simplex Admin Suite v" + getDescription().getVersion() + " wurde geladen. Bedrock-Forms: " + bedrockMenus.status());
@@ -552,6 +556,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (community != null) community.stop();
         if (powerBot != null) powerBot.close();
         if (chatSilence != null) chatSilence.stop();
+        if (liteBansMigration != null) liteBansMigration.stop();
         if (liveInventory != null) liveInventory.close();
         if (publicChatAssistant != null) publicChatAssistant.close();
         if (diagnostics != null) { try { diagnostics.stop(); } catch (Throwable error) { getLogger().warning("Diagnose konnte nicht sauber beendet werden: " + error.getClass().getSimpleName()); } }
@@ -847,6 +852,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             String feature = args[0].toLowerCase(Locale.ROOT);
             String[] rest = Arrays.copyOfRange(args, 1, args.length);
             if (feature.equals("checkban") || feature.equals("checkmute")) return moderationOverview.command(sender, feature, rest);
+            if (feature.equals("bans") || feature.equals("banns")) return banCenterCommand(sender, rest);
             if (feature.equals("xraybait")) return xrayBait.command(sender, rest);
             if (feature.equals("setdiscord")) return discordInvite.set(sender, rest);
         }
@@ -8547,9 +8553,12 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (mode.equals("none") || mode.equals("account")) {
             if (altDetection.ultraStatus(p).active && !has(sender, "simplexadminsuite.ultraban.unban")) return "Berechtigung zum Aufheben der Gruppe fehlt.";
             if (altDetection.ultraStatus(p).active) altDetection.ultraUnban(sender, name);
+            if (mode.equals("none") && banCenter != null) banCenter.recordLift(p, sender.getName(), "single", "Bannart: keine");
             p.internalBanUntil = mode.equals("none") ? 0L : Long.MAX_VALUE;
             p.internalBanReason = mode.equals("none") ? "" : sanitizeText(reason, 240);
-            p.internalBanBy = sender.getName(); database.save(p);
+            p.internalBanBy = sender.getName();
+            if (mode.equals("none")) BanCenterCore.clearCase(p); else BanCenterCore.markBan(p, System.currentTimeMillis(), "suite");
+            database.save(p);
             Player online = Bukkit.getPlayer(p.uuid);
             if (mode.equals("account") && online != null) suiteKick(online,punishments.activeBanMessage(p));
             if (moderationControl != null) moderationControl.refreshOnline();
@@ -8560,7 +8569,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (!getConfig().getBoolean("alt-detection.ultraban.enabled", true)) return "Ultrabann ist deaktiviert.";
         // A previous local account ban must not prevent admission in ghost mode.
         if (p.internalBanActive(System.currentTimeMillis()) && !has(sender,"simplexadminsuite.action.unban")) return "Account-Entbannberechtigung fehlt.";
-        p.internalBanUntil = 0L; database.save(p);
+        if (p.internalBanActive(System.currentTimeMillis()) && banCenter != null) banCenter.recordLift(p, sender.getName(), "single", "in Alt-Gruppe überführt");
+        p.internalBanUntil = 0L; BanCenterCore.clearCase(p); database.save(p);
         AdvancedAltDetection.UltraBanResult result = altDetection.ultraBan(sender, p, reason, mode);
         if (moderationControl != null) moderationControl.refreshOnline();
         return "Bannart: " + mode + " • " + result.message;
@@ -8731,6 +8741,145 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     }
 
     /** App facade: server thread only, using exactly the existing suite data/services. */
+    /**
+     * 10.20.0: /sas bans – summary, lifts and the LiteBans migration from the console or in game.
+     * /sas bans · /sas bans lift <Fall> [all|Spieler] · /sas bans migration [snapshot|run|disable|decide <key>=<wahl>]
+     */
+    private boolean banCenterCommand(CommandSender sender, String[] args) {
+        if (banCenter == null) { sender.sendMessage(prefix() + "Bann-Zentrale nicht geladen."); return true; }
+        if (!has(sender, "simplexadminsuite.bans")) { sender.sendMessage(prefix() + "Keine Berechtigung (simplexadminsuite.bans)."); return true; }
+        String sub = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
+        try {
+            if (sub.isEmpty() || sub.equals("list") || sub.equals("liste")) {
+                Map<String, Object> data = banCenter.overview("all", args.length > 1 ? args[1] : "");
+                Map<?, ?> k = (Map<?, ?>) data.get("kpis");
+                sender.sendMessage(prefix() + "Bann-Zentrale: " + k.get("cases") + " Fälle · " + k.get("main") + " Hauptbanns · " + k.get("alts") + " Alt-Konten · " + k.get("ipBlocks") + " IP-Sperren");
+                int shown = 0;
+                for (Object o : (List<?>) data.get("items")) {
+                    if (!(o instanceof Map<?, ?> c) || shown++ >= 15) break;
+                    sender.sendMessage("§7" + c.get("id") + " §f" + c.get("mainName") + " §8· §7" + c.get("reason") + " §8· §7" + c.get("accounts") + " Konto/Konten" + (((Number) c.get("alts")).intValue() > 0 ? " §6(" + c.get("alts") + " Alt)" : ""));
+                }
+                sender.sendMessage("§8Aufheben: /sas bans lift <Fall> [all|Spieler] · Migration: /sas bans migration");
+                return true;
+            }
+            if (sub.equals("lift") || sub.equals("aufheben")) {
+                if (!has(sender, "simplexadminsuite.action.unban")) { sender.sendMessage(prefix() + "Keine Entbannberechtigung."); return true; }
+                if (args.length < 2) { sender.sendMessage(prefix() + "/sas bans lift <Fall-ID> [all|Spieler]"); return true; }
+                String scope = args.length > 2 ? args[2] : "all"; String player = "";
+                if (!scope.equalsIgnoreCase("all")) { PlayerProfile p = database.find(scope); if (p == null) { sender.sendMessage(prefix() + "Spieler nicht gefunden."); return true; } player = p.uuid.toString(); }
+                Map<String, Object> r = banCenter.lift(sender.getName(), args[1], player, player.isEmpty(), "Befehl");
+                sender.sendMessage(prefix() + "§a" + r.get("title") + ": §7" + r.get("description"));
+                return true;
+            }
+            if (sub.equals("migration") || sub.equals("migrate")) {
+                if (liteBansMigration == null) { sender.sendMessage(prefix() + "Migration nicht geladen."); return true; }
+                if (!has(sender, "simplexadminsuite.admin")) { sender.sendMessage(prefix() + "Die Migration braucht simplexadminsuite.admin."); return true; }
+                String op = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "status";
+                if (op.equals("status")) {
+                    Map<String, Object> d = liteBansMigration.data(); Map<?, ?> c = (Map<?, ?>) d.get("counts");
+                    sender.sendMessage(prefix() + "LiteBans: " + (Boolean.TRUE.equals(d.get("litebansEnabled")) ? "§6läuft" : "§aaus") + " §7· Snapshot: " + (d.get("snapshot") == null ? "keiner" : ((Map<?, ?>) d.get("snapshot")).get("source"))
+                            + (c == null || c.isEmpty() ? "" : " · Fälle " + c.get("cases") + " · offen " + c.get("pending") + " · übernommen " + c.get("done") + " · fehlgeschlagen " + c.get("failed") + " · geteilte IP " + c.get("excluded"))
+                            + (Boolean.TRUE.equals(d.get("running")) ? " · läuft" : "") + (String.valueOf(d.get("error")).isBlank() ? "" : " · Fehler: " + d.get("error")));
+                    if (args.length > 2 && args[2].equalsIgnoreCase("cases")) for (Object o : (List<?>) d.get("cases")) if (o instanceof Map<?, ?> row)
+                        sender.sendMessage("§7" + row.get("key") + " §f#" + row.get("id") + " §8· §7" + row.get("decision") + " §8· §7" + row.get("status") + (String.valueOf(row.get("message")).isBlank() ? "" : " §8· §7" + row.get("message")));
+                    return true;
+                }
+                Map<String, Object> body = new LinkedHashMap<>(); body.put("confirmed", true);
+                switch (op) {
+                    case "snapshot", "einlesen" -> body.put("operation", "snapshot");
+                    case "run", "start" -> body.put("operation", "run");
+                    case "disable", "abschalten" -> body.put("operation", "disable");
+                    case "decide", "auswahl" -> { body.put("operation", "decide"); body.put("decisions", String.join(",", Arrays.copyOfRange(args, 2, args.length))); }
+                    default -> { sender.sendMessage(prefix() + "/sas bans migration [status [cases]|snapshot|decide <key>=<wahl>|run|disable]"); return true; }
+                }
+                Map<String, Object> r = liteBansMigration.apply(sender.getName(), body);
+                sender.sendMessage(prefix() + "§a" + r.get("title") + ": §7" + r.get("description"));
+                return true;
+            }
+            sender.sendMessage(prefix() + "/sas bans [liste|lift|migration]");
+        } catch (Exception error) { sender.sendMessage(prefix() + "§c" + LiteBansMigration.describe(error)); }
+        return true;
+    }
+
+    // ------------------------------------------------------------------ 10.20.0 Bann-Zentrale & LiteBans-Ablösung
+
+    private void startBanCenter() {
+        banCenter = new BanCenterCore(this);
+        liteBansMigration = new LiteBansMigration(this, new LiteBansMigration.Host() {
+            @Override public boolean ipExcluded(String ip) { return ip != null && !ip.isBlank() && altDetection != null && altDetection.ipExclusions.contains(ip); }
+            @Override public String knownName(UUID uuid) { PlayerProfile p = database.get(uuid); return p == null ? null : p.name; }
+            @Override public String apply(LiteBansMigration.Case c, String decision, List<LiteBansMigration.Row> alts, java.util.function.Function<String, String> names, String actor) { return applyLiteBansCase(c, decision, alts, names, actor); }
+            @Override public int archive(List<LiteBansMigration.Row> rows, java.util.function.Function<String, String> names) { return banCenter.archiveLiteBans(rows, names); }
+            @Override public void audit(String actor, String title, String detail) { expansionAudit(actor, null, title, detail); }
+        });
+        Bukkit.getScheduler().runTask(this, () -> liteBansMigration.startup(() -> {
+            if (!getConfig().getBoolean("litebans-migration.take-over-commands", true)) return;
+            int taken = BanCommands.takeOver(this);
+            if (taken > 0) getLogger().info(taken + " Strafbefehle (/ban, /tempban, /unban, /mute, /kick, /warn …) laufen jetzt über die Simplex Admin Suite.");
+        }));
+    }
+
+    /** Applies one LiteBans case to the Suite's own ban system (server thread). */
+    private String applyLiteBansCase(LiteBansMigration.Case c, String decision, List<LiteBansMigration.Row> alts, java.util.function.Function<String, String> names, String actor) {
+        long now = System.currentTimeMillis();
+        UUID mainId;
+        try { mainId = UUID.fromString(c.main.uuid()); } catch (IllegalArgumentException invalid) { throw new IllegalArgumentException("LiteBans-Eintrag ohne gültige UUID"); }
+        PlayerProfile main = database.ensure(mainId, names.apply(c.main.uuid()), c.main.time());
+        String by = c.main.actor().isBlank() ? "LiteBans" : c.main.actor();
+        String reason = sanitizeText(c.main.reason().isBlank() ? "LiteBans" : c.main.reason(), getConfig().getInt("punishments.max-reason-length", 240));
+        long until = c.main.until() <= 0 ? Long.MAX_VALUE : c.main.until();
+        if (until != Long.MAX_VALUE && until <= now) return "Inzwischen abgelaufen – nichts zu tun.";
+        if (c.type.equals("mute")) {
+            if (main.internalMuteActive(now) && (main.internalMuteUntil == Long.MAX_VALUE || main.internalMuteUntil >= until)) return main.name + ": bereits (länger) stummgeschaltet – unverändert.";
+            main.internalMuteUntil = until; main.internalMuteReason = reason; main.internalMuteBy = by;
+            main.addAction("Mute aus LiteBans #" + c.main.id() + " übernommen"); database.save(main);
+            return main.name + " stummgeschaltet" + (until == Long.MAX_VALUE ? " (dauerhaft)." : " bis " + dossierDate(until) + ".");
+        }
+        if (c.type.equals("warning")) {
+            String marker = "[LiteBans #" + c.main.id() + "]";
+            synchronized (main.warnings) { if (main.warnings.stream().anyMatch(w -> w.contains(marker))) return "Warnung war bereits übernommen."; main.warnings.add(marker + " " + reason + " (von " + by + ")"); }
+            database.save(main); return "Warnung für " + main.name + " übernommen.";
+        }
+        String caseId = "LB-" + c.main.id();
+        boolean mainExcluded = altDetection != null && altDetection.ipExclusions.contains(c.main.ip());
+        List<String> out = new ArrayList<>();
+        out.add(banImported(main, caseId, "main", null, until, reason, by, c.main, mainExcluded ? "" : c.main.ip()));
+        int dropped = c.alts.size() - alts.size();
+        if (!decision.equals("main")) {
+            for (LiteBansMigration.Row r : alts) {
+                UUID id; try { id = UUID.fromString(r.uuid()); } catch (IllegalArgumentException invalid) { continue; }
+                PlayerProfile alt = database.ensure(id, names.apply(r.uuid()), r.time());
+                out.add(banImported(alt, caseId, "alt", main, until, reason, by, r, r.ip()));
+            }
+        }
+        if (dropped > 0) out.add(dropped + " verknüpfte(s) Konto/Konten nicht übernommen (ausgeschlossene IP oder abgewählt)");
+        if (decision.equals("account+ip") && c.main.ipban() && !mainExcluded && !c.main.ip().isBlank() && altDetection != null) {
+            altDetection.setIpBlocked(Bukkit.getConsoleSender(), main, c.main.ip(), true); out.add("IP " + c.main.ip() + " gesperrt");
+        }
+        if (decision.equals("ultra") && altDetection != null) out.add(altDetection.ultraBan(Bukkit.getConsoleSender(), main, reason).message);
+        return String.join(" · ", out);
+    }
+
+    private String banImported(PlayerProfile p, String caseId, String role, PlayerProfile main, long until, String reason, String by, LiteBansMigration.Row row, String ip) {
+        long now = System.currentTimeMillis();
+        if (p.internalBanActive(now)) {
+            if (caseId.equals(p.internalBanCase)) return p.name + ": bereits übernommen";
+            if (!"litebans".equals(p.internalBanSource)) return p.name + ": hat schon einen Suite-Bann (bleibt unverändert)";
+            if ("alt".equals(role) && "main".equals(p.internalBanRole)) return p.name + ": hat einen eigenen Hauptbann (bleibt)";
+        }
+        boolean excluded = altDetection != null && altDetection.ipExclusions.contains(ip);
+        p.internalBanUntil = until; p.internalBanReason = reason; p.internalBanBy = by;
+        p.internalBanCase = caseId; p.internalBanRole = role; p.internalBanSince = row.time() > 0 ? row.time() : now; p.internalBanSource = "litebans";
+        p.internalBanMain = main == null ? "" : main.uuid.toString(); p.internalBanMainName = main == null ? "" : main.name;
+        p.internalBanVia = "LiteBans #" + row.id() + (main == null ? "" : row.ip().isBlank() ? " · mit " + main.name + " gesperrt" : " · gleiche IP wie " + main.name);
+        p.internalBanIp = excluded || ip == null ? "" : ip;
+        p.addAction("Bann aus LiteBans #" + row.id() + " übernommen (" + (main == null ? "Hauptbann" : "Alt-Konto von " + main.name) + ")");
+        database.save(p);
+        Player online = Bukkit.getPlayer(p.uuid);
+        if (online != null) { String message = punishments.activeBanMessage(p); if (message != null) suiteKick(online, message); }
+        return p.name + (main == null ? "" : " (Alt)");
+    }
+
     static Map<String,Object> appMap(Object... pairs) { Map<String,Object> m=new LinkedHashMap<>();for(int i=0;i<pairs.length;i+=2)m.put(pairs[i].toString(),pairs[i+1]);return m; }
     void appOpenRemoteMenu(Player player) { if(unifiedMenu!=null)unifiedMenu.open(player); }
     Object altDashboardData(Map<String,String> query){
@@ -9069,7 +9218,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         PlayerProfile p=database.find(id);if(p==null)throw new IllegalArgumentException("Spieler fehlt");
         String revision=AppApiSecurity.hash(p.uuid+":"+p.internalBanUntil+":"+p.internalBanReason+":"+p.internalBanBy);
         if(!revision.equals(expected))throw new IllegalArgumentException("Sperre hat sich geändert. Bitte neu laden.");
-        p.internalBanUntil=0L;p.internalBanReason="";p.internalBanBy="";database.save(p);expansionAudit(actor,p.uuid,"Interner Bann aufgehoben","App");
+        if(banCenter!=null)banCenter.recordLift(p,actor,"single","App");p.internalBanUntil=0L;p.internalBanReason="";p.internalBanBy="";BanCenterCore.clearCase(p);database.save(p);expansionAudit(actor,p.uuid,"Interner Bann aufgehoben","App");
     }
     private void appInventory(List<Object> rows,String container,List<?> contents){
         for(int i=0;i<contents.size();i++)if(contents.get(i) instanceof ItemStack item && !item.getType().isAir()){
@@ -9109,6 +9258,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     private Map<String,Object> appPlayer(PlayerProfile p,boolean detail){
         Player online=Bukkit.getPlayer(p.uuid);
         Map<String,Object> row=appMap("id",p.uuid.toString(),"name",p.name,"online",online!=null,"client",p.clientPlatform,"device",p.bedrockDeviceModel,"brand",p.javaClientBrandValue(),"version",p.clientVersion,"firstSeen",p.firstSeen,"lastSeen",p.lastSeen,"points",p.simplexPoints(),"warnings",p.warnings.size(),"ban",p.internalBanActive(System.currentTimeMillis()),"mute",p.internalMuteActive(System.currentTimeMillis()));
+        if(p.internalBanActive(System.currentTimeMillis())){row.put("banRole",BanCenterCore.roleOf(p));row.put("banMain",p.internalBanMainName);row.put("banCase",p.internalBanCase);}
         if(detail){row.put("deviceCount",p.devices.size());row.put("altCount",altDetection==null||altDetection.matchCache==null?null:altDetection.matchCache.counts.getOrDefault(p.uuid,0));row.put("vpnWhitelisted",vpnProtection!=null&&vpnProtection.isWhitelisted(p.uuid,p.name));row.put("logoutLocation",appLocation(p.logoutLocation));row.put("lastLocation",appLocation(p.lastLocation));row.put("network",profileNetwork(p));row.put("notes",new ArrayList<>(p.notes));row.put("warningEntries",new ArrayList<>(p.warnings));row.put("previousNames",new ArrayList<>(p.previousNames));row.put("rights",Arrays.stream(powerRights()).map(r->appMap("id",r,"blocked",p.blockedRightsSet().contains(r),"until",p.temporaryBlockedRightsMap().getOrDefault(r,0L))).toList());
             ServerStatistics.Profile stats=p.statisticsSnapshot();row.put("activity",appMap("playMillis",stats.play(),"afkMillis",stats.afk(),"sessions",stats.sessions(),"devices",stats.devices()));
             if(adminAccess!=null){Map<String,Boolean> lp=luckPerms==null?Map.of():luckPerms.permissions.getOrDefault(p.uuid,Map.of());row.put("staff",adminAccess.hasAccess(p.uuid,online,lp)?adminAccess.roleLabel(p.uuid):"");}
@@ -12913,7 +13063,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     public static final class IntegrationBridge {
         private final SimplexAdminSuite plugin;
         private IntegrationBridge(SimplexAdminSuite plugin) { this.plugin = plugin; }
-        private boolean liteBansAvailable() { return Bukkit.getPluginManager().getPlugin("LiteBans") != null; }
+        /** 10.20.0: LiteBans is switched off by default; the Suite's own ban system is the only provider then. */
+        private boolean liteBansTakenOver() { return plugin.getConfig().getBoolean("litebans-migration.disable-litebans", true); }
+        private boolean liteBansAvailable() { Plugin lite = Bukkit.getPluginManager().getPlugin("LiteBans"); return lite != null && lite.isEnabled() && !liteBansTakenOver(); }
         private boolean vanishAvailable() { if (plugin.adminRuntime != null) return true;  return Bukkit.getPluginManager().getPlugin("ProVanish") != null || Bukkit.getPluginManager().getPlugin("Vanish") != null || Bukkit.getPluginManager().getPlugin("SimpleVanish") != null || Bukkit.getPluginManager().getPlugin("PremiumVanish") != null || Bukkit.getPluginManager().getPlugin("SuperVanish") != null; }
         private boolean invseeAvailable() { Plugin invsee = Bukkit.getPluginManager().getPlugin("InvSeePlusPlus"); return invsee != null || Bukkit.getPluginManager().getPlugin("InvSee++") != null || Bukkit.getPluginManager().getPlugin("InvSee") != null; }
         private boolean punishment(String action, String player, String duration, String reason) {
@@ -12986,7 +13138,10 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         private PunishmentService(SimplexAdminSuite plugin) {
             this.plugin = plugin;
             String configured = plugin.getConfig().getString("punishments.provider", "auto").toLowerCase(Locale.ROOT);
-            if (configured.equals("auto")) this.provider = plugin.bridge.liteBansAvailable() ? "litebans" : "internal";
+            if (plugin.bridge.liteBansTakenOver() && !configured.equals("internal")) {
+                if (!configured.equals("auto")) plugin.getLogger().info("punishments.provider=" + configured + " wird ignoriert: LiteBans ist abgelöst, alle Strafen laufen über das interne Simplex-System.");
+                this.provider = "internal";
+            } else if (configured.equals("auto")) this.provider = plugin.bridge.liteBansAvailable() ? "litebans" : "internal";
             else if (configured.equals("litebans") && !plugin.bridge.liteBansAvailable()) {
                 plugin.getLogger().warning("punishments.provider=litebans, aber LiteBans fehlt. Sicherer Fallback: internes Simplex-Strafsystem.");
                 this.provider = "internal";
@@ -13018,6 +13173,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 }
                 if(plugin.appEvents!=null)plugin.appEvents.record("ban",target.uuid,"Spieler gesperrt",target.name+" · "+reason+" · "+admin.getName(),true);
                 target.internalBanUntil = until; target.internalBanReason = reason; target.internalBanBy = admin.getName();
+                BanCenterCore.markBan(target, now, "suite");
                 plugin.database.save(target);
                 if (online != null && plugin.getConfig().getBoolean("punishments.kick-player-on-ban", true)) plugin.suiteKick(online,activeBanMessage(target));
                 broadcast(action.equals("ban") ? "messages.broadcast-ban" : "messages.broadcast-tempban",
@@ -13025,7 +13181,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 if(plugin.community!=null)plugin.community.recordPunishment(target.uuid,action,duration,reason,"internal"); return true;
             }
             if (action.equals("unban")) {
-                target.internalBanUntil = 0L; target.internalBanReason = ""; target.internalBanBy = ""; plugin.database.save(target);
+                if (plugin.banCenter != null) plugin.banCenter.recordLift(target, admin.getName(), "", "Entbannt");
+                target.internalBanUntil = 0L; target.internalBanReason = ""; target.internalBanBy = ""; BanCenterCore.clearCase(target); plugin.database.save(target);
                 broadcast("messages.broadcast-unban", "{player} has been unbanned by staff.", target.name, "", ""); if(plugin.community!=null)plugin.community.recordPunishment(target.uuid,action,duration,reason,"internal"); return true;
             }
             if (action.equals("mute") || action.equals("tempmute")) {
@@ -13057,13 +13214,24 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if(plugin.emergency(profile.uuid))return null;
             long now = System.currentTimeMillis();
             if (!profile.internalBanActive(now)) {
-                if (profile.internalBanUntil != 0L) { profile.internalBanUntil = 0L; profile.internalBanReason = ""; profile.internalBanBy = ""; plugin.database.save(profile); }
+                if (profile.internalBanUntil != 0L) { if (plugin.banCenter != null) plugin.banCenter.recordLift(profile, "System", "expired", "abgelaufen"); profile.internalBanUntil = 0L; profile.internalBanReason = ""; profile.internalBanBy = ""; BanCenterCore.clearCase(profile); plugin.database.save(profile); }
                 return null;
+            }
+            boolean german=plugin.community!=null&&plugin.community.german(profile.uuid,profile.localeValue());
+            String remaining=german?PlayerLanguages.translate(DurationValue.remaining(profile.internalBanUntil,now)):DurationValue.remaining(profile.internalBanUntil,now);
+            String reference=profile.internalBanCase==null||profile.internalBanCase.isBlank()?"":profile.internalBanCase;
+            if("alt".equals(profile.internalBanRole)){
+                // 10.20.0: blocked alternative accounts see which main ban they belong to (German or English).
+                String template=german?plugin.getConfig().getString("player-languages.de.messages.internal-alt-ban-login","Dieses Konto ist als Zweitkonto gesperrt.\nZugehöriger Bann: {main}\nGrund: {reason}\nVerbleibend: {remaining}\nReferenz: {case}")
+                        :plugin.getConfig().getString("messages.internal-alt-ban-login","This account is blocked as an alternative account.\nLinked ban: {main}\nReason: {reason}\nRemaining: {remaining}\nReference: {case}");
+                return plugin.color(template.replace("{main}",profile.internalBanMainName.isBlank()?"?":profile.internalBanMainName).replace("{reason}",profile.internalBanReason).replace("{remaining}",remaining).replace("{case}",reference));
             }
             String fallback="You are banned from this server.\nReason: {reason}\nRemaining: {remaining}";
             String template=plugin.getConfig().getString("messages.internal-ban-login",fallback);
-            if(plugin.community!=null&&plugin.community.german(profile.uuid,profile.localeValue()))template=plugin.getConfig().getString("player-languages.de.messages.internal-ban-login",PlayerLanguages.translate(template));
-            return plugin.color(template.replace("{reason}",profile.internalBanReason).replace("{remaining}",plugin.community!=null&&plugin.community.german(profile.uuid,profile.localeValue())?PlayerLanguages.translate(DurationValue.remaining(profile.internalBanUntil,now)):DurationValue.remaining(profile.internalBanUntil,now)));
+            if(german)template=plugin.getConfig().getString("player-languages.de.messages.internal-ban-login",PlayerLanguages.translate(template));
+            String text=template.replace("{reason}",profile.internalBanReason).replace("{remaining}",remaining);
+            if(!reference.isBlank()&&!text.contains(reference))text+=(german?"\nReferenz: ":"\nReference: ")+reference;
+            return plugin.color(text);
         }
         private String activeMuteMessage(PlayerProfile profile) {
             if(plugin.emergency(profile.uuid))return null;
@@ -17348,6 +17516,28 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             saveIdentityBans();
         }
 
+        /** 10.20.0: removes identity bans that were created for one account (alt cascade). */
+        private synchronized int removeIdentityBansSourcedBy(UUID uuid) {
+            int before = identityBans.size();
+            identityBans.entrySet().removeIf(entry -> uuid.equals(entry.getValue().sourceUuid));
+            int removed = before - identityBans.size();
+            if (removed > 0) saveIdentityBans();
+            return removed;
+        }
+        /** 10.20.0: frees one account from an alt group without ending the group for everyone else. */
+        private synchronized boolean releaseFromGroup(UltraBanGroup group, UUID uuid) {
+            boolean changed = group.members.remove(uuid) != null;
+            changed |= group.identities.remove("UUID|" + uuid) != null;
+            String text = uuid.toString();
+            for (var it = group.identities.entrySet().iterator(); it.hasNext();) {
+                UltraIdentity identity = it.next().getValue();
+                if (identity.sources.remove(text) && identity.sources.isEmpty()) { it.remove(); changed = true; }
+            }
+            changed |= group.released.add(uuid);
+            group.explicitRoots.remove(uuid);
+            return changed;
+        }
+
         private synchronized void removeIdentityBans(PlayerProfile profile) {
             Set<String> keys = new HashSet<>(identityKeys(profile, true));
             identityBans.entrySet().removeIf(entry -> keys.contains(entry.getKey()) || profile.uuid.equals(entry.getValue().sourceUuid));
@@ -17554,9 +17744,14 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             if(!plugin.adminAccess.altBans(actor))return new CascadeResult(0,"Alt-Account-Strafen sind für deine Rolle gesperrt.");
             List<PlayerProfile> targets = new ArrayList<>(safeLinkedProfiles(source));
             int success = 0; List<String> names = new ArrayList<>();
+            boolean banAction = action.equals("ban") || action.equals("tempban");
+            if (banAction) BanCenterCore.ensureCase(source, System.currentTimeMillis());
             for (PlayerProfile target : targets) {
-                boolean ok = plugin.punishments.execute(actor, action, target, target.name, duration,
-                        plugin.sanitizeText(reason, plugin.getConfig().getInt("punishments.max-reason-length", 240)));
+                if (banAction) BanCenterCore.ALT_CONTEXT.set(source);
+                boolean ok;
+                try { ok = plugin.punishments.execute(actor, action, target, target.name, duration,
+                        plugin.sanitizeText(reason, plugin.getConfig().getInt("punishments.max-reason-length", 240))); }
+                finally { BanCenterCore.ALT_CONTEXT.remove(); }
                 if (!ok) continue;
                 success++; names.add(target.name);
                 target.addAction("Verknüpfte Strafaktion durch " + actor.getName() + ": " + action + " | Ausgangsprofil " + source.name);
@@ -18025,6 +18220,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
 
         private UltraMatch matchAgainstGroup(UltraBanGroup group, PlayerProfile profile) {
             if (group == null || !group.active || group.until != Long.MAX_VALUE && group.until <= System.currentTimeMillis()) return null;
+            if (group.released.contains(profile.uuid)) return null;
             List<String> evidence = new ArrayList<>(); int score = 0; boolean strong = false; boolean ip = false;
             UltraMember known = group.members.get(profile.uuid);
             if (known != null || group.identities.containsKey("UUID|" + profile.uuid)) {
@@ -18150,6 +18346,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 UltraBanGroup group = new UltraBanGroup(id, sourceUuid, y.getString(path + ".source-name", "Unknown"), y.getString(path + ".actor", "Unknown"),
                         y.getString(path + ".reason", "Ban evasion / identity-wide ban"), y.getLong(path + ".created-at", 0L), y.getLong(path + ".until", Long.MAX_VALUE), y.getBoolean(path + ".active", true));
                 if(sourceUuid!=null)group.explicitRoots.add(sourceUuid);for(String raw:y.getStringList(path+".explicit-roots"))try{group.explicitRoots.add(UUID.fromString(raw));}catch(IllegalArgumentException ignored){}
+                for(String raw:y.getStringList(path+".released"))try{group.released.add(UUID.fromString(raw));}catch(IllegalArgumentException ignored){}
                 group.mode = ModerationControl.normalizeMode(y.getString(path + ".mode", "ultra"));
                 group.blockedAttempts = y.getInt(path + ".blocked-attempts", 0); group.lastAttemptAt = y.getLong(path + ".last-attempt-at", 0L); group.lastAttemptName = y.getString(path + ".last-attempt-name", "");
                 int members = y.getInt(path + ".members-count", 0);
@@ -18172,6 +18369,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                 for (int i = 0; i < groups.size(); i++) {
                     UltraBanGroup group = groups.get(i); String path = "groups." + i;
                     y.set(path + ".explicit-roots",group.explicitRoots.stream().map(UUID::toString).toList());
+                    if(!group.released.isEmpty())y.set(path + ".released",group.released.stream().map(UUID::toString).toList());
                     y.set(path + ".mode", group.mode);
                     y.set(path + ".id", group.id); y.set(path + ".source-uuid", group.sourceUuid == null ? null : group.sourceUuid.toString()); y.set(path + ".source-name", group.sourceName);
                     y.set(path + ".actor", group.actor); y.set(path + ".reason", group.reason); y.set(path + ".created-at", group.createdAt); y.set(path + ".until", group.until); y.set(path + ".active", group.active);
@@ -18364,6 +18562,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             private String mode = "ultra";
             private final String id; private final UUID sourceUuid; private final String sourceName; private String actor, reason; private final long createdAt; private long until; private boolean active;
             private final Set<UUID> explicitRoots=new java.util.LinkedHashSet<>();
+            /** 10.20.0: accounts an admin released individually; the group never re-absorbs them. */
+            private final Set<UUID> released=new java.util.LinkedHashSet<>();
             private final Map<UUID, UltraMember> members = new LinkedHashMap<>(); private final Map<String, UltraIdentity> identities = new LinkedHashMap<>();
             private int blockedAttempts; private long lastAttemptAt; private String lastAttemptName = "";
             private UltraBanGroup(String id, UUID sourceUuid, String sourceName, String actor, String reason, long createdAt, long until, boolean active) { this.id = id; this.sourceUuid = sourceUuid; this.sourceName = sourceName; this.actor = actor; this.reason = reason; this.createdAt = createdAt; this.until = until; this.active = active; }
@@ -18407,6 +18607,360 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         private static final class CascadeResult { private final int success; private final String message; private CascadeResult(int success, String message) { this.success = success; this.message = message; } }
     }
 
+    /**
+     * 10.20.0: Bann-Zentrale. One view over every ban the Suite enforces: account bans (main ban or blocked
+     * alternative account), alt-account groups (Ultrabann), IP blocks and identity bans. A "case" is one main ban
+     * plus every account that belongs to it. Lifting works per account or for the whole case; nothing is deleted
+     * from player profiles except the ban itself, and every lift is kept in {@code bans/history.yml}.
+     */
+    static final class BanCenterCore {
+        static final String FEATURE = "ban-center-v1";
+        static final ThreadLocal<PlayerProfile> ALT_CONTEXT = new ThreadLocal<>();
+        private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
+        private final SimplexAdminSuite plugin;
+        private final File historyFile;
+        private final List<Map<String, Object>> history = new ArrayList<>();
+        private static final Pattern LEGACY_ALT = Pattern.compile("Verknüpfte Strafaktion durch .*?: (?:temp)?ban \\| Ausgangsprofil (\\S+)");
+
+        BanCenterCore(SimplexAdminSuite plugin) {
+            this.plugin = plugin;
+            this.historyFile = new File(plugin.getDataFolder(), "bans/history.yml");
+            loadHistory();
+        }
+
+        // -------------------------------------------------------------- case bookkeeping (called from punishments)
+
+        static String newCaseId(long now) {
+            String alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; StringBuilder out = new StringBuilder("B-");
+            for (int i = 0; i < 6; i++) out.append(alphabet.charAt(RANDOM.nextInt(alphabet.length())));
+            return out.toString();
+        }
+        static void ensureCase(PlayerProfile main, long now) {
+            if (main.internalBanCase == null || main.internalBanCase.isBlank()) main.internalBanCase = newCaseId(now);
+            if (main.internalBanRole == null || main.internalBanRole.isBlank()) main.internalBanRole = "main";
+        }
+        /** Sets case data for a fresh ban. Inside an alt cascade the account becomes an alt of the cascade's source. */
+        static void markBan(PlayerProfile target, long now, String source) {
+            PlayerProfile main = ALT_CONTEXT.get();
+            target.internalBanSince = now; target.internalBanSource = source;
+            if (main != null && !main.uuid.equals(target.uuid)) {
+                ensureCase(main, now);
+                target.internalBanCase = main.internalBanCase; target.internalBanRole = "alt";
+                target.internalBanMain = main.uuid.toString(); target.internalBanMainName = main.name;
+                target.internalBanVia = "Alt-Erkennung: verknüpftes Konto"; target.internalBanIp = "";
+                return;
+            }
+            boolean keep = main != null || "main".equals(target.internalBanRole) && target.internalBanCase != null && !target.internalBanCase.isBlank();
+            if (!keep) target.internalBanCase = newCaseId(now);
+            target.internalBanRole = "main"; target.internalBanMain = ""; target.internalBanMainName = ""; target.internalBanVia = ""; target.internalBanIp = "";
+        }
+        static void clearCase(PlayerProfile p) {
+            p.internalBanCase = ""; p.internalBanRole = ""; p.internalBanMain = ""; p.internalBanMainName = ""; p.internalBanSince = 0L; p.internalBanSource = ""; p.internalBanVia = ""; p.internalBanIp = "";
+        }
+
+        // -------------------------------------------------------------- history
+
+        private synchronized void loadHistory() {
+            history.clear();
+            if (!historyFile.isFile()) return;
+            YamlConfiguration y = YamlConfiguration.loadConfiguration(historyFile);
+            for (Map<?, ?> raw : y.getMapList("entries")) { Map<String, Object> row = new LinkedHashMap<>(); raw.forEach((k, v) -> row.put(String.valueOf(k), v)); history.add(row); }
+        }
+        private synchronized void saveHistory() {
+            while (history.size() > 3000) history.remove(0);
+            YamlConfiguration y = new YamlConfiguration(); y.set("schema", 1); y.set("entries", new ArrayList<>(history));
+            try { historyFile.getParentFile().mkdirs(); File temp = new File(historyFile.getParentFile(), "history.yml.tmp"); y.save(temp);
+                try { Files.move(temp.toPath(), historyFile.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); } catch (Exception atomic) { Files.move(temp.toPath(), historyFile.toPath(), StandardCopyOption.REPLACE_EXISTING); } }
+            catch (Exception error) { plugin.getLogger().warning("Bann-Verlauf konnte nicht gespeichert werden: " + error.getMessage()); }
+        }
+        synchronized void recordLift(PlayerProfile p, String actor, String scope, String note) {
+            if (p == null || p.internalBanUntil == 0L) return;
+            history.add(appMap("at", System.currentTimeMillis(), "type", "lift", "uuid", p.uuid.toString(), "name", p.name, "reason", p.internalBanReason, "by", p.internalBanBy,
+                    "since", p.internalBanSince, "until", p.internalBanUntil == Long.MAX_VALUE ? 0L : p.internalBanUntil, "case", p.internalBanCase, "role", roleOf(p),
+                    "main", p.internalBanMainName, "source", p.internalBanSource.isBlank() ? "suite" : p.internalBanSource, "liftedBy", actor, "scope", scope, "note", note));
+            saveHistory();
+        }
+        synchronized int archiveLiteBans(List<LiteBansMigration.Row> rows, java.util.function.Function<String, String> names) {
+            Set<String> known = new HashSet<>(); for (Map<String, Object> h : history) if ("litebans".equals(h.get("type"))) known.add(h.get("table") + "#" + h.get("id"));
+            int added = 0;
+            for (LiteBansMigration.Row r : rows) {
+                if (!known.add(r.table() + "#" + r.id()) || r.uuid().isEmpty() || r.uuid().equals("#")) continue;
+                history.add(appMap("at", r.removedAt() > 0 ? r.removedAt() : r.until() > 0 ? r.until() : r.time(), "type", "litebans", "table", r.table(), "id", r.id(), "uuid", r.uuid(), "name", names.apply(r.uuid()),
+                        "reason", r.reason(), "by", r.actor(), "since", r.time(), "until", r.until() <= 0 ? 0L : r.until(), "ipban", r.ipban(),
+                        "liftedBy", r.removedBy(), "note", r.removedReason().isBlank() ? (r.active() ? "abgelaufen" : "") : r.removedReason(), "source", "litebans"));
+                added++;
+            }
+            history.sort(Comparator.comparingLong(h -> h.get("at") instanceof Number n ? n.longValue() : 0L));
+            saveHistory();
+            return added;
+        }
+
+        // -------------------------------------------------------------- reading
+
+        static String roleOf(PlayerProfile p) { return "alt".equals(p.internalBanRole) ? "alt" : "main"; }
+
+        private static final class Member {
+            final UUID uuid; final String name; String role; String via; boolean account, ultra; long until; String reason = "";
+            Member(UUID uuid, String name, String role, String via) { this.uuid = uuid; this.name = name; this.role = role; this.via = via; }
+        }
+        private static final class CaseView {
+            final String id; String kind = "account", source = "suite", reason = "", actor = "", ip = "", mainName = ""; UUID main; long created, until;
+            final Map<UUID, Member> members = new LinkedHashMap<>(); final List<String> ultraGroups = new ArrayList<>();
+            CaseView(String id) { this.id = id; }
+        }
+
+        /** Legacy alt bans (before 10.20.0) are recognised from the cascade note in the profile history. */
+        private PlayerProfile legacyMain(PlayerProfile p) {
+            if (p.internalBanCase != null && !p.internalBanCase.isBlank()) return null;
+            synchronized (p.recentActions) {
+                for (int i = p.recentActions.size() - 1; i >= 0; i--) {
+                    Matcher m = LEGACY_ALT.matcher(p.recentActions.get(i)); if (!m.find()) continue;
+                    PlayerProfile main = plugin.database.find(m.group(1));
+                    return main != null && !main.uuid.equals(p.uuid) && main.name.equalsIgnoreCase(m.group(1)) ? main : null;
+                }
+            }
+            return null;
+        }
+        private String caseKey(PlayerProfile p) {
+            if (p.internalBanCase != null && !p.internalBanCase.isBlank()) return p.internalBanCase;
+            PlayerProfile main = legacyMain(p);
+            if (main != null && main.internalBanActive(System.currentTimeMillis())) return caseKey(main);
+            return "S-" + p.uuid.toString().substring(0, 8).toUpperCase(Locale.ROOT);
+        }
+
+        private List<CaseView> collect(long now) {
+            Map<String, CaseView> cases = new LinkedHashMap<>();
+            Map<UUID, String> caseOfMain = new HashMap<>();
+            for (PlayerProfile p : plugin.database.sortedProfiles()) {
+                if (!p.internalBanActive(now)) continue;
+                String key = caseKey(p);
+                CaseView c = cases.computeIfAbsent(key, CaseView::new);
+                PlayerProfile legacy = legacyMain(p);
+                boolean alt = "alt".equals(p.internalBanRole) || legacy != null && legacy.internalBanActive(now);
+                Member m = new Member(p.uuid, p.name, alt ? "alt" : "main", p.internalBanVia == null || p.internalBanVia.isBlank() ? (legacy != null ? "Alt-Kaskade (älterer Bann)" : "") : p.internalBanVia);
+                m.account = true; m.until = p.internalBanUntil; m.reason = p.internalBanReason;
+                c.members.put(p.uuid, m);
+                if (!alt || c.main == null) {
+                    if (!alt || c.main == null && p.internalBanMain.isBlank()) { c.main = p.uuid; c.mainName = p.name; }
+                    if (!alt) caseOfMain.put(p.uuid, key);
+                }
+                if (!alt || c.reason.isBlank()) { c.reason = p.internalBanReason; c.actor = p.internalBanBy; c.until = p.internalBanUntil; c.created = p.internalBanSince; c.source = p.internalBanSource == null || p.internalBanSource.isBlank() ? "suite" : p.internalBanSource; }
+                if (p.internalBanIp != null && !p.internalBanIp.isBlank() && !alt) c.ip = p.internalBanIp;
+                if (alt && c.main == null && !p.internalBanMain.isBlank()) { try { c.main = UUID.fromString(p.internalBanMain); c.mainName = p.internalBanMainName; } catch (IllegalArgumentException ignored) { } }
+            }
+            AdvancedAltDetection alt = plugin.altDetection;
+            if (alt != null) synchronized (alt) {
+                for (AdvancedAltDetection.UltraBanGroup g : alt.ultraGroups.values()) {
+                    if (!g.active || g.until != Long.MAX_VALUE && g.until <= now) continue;
+                    String key = g.sourceUuid != null && caseOfMain.containsKey(g.sourceUuid) ? caseOfMain.get(g.sourceUuid) : "U-" + g.id;
+                    CaseView c = cases.computeIfAbsent(key, CaseView::new);
+                    c.ultraGroups.add(g.id);
+                    if (c.main == null) { c.main = g.sourceUuid; c.mainName = g.sourceName; c.reason = g.reason; c.actor = g.actor; c.created = g.createdAt; c.until = g.until; c.kind = "ultra"; c.source = "ultra:" + g.mode; }
+                    for (AdvancedAltDetection.UltraMember um : g.members.values()) {
+                        if (g.released.contains(um.uuid)) continue;
+                        boolean isMain = um.uuid.equals(g.sourceUuid);
+                        Member m = c.members.computeIfAbsent(um.uuid, u -> new Member(u, um.name, isMain ? "main" : "alt", ""));
+                        m.ultra = true; if (m.via.isBlank()) m.via = "Ultrabann " + g.id + (um.relation == null || um.relation.isBlank() ? "" : " · " + um.relation);
+                        if (!m.account) { m.role = isMain ? "main" : "alt"; m.until = g.until; m.reason = g.reason; }
+                    }
+                }
+            }
+            List<CaseView> out = new ArrayList<>(cases.values());
+            out.sort(Comparator.comparingLong((CaseView c) -> c.created).reversed());
+            return out;
+        }
+
+        private Map<String, Object> view(CaseView c, long now) {
+            List<Map<String, Object>> members = new ArrayList<>();
+            List<Member> sorted = new ArrayList<>(c.members.values());
+            sorted.sort(Comparator.comparing((Member m) -> !"main".equals(m.role)).thenComparing(m -> m.name.toLowerCase(Locale.ROOT)));
+            for (Member m : sorted) {
+                PlayerProfile p = plugin.database.get(m.uuid); Player online = Bukkit.getPlayer(m.uuid);
+                members.add(appMap("uuid", m.uuid.toString(), "name", m.name, "role", m.role, "via", m.via, "account", m.account, "ultra", m.ultra,
+                        "until", m.until == Long.MAX_VALUE ? 0L : m.until, "permanent", m.until == Long.MAX_VALUE, "online", online != null,
+                        "lastSeen", p == null ? 0L : p.lastSeen, "client", p == null ? "" : p.clientPlatform, "reason", m.reason));
+            }
+            boolean ipExcluded = !c.ip.isBlank() && plugin.altDetection != null && plugin.altDetection.ipExclusions.contains(c.ip);
+            long alts = c.members.values().stream().filter(m -> "alt".equals(m.role)).count();
+            return appMap("id", c.id, "kind", c.kind, "source", c.source, "main", c.main == null ? "" : c.main.toString(), "mainName", c.mainName, "reason", c.reason, "actor", c.actor,
+                    "created", c.created, "until", c.until == Long.MAX_VALUE ? 0L : c.until, "permanent", c.until == Long.MAX_VALUE, "ip", c.ip, "ipExcluded", ipExcluded,
+                    "ipBlocked", !c.ip.isBlank() && plugin.altDetection != null && plugin.altDetection.blockedIps.containsKey(c.ip),
+                    "ultraGroups", c.ultraGroups, "accounts", c.members.size(), "alts", alts, "members", members);
+        }
+
+        Map<String, Object> overview(String filter, String query) {
+            long now = System.currentTimeMillis();
+            List<CaseView> all = collect(now);
+            String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+            List<Map<String, Object>> rows = new ArrayList<>();
+            int mains = 0, alts = 0, temporary = 0, soon = 0, litebans = 0;
+            for (CaseView c : all) {
+                for (Member m : c.members.values()) if ("alt".equals(m.role)) alts++; else mains++;
+                if (c.until != Long.MAX_VALUE) { temporary++; if (c.until - now < 86_400_000L) soon++; }
+                if (c.source.equals("litebans")) litebans++;
+                boolean match = q.isEmpty() || c.id.toLowerCase(Locale.ROOT).contains(q) || c.reason.toLowerCase(Locale.ROOT).contains(q) || c.ip.contains(q)
+                        || c.members.values().stream().anyMatch(m -> m.name.toLowerCase(Locale.ROOT).contains(q) || m.uuid.toString().startsWith(q));
+                boolean kind = switch (filter == null ? "" : filter) {
+                    case "alts" -> c.members.values().stream().anyMatch(m -> "alt".equals(m.role));
+                    case "temporary" -> c.until != Long.MAX_VALUE;
+                    case "litebans" -> c.source.equals("litebans");
+                    case "ultra" -> !c.ultraGroups.isEmpty();
+                    default -> true;
+                };
+                if (match && kind) rows.add(view(c, now));
+            }
+            AdvancedAltDetection alt = plugin.altDetection;
+            List<Map<String, Object>> ipBlocks = new ArrayList<>(); List<String> excluded = new ArrayList<>(); int identity = 0, devices = 0;
+            if (alt != null) synchronized (alt) {
+                for (AdvancedAltDetection.IdentifierBlock b : alt.blockedIps.values()) ipBlocks.add(appMap("ip", b.value, "by", b.actor, "source", b.sourceName, "at", b.createdAt, "excluded", alt.ipExclusions.contains(b.value), "accounts", accountsOnIp(b.value)));
+                excluded.addAll(alt.ipExclusions.values()); identity = alt.identityBans.size(); devices = alt.blockedDevices.size();
+            }
+            List<Map<String, Object>> recent;
+            synchronized (this) { recent = new ArrayList<>(history.subList(Math.max(0, history.size() - 200), history.size())); }
+            Collections.reverse(recent);
+            Map<String, Object> migration = plugin.liteBansMigration == null ? null : appMap("pending", plugin.liteBansMigration.pendingCount(), "snapshot", plugin.liteBansMigration.hasSnapshot(),
+                    "litebansEnabled", LiteBansMigration.liteBans() != null && LiteBansMigration.liteBans().isEnabled());
+            return appMap("at", now, "kpis", appMap("cases", all.size(), "main", mains, "alts", alts, "temporary", temporary, "expiringSoon", soon, "litebans", litebans,
+                    "ipBlocks", ipBlocks.size(), "identityBans", identity, "deviceBlocks", devices, "excludedIps", excluded.size()),
+                    "items", rows, "ipBlocks", ipBlocks, "excludedIps", excluded, "history", recent, "migration", migration);
+        }
+
+        private int accountsOnIp(String ip) {
+            int n = 0; String canonical = AltIpExclusions.canonical(ip);
+            for (PlayerProfile p : plugin.database.sortedProfiles()) {
+                if (AltIpExclusions.canonical(p.lastIpHash).equals(canonical)) { n++; continue; }
+                synchronized (p.altIpHistory) { for (String v : p.altIpHistory.keySet()) if (AltIpExclusions.canonical(v).equals(canonical)) { n++; break; } }
+            }
+            return n;
+        }
+
+        /** Ban status for the player profile (app + web): main ban or blocked alternative account, plus the whole case. */
+        Map<String, Object> player(UUID uuid) {
+            long now = System.currentTimeMillis();
+            PlayerProfile p = plugin.database.get(uuid);
+            if (p == null) throw new IllegalArgumentException("Spieler nicht gefunden");
+            CaseView found = null;
+            for (CaseView c : collect(now)) if (c.members.containsKey(uuid)) { found = c; break; }
+            Member me = found == null ? null : found.members.get(uuid);
+            String role = me == null ? "none" : me.role;
+            AdvancedAltDetection alt = plugin.altDetection;
+            int identity = 0; boolean ipBlocked = false, ipExcluded = false;
+            if (alt != null) synchronized (alt) {
+                for (AdvancedAltDetection.IdentityBan b : alt.identityBans.values()) if (uuid.equals(b.sourceUuid)) identity++;
+                ipBlocked = !p.lastIpHash.isBlank() && alt.blockedIps.containsKey(p.lastIpHash);
+                ipExcluded = !p.lastIpHash.isBlank() && alt.ipExclusions.contains(p.lastIpHash);
+            }
+            List<Map<String, Object>> past = new ArrayList<>();
+            synchronized (this) { for (int i = history.size() - 1; i >= 0 && past.size() < 25; i--) if (uuid.toString().equalsIgnoreCase(String.valueOf(history.get(i).get("uuid")))) past.add(history.get(i)); }
+            String headline = me == null ? "Nicht gesperrt" : "main".equals(role) ? "Hauptbann" : "Gesperrtes Alt-Konto von " + (found.mainName.isBlank() ? "?" : found.mainName);
+            return appMap("player", uuid.toString(), "name", p.name, "banned", me != null, "role", role, "headline", headline,
+                    "accountBan", p.internalBanActive(now) ? appMap("reason", p.internalBanReason, "by", p.internalBanBy, "since", p.internalBanSince, "until", p.internalBanUntil == Long.MAX_VALUE ? 0L : p.internalBanUntil,
+                            "permanent", p.internalBanUntil == Long.MAX_VALUE, "case", caseKey(p), "via", p.internalBanVia, "source", p.internalBanSource.isBlank() ? "suite" : p.internalBanSource) : null,
+                    "case", found == null ? null : view(found, now), "identityBans", identity, "ipBlocked", ipBlocked, "ipExcluded", ipExcluded, "lastIp", p.lastIpMasked,
+                    "mute", p.internalMuteActive(now) ? appMap("reason", p.internalMuteReason, "by", p.internalMuteBy, "until", p.internalMuteUntil == Long.MAX_VALUE ? 0L : p.internalMuteUntil) : null,
+                    "history", past);
+        }
+
+        // -------------------------------------------------------------- lifting
+
+        Map<String, Object> apply(String actor, Map<String, Object> body) throws Exception {
+            String op = String.valueOf(body.getOrDefault("operation", ""));
+            return switch (op) {
+                case "lift" -> lift(actor, text(body, "case"), text(body, "player"), "all".equals(text(body, "scope")), text(body, "note"));
+                case "ip-preview" -> ipPreview(text(body, "ip"));
+                case "ip-lift" -> liftIp(actor, text(body, "ip"), !"false".equals(text(body, "exclude")), text(body, "note"));
+                case "ip-unblock" -> { AdvancedAltDetection alt = plugin.altDetection; String ip = AltIpExclusions.normalize(text(body, "ip"));
+                    alt.setIpBlocked(Bukkit.getConsoleSender(), null, ip, false); plugin.expansionAudit(actor, null, "IP-Sperre aufgehoben", ip);
+                    yield appMap("ok", true, "title", "IP-Sperre aufgehoben", "description", ip + " ist wieder frei. Konto-Banns bleiben unverändert."); }
+                default -> throw new IllegalArgumentException("Unbekannte Bann-Aktion");
+            };
+        }
+        private static String text(Map<String, Object> body, String key) { Object v = body.get(key); return v == null ? "" : String.valueOf(v).trim(); }
+
+        Map<String, Object> lift(String actor, String caseId, String playerRaw, boolean all, String note) {
+            long now = System.currentTimeMillis();
+            UUID player = null; if (!playerRaw.isBlank()) try { player = UUID.fromString(playerRaw); } catch (IllegalArgumentException e) { throw new IllegalArgumentException("Ungültige Spieler-UUID"); }
+            CaseView c = null;
+            for (CaseView v : collect(now)) if (v.id.equalsIgnoreCase(caseId) || caseId.isBlank() && player != null && v.members.containsKey(player)) { c = v; break; }
+            if (c == null) throw new IllegalArgumentException("Dieser Bann ist nicht mehr aktiv. Liste neu laden.");
+            if (!all && (player == null || !c.members.containsKey(player))) throw new IllegalArgumentException("Spieler gehört nicht zu diesem Bann.");
+            Set<UUID> targets = all ? new java.util.LinkedHashSet<>(c.members.keySet()) : Set.of(player);
+            String cleanNote = plugin.sanitizeText(note, 200);
+            int accounts = 0, released = 0, groups = 0, ips = 0, identities = 0; List<String> names = new ArrayList<>();
+            AdvancedAltDetection alt = plugin.altDetection;
+            for (UUID id : targets) {
+                PlayerProfile p = plugin.database.get(id);
+                if (p != null && p.internalBanActive(now)) {
+                    recordLift(p, actor, all ? "all" : "single", cleanNote);
+                    p.internalBanUntil = 0L; p.internalBanReason = ""; p.internalBanBy = ""; clearCase(p);
+                    p.addAction("Bann aufgehoben durch " + actor + (all ? " (ganzer Fall " + c.id + ")" : " (nur dieses Konto, Fall " + c.id + ")") + (cleanNote.isBlank() ? "" : " – " + cleanNote));
+                    plugin.database.save(p); accounts++;
+                }
+                if (p != null) names.add(p.name);
+                if (alt != null) identities += alt.removeIdentityBansSourcedBy(id);
+            }
+            if (alt != null) synchronized (alt) {
+                for (String gid : c.ultraGroups) {
+                    AdvancedAltDetection.UltraBanGroup g = alt.ultraGroups.get(gid.toLowerCase(Locale.ROOT)); if (g == null) continue;
+                    if (all) { if (g.active) { g.active = false; groups++; } }
+                    else for (UUID id : targets) if (alt.releaseFromGroup(g, id)) released++;
+                }
+                if (all && !c.ip.isBlank() && alt.blockedIps.remove(c.ip) != null) ips++;
+                alt.saveUltraBans(); alt.saveIdentifierBlocks(); alt.markMatchCacheDirty();
+            }
+            if (plugin.moderationControl != null) plugin.moderationControl.refreshOnline();
+            String detail = (all ? "Ganzer Fall " : "Einzelnes Konto aus Fall ") + c.id + ": " + String.join(", ", names) + " · Konten " + accounts + ", Gruppen " + groups + ", freigestellt " + released + ", IP " + ips + ", Identitäten " + identities;
+            plugin.expansionAudit(actor, player, "Bann aufgehoben", detail);
+            if (plugin.appEvents != null) plugin.appEvents.record("unban", player == null ? c.main : player, "Bann aufgehoben", detail, false);
+            String description = all ? "Fall " + c.id + " ist vollständig aufgehoben: " + targets.size() + " Konto/Konten frei" + (ips > 0 ? ", IP-Sperre entfernt" : "") + (groups > 0 ? ", " + groups + " Alt-Gruppe(n) beendet" : "") + "."
+                    : names.get(0) + " ist frei. Die übrigen " + (c.members.size() - 1) + " Konto/Konten des Falls bleiben gesperrt" + (released > 0 ? "; dieses Konto wird von der Alt-Gruppe nicht erneut erfasst." : ".");
+            return appMap("ok", true, "title", all ? "Alle zugehörigen Banns aufgehoben" : "Nur dieses Konto entsperrt", "description", description, "accounts", accounts, "groups", groups, "released", released);
+        }
+
+        /** Which bans hang on one IP (for a mistaken IP ban, e.g. a shared proxy/Geyser address). */
+        Map<String, Object> ipPreview(String raw) {
+            String ip = AltIpExclusions.normalize(raw); long now = System.currentTimeMillis();
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (PlayerProfile p : plugin.database.sortedProfiles()) if (p.internalBanActive(now) && ip.equals(AltIpExclusions.canonical(p.internalBanIp)))
+                rows.add(appMap("uuid", p.uuid.toString(), "name", p.name, "role", roleOf(p), "reason", p.internalBanReason, "case", caseKey(p)));
+            AdvancedAltDetection alt = plugin.altDetection; boolean blocked, excluded; int identity = 0, groupAnchors = 0;
+            synchronized (alt) {
+                blocked = alt.blockedIps.containsKey(ip); excluded = alt.ipExclusions.contains(ip);
+                for (AdvancedAltDetection.IdentityBan b : alt.identityBans.values()) if (b.type.equals("IP") && ip.equals(AltIpExclusions.canonical(b.hash))) identity++;
+                for (AdvancedAltDetection.UltraBanGroup g : alt.ultraGroups.values()) if (g.active && g.identities.containsKey("IP|" + ip)) groupAnchors++;
+            }
+            return appMap("ip", ip, "accounts", rows, "ipBlocked", blocked, "excluded", excluded, "identityBans", identity, "groupAnchors", groupAnchors, "seenAccounts", accountsOnIp(ip),
+                    "default", ip.equals(AltIpExclusions.DEFAULT_IP));
+        }
+
+        /** Undo everything a mistaken IP ban caused: exclude the IP, remove IP blocks/anchors and free accounts banned only through it. */
+        Map<String, Object> liftIp(String actor, String raw, boolean exclude, String note) throws Exception {
+            String ip = AltIpExclusions.normalize(raw); long now = System.currentTimeMillis();
+            AdvancedAltDetection alt = plugin.altDetection;
+            int accounts = 0; List<String> names = new ArrayList<>();
+            for (PlayerProfile p : plugin.database.sortedProfiles()) {
+                if (!p.internalBanActive(now) || !ip.equals(AltIpExclusions.canonical(p.internalBanIp))) continue;
+                recordLift(p, actor, "ip", "IP " + ip + (note.isBlank() ? "" : " – " + note));
+                p.internalBanUntil = 0L; p.internalBanReason = ""; p.internalBanBy = ""; clearCase(p);
+                p.addAction("Bann über IP " + ip + " durch " + actor + " aufgehoben"); plugin.database.save(p); accounts++; names.add(p.name);
+            }
+            Map<String, Object> repair = null;
+            if (exclude && !alt.ipExclusions.contains(ip)) { alt.ipExclusions.change(ip, true); repair = alt.repairIps(actor, null); }
+            int removed = 0;
+            synchronized (alt) {
+                if (alt.blockedIps.remove(ip) != null) removed++;
+                int before = alt.identityBans.size(); alt.identityBans.entrySet().removeIf(e -> e.getValue().type.equals("IP") && ip.equals(AltIpExclusions.canonical(e.getValue().hash))); removed += before - alt.identityBans.size();
+                for (AdvancedAltDetection.UltraBanGroup g : alt.ultraGroups.values()) if (g.identities.remove("IP|" + ip) != null) removed++;
+                alt.saveIdentifierBlocks(); alt.saveIdentityBans(); alt.saveUltraBans(); alt.markMatchCacheDirty();
+            }
+            if (plugin.moderationControl != null) plugin.moderationControl.refreshOnline();
+            String detail = ip + ": " + accounts + " Konten frei (" + String.join(", ", names.stream().limit(20).toList()) + "), " + removed + " IP-Sperren/Anker entfernt" + (exclude ? ", IP ausgeschlossen" : "");
+            plugin.expansionAudit(actor, null, "IP-Fehlbann aufgehoben", detail);
+            return appMap("ok", true, "title", "IP-Banns aufgehoben", "description", accounts + " Konto/Konten über " + ip + " entsperrt, " + removed + " IP-Sperren und Gruppenanker entfernt."
+                    + (exclude ? " Die IP ist jetzt von Alt-Erkennung und IP-Sperren ausgeschlossen." : "") + (repair == null ? "" : " " + repair.get("description")), "accounts", accounts);
+        }
+    }
+
     public static final class PlayerDatabase {
         private final SimplexAdminSuite plugin; private final File folder; private final Map<UUID, PlayerProfile> profiles = new LinkedHashMap<>();
         private PlayerDatabase(SimplexAdminSuite plugin) { this.plugin = plugin; this.folder = new File(plugin.getDataFolder(), "players"); if (!folder.exists()) folder.mkdirs(); loadAll(); }
@@ -18439,6 +18993,15 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         }
         private synchronized PlayerProfile touch(Player player) { PlayerProfile profile = profiles.get(player.getUniqueId()); long now = System.currentTimeMillis(); if (profile == null) { profile = new PlayerProfile(player.getUniqueId(), player.getName()); profile.firstSeen = now; profiles.put(profile.uuid, profile); } if (!profile.name.equals(player.getName())) { profile.previousNames.add(profile.name); profile.name = player.getName(); profile.addAction("Namensänderung erkannt: " + profile.previousNames.get(profile.previousNames.size() - 1) + " → " + player.getName()); } profile.lastSeen = now; UUID accessId=profile.uuid; profile.emergencyAccess=()->plugin.emergency(accessId); if(plugin.pointsEconomy!=null)plugin.pointsEconomy.attach(profile); return profile; }
         private synchronized PlayerProfile get(UUID uuid) { return profiles.get(uuid); }
+        /** 10.20.0: profile for an account that was never online with the Suite (LiteBans import). */
+        private synchronized PlayerProfile ensure(UUID uuid, String name, long firstSeen) {
+            PlayerProfile profile = profiles.get(uuid);
+            if (profile != null) return profile;
+            profile = new PlayerProfile(uuid, name == null || name.isBlank() ? uuid.toString().substring(0, 8) : name);
+            profile.firstSeen = firstSeen; profile.lastSeen = firstSeen; profile.schemaVersion = CURRENT_DATA_SCHEMA;
+            profile.addAction("Profil aus der LiteBans-Migration angelegt");
+            profiles.put(uuid, profile); save(profile); return profile;
+        }
         private synchronized int staffNotesUpdatedAfter(long timestamp) {
             int count = 0;
             for (PlayerProfile profile : profiles.values()) if (profile.staffNotesUpdatedAt > timestamp) count++;
@@ -18643,6 +19206,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         private final Set<String> manualAltLinks = Collections.synchronizedSet(new HashSet<>());
         private final Set<String> ignoredAltLinks = Collections.synchronizedSet(new HashSet<>());
         private long internalBanUntil; private String internalBanReason = ""; private String internalBanBy = "";
+        /** 10.20.0: ban case data (additive keys). role: main = Hauptbann, alt = gesperrtes Alt-Konto. */
+        private String internalBanCase = ""; private String internalBanRole = ""; private String internalBanMain = ""; private String internalBanMainName = ""; private long internalBanSince; private String internalBanSource = ""; private String internalBanVia = ""; private String internalBanIp = "";
         private long internalMuteUntil; private String internalMuteReason = ""; private String internalMuteBy = "";
         private long staffSummarySeenAt; private long staffNotesUpdatedAt;
         private int sessionCount; private long lastJoinAt; private long currentSessionStartedAt; private long totalPlayMillis; private long totalAfkMillis; private long lastChatAt;
@@ -18816,6 +19381,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             y.set("security.last-admin-authentication-at", lastAdminAuthenticationAt); y.set("security.failed-admin-authentications", failedAdminAuthentications);
             y.set("staff.summary-seen-at", staffSummarySeenAt); y.set("staff.notes-updated-at", staffNotesUpdatedAt);
             y.set("internal-punishments.ban.until", internalBanUntil); y.set("internal-punishments.ban.reason", internalBanReason); y.set("internal-punishments.ban.by", internalBanBy);
+            y.set("internal-punishments.ban.case", internalBanCase); y.set("internal-punishments.ban.role", internalBanRole); y.set("internal-punishments.ban.main", internalBanMain); y.set("internal-punishments.ban.main-name", internalBanMainName); y.set("internal-punishments.ban.since", internalBanSince); y.set("internal-punishments.ban.source", internalBanSource); y.set("internal-punishments.ban.via", internalBanVia); y.set("internal-punishments.ban.ip", internalBanIp);
             y.set("internal-punishments.mute.until", internalMuteUntil); y.set("internal-punishments.mute.reason", internalMuteReason); y.set("internal-punishments.mute.by", internalMuteBy);
             y.save(file);
         }
@@ -18844,6 +19410,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             p.lastAdminAuthenticationAt = y.getLong("security.last-admin-authentication-at", 0L); p.failedAdminAuthentications = y.getInt("security.failed-admin-authentications", 0);
             p.staffSummarySeenAt = y.getLong("staff.summary-seen-at", 0L); p.staffNotesUpdatedAt = y.getLong("staff.notes-updated-at", 0L);
             p.internalBanUntil = y.getLong("internal-punishments.ban.until", 0L); p.internalBanReason = y.getString("internal-punishments.ban.reason", ""); p.internalBanBy = y.getString("internal-punishments.ban.by", "");
+            p.internalBanCase = y.getString("internal-punishments.ban.case", ""); p.internalBanRole = y.getString("internal-punishments.ban.role", ""); p.internalBanMain = y.getString("internal-punishments.ban.main", ""); p.internalBanMainName = y.getString("internal-punishments.ban.main-name", ""); p.internalBanSince = y.getLong("internal-punishments.ban.since", 0L); p.internalBanSource = y.getString("internal-punishments.ban.source", ""); p.internalBanVia = y.getString("internal-punishments.ban.via", ""); p.internalBanIp = y.getString("internal-punishments.ban.ip", "");
             p.internalMuteUntil = y.getLong("internal-punishments.mute.until", 0L); p.internalMuteReason = y.getString("internal-punishments.mute.reason", ""); p.internalMuteBy = y.getString("internal-punishments.mute.by", "");
             return p;
         }

@@ -36,7 +36,11 @@ struct SuitePlayerBadges: View {
     }
     static func badges(_ row: JSON) -> [Badge] {
         var result: [Badge] = []
-        if row["ban"].bool { result.append(Badge(title: "Gebannt", symbol: "hand.raised.fill", color: .red)) }
+        if row["ban"].bool {
+            // 5.13.0: blocked alternative accounts are marked separately from main bans.
+            if row["banRole"].string == "alt" { result.append(Badge(title: "Alt-Konto gesperrt", symbol: "person.2.slash", color: .orange)) }
+            else { result.append(Badge(title: "Gebannt", symbol: "hand.raised.fill", color: .red)) }
+        }
         if row["mute"].bool { result.append(Badge(title: "Stumm", symbol: "speaker.slash.fill", color: .orange)) }
         if row["warnings"].int > 0 { result.append(Badge(title: row["warnings"].int == 1 ? "1 Warnung" : "\(row["warnings"].int) Warnungen", symbol: "exclamationmark.triangle.fill", color: .yellow)) }
         if !row["staff"].string.isEmpty { result.append(Badge(title: "Team", symbol: "person.badge.shield.checkmark.fill", color: Color.panelAccent)) }

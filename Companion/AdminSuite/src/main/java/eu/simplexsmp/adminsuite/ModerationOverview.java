@@ -78,9 +78,19 @@ final class ModerationOverview {
             long until=mute?s.muteUntil:s.banUntil;
             base.add(new Line("Simplex • "+(mute?"Mute":"Ban")+": "+(until>now?"AKTIV":"frei"),until>now?"Grund: "+safe(mute?s.muteReason:s.banReason)+"\nVon: "+safe(mute?s.muteBy:s.banBy)+"\nBis: "+expiry(until):"Keine aktive interne Strafe",until>now?Material.RED_DYE:Material.LIME_DYE));
         }
+        if(kinds.contains(false)&&plugin.banCenter!=null){
+            // 10.20.0: main ban or blocked alternative account, with the whole case.
+            try{Map<String,Object> st=plugin.banCenter.player(s.id);
+                if(Boolean.TRUE.equals(st.get("banned"))&&st.get("case") instanceof Map<?,?> c){
+                    StringBuilder text=new StringBuilder("Fall: "+c.get("id")+"\nHauptkonto: "+c.get("mainName")+"\nKonten im Fall: "+c.get("accounts")+" (davon Alt-Konten: "+c.get("alts")+")");
+                    if(c.get("members") instanceof List<?> ms)for(Object o:ms)if(o instanceof Map<?,?> m)text.append("\n• ").append(m.get("name")).append("main".equals(m.get("role"))?" – Hauptbann":" – Alt-Konto").append(String.valueOf(m.get("via")).isBlank()?"":" ("+m.get("via")+")");
+                    text.append("\nAufheben: App/Webpanel → Bann-Zentrale oder Spielerprofil (nur dieses Konto oder alle).");
+                    base.add(new Line("Bann-Zentrale • "+st.get("headline"),text.toString(),"main".equals(st.get("role"))?Material.RED_BANNER:Material.ORANGE_BANNER));
+                }}catch(RuntimeException ignored){}
+        }
         if(kinds.contains(false))nativeStatus(s,base);
         if(kinds.contains(true))base.add(new Line("Minecraft • Mute","Vanilla/Paper besitzt keine eigene Mute-Liste.",Material.PAPER));
-        Plugin lite=lite();if(lite==null){base.add(new Line("LiteBans • nicht verfügbar","Nur lokal installiertes LiteBans kann über seine API abgefragt werden.",Material.GRAY_DYE));done.accept(base);return;}
+        Plugin lite=lite();if(lite==null){if(plugin.liteBansMigration!=null&&plugin.liteBansMigration.disablePolicy())base.add(new Line("LiteBans • abgelöst","LiteBans ist abgeschaltet. Übernommene Banns stehen oben unter „Bann-Zentrale“, ältere Einträge im Verlauf der Bann-Zentrale.",Material.GRAY_DYE));else base.add(new Line("LiteBans • nicht verfügbar","Nur lokal installiertes LiteBans kann über seine API abgefragt werden.",Material.GRAY_DYE));done.accept(base);return;}
         if(!queries.tryAcquire()){sender.sendMessage("§eEs laufen bereits mehrere Abfragen. Bitte gleich erneut versuchen.");return;}
         Bukkit.getScheduler().runTaskAsynchronously(plugin,()->{
             try{
