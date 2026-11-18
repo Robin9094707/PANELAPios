@@ -293,7 +293,7 @@
       h("div", { class: "body" }, body), actions && actions.length ? h("footer", {}, actions) : null);
     bg.appendChild(m); bg.addEventListener("mousedown", function (e) { if (e.target === bg && !opts.locked) close(); });
     document.addEventListener("keydown", esc); document.body.appendChild(bg);
-    var f = m.querySelector("input, textarea, select"); if (f && !opts.noFocus) setTimeout(function () { f.focus(); }, 30);
+    var f = m.querySelector("input:not([type=hidden]), textarea, select"); if (f && !opts.noFocus) setTimeout(function () { f.focus(); }, 30);
     return { close: close, el: m };
   }
   function confirmDialog(title, text, okLabel, danger) {

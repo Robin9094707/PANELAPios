@@ -145,7 +145,7 @@ jobs:
       - name: Upload the JAR as an individual file
         uses: actions/upload-artifact@v7.0.2
         with:
-          path: Companion/AdminSuite/target/SimplexAdminSuite-10.20.0.jar
+          path: Companion/AdminSuite/target/SimplexAdminSuite-10.21.0.jar
           archive: false
           if-no-files-found: error
           retention-days: 30
@@ -160,7 +160,7 @@ jobs:
           python3 tools/package-source.py
           cp ../../docs/Simplex-Admin-Recovery.pdf target/
           cd target
-          sha256sum SimplexAdminSuite-10.20.0.jar SimplexAdminSuite-10.20.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-10.21.0.jar SimplexAdminSuite-10.21.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
       - name: Build and test SimplexSentinelBridge (Geyser extension) against the real Geyser API
         working-directory: Companion/SentinelBridge
         run: |
@@ -174,8 +174,8 @@ jobs:
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-10.20.0.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-10.20.0-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-10.21.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-10.21.0-source.zip
             Companion/AdminSuite/target/Simplex-Admin-Recovery.pdf
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
@@ -235,6 +235,8 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
+          Simplex Panel 5.14.0 / Admin Suite 10.21.0: Community management in iOS and Web for Simplex Points, Shop offers, bilingual Quick Delivery, the public Discord invite and scoreboard day counters. The iOS Admin tab shows favorites and searchable tools. Existing data stores and account settings are reused. See UPDATE-5.14.0.md.
+
           Simplex Panel 5.13.0 / Admin Suite 10.20.0: Bann-Zentrale – every ban as a case (main ban plus blocked alt accounts) in app and web panel with search, filters, history and the ban status right in the player profile (main ban or alt account of whom); lift only one account or the whole case including alt group, IP block and identity bans; undo mistaken shared-IP bans in one step and exclude the IP. LiteBans is switched off and replaced: its bans, mutes and warnings are read (running plugin, MySQL or the litebans.mv.db file), every case and linked account can be chosen before taking it over, cases on the excluded IP 82.165.45.159 are not taken over by default, interrupted migrations continue, older entries go to the history, and /ban, /tempban, /unban, /mute, /kick, /warn now run through the Suite (DE/EN player texts). All existing Suite bans and data stay valid. SentinelBridge 1.6.0 unchanged. See UPDATE-5.13.0.md.
 
           Simplex Panel 5.11.0 / Admin Suite 10.18.0: simpler pairing – the app checks the address itself, shows an unknown or changed certificate once for confirmation (no typing of fingerprints), accepts publicly valid certificates of a domain without a fingerprint and explains unreachable ports and proxy errors (502) in plain words; old setup links keep working after a server move. Suite: /sas app status as a pairing checklist with a port self-test, /sas app address <IP:Port>, complete setup links without editing the config, unauthenticated /v1/ping. Contains 5.10.0 / 10.17.0, 5.9.0 / 10.16.1. SentinelBridge 1.6.0 unchanged. See UPDATE-5.11.0.md.

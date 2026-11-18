@@ -9,12 +9,15 @@ struct SuiteServerShortcuts: View {
     @State private var editing = false
     @State private var quickCenter: SuiteConnection?
     var records: [SuiteConnection] {
-        connections.values.filter { record in
+        Self.matchingRecords(connections.values, query: query, preferences: preferences, store: store)
+    }
+    @MainActor static func matchingRecords(_ records: [SuiteConnection], query: String, preferences: SuiteQuickAccess, store: AppStore) -> [SuiteConnection] {
+        records.filter { record in
             !preferences.isHidden(record.id) && (query.isEmpty || SuiteSearch.matches(query, in: preferences.name(record, store: store) + " " + record.endpoint) || preferences.tools(for: record.id).contains { $0.matches(query) })
         }
     }
     var body: some View {
-        if !connections.values.isEmpty {
+        if !records.isEmpty || (query.isEmpty && !connections.values.isEmpty) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Label("Server-Schnellzugriffe", systemImage: "bolt.fill").font(.headline)

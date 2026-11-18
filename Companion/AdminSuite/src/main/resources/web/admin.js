@@ -5,8 +5,7 @@
   var S = window.Simplex, h = S.h, icon = S.icon, P = S.pages = S.pages || {};
 
   // ============================================================ Suite functions (schema driven)
-  var schemaCache = null;
-  S.schema = async function (force) { if (!schemaCache || force) schemaCache = (await S.api("schema")).actions || []; return schemaCache; };
+  S.schema = async function () { return (await S.api("schema")).actions || []; };
   function allowed(a) { return a.allowed !== false && S.can("action." + a.id) && (a.scope !== "full" || S.full()); }
 
   function fieldInput(f, value) {
@@ -43,24 +42,36 @@
       r.link ? h("div", { class: "row wrap", style: { marginTop: "8px" } }, h("code", { class: "mono ellipsis grow", text: r.link }), S.btn("Kopieren", { size: "sm", icon: "copy", onClick: function () { return S.copy(r.link, "Link"); } })) : null));
   }
   /** Opens a form for any Suite action: "Nur anzeigen" (read-only view) or "Prüfen & ausführen" (server-bound confirmation). */
-  S.openAction = function (a, preset) {
+  S.openAction = function (a, preset, saved) {
     preset = preset || {};
     var ok = allowed(a);
-    var form = h("form", { class: "stack" }, (a.options || []).map(function (f) {
+    var form = h("form", { class: "stack", onSubmit: function (event) { event.preventDefault(); } }, (a.options || []).map(function (f) {
+      if (f.hidden) return h("input", { type: "hidden", name: f.name, value: preset[f.name] || "" });
       f._path = a.id; return S.field(f.description + (f.required ? " *" : ""), fieldInput(f, preset[f.name]));
     }));
     if (!(a.options || []).length) form.appendChild(h("p", { class: "muted small", text: "Diese Aktion hat keine Eingabefelder." }));
     var result = h("div");
     var body = h("div", { class: "stack" }, !ok ? S.notice("Keine Berechtigung für diese Aktion (" + "action." + a.id + "). Du kannst sie nur ansehen.", "warn", "lock") : null, form, result);
     var dlg = S.modal(a.description || a.name || a.id, body, [
-      S.btn("Nur anzeigen", { icon: "eye", onClick: async function () { S.clear(result); try { result.appendChild(replyView(await S.api("view", { query: Object.assign({ path: a.id }, readForm(form)) }))); } catch (e) { result.appendChild(S.notice(e.message, e.status === 405 ? "warn" : "danger")); } } }),
-      S.btn("Prüfen & ausführen", { kind: "primary", icon: "shieldCheck", disabled: !ok, title: ok ? "" : "Keine Berechtigung", onClick: async function () { S.clear(result); try { var r = await S.runAction(a.id, readForm(form), { silent: true }); if (r) result.appendChild(replyView(r)); } catch (e) { result.appendChild(S.notice(e.message, "danger")); } } })
+      a.dedicated ? null : S.btn("Nur anzeigen", { icon: "eye", onClick: async function () { S.clear(result); try { result.appendChild(replyView(await S.api("view", { query: Object.assign({ path: a.id }, readForm(form)) }))); } catch (e) { result.appendChild(S.notice(e.message, e.status === 405 ? "warn" : "danger")); } } }),
+      S.btn("Prüfen & ausführen", { kind: "primary", icon: "shieldCheck", disabled: !ok, title: ok ? "" : "Keine Berechtigung", onClick: async function () {
+        S.clear(result);
+        try {
+          var reply = await S.runAction(a.id, readForm(form), { silent: true });
+          if (!reply) return;
+          if (saved && reply.ok === true) {
+            dlg.close();
+            S.toast(reply.title || "Gespeichert", "ok", reply.description);
+            saved();
+          } else result.appendChild(replyView(reply));
+        } catch (error) { result.appendChild(S.notice(error.message, "danger")); }
+      } })
     ], { wide: true, icon: "sparkles" });
     return dlg;
   };
 
   P.functions = async function (param, query, alive) {
-    var actions = await S.schema(); if (!alive()) return;
+    var actions = (await S.schema()).filter(function (a) { return !a.dedicated; }); if (!alive()) return;
     var wrap = h("div", { class: "stack" }), q = query.get("q") || "", onlyAllowed = false;
     function render() {
       S.clear(wrap);

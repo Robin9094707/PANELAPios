@@ -52,6 +52,7 @@ public final class AppApiIntegrationHarness {
             System.setProperty("jdk.internal.httpclient.disableHostnameVerification","true");SSLContext ssl=SSLContext.getInstance("TLS");ssl.init(null,new TrustManager[]{new X509TrustManager(){public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}public void checkClientTrusted(X509Certificate[] c,String a){}public void checkServerTrusted(X509Certificate[] c,String a)throws java.security.cert.CertificateException{try{String actual=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(c[0].getEncoded()));if(!actual.equals(pin))throw new java.security.cert.CertificateException("Wrong certificate");}catch(GeneralSecurityException e){throw new java.security.cert.CertificateException(e);}}}},new SecureRandom());
             client=HttpClient.newBuilder().sslContext(ssl).connectTimeout(java.time.Duration.ofSeconds(5)).build();base=URI.create("https://127.0.0.1:"+port);
             var read=api.security.issue("Read","read");var full=api.security.issue("Full","full");var manage=api.security.issue("Manage","manage");
+            communityTools(plugin, dir, read, manage, full);
             assistant(plugin,api,full,worldTime);
             try (var bot = new PowerBot(plugin)) {
                 plugin.powerBot = bot;
@@ -127,6 +128,8 @@ public final class AppApiIntegrationHarness {
             check(call("/v1/health",session,null).statusCode()==200,"session can read health");
             check(call("/v1/data/access",session,null).statusCode()==403,"limited user cannot enumerate app accounts");
             check(call("/v1/data/settings",session,null).statusCode()==403,"limited user cannot read settings");
+            check(call("/v1/data/community-tools",session,null).statusCode()==403,"tickets-only user cannot read community data");
+            check(!call("/v1/schema",session,null).body().contains("community.points"),"tickets-only user has no community forms");
             check(call("/v1/menu",session,null).statusCode()==403,"limited user cannot bypass via remote menu");
             check(call("/v1/prepare",session,action).statusCode()==403,"limited user cannot prepare remote menu action");
             check(call("/v1/tickets",session,json(Map.of("id","1","action","delete"))).statusCode()==403,"close permission does not grant delete");
@@ -154,6 +157,54 @@ public final class AppApiIntegrationHarness {
             System.out.println("PASS "+checks+" production HTTPS/menu integration checks with synthetic Bukkit services");
         }finally{if(api!=null)api.stop();serverField.set(null,old);try(var stream=Files.walk(dir)){for(Path p:stream.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(p);}}
     }
+    private static void communityTools(SimplexAdminSuite plugin, Path dir, AppApiSecurity.Issued read,
+                                       AppApiSecurity.Issued manage, AppApiSecurity.Issued full) throws Exception {
+        plugin.discordInvite = new DiscordInvite(plugin);
+        plugin.getConfig().set("community.discord-invite-code", "originalInvite");
+        check(call("/v1/data/community-tools", null, null).statusCode() == 401, "community read requires authentication");
+        var overview = call("/v1/data/community-tools", read.token(), null);
+        check(overview.statusCode() == 200 && overview.body().contains("originalInvite"), "read key may see community settings");
+        var input = json(Map.of("path", CommunityTools.INVITE, "values",
+            Map.of("expected", "originalInvite", "invite", "https://discord.gg/fixtureInvite")));
+        check(call("/v1/view?path=community.invite", full.token(), null).statusCode() == 405, "GET cannot modify community settings");
+        check(call("/v1/prepare", read.token(), input).statusCode() == 403, "read key cannot prepare community changes");
+        check(call("/v1/prepare", manage.token(), input).statusCode() == 403, "invite edit requires full scope");
+        var first = call("/v1/prepare", full.token(), input);
+        var second = call("/v1/prepare", full.token(), input);
+        check(first.statusCode() == 200 && first.body().contains("fixtureInvite") && plugin.discordInvite.code().equals("originalInvite"),
+            "community preview leaves the data unchanged");
+        var ticket = object(DiscordBotManager.Json.parse(first.body())).get("ticket");
+        check(call("/v1/execute", full.token(), json(Map.of("ticket", ticket))).statusCode() == 200
+            && plugin.discordInvite.code().equals("fixtureInvite"), "confirmed edit uses the existing invite setting");
+        var stale = object(DiscordBotManager.Json.parse(second.body())).get("ticket");
+        check(call("/v1/execute", full.token(), json(Map.of("ticket", stale))).statusCode() == 409, "concurrent community edit is rejected");
+        check(call("/v1/execute", full.token(), json(Map.of("ticket", ticket))).statusCode() == 400, "one-time community ticket cannot be replayed");
+
+        UUID player = UUID.randomUUID();
+        Path economy = dir.resolve("community-fixture.sqlite");
+        try (EconomyStore store = new EconomyStore(economy)) {
+            store.migrate(player, 45);
+            var original = new EconomyStore.Offer("sample", "Name", "Name", new byte[]{1, 2}, 5, 3, 6, 0, "textures/sample", 0, true, new byte[]{3, 4});
+            store.put(original);
+            store.purchaseItem(player, original.id(), original.revision(), "purchase1");
+            check(!store.updateOfferDetails(original, "Old", "Old", 6, 3, true), "a purchase invalidates a stale stock snapshot");
+            check(store.updateOfferDetails(store.offer(original.id()), "Neu", "New", 6, 2, false), "edit fresh offer metadata");
+            store.note(new EconomyStore.Note("older", player, "fixture", "Alt", "Old", "DE", "EN", 2, true, 1, 1, 1));
+            store.note(new EconomyStore.Note("latest", player, "fixture", "Neu", "New", "DE", "EN", 0, true, 2, 0, 0));
+        }
+        try (EconomyStore store = new EconomyStore(economy)) {
+            var saved = store.offer("sample");
+            check(saved.de().equals("Neu") && !saved.enabled() && saved.stock() == 2 && saved.limit() == 6, "shop fields survive reopening");
+            check(Arrays.equals(saved.item(), new byte[]{1, 2}) && Arrays.equals(saved.currency(), new byte[]{3, 4}),
+                "serialized item and payment survive remote editing");
+            check(store.balance(player) == 45 && store.receipt("purchase1") != null, "balance and receipt survive remote editing");
+            check(store.recentNotes(player, 1).get(0).id().equals("latest") && store.notes(player, false).size() == 2,
+                "bounded recent history leaves older delivery records intact");
+        }
+        check(CommunityTools.pointsAfter(45, 10, "deposit") == 55 && CommunityTools.pointsAfter(45, 10, "withdraw") == 35
+            && CommunityTools.pointsAfter(45, 0, "set") == 0, "preview computes all supported point actions");
+    }
+
     private static void assistant(SimplexAdminSuite plugin,AppApiManager api,AppApiSecurity.Issued full,java.util.concurrent.atomic.AtomicLong worldTime)throws Exception{
         var context=new java.util.concurrent.atomic.AtomicReference<String>("");
         plugin.aiAdmin=new AiAdmin(plugin,(instructions,input,schema,tokens)->{

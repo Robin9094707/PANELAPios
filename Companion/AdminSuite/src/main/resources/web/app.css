@@ -745,6 +745,7 @@ button.chip:hover:not(:disabled) { border-color: var(--accent); }
 .finder { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; font: inherit; font-size: 14px; }
 .finder:hover { border-color: var(--border-strong); color: var(--text); }
 .finder svg { width: 15px; height: 15px; }
+@media (max-width: 900px) { .finder { width: 36px; flex: 0 0 36px; justify-content: center; padding: 0; } }
 kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--border-strong); color: var(--muted); background: var(--surface-2); }
 .palette-bg { position: fixed; inset: 0; z-index: 80; background: rgba(2, 6, 18, .55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; justify-content: center; padding: 12vh 16px 16px; }
 .palette { width: min(620px, 100%); align-self: flex-start; background: var(--surface-solid); border: 1px solid var(--border-strong); border-radius: 16px; box-shadow: var(--shadow); padding: 10px; }

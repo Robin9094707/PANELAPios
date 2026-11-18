@@ -26,7 +26,8 @@ struct HomeView: View {
     @ObservedObject private var setupInbox = SuiteSetupInbox.shared
     @ObservedObject private var layouts = DashboardLayouts.shared
     var layoutKey: String { "home:" + (store.api?.base.absoluteString ?? "none") + "|" + (store.demo ? "demo" : store.selected?.uuidString ?? "none") }
-    var filtered: [Server] { store.visibleServers.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.node.localizedCaseInsensitiveContains(search) }.sorted { a, b in
+    private var searchQuery: String { search.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var filtered: [Server] { store.visibleServers.filter { SuiteSearch.matches(searchQuery, in: $0.name + " " + $0.node) }.sorted { a, b in
         guard let api = store.api else { return a.name < b.name }
         let ap = workspace.favorites.contains(workspace.key(api, a)), bp = workspace.favorites.contains(workspace.key(api, b))
         return ap == bp ? a.name.localizedStandardCompare(b.name) == .orderedAscending : ap
@@ -35,23 +36,19 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if search.isEmpty { SuiteHomeBriefing() }
-                    SuiteServerShortcuts(query: search)
-                    if search.isEmpty { SuiteHomeEvents(refresh: iconRevision) }
-                    quickMenu
-                    if !search.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Label("Werkzeuge & Einstellungen", systemImage: "magnifyingglass").font(.headline)
-                            ForEach(SuiteTool.allCases.filter { $0.matches(search) }) { tool in
-                                Button { suiteNavigation.request = SuiteLaunchRequest(tool: tool) } label: { Label(tool.title, systemImage: tool.symbol) }
-                            }
-                        }.frame(maxWidth: .infinity, alignment: .leading).card()
+                    if searchQuery.isEmpty {
+                        SuiteHomeBriefing()
+                        SuiteServerShortcuts(query: "")
+                        SuiteHomeEvents(refresh: iconRevision)
+                        quickMenu
+                        if let api = store.api {
+                            if api.amp != nil { NavigationLink { AMPApplicationsView(api: api) } label: { Label("Python App Runner & AMP-Anwendungen", systemImage: "terminal.fill").frame(maxWidth: .infinity, alignment: .leading).card() }.buttonStyle(.plain) }
+                            ForEach(layouts.cards(layoutKey, scope: .home)) { card in homeCard(card, api: api) }
+                            if store.demo { Button("Eigenes Panel verbinden", systemImage: "plus") { add = true }.buttonStyle(.glassProminent).frame(maxWidth: .infinity) }
+                        } else { hero; welcome }
+                    } else {
+                        homeSearchResults
                     }
-                    if let api = store.api {
-                        if api.amp != nil { NavigationLink { AMPApplicationsView(api: api) } label: { Label("Python App Runner & AMP-Anwendungen", systemImage: "terminal.fill").frame(maxWidth: .infinity, alignment: .leading).card() }.buttonStyle(.plain) }
-                        ForEach(layouts.cards(layoutKey, scope: .home)) { card in homeCard(card, api: api) }
-                        if store.demo { Button("Eigenes Panel verbinden", systemImage: "plus") { add = true }.buttonStyle(.glassProminent).frame(maxWidth: .infinity) }
-                    } else { hero; welcome }
                 }.padding(.bottom, 60).padding(22).frame(maxWidth: 1100).frame(maxWidth: .infinity)
             }.panelScreen().navigationTitle("Panel").navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $search, prompt: "Server, Werkzeuge & Einstellungen suchen")
@@ -98,6 +95,25 @@ struct HomeView: View {
                     await store.pollPresence()
                 }
                 .onChange(of: store.servers) { _, servers in if let api = store.api { suiteConnections.rememberServerNames(panel: api.base.absoluteString, servers: servers) } }
+        }
+    }
+    private var homeSearchResults: some View {
+        let tools = SuiteTool.allCases.filter { $0.matches(searchQuery) }
+        let shortcuts = SuiteServerShortcuts.matchingRecords(suiteConnections.values, query: searchQuery, preferences: preferences, store: store)
+        return VStack(alignment: .leading, spacing: 18) {
+            SuiteServerShortcuts(query: searchQuery)
+            if !filtered.isEmpty { serverList }
+            if !tools.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Werkzeuge & Einstellungen", systemImage: "magnifyingglass").font(.headline)
+                    ForEach(tools) { tool in
+                        Button { suiteNavigation.request = SuiteLaunchRequest(tool: tool) } label: { Label(tool.title, systemImage: tool.symbol) }
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).card()
+            }
+            if filtered.isEmpty && tools.isEmpty && shortcuts.isEmpty {
+                ContentUnavailableView.search(text: searchQuery)
+            }
         }
     }
     private func syncShortcuts() async {

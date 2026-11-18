@@ -35,6 +35,7 @@ final class AppApiManager {
     /** 9.9.0: push, appearance, rename, public name, admin-log filters, LuckPerms and Lands. */
     final PanelHub hub;
     final WebPush webPush;
+    private final CommunityTools communityTools;
     private final Map<String,Map<String,Object>> actions=new LinkedHashMap<>();
     private final Map<String,long[]> rates=new HashMap<>();
     private final PlayerNbtAccess playerNbt;
@@ -47,6 +48,7 @@ final class AppApiManager {
     AppApiManager(SimplexAdminSuite plugin)throws Exception{
         this.plugin=plugin;histories=new HistoryApi(plugin);studio=new StudioApi(plugin);ads=new AdHubApi(plugin);playerNbt=new PlayerNbtAccess(plugin);serverName=Bukkit.getServer().getName();security=new AppApiSecurity(plugin.getDataFolder().toPath().resolve("app-api"));controller=new DiscordAdminController(plugin,plugin.discordRelay());menus=new AppApiMenus(plugin,security);accounts=new AccountApi(this,plugin,security);web=new WebPanel(plugin.getDescription().getVersion());
         hub=new PanelHub(this,plugin,security);
+        communityTools = new CommunityTools(plugin);
         webPush=new WebPush(security.directory.resolve("web-push.properties"),this::pushContact,hub::allowed,(owner,type,level)->plugin.appEvents==null?level:plugin.appEvents.quietLevel(owner,type,level));
         for(Object command:controller.guildCommands())if(command instanceof Map<?,?> c&&"sasadmin".equals(c.get("name")))flatten("",c.get("options"));
         extra("restart.apply","Serverneustart planen oder abbrechen","Server",List.of(choice("operation","Aktion","schedule","cancel"),field("seconds","Sekunden (1–60)",4,false),field("reasonDE","Grund Deutsch",3,false),field("reasonEN","Grund Englisch",3,false)));
@@ -85,6 +87,24 @@ final class AppApiManager {
         extra("commands.update","Befehle eines Spielers sperren oder erlauben","Ränge & Rechte",List.of(field("player","Spielername oder UUID",3,true),choice("operation","Aktion","block","allow","reset","clear"),field("commands","Befehle (kommagetrennt, ohne /)",3,false),field("duration","Dauer (leer = dauerhaft, z. B. 7d)",3,false),field("reason","Grund (sieht der Spieler)",3,false),optionalChoice("alts","Alt-Accounts erben die Sperre (leer = ja)","true","false"),optionalChoice("grant","Fehlende Rechte in LuckPerms setzen (leer = nein)","false","true")));
         extra("commands.global","Befehle für alle Spieler sperren","Ränge & Rechte",List.of(choice("operation","Aktion","global-block","global-allow"),field("commands","Befehle (kommagetrennt, ohne /)",3,true),field("duration","Dauer (leer = dauerhaft)",3,false),field("reason","Grund",3,false)));
         extra("suite.command","Weitere Suite-Befehle","Werkzeuge",List.of(choice("root","Suite-Befehl","sas","delivery","shop","spcurrency","connection"),field("command","Argumente ohne /sas",3,true)));
+        extra(CommunityTools.INVITE, "Discord-Einladung ändern", "Community", List.of(
+            bound("expected", false), field("invite", "Einladungscode oder Discord-Link", 3, true)));
+        extra(CommunityTools.DAYS, "Spieltagzähler ändern", "Community", List.of(
+            bound("world", true), bound("expected", true), field("days", "Neuer Spieltagzähler", 3, true)));
+        extra(CommunityTools.POINTS, "Simplex Points buchen", "Community", List.of(
+            bound("player", true), bound("expected", true), select("operation", "Buchung", "deposit", "Gutschreiben", "withdraw", "Abziehen", "set", "Kontostand setzen"),
+            field("amount", "Betrag in SP", 3, true), field("reason", "Grund für das Punktebuch", 3, true)));
+        extra(CommunityTools.DELIVERY, "Quick Delivery erstellen", "Community", List.of(
+            bound("player", true), field("titleDE", "Titel (Deutsch)", 3, true), field("messageDE", "Nachricht (Deutsch)", 3, true),
+            field("titleEN", "Titel (Englisch)", 3, true), field("messageEN", "Nachricht (Englisch)", 3, true),
+            select("priority", "Priorität", "0", "Normal", "1", "Wichtig", "2", "Hoch"),
+            select("menu", "Zustellung", "true", "Im Spielmenü", "false", "Im Chat")));
+        extra(CommunityTools.SHOP, "Shop-Angebot bearbeiten", "Community", List.of(
+            bound("offer", true), bound("expected", true), bound("expectedStock", true),
+            field("titleDE", "Name (Deutsch)", 3, true), field("titleEN", "Name (Englisch)", 3, true),
+            field("price", "Preis in der bestehenden Zahlungsart", 3, true),
+            field("stock", "Bestand (−1 = unbegrenzt)", 3, true), select("enabled", "Status", "true", "Aktiv", "false", "Inaktiv")));
+        for (String action : CommunityTools.ACTIONS) actions.get(action).put("dedicated", true);
     }
     @SuppressWarnings("unchecked") private void flatten(String prefix,Object options){
         if(!(options instanceof List<?> list))return;
@@ -96,6 +116,19 @@ final class AppApiManager {
     private static String group(String path){return switch(path.split("\\.")[0]){case "player"->"Spieler";case "server"->"Server";case "security","client"->"Sicherheit";case "moderation"->"Moderation";case "settings"->"Einstellungen";case "ai"->"KI & Integrationen";default->"Übersicht";};}
     private void extra(String id,String description,String group,List<?> options){actions.put(id,new LinkedHashMap<>(SimplexAdminSuite.appMap("id",id,"name",description,"description",description,"group",group,"scope",scope(id),"options",options)));}
     private static Map<String,Object> field(String id,String label,int type,boolean required){return SimplexAdminSuite.appMap("name",id,"description",label,"type",type,"required",required);}
+    private static Map<String,Object> bound(String id, boolean required) {
+        var field = field(id, id, 3, required);
+        field.put("hidden", true);
+        return field;
+    }
+    private static Map<String,Object> select(String id, String label, String... valueLabels) {
+        List<Map<String,Object>> choices = new ArrayList<>();
+        for (int i = 0; i < valueLabels.length; i += 2)
+            choices.add(SimplexAdminSuite.appMap("value", valueLabels[i], "name", valueLabels[i + 1]));
+        var field = field(id, label, 3, true);
+        field.put("choices", choices);
+        return field;
+    }
     /** 10.2: a choice the client may omit (the action then uses its documented default). */
     private static Map<String,Object> optionalChoice(String id,String label,String... values){var f=choice(id,label,values);f.put("required",false);return f;}
     private static Map<String,Object> choice(String id,String label,String... values){var f=field(id,label,3,true);f.put("choices",Arrays.stream(values).map(v->SimplexAdminSuite.appMap("name",switch(v){case "health"->"Gesundheit";case "food"->"Hunger";case "saturation"->"Sättigung";case "level"->"Erfahrungslevel";case "exp"->"XP-Anteil";case "gamemode"->"Spielmodus";case "invulnerable"->"Unverwundbarkeit";case "allowFlight"->"Flug erlauben";default->v;},"value",v)).toList());return f;}
@@ -104,7 +137,7 @@ final class AppApiManager {
         if(!Double.isFinite(seconds)||seconds<1||seconds>60||seconds!=(int)seconds)throw new IllegalArgumentException("Countdown muss eine ganze Zahl von 1 bis 60 Sekunden sein");
         return (int)seconds;
     }
-    static String scope(String path){return Set.of("commands.global","luckperms.edit","lands.access","quiet.update","setup.create","app.settings","staffchat.update","accounts.update","links.update","memory.update","online.update","restart.apply","alts.ip","management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","crossplay.update","crossplay.auto","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
+    static String scope(String path){return Set.of(CommunityTools.INVITE,CommunityTools.DAYS,CommunityTools.SHOP,"commands.global","luckperms.edit","lands.access","quiet.update","setup.create","app.settings","staffchat.update","accounts.update","links.update","memory.update","online.update","restart.apply","alts.ip","management.apply","events.ack","events.delete","events.note","events.clear","notifications.update","plugins.stage","world.update","logs.retry","settings.update","menu.action","crossplay.update","crossplay.auto","server.console","server.suite","suite.command","server.reload","server.trim","security.identity-reset","settings.set","moderation.config","moderation.logchannel","moderation.log").contains(path)?"full":"manage";}
     void reload(){
         stopListener();menus.clear();long rev=generation.get();
         if(!plugin.getConfig().getBoolean("app-api.enabled",false)){status="Ausgeschaltet";return;}
@@ -243,9 +276,10 @@ final class AppApiManager {
                         "tabPlugin",VisualIdentityManager.tabPlugin(),"aboveHead",plugin.getConfig().getBoolean("nameplates.rank-above-head",true)&&plugin.getConfig().getBoolean("nameplates.manage-nametags",true),"inPlayerList",plugin.getConfig().getBoolean("nameplates.rank-in-player-list",true),
                         "playerListManaged",plugin.getConfig().getBoolean("nameplates.manage-player-list",true)&&!(plugin.getConfig().getBoolean("nameplates.yield-to-tab-plugin",true)&&!VisualIdentityManager.tabPlugin().isEmpty())));
                     case "/v1/data/app-settings"->onMain(rev,()->AppSettings.data(plugin));
+                    case "/v1/data/community-tools" -> onMain(rev, () -> communityTools.data(query.getOrDefault("player", "")));
                     case "/v1/data/staff-tasks"->onMain(rev,()->plugin.appStaffTasks());
                     case "/v1/data/setup-info"->onMain(rev,()->SimplexAdminSuite.appMap("fingerprint",fingerprint,"publicAddress",plugin.getConfig().getString("app-api.public-address",""),"port",plugin.getConfig().getInt("app-api.port",39093),"name",serverName));
-                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1","admin-log-v1","staff-chat-v1","setup-links-v1","quiet-hours-v1","nameplates-v1","app-settings-v1","staff-tasks-v1","accounts-v2","sessions-v1","mfa-v1","passkeys-v1","web-panel-v1","admin-log-v2","web-push-v1","web-prefs-v1","account-rename-v1","public-name-v1","luckperms-v1","lands-v1","nameplates-v2","access-locks-v1","player-rights-v1","luckperms-v2","changelog-v1","bans-sources-v2","permission-catalog-v2","command-rights-v1","luckperms-v3","live-switches-v1","diagnostics-v1","lag-map-v1","spark-v1","crash-manager-v1","player-connection-v1","command-rights-v2","world-trim-v1","discord-status-designer-v1","scoreboard-designer-v1","player-dossier-v1","bridge-v3","bark-test-v1","ad-hub-v1","history-management-v1","player-nbt-summary-v1","shortcut-preferences-v1","plugin-stage-v2",AiAdmin.FEATURE,AiAdmin.CHAT_FEATURE,"diagnostics-v3","visual-inventory-v1","console-archive-v1","server-events-v1",PowerBot.FEATURE,PowerBot.KEYWORDS_FEATURE,PowerBot.HOME_FEATURE,"moderation-qol-v1",PowerBot.CASES_FEATURE,PowerBot.BRIEFING_FEATURE,PowerBot.TIMELINE_FEATURE,"item-locker-v1",SmartRestart.FEATURE,Automations.FEATURE,"ai-chat-v2","invsee-move-v1","item-icons-v2","quick-center-v1","ai-context-v2",PowerBot.ESCALATION_FEATURE,DisconnectForensics.FEATURE,ChatSilence.FEATURE,"visibility-fix-v1",SimplexAdminSuite.BanCenterCore.FEATURE,LiteBansMigration.FEATURE),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis(),
+                    case "/v1/health"->SimplexAdminSuite.appMap("serverId",security.serverId(),"name",serverName,"version",plugin.getDescription().getVersion(),"features",List.of("overview","statistics","worlds","plugins","log-status","database-inspector","plugin-files-v1","moderation-center-v1","events-v1","offline-player-nbt-v1","management-v2","players-paged-v2","profile-v2","discord-settings-v1","admin-roles-v3","public-chat-v1","restart-v1","admin-dashboard-v1","players-filters-v3","profile-v3","public-chat-v2","crossplay-v1","tickets-v1","tickets-v2","statistics-v2","player-warnings-v1","accounts-v1","links-v1","online-notifications-v1","memory-restart-v1","admin-log-v1","staff-chat-v1","setup-links-v1","quiet-hours-v1","nameplates-v1","app-settings-v1","staff-tasks-v1","accounts-v2","sessions-v1","mfa-v1","passkeys-v1","web-panel-v1","admin-log-v2","web-push-v1","web-prefs-v1","account-rename-v1","public-name-v1","luckperms-v1","lands-v1","nameplates-v2","access-locks-v1","player-rights-v1","luckperms-v2","changelog-v1","bans-sources-v2","permission-catalog-v2","command-rights-v1","luckperms-v3","live-switches-v1","diagnostics-v1","lag-map-v1","spark-v1","crash-manager-v1","player-connection-v1","command-rights-v2","world-trim-v1","discord-status-designer-v1","scoreboard-designer-v1","player-dossier-v1","bridge-v3","bark-test-v1","ad-hub-v1","history-management-v1","player-nbt-summary-v1","shortcut-preferences-v1","plugin-stage-v2",AiAdmin.FEATURE,AiAdmin.CHAT_FEATURE,"diagnostics-v3","visual-inventory-v1","console-archive-v1","server-events-v1",PowerBot.FEATURE,PowerBot.KEYWORDS_FEATURE,PowerBot.HOME_FEATURE,"moderation-qol-v1",PowerBot.CASES_FEATURE,PowerBot.BRIEFING_FEATURE,PowerBot.TIMELINE_FEATURE,"item-locker-v1",SmartRestart.FEATURE,Automations.FEATURE,"ai-chat-v2","invsee-move-v1","item-icons-v2","quick-center-v1","ai-context-v2",PowerBot.ESCALATION_FEATURE,DisconnectForensics.FEATURE,ChatSilence.FEATURE,"visibility-fix-v1",SimplexAdminSuite.BanCenterCore.FEATURE,LiteBansMigration.FEATURE,CommunityTools.FEATURE),"apiVersion",1,"scope",key.scope(),"keyLabel",key.label(),"limited",key.id().startsWith("user:"),"permissions",key.id().startsWith("user:")?security.users.permissions(key.label()):List.of("*"),"time",System.currentTimeMillis(),
                         "account",SimplexAdminSuite.appMap("kind",key.id().startsWith("user:")?"user":"key","username",key.id().startsWith("user:")?key.label():"","owner",key.id().startsWith("user:")&&security.users.owner(key.label()),"manager",accounts.manager(key),"mfa",key.id().startsWith("user:")&&security.users.mfa(key.label()),"canMigrate",!key.id().startsWith("user:")&&key.scope().equals("full")&&security.users.ownerName().isEmpty()),"web",SimplexAdminSuite.appMap("domain",accounts.domain(),"url",accounts.webUrl(),"passkeys",!accounts.rpId().isEmpty()));
                     case "/v1/data/access"->{if(!key.scope().equals("full"))throw new ApiError(403,"Benutzerverwaltung benötigt full-Zugriff");yield SimplexAdminSuite.appMap("items",security.users.list(),"catalog",permissionCatalog(),"presets",rolePresets());}
                     case "/v1/data/links"->SimplexAdminSuite.appMap("items",plugin.accountLinks.store.all().stream().map(l->SimplexAdminSuite.appMap("player",l.minecraft().toString(),"name",l.name(),"discord",l.discord(),"linkedAt",l.linkedAt())).toList());
@@ -275,9 +309,12 @@ final class AppApiManager {
                     case "/v1/plugin-files/inspect"->pluginFiles().inspect(query.getOrDefault("filename",""),Boolean.parseBoolean(query.getOrDefault("pending","false")));
                     case "/v1/plugin-files/status"->pluginFiles().status(query.getOrDefault("filename",""),query.getOrDefault("sha256",""));
                     case "/v1/menu"->onMain(rev,()->{if(!key.scope().equals("full"))throw new ApiError(403,"Suite-Menüs benötigen einen full-Schlüssel.");return menus.current(key);});
-                    case "/v1/schema"->SimplexAdminSuite.appMap("actions",actions.values().stream().filter(row->!Set.of("plugins.stage","ai.ask","ai.propose","ai.inbox").contains(row.get("id"))).map(row->{Map<String,Object> copy=new LinkedHashMap<>(row);copy.put("allowed",security.users.allows(key,"action."+row.get("id"))&&AppApiSecurity.permitted(key,scope(String.valueOf(row.get("id")))));return copy;}).toList());
+                    case "/v1/schema"->SimplexAdminSuite.appMap("actions",actions.values().stream().filter(row->!Set.of("plugins.stage","ai.ask","ai.propose","ai.inbox").contains(row.get("id"))
+                        && (!Boolean.TRUE.equals(row.get("dedicated")) || security.users.allows(key, CommunityTools.READ))).map(row->{Map<String,Object> copy=new LinkedHashMap<>(row);copy.put("allowed",security.users.allows(key,"action."+row.get("id"))&&AppApiSecurity.permitted(key,scope(String.valueOf(row.get("id")))));return copy;}).toList());
                     case "/v1/view"->onMain(rev,()->{
-                        DiscordAdminController.Request request=request(query.getOrDefault("path","dashboard"),new LinkedHashMap<>(query));
+                        String requested = query.getOrDefault("path", "dashboard");
+                        if (CommunityTools.ACTIONS.contains(requested)) throw new ApiError(405,"Diese Aktion benötigt Vorschau und Bestätigung.");
+                        DiscordAdminController.Request request=request(requested,new LinkedHashMap<>(query));
                         if(isCenterAction(request.path)||controller.mutation(request)||Set.of("plugins.stage","ai.ask","ai.propose","server.suite","world.update","logs.retry").contains(request.path))throw new ApiError(405,"Diese Aktion benötigt Vorschau und Bestätigung.");
                         return reply(controller.execute(request,actor(key)));
                     });
@@ -374,7 +411,8 @@ final class AppApiManager {
                     DiscordAdminController.Request req=request(action,values);authorize(key,req);
                     String encoded=DiscordBotManager.Json.stringify(SimplexAdminSuite.appMap("path",action,"values",values));
                     String summary;
-                    if(req.path.equals("vpn.whitelist"))summary=onMain(rev,()->plugin.appVpnWhitelistPlan(req.text("player"),req.text("allowed")));
+                    if (CommunityTools.ACTIONS.contains(req.path)) summary = onMain(rev, () -> communityTools.preview(req));
+                    else if(req.path.equals("vpn.whitelist"))summary=onMain(rev,()->plugin.appVpnWhitelistPlan(req.text("player"),req.text("allowed")));
                     else if(Set.of("accounts.update","links.update","memory.update","online.update","quiet.update","setup.create","app.settings","staffchat.update","tasks.update").contains(req.path))summary="Änderung: "+actions.get(req.path).get("description")+". Bestehende Daten bleiben erhalten. Passwort und Sitzungen werden nie angezeigt.";
                     else if(req.path.equals("luckperms.edit"))summary=LuckPermsAdmin.summary(req.values);
                     else if(req.path.equals("lands.access"))summary=LuckPermsAdmin.summary(landsAccess(req.values));
@@ -441,6 +479,7 @@ final class AppApiManager {
                         throw new ApiError(410,"Bitte den KI-Assistenten in der aktuellen App oder im Webpanel öffnen.");
                     }else result=onMain(rev,()->{
                         authorize(key,req);
+                        if (CommunityTools.ACTIONS.contains(req.path)) return communityTools.apply(req, actor(key).auditName());
                         if(isCenterAction(req.path)) {
                             if(req.path.equals("events.ack"))return plugin.appEvents.acknowledge(security.notificationOwner(key),req.text("id"));
                             if(req.path.equals("notifications.update")){if(plugin.appEvents==null)throw new ApiError(503,"Ereignismodul nicht verfügbar");return plugin.appEvents.configure(security.notificationOwner(key),req.values);}
@@ -507,7 +546,7 @@ final class AppApiManager {
     private static final Map<String,String[]> DATA_RIGHTS=new LinkedHashMap<>();
     static {
         String[][] rows={{"overview","Serverübersicht","Server"},{"statistics","Statistiken","Server"},{"statistics-rows","Statistik-Details je Spieler","Server"},{"worlds","Welten","Server"},{"plugins","Plugins","Server"},{"log-status","Protokollstatus","Server"},
-            {"operations","Einsatzleitstelle","Server"},{"memory","RAM-Notfallneustart","Server"},{"crossplay","Geyser/Floodgate-Status","Server"},{"settings","Suite-Einstellungen","Einstellungen"},{"app-settings","App-Einstellungen","Einstellungen"},{"management","Suite-Verwaltung","Einstellungen"},
+            {"operations","Einsatzleitstelle","Server"},{"memory","RAM-Notfallneustart","Server"},{"crossplay","Geyser/Floodgate-Status","Server"},{"settings","Suite-Einstellungen","Einstellungen"},{"app-settings","App-Einstellungen","Einstellungen"},{"management","Suite-Verwaltung","Einstellungen"},{"community-tools","Punktekonten, Shop, Quick Delivery, Discord-Link und Spieltage ansehen","Community"},
             {"powerbot","PowerBot-Fallzentrale","Moderation"},{"chat-silence","Chat-Ruhe der Spieler (wer den Chat stummgeschaltet hat)","Tickets & Chat"},{"server-events","Event-Modus und Ingame-Tage","Server"},{"players","Spielerliste","Spieler"},{"profile","Spielerprofile","Spieler"},{"player-whispers","Private Flüsternachrichten im Spielerprofil","Spieler"},{"inventory","Live-Inventare","Spieler"},{"snapshots","Inventar-Snapshots","Spieler"},{"snapshot-content","Inhalt von Snapshots","Spieler"},{"nbt-paths","Spielerdaten (NBT)","Spieler"},{"devices","Geräte von Spielern","Spieler"},
             {"bans","Banns & Sperren","Moderation"},{"ban-center","Bann-Zentrale: alle Banns, Alt-Konten, IP-Sperren und Verlauf","Moderation"},{"reports","Reports","Moderation"},{"litebans","LiteBans-Einträge","Moderation"},{"ultrabans","Ultrabanns","Moderation"},{"access-locks","Spielerrechte & Sperren","Moderation"},
             {"alts","Alt-Konten eines Spielers","Sicherheit"},{"alt-dashboard","Alt-Account-Übersicht","Sicherheit"},{"alt-ips","Alt-IP-Regeln","Sicherheit"},{"vpn-whitelist","VPN-Ausnahmen","Sicherheit"},{"vpn-kicks","VPN-Kicks","Sicherheit"},{"events","Ereignisse & Alarme","Sicherheit"},
@@ -645,6 +684,7 @@ final class AppApiManager {
     private void authorize(AppApiSecurity.Key key,DiscordAdminController.Request request){
         if(!security.valid(key))throw new ApiError(401,"API-Schlüssel wurde widerrufen.");
         requirePermission(key,"action."+request.path);
+        if (CommunityTools.ACTIONS.contains(request.path)) requirePermission(key, CommunityTools.READ);
         String required=scope(request.path);if(!AppApiSecurity.permitted(key,required))throw new ApiError(403,"Keine Berechtigung. Benötigtes Schlüsselprofil: "+required);
         if(request.path.equals("moderation.config")){String field=request.text("key");if(field.startsWith("app-api.")||field.startsWith("admin-security.")||ModerationControl.protectedKey(field))throw new ApiError(403,"Geschützte Zugangseinstellung; bitte lokal bearbeiten.");}
     }
@@ -653,7 +693,8 @@ final class AppApiManager {
         if(values.size()>32)throw new IllegalArgumentException("Zu viele Felder");
         for(var entry:values.entrySet()){
             if(entry.getKey().startsWith("_")||entry.getValue() instanceof Map<?,?>||entry.getValue() instanceof List<?>)throw new IllegalArgumentException("Ungültiges Aktionsfeld");
-            String value=String.valueOf(entry.getValue());if(value.length()>(path.equals("management.apply")&&entry.getKey().equals("node")||path.equals("accounts.update")&&entry.getKey().equals("permissions")?24000:4000)||value.chars().anyMatch(c->c<32&&c!='\t'))throw new IllegalArgumentException("Feld enthält ungültige Zeichen oder ist zu lang");
+            boolean multiline = path.equals(CommunityTools.DELIVERY) && Set.of("messageDE", "messageEN").contains(entry.getKey());
+            String value=String.valueOf(entry.getValue());if(value.length()>(path.equals("management.apply")&&entry.getKey().equals("node")||path.equals("accounts.update")&&entry.getKey().equals("permissions")?24000:4000)||value.chars().anyMatch(c->c<32&&c!='\t'&&!(multiline&&c=='\n')))throw new IllegalArgumentException("Feld enthält ungültige Zeichen oder ist zu lang");
         }
         Map<String,Object> schema=actions.get(path);if(schema!=null&&schema.get("options") instanceof List<?> fields)for(Object raw:fields){Map<String,Object> f=(Map<String,Object>)raw;String name=String.valueOf(f.get("name"));Object val=values.get(name);
             if(Boolean.TRUE.equals(f.get("required"))&&(val==null||String.valueOf(val).isBlank()))throw new IllegalArgumentException("Pflichtfeld fehlt: "+name);
