@@ -45,11 +45,23 @@ public final class AccountTransferHarness {
         Path journal = root.resolve("backups");
         var service = new AccountTransferFiles(root, journal);
         var worldList = List.of(world.toFile());
-        var plan = service.plan(worldList, a, b, List.of(homes), multiverse);
+        Path simplex = Files.createDirectories(root.resolve("plugins/SimplexHomes"));
+        Path indexedA = Files.createDirectories(simplex.resolve("player-homes/Veteran_" + a.id()));
+        Path indexedB = Files.createDirectories(simplex.resolve("player-homes/NewPlayer_" + b.id()));
+        Files.writeString(indexedA.resolve("profile.yml"), "uuid: " + a.id());
+        Files.writeString(indexedB.resolve("profile.yml"), "uuid: " + b.id());
+        Files.writeString(simplex.resolve("player-homes-index.yml"), "players:\n"
+            + "  " + a.id() + ":\n    uuid: " + a.id() + "\n    folder: " + indexedA.getFileName() + "\n"
+            + "  " + b.id() + ":\n    uuid: " + b.id() + "\n    folder: " + indexedB.getFileName() + "\n");
+        Files.writeString(indexedA.resolve("homes.yml"), "meta:\n  favorites: [town]\n  order: [town]\nhomes:\n  town:\n    x: 12\n    owner-uuid: " + a.id() + "\n");
+        Files.writeString(indexedB.resolve("homes.yml"), "homes:\n  depot:\n    x: 31\n    owner-name: NewPlayer\n");
+        Path legacy = simplex.resolve("homes.yml");
+        Files.writeString(legacy, a.id() + ":\n  cabin:\n    x: 8\n");
+        var plan = service.plan(worldList, a, b, List.of(homes), simplex, multiverse);
         assert plan.rows().get(0).get("oldItems").toString().contains("diamond");
         assert plan.rows().get(0).get("newItems").toString().contains("gold_ingot");
         assert Arrays.equals(originalA, Files.readAllBytes(old));
-        assert plan.revision().equals(service.plan(worldList, a, b, List.of(homes), multiverse).revision());
+        assert plan.revision().equals(service.plan(worldList, a, b, List.of(homes), simplex, multiverse).revision());
 
         var first = service.backup(UUID.randomUUID(), a, b, plan);
         Files.write(old, originalB);
@@ -73,6 +85,16 @@ public final class AccountTransferHarness {
         assert Files.exists(stats.resolve(b.id() + ".json"));
         assert Files.readString(homeA).contains("identity: Veteran") && Files.readString(homeA).contains("base:");
         assert Files.readString(homeB).contains("identity: NewPlayer") && Files.readString(homeB).contains("mine:");
+        var firstHomes = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(indexedA.resolve("homes.yml").toFile());
+        var secondHomes = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(indexedB.resolve("homes.yml").toFile());
+        var indexData = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(simplex.resolve("player-homes-index.yml").toFile());
+        assert firstHomes.getString("homes.depot.owner-name").equals("Veteran");
+        assert secondHomes.getString("homes.town.owner-uuid").equals(b.id().toString());
+        assert secondHomes.getStringList("meta.favorites").equals(List.of("town"));
+        assert secondHomes.getStringList("meta.order").equals(List.of("town"));
+        assert indexData.getInt("players." + a.id() + ".home-count") == 1;
+        assert indexData.getInt("players." + b.id() + ".home-count") == 2;
+        assert Files.readString(legacy).contains(b.id().toString()) && !Files.readString(legacy).contains(a.id().toString());
         assert Files.readString(group.resolve("Veteran.json")).contains("new_group");
         assert !Files.exists(saves.resolve(a.id() + ".dat_old")) && Files.exists(saves.resolve(b.id() + ".dat_old"));
         assert service.pending().isEmpty();
@@ -85,6 +107,8 @@ public final class AccountTransferHarness {
         assert Arrays.equals(originalB, Files.readAllBytes(current));
         assert Files.exists(stats.resolve(a.id() + ".json")) && !Files.exists(stats.resolve(b.id() + ".json"));
         assert Files.readString(homeA).contains("mine:") && Files.readString(homeB).contains("base:");
+        assert Files.readString(indexedA.resolve("homes.yml")).contains("town:");
+        assert Files.readString(legacy).contains(a.id().toString());
         assert service.pending().isEmpty();
     }
 

@@ -42,7 +42,7 @@ final class AccountTransfer {
     }
     record Selection(UUID old, UUID current, Options options) {}
     record Context(AccountTransferFiles.Account old, AccountTransferFiles.Account current,
-                   List<File> worlds, List<Path> homes, Path multiverse, Plugin luckPerms, Long oldPoints, Long newPoints) {}
+                   List<File> worlds, List<Path> homes, Path simplexHomes, Path multiverse, Plugin luckPerms, Long oldPoints, Long newPoints) {}
     record Draft(Selection selection, Context context, AccountTransferFiles.Plan plan,
                  AccountTransferLuckPerms.Pair rights, String revision) {}
 
@@ -77,11 +77,17 @@ final class AccountTransfer {
     private Map<String,Object> capabilities() {
         return appMap("points", plugin.pointsEconomy != null,
             "luckPerms", enabled("LuckPerms") != null,
-            "homes", !homeFolders().isEmpty(),
+            "homes", !homeFolders().isEmpty() || simplexHomesFolder() != null,
             "multiverse", multiverseFolder() != null,
             "homesDetected", present("SimplexHomes", "Essentials"),
             "multiverseDetected", present("Multiverse-Inventories") || Files.isDirectory(root.resolve("plugins/Multiverse-Inventories")),
             "confirmation", CONFIRM, "ready", !recoveryUnavailable);
+    }
+
+    private Path simplexHomesFolder() {
+        Path folder = root.resolve("plugins/SimplexHomes");
+        return enabled("SimplexHomes") == null && Files.isRegularFile(folder.resolve("player-homes-index.yml"))
+            && Files.isDirectory(folder.resolve("player-homes")) ? folder : null;
     }
 
     private Plugin enabled(String name) {
@@ -138,20 +144,21 @@ final class AccountTransfer {
             throw new AppApiManager.ApiError(409, "Beide Accounts müssen ausgeloggt sein.");
         Options options = selected.options;
         var homeFolders = options.homes ? homeFolders() : List.<Path>of();
+        Path simplexHomes = options.homes ? simplexHomesFolder() : null;
         Path multiverse = options.multiverse ? multiverseFolder() : null;
         Plugin rights = options.luckPerms ? enabled("LuckPerms") : null;
-        if ((options.homes && homeFolders.isEmpty()) || (options.multiverse && multiverse == null)
+        if ((options.homes && homeFolders.isEmpty() && simplexHomes == null) || (options.multiverse && multiverse == null)
             || (options.luckPerms && rights == null) || (options.points && plugin.pointsEconomy == null))
             throw new AppApiManager.ApiError(409, "Eine ausgewählte Integration ist gerade nicht verfügbar.");
         Long left = options.points ? plugin.getPointsApi().balance(old) : null;
         Long right = options.points ? plugin.getPointsApi().balance(current) : null;
         return new Context(account(old), account(current), Bukkit.getWorlds().stream().map(World::getWorldFolder).toList(),
-            homeFolders, multiverse, rights, left, right);
+            homeFolders, simplexHomes, multiverse, rights, left, right);
     }
 
     private Draft draft(Selection selection, Context context) throws Exception {
         var permissions = context.luckPerms == null ? null : AccountTransferLuckPerms.load(context.luckPerms, selection.old, selection.current);
-        var plan = files.plan(context.worlds, context.old, context.current, context.homes, context.multiverse);
+        var plan = files.plan(context.worlds, context.old, context.current, context.homes, context.simplexHomes, context.multiverse);
         String revision = AccountTransferFiles.hash((selection.toString() + "\n" + plan.revision()
             + "\n" + context.oldPoints + "\n" + context.newPoints
             + "\n" + (permissions == null ? "-" : permissions.revision())).getBytes(StandardCharsets.UTF_8));
@@ -194,7 +201,8 @@ final class AccountTransfer {
                 authority.run();
                 Context latest = context(selection, true);
                 if (!Objects.equals(latest.oldPoints, context.oldPoints) || !Objects.equals(latest.newPoints, context.newPoints)
-                    || !latest.homes.equals(context.homes) || !Objects.equals(latest.multiverse, context.multiverse)
+                    || !latest.homes.equals(context.homes) || !Objects.equals(latest.simplexHomes, context.simplexHomes)
+                    || !Objects.equals(latest.multiverse, context.multiverse)
                     || latest.luckPerms != context.luckPerms) throw changed();
                 files.commit(directory, actual.plan);
                 return null;

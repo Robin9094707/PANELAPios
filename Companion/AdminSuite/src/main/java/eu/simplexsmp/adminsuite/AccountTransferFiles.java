@@ -34,7 +34,7 @@ final class AccountTransferFiles {
         this.history = history.toAbsolutePath().normalize();
     }
 
-    Plan plan(Collection<File> worlds, Account old, Account current, List<Path> homeFolders, Path multiverse) throws Exception {
+    Plan plan(Collection<File> worlds, Account old, Account current, List<Path> homeFolders, Path simplexHomes, Path multiverse) throws Exception {
         Path server = root.toRealPath();
         var source = PlayerNbtLocator.find(server, worlds, old.id);
         var target = PlayerNbtLocator.find(server, worlds, current.id);
@@ -98,6 +98,7 @@ final class AccountTransferFiles {
                 b, right, newYaml.saveToString().getBytes(StandardCharsets.UTF_8));
             checkSize(changes);
         }
+        if (simplexHomes != null) swapSimplexHomes(server, simplexHomes, old, current, changes, rows);
         if (multiverse != null) {
             if (!safeName(old.name) || !safeName(current.name))
                 throw new IllegalArgumentException("Multiverse unterstützt für diesen Transfer nur sichere Spielerkontonamen.");
@@ -147,6 +148,80 @@ final class AccountTransferFiles {
         }
         return values;
     }
+
+    private static void swapSimplexHomes(Path root, Path folder, Account old, Account current,
+                                        List<Change> changes, List<Map<String,Object>> rows) throws Exception {
+        Path indexPath = folder.resolve("player-homes-index.yml");
+        byte[] indexBytes = read(root, indexPath);
+        var index = yaml(indexBytes);
+        Path oldPath = simplexHomesPath(root, folder, index, old);
+        Path newPath = simplexHomesPath(root, folder, index, current);
+        byte[] a = read(root, oldPath), b = read(root, newPath);
+        var left = yaml(a);
+        var right = yaml(b);
+        var oldHomes = homesFor(left.getConfigurationSection("homes"), current);
+        var newHomes = homesFor(right.getConfigurationSection("homes"), old);
+        var oldFavorites = left.getStringList("meta.favorites");
+        var oldOrder = left.getStringList("meta.order");
+        left.set("homes", newHomes);
+        left.set("meta.favorites", right.getStringList("meta.favorites"));
+        left.set("meta.order", right.getStringList("meta.order"));
+        right.set("homes", oldHomes);
+        right.set("meta.favorites", oldFavorites);
+        right.set("meta.order", oldOrder);
+
+        Path legacyPath = folder.resolve("homes.yml");
+        byte[] legacyBytes = read(root, legacyPath);
+        var legacy = yaml(legacyBytes);
+        var oldLegacy = homesFor(legacy.getConfigurationSection(old.id.toString()), current);
+        var newLegacy = homesFor(legacy.getConfigurationSection(current.id.toString()), old);
+        int oldCount = count(oldHomes) + count(oldLegacy), newCount = count(newHomes) + count(newLegacy);
+        rows.add(SimplexAdminSuite.appMap("area", "SimplexHomes", "path", root.relativize(folder).toString(),
+            "old", oldCount + " Homes", "new", newCount + " Homes"));
+        if (oldCount == 0 && newCount == 0) return;
+        if (oldHomes != null || newHomes != null) {
+            add(changes, oldPath, a, yamlBytes(left), newPath, b, yamlBytes(right));
+        }
+        if (oldLegacy != null || newLegacy != null) {
+            legacy.set(old.id.toString(), newLegacy);
+            legacy.set(current.id.toString(), oldLegacy);
+            changes.add(new Change(legacyPath, legacyBytes, yamlBytes(legacy)));
+        }
+        // The plugin uses this index as a cache for home counts. The account and name indexes stay tied to their UUID.
+        index.set("players." + old.id + ".home-count", newCount);
+        index.set("players." + current.id + ".home-count", oldCount);
+        changes.add(new Change(indexPath, indexBytes, yamlBytes(index)));
+        checkSize(changes);
+    }
+
+    private static Path simplexHomesPath(Path root, Path folder, YamlConfiguration index, Account account) throws Exception {
+        String idPath = "players." + account.id;
+        String name = index.getString(idPath + ".folder", "");
+        if (!account.id.toString().equals(index.getString(idPath + ".uuid")) || name.isBlank()
+            || name.equals(".") || name.equals("..") || name.contains("/") || name.contains("\\"))
+            throw new IllegalArgumentException("SimplexHomes-Index kennt den Spielerordner von " + account.name + " nicht.");
+        Path path = checked(root, folder.resolve("player-homes").resolve(name));
+        var profile = yaml(read(root, path.resolve("profile.yml")));
+        if (!account.id.toString().equals(profile.getString("uuid")))
+            throw new IllegalArgumentException("SimplexHomes-Profil und UUID stimmen für " + account.name + " nicht überein.");
+        return path.resolve("homes.yml");
+    }
+
+    private static Map<String,Object> homesFor(org.bukkit.configuration.ConfigurationSection homes, Account target) {
+        var values = homeMap(homes);
+        if (values != null) values.replaceAll((name, value) -> {
+            if (!(value instanceof Map<?,?> fields)) throw new IllegalArgumentException("Unsupported SimplexHomes entry: " + name);
+            Map<Object,Object> copy = new LinkedHashMap<>(fields);
+            if (copy.containsKey("owner-uuid")) copy.put("owner-uuid", target.id.toString());
+            if (copy.containsKey("owner-name")) copy.put("owner-name", target.name);
+            return copy;
+        });
+        return values;
+    }
+
+    private static int count(Map<String,Object> map) { return map == null ? 0 : map.size(); }
+
+    private static byte[] yamlBytes(YamlConfiguration yaml) { return yaml.saveToString().getBytes(StandardCharsets.UTF_8); }
 
     private static void add(List<Change> changes, Path a, byte[] left, byte[] nextLeft, Path b, byte[] right, byte[] nextRight) {
         if (a.equals(b)) throw new IllegalArgumentException("Beide Accounts würden dieselbe Speicherdatei nutzen.");
