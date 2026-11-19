@@ -18,6 +18,7 @@
     { group: "Community", items: [
       { id: "players", label: "Spieler", icon: "users", perm: "data.players" },
       { id: "community-tools", label: "Community-Verwaltung", icon: "box", perm: "data.community-tools", feature: "community-tools-v1", keywords: "Simplex Points Punkte Shop Angebote Quick Delivery Zustellung Discord Einladung Spieltag Scoreboard" },
+      { id: "account-transfer", label: "Account-Transfer", icon: "users", full: true, owner: true, mainAdmin: true, feature: "account-transfer-v1", keywords: "Spielerdaten Profil Inventar tauschen Homes umziehen LuckPerms" },
       { id: "tickets", label: "Tickets", icon: "ticket", perm: "data.tickets", badge: "tickets" },
       { id: "staff-chat", label: "Staff-Chat", icon: "team", perm: "data.staff-chat", feature: "staff-chat-v1" },
       { id: "chat", label: "Serverchat", icon: "chat", perm: "data.chat" },
@@ -75,6 +76,7 @@
   function denied(item) {
     if (!item) return null;
     if (item.feature && !S.has(item.feature)) return "Benötigt eine neuere Admin Suite";
+    if (item.mainAdmin && !(S.health && S.health.account && (S.health.account.owner || S.health.account.kind === "key"))) return "Nur für den Hauptadmin";
     if (item.owner && !(S.account && S.account.manager)) return "Nur für den Hauptadmin";
     if (item.full && !S.full()) return "Benötigt Vollzugriff";
     if (item.perm && !S.can(item.perm)) return "Keine Berechtigung: " + item.perm;

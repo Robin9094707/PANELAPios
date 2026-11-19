@@ -52,6 +52,13 @@ public final class AppApiIntegrationHarness {
             System.setProperty("jdk.internal.httpclient.disableHostnameVerification","true");SSLContext ssl=SSLContext.getInstance("TLS");ssl.init(null,new TrustManager[]{new X509TrustManager(){public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}public void checkClientTrusted(X509Certificate[] c,String a){}public void checkServerTrusted(X509Certificate[] c,String a)throws java.security.cert.CertificateException{try{String actual=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(c[0].getEncoded()));if(!actual.equals(pin))throw new java.security.cert.CertificateException("Wrong certificate");}catch(GeneralSecurityException e){throw new java.security.cert.CertificateException(e);}}}},new SecureRandom());
             client=HttpClient.newBuilder().sslContext(ssl).connectTimeout(java.time.Duration.ofSeconds(5)).build();base=URI.create("https://127.0.0.1:"+port);
             var read=api.security.issue("Read","read");var full=api.security.issue("Full","full");var manage=api.security.issue("Manage","manage");
+            check(call("/v1/account-transfer", null, null).statusCode() == 401, "account transfer requires a session");
+            check(call("/v1/account-transfer", manage.token(), null).statusCode() == 403, "management key cannot transfer player accounts");
+            check(call("/v1/account-transfer", full.token(), null).statusCode() == 200, "full key can open account transfer");
+            check(call("/v1/account-transfer/execute", full.token(), json(Map.of("confirm", "NEIN"))).statusCode() == 400,
+                "transfer requires the typed confirmation");
+            check(call("/v1/account-transfer/preview", full.token(), json(Map.of("old", worldId.toString(), "new", worldId.toString()))).statusCode() == 400,
+                "same account cannot be selected on both sides");
             communityTools(plugin, dir, read, manage, full);
             assistant(plugin,api,full,worldTime);
             try (var bot = new PowerBot(plugin)) {
@@ -129,6 +136,7 @@ public final class AppApiIntegrationHarness {
             check(call("/v1/data/access",session,null).statusCode()==403,"limited user cannot enumerate app accounts");
             check(call("/v1/data/settings",session,null).statusCode()==403,"limited user cannot read settings");
             check(call("/v1/data/community-tools",session,null).statusCode()==403,"tickets-only user cannot read community data");
+            check(call("/v1/account-transfer",session,null).statusCode()==403,"non-owner app account cannot open account transfer");
             check(!call("/v1/schema",session,null).body().contains("community.points"),"tickets-only user has no community forms");
             check(call("/v1/menu",session,null).statusCode()==403,"limited user cannot bypass via remote menu");
             check(call("/v1/prepare",session,action).statusCode()==403,"limited user cannot prepare remote menu action");

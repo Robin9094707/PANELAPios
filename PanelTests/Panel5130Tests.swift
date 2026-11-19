@@ -69,6 +69,14 @@ import XCTest
         XCTAssertNotNil(SuiteShortcutTool(rawValue: tool.rawValue))
         XCTAssertTrue(tool.matches("Punkte Shop"))
         XCTAssertEqual(tool.permission, "data.community-tools")
-        XCTAssertEqual(WhatsNew.releases.first?.version, "5.14.0")
+        XCTAssertEqual(WhatsNew.release(for: "5.14.0")?.title, "Community-Verwaltung")
+    }
+
+    func testAccountTransferNavigation() {
+        let tool = SuiteTool.accountTransfer
+        XCTAssertEqual(SuiteLaunchRequest.parse(SuiteLaunchRequest(tool: tool).url)?.tool, tool)
+        XCTAssertTrue(tool.matches("Inventar tauschen"))
+        XCTAssertEqual(tool.feature, "account-transfer-v1")
+        XCTAssertEqual(WhatsNew.releases.first?.version, "5.15.0")
     }
 }

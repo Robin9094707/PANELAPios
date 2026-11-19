@@ -18,6 +18,11 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.15.0", title: "Account-Transfer", summary: "Zwei Spielerkonten auswählen, den Bestand vergleichen und Spielstände in beide Richtungen tauschen.", items: [
+            .init(symbol: "arrow.right.arrow.left", title: "Spielstand tauschen", detail: "Das bisherige Inventar des neuen Accounts landet auf dem alten Account. Beide Accounts müssen offline sein."),
+            .init(symbol: "shield", title: "Punkte und Rechte", detail: "Simplex Points und LuckPerms lassen sich beim Tausch zusätzlich auswählen."),
+            .init(symbol: "doc.text.magnifyingglass", title: "Vorschau und Sicherung", detail: "Vor dem Schreiben wird der geladene Stand geprüft. Die Originaldateien werden auf dem Server gesichert.")
+        ]),
         WhatsNewRelease(version: "5.14.0", title: "Community-Verwaltung", summary: "Punkte, Shop, Quick Delivery, Discord-Einladung und Spieltage direkt in App und Web verwalten.", items: [
             .init(symbol: "star.fill", title: "Kompakter Admin-Tab", detail: "Favoriten und der Einstieg zu allen Werkzeugen stehen oben. Beim Suchen siehst du direkt die Treffer."),
             .init(symbol: "storefront.fill", title: "Punkte und Shop", detail: "Punktestand ansehen, mit Grund buchen und Preise, Bestand oder Status vorhandener Angebote ändern."),

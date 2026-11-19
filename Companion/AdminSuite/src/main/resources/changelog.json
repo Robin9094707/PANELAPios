@@ -1,5 +1,29 @@
 [
   {
+    "version": "10.22.0",
+    "app": "5.15.0",
+    "title": "Account-Transfer",
+    "items": [
+      {
+        "title": "Tausch mit Vorschau",
+        "icon": "users",
+        "text": "Zwei Offline-Spieler auswählen und Inventar, Endertruhe, Fortschritte und weiteren Spielstand in beide Richtungen tauschen."
+      },
+      {
+        "title": "Punkte und Rechte",
+        "icon": "shield",
+        "text": "Simplex Points und LuckPerms optional einbeziehen."
+      },
+      {
+        "title": "Sicherung",
+        "icon": "box",
+        "text": "Der Server sichert die Originale und prüft die Vorschau vor dem Tausch erneut."
+      }
+    ],
+    "date": "2026-11-19",
+    "intro": "Der geführte Account-Transfer ist in der App, im Web und im Ingame-Menü verfügbar."
+  },
+  {
     "version": "10.21.0",
     "app": "5.14.0",
     "title": "Community-Verwaltung",
