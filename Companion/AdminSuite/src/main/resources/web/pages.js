@@ -185,6 +185,8 @@
     if (S.has("ban-center-v1") && S.can("data.ban-center") && S.banStatusCard) cards.push(S.banStatusCard(p.id));
     // 10.0.0: quick access to rank (LuckPerms) and access locks of this player.
     var quick = h("div", { class: "row wrap" },
+      S.has("community-tools-v1") && S.can("data.community-tools")
+        ? h("a", { class: "btn sm", href: "#/community-tools?player=" + encodeURIComponent(p.id), text: "Punktekonto & Quick Delivery" }) : null,
       S.has("powerbot-v1") && S.can("data.snapshots") && S.can("data.snapshot-content") ? h("a", { class: "btn sm", href: "#/snapshots/" + p.id, text: "Inventar-Snapshots" }) : null,
       (p.online || S.has("powerbot-v1")) && S.has("visual-inventory-v1") && S.can("data.inventory") ? h("a", { class: "btn sm primary", href: "#/inventory/" + p.id + (p.online ? "" : "?offline=true"), text: p.online ? "Live-Inventar" : "Offline-Inventar" }) : null,
       S.has("visual-inventory-v1") && S.can("data.devices") ? h("a", { class: "btn sm", href: "#/player-devices/" + p.id, text: "Geräte" }) : null,

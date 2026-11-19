@@ -66,6 +66,25 @@ final class EconomyStore implements AutoCloseable {
             db.commit();return true;
         }catch(SQLException|RuntimeException e){db.rollback();throw e;}finally{db.setAutoCommit(true);}
     }
+    synchronized boolean swapBalances(UUID left, UUID right, long expectedLeft, long expectedRight, String reason) throws SQLException {
+        if (left.equals(right)) throw new IllegalArgumentException("Zwei Punktekonten erforderlich.");
+        db.setAutoCommit(false);
+        try {
+            if (balance(left) != expectedLeft || balance(right) != expectedRight) { db.rollback(); return false; }
+            exec("INSERT OR IGNORE INTO accounts VALUES(?,0)", left);
+            exec("INSERT OR IGNORE INTO accounts VALUES(?,0)", right);
+            exec("UPDATE accounts SET balance=? WHERE uuid=?", expectedRight, left);
+            exec("UPDATE accounts SET balance=? WHERE uuid=?", expectedLeft, right);
+            if (expectedLeft != expectedRight) {
+                long now = System.currentTimeMillis();
+                exec("INSERT INTO ledger(uuid,delta,reason,created) VALUES(?,?,?,?)", left, expectedRight - expectedLeft, reason, now);
+                exec("INSERT INTO ledger(uuid,delta,reason,created) VALUES(?,?,?,?)", right, expectedLeft - expectedRight, reason, now);
+            }
+            db.commit();
+            return true;
+        } catch (SQLException | RuntimeException error) { db.rollback(); throw error; }
+        finally { db.setAutoCommit(true); }
+    }
     private static Offer offer(ResultSet r)throws SQLException {return new Offer(r.getString("id"),r.getString("de"),r.getString("en"),r.getBytes("item"),r.getLong("price"),r.getLong("stock"),r.getLong("lim"),r.getLong("expires"),r.getString("icon"),r.getLong("revision"),r.getBoolean("enabled"),r.getBytes("currency"));}
     synchronized List<Offer> offers()throws SQLException {List<Offer> out=new ArrayList<>();try(Statement s=db.createStatement();ResultSet r=s.executeQuery("SELECT * FROM offers ORDER BY id")){while(r.next())out.add(offer(r));}return out;}
     synchronized Offer offer(String id)throws SQLException {try(PreparedStatement s=db.prepareStatement("SELECT * FROM offers WHERE id=?")){bind(s,id);try(ResultSet r=s.executeQuery()){return r.next()?offer(r):null;}}}
@@ -74,6 +93,13 @@ final class EconomyStore implements AutoCloseable {
         exec("INSERT INTO offers(id,de,en,item,price,stock,lim,expires,icon,revision,enabled,currency) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET de=excluded.de,en=excluded.en,item=excluded.item,price=excluded.price,stock=excluded.stock,lim=excluded.lim,expires=excluded.expires,icon=excluded.icon,revision=offers.revision+1,enabled=excluded.enabled,currency=excluded.currency",o.id,o.de,o.en,o.item,o.price,o.stock,o.limit,o.expires,o.icon,o.revision,o.enabled?1:0,o.currency==null?new byte[0]:o.currency);
     }
     synchronized void remove(String id)throws SQLException {exec("UPDATE offers SET enabled=0,revision=revision+1 WHERE id=?",id);}
+    synchronized boolean updateOfferDetails(Offer current, String de, String en, long price, long stock, boolean enabled) throws SQLException {
+        try (PreparedStatement statement = db.prepareStatement(
+                "UPDATE offers SET de=?,en=?,price=?,stock=?,enabled=?,revision=revision+1 WHERE id=? AND revision=? AND stock=?")) {
+            bind(statement, de, en, price, stock, enabled ? 1 : 0, current.id, current.revision, current.stock);
+            return statement.executeUpdate() == 1;
+        }
+    }
     synchronized long bought(UUID who,String id)throws SQLException {try(PreparedStatement s=db.prepareStatement("SELECT COUNT(*) FROM receipts WHERE uuid=? AND offer=? AND state NOT IN ('REFUNDED','REFUND_PENDING','REFUNDING')")){bind(s,who,id);try(ResultSet r=s.executeQuery()){r.next();return r.getLong(1);}}}
     synchronized Receipt purchase(UUID who,String id,long expectedRevision,String request)throws SQLException {
         return purchase(who,id,expectedRevision,request,false);
@@ -120,6 +146,16 @@ final class EconomyStore implements AutoCloseable {
     }
     private static Note note(ResultSet r)throws SQLException {return new Note(r.getString("id"),UUID.fromString(r.getString("uuid")),r.getString("actor"),r.getString("title_de"),r.getString("title_en"),r.getString("de"),r.getString("en"),r.getInt("priority"),r.getBoolean("menu"),r.getLong("created"),r.getLong("sent"),r.getLong("ack"),r.getString("language"));}
     synchronized List<Note> notes(UUID id,boolean unread)throws SQLException {List<Note> out=new ArrayList<>();try(PreparedStatement s=db.prepareStatement("SELECT * FROM notes WHERE uuid=?"+(unread?" AND ack=0":"")+" ORDER BY priority DESC,created")){bind(s,id);try(ResultSet r=s.executeQuery()){while(r.next())out.add(note(r));}}return out;}
+    synchronized List<Note> recentNotes(UUID owner, int limit) throws SQLException {
+        List<Note> out = new ArrayList<>();
+        try (PreparedStatement statement = db.prepareStatement("SELECT * FROM notes WHERE uuid=? ORDER BY created DESC,id LIMIT ?")) {
+            bind(statement, owner, limit);
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) out.add(note(rows));
+            }
+        }
+        return out;
+    }
     synchronized void sent(String id,UUID owner)throws SQLException {exec("UPDATE notes SET sent=CASE WHEN sent=0 THEN ? ELSE sent END WHERE id=? AND uuid=?",System.currentTimeMillis(),id,owner);}
     synchronized boolean ack(String id,UUID owner)throws SQLException {try(PreparedStatement s=db.prepareStatement("UPDATE notes SET ack=? WHERE id=? AND uuid=? AND sent>0 AND ack=0")){bind(s,System.currentTimeMillis(),id,owner);return s.executeUpdate()==1;}}
     synchronized boolean deleteNote(String id)throws SQLException {try(PreparedStatement s=db.prepareStatement("DELETE FROM notes WHERE id=? AND ack=0")){bind(s,id);return s.executeUpdate()==1;}}

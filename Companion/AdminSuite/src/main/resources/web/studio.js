@@ -342,7 +342,7 @@
   function palette() {
     if (document.querySelector(".palette-bg")) return;
     var items = [];
-    (S.nav || []).forEach(function (g) { g.items.forEach(function (it) { if (!S.denied || !S.denied(it.id)) items.push({ label: it.label, group: g.group, icon: it.icon, href: "#/" + it.id }); }); });
+    (S.nav || []).forEach(function (g) { g.items.forEach(function (it) { if (!S.denied || !S.denied(it.id)) items.push({ label: it.label, group: g.group, icon: it.icon, href: "#/" + it.id, keywords: it.keywords || "" }); }); });
     var input = S.input({ placeholder: "Seite oder Spieler suchen …", class: "input palette-input" }), list = h("div", { class: "palette-list" }), active = 0, results = [], t;
     var bg = h("div", { class: "palette-bg", onMousedown: function (e) { if (e.target === bg) close(); } }, h("div", { class: "palette" }, h("div", { class: "row" }, icon("search"), input, h("kbd", { text: "Esc" })), list));
     function close() { bg.remove(); document.removeEventListener("keydown", keys, true); }
@@ -354,7 +354,7 @@
     }
     function search() {
       var q = input.value.trim().toLowerCase();
-      results = items.filter(function (it) { return !q || (S.workspaceMatches ? S.workspaceMatches(q, it.label + " " + it.group) : (it.label + " " + it.group).toLowerCase().indexOf(q) >= 0); }).slice(0, 8);
+      results = items.filter(function (it) { var text = it.label + " " + it.group + " " + it.keywords; return !q || (S.workspaceMatches ? S.workspaceMatches(q, text) : text.toLowerCase().indexOf(q) >= 0); }).slice(0, 8);
       if (q) {
         results.push({ label: "Werkzeuge & Funktionen: " + q, group: "Überall suchen", icon: "grid", href: "#/tools?q=" + encodeURIComponent(q) });
         if (S.has("ad-hub-v1") && S.can("data.discord-ads")) results.push({ label: "Werbung durchsuchen: " + q, group: "Werbung", icon: "send", href: "#/ad-hub?q=" + encodeURIComponent(q) });

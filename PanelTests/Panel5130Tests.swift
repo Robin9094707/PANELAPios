@@ -59,8 +59,24 @@ import XCTest
     }
 
     func testReleaseNotes() {
-        XCTAssertEqual(WhatsNew.releases.first?.version, "5.13.0")
         XCTAssertEqual(WhatsNew.release(for: "5.13.0")?.title, "Bann-Zentrale")
         XCTAssertTrue(WhatsNew.shouldPresent(current: "5.13.0", lastSeen: "5.12.0", existingUser: true))
+    }
+
+    func testCommunityToolIsDiscoverable() {
+        let tool = SuiteTool.communityTools
+        XCTAssertEqual(SuiteLaunchRequest.parse(SuiteLaunchRequest(tool: tool).url)?.tool, tool)
+        XCTAssertNotNil(SuiteShortcutTool(rawValue: tool.rawValue))
+        XCTAssertTrue(tool.matches("Punkte Shop"))
+        XCTAssertEqual(tool.permission, "data.community-tools")
+        XCTAssertEqual(WhatsNew.release(for: "5.14.0")?.title, "Community-Verwaltung")
+    }
+
+    func testAccountTransferNavigation() {
+        let tool = SuiteTool.accountTransfer
+        XCTAssertEqual(SuiteLaunchRequest.parse(SuiteLaunchRequest(tool: tool).url)?.tool, tool)
+        XCTAssertTrue(tool.matches("Inventar tauschen"))
+        XCTAssertEqual(tool.feature, "account-transfer-v1")
+        XCTAssertEqual(WhatsNew.releases.first?.version, "5.15.0")
     }
 }

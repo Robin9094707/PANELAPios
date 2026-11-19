@@ -228,7 +228,9 @@ struct SuiteActionsView: View {
     let actions: [SuiteAction]
     var title: String
     @State private var search = ""
-    var filtered: [SuiteAction] { actions.filter { search.isEmpty || ($0.title + $0.id + $0.group).localizedCaseInsensitiveContains(search) } }
+    var filtered: [SuiteAction] {
+        actions.filter { !$0.data["dedicated"].bool && SuiteSearch.matches(search, in: $0.title + " " + $0.id + " " + $0.group) }
+    }
     var body: some View {
         List {
             ForEach(Array(Set(filtered.map(\.group))).sorted(), id: \.self) { group in
@@ -246,6 +248,7 @@ struct SuiteActionView: View {
     let suite: SuiteAPI
     let action: SuiteAction
     var preset: [String: JSON] = [:]
+    var onSaved: (() async -> Void)? = nil
     @State private var values: [String: JSON] = [:]
     @State private var plan: JSON?
     @State private var result: JSON?
@@ -258,14 +261,14 @@ struct SuiteActionView: View {
     var body: some View {
         Form {
             Section { Text(action.title).font(.title3.bold()).fixedSize(horizontal: false, vertical: true); Text("Änderungen werden zuerst geprüft und erst nach deiner Bestätigung einmalig ausgeführt.").font(.footnote).foregroundStyle(.secondary) }
-            ForEach(action.fields, id: \.["name"].string) { field in
+            ForEach(action.fields.filter { !$0["hidden"].bool }, id: \.["name"].string) { field in
                 Section {
                     input(field)
                     if field["autocomplete"].bool { Button("Vorschläge laden", systemImage: "magnifyingglass") { choiceField = field; choiceQuery = values[field["name"].string]?.string ?? "" } }
                 } header: { Text(field["description"].string + (field["required"].bool ? " *" : "")).fixedSize(horizontal: false, vertical: true) }
             }
             Section {
-                Button("Nur anzeigen", systemImage: "eye") { Task { await read() } }.disabled(busy)
+                if !action.data["dedicated"].bool { Button("Nur anzeigen", systemImage: "eye") { Task { await read() } }.disabled(busy) }
                 Button("Aktion prüfen", systemImage: "checkmark.shield") { Task { await prepare() } }.disabled(busy || !canManage)
                 if !canManage { Label("Keine Berechtigung mit diesem Schlüssel", systemImage: "lock.fill").font(.caption).foregroundStyle(.secondary) }
                 if busy { ProgressView("Suite verarbeitet …") }
@@ -294,7 +297,20 @@ struct SuiteActionView: View {
     func read() async { busy = true; defer { busy = false }; do { result = try await suite.view(action.id, values: payload) } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
     func prepare() async { busy = true; defer { busy = false }; do { plan = try await suite.prepare(action.id, values: payload) } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } }
     func confirmation(_ prepared: JSON) -> some View {
-        NavigationStack { List { Section { Text(action.title).font(.headline); SuiteFormattedText(text: prepared["summary"].string); Text("Bestätigung ist 60 Sekunden gültig. Bei Zeitüberschreitung zuerst den Serverzustand prüfen.").font(.footnote).foregroundStyle(.secondary) }; Section { Button("Jetzt ausführen", role: .destructive) { Task { busy = true; do { result = try await suite.execute(prepared["ticket"].string); if result?["ok"].bool == true { Feedback.success() } } catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } }; busy = false; plan = nil } }.disabled(busy); if busy { ProgressView("Wird ausgeführt …") } } }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Aktion bestätigen").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { plan = nil }.disabled(busy) } } }.interactiveDismissDisabled(busy)
+        NavigationStack { List { Section { Text(action.title).font(.headline); SuiteFormattedText(text: prepared["summary"].string); Text("Bestätigung ist 60 Sekunden gültig. Bei Zeitüberschreitung zuerst den Serverzustand prüfen.").font(.footnote).foregroundStyle(.secondary) }; Section { Button("Jetzt ausführen", role: .destructive) { Task { await execute(prepared) } }.disabled(busy); if busy { ProgressView("Wird ausgeführt …") } } }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Aktion bestätigen").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { plan = nil }.disabled(busy) } } }.interactiveDismissDisabled(busy)
+    }
+    private func execute(_ prepared: JSON) async {
+        busy = true
+        defer { busy = false; plan = nil }
+        do {
+            result = try await suite.execute(prepared["ticket"].string)
+            if result?["ok"].bool == true {
+                Feedback.success()
+                await onSaved?()
+            }
+        } catch {
+            if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription }
+        }
     }
     var suggestionSheet: some View {
         NavigationStack { List { ForEach(choices, id: \.["value"].string) { item in Button(item["name"].string) { if let field = choiceField { values[field["name"].string] = item["value"] }; choiceField = nil } } }.labelStyle(SuiteWrappingLabelStyle()).panelScreen().navigationTitle("Vorschläge").searchable(text: $choiceQuery).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Schließen") { choiceField = nil } } }.task(id: choiceQuery) { let revision = UUID(); choiceGeneration = revision; do { try await Task.sleep(for: .milliseconds(250)); var q = payload.mapValues(\.string); q["path"] = action.id; q["field"] = choiceField?["name"].string ?? ""; q["q"] = choiceQuery; let response = try await suite.request("choices", query: q); if choiceGeneration == revision { choices = response.array } } catch is CancellationError {} catch { if !RequestFailure.isCancellation(error) && !Task.isCancelled { self.error = error.localizedDescription } } } }

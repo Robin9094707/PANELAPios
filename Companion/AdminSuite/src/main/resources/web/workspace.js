@@ -71,14 +71,14 @@
     function draw() {
       S.clear(body);
       (S.nav || []).forEach(function (group) {
-        var items = group.items.filter(function (item) { return item.id !== "tools" && matches(q, item.label + " " + group.group + " " + item.id + (item.id === "ad-hub" ? " Werbung werben kopieren" : "")); });
+        var items = group.items.filter(function (item) { return item.id !== "tools" && !S.denied(item.id) && matches(q, item.label + " " + group.group + " " + item.id + " " + (item.keywords || "") + (item.id === "ad-hub" ? " Werbung werben kopieren" : "")); });
         if (!items.length) return;
         body.appendChild(S.card(group.group, {}, h("div", { class: "grid two" }, items.map(function (item) {
-          var denied = S.denied(item.id); return h("a", { class: "item link", href: "#/" + item.id, title: denied || item.label }, S.icon(item.icon), h("span", { text: item.label }), denied ? S.icon("lock") : null);
+          return h("a", { class: "item link", href: "#/" + item.id }, S.icon(item.icon), h("span", { text: item.label }));
         }))));
       });
       if (q) {
-        var actions = (catalog.actions || []).filter(function (a) { return a.allowed !== false && matches(q, a.description + " " + a.name + " " + a.group + " " + a.id); });
+        var actions = (catalog.actions || []).filter(function (a) { return !a.dedicated && a.allowed !== false && matches(q, a.description + " " + a.name + " " + a.group + " " + a.id); });
         if (actions.length) body.appendChild(S.card("Weitere Funktionen", {}, h("div", { class: "list" }, actions.map(function (a) { return h("a", { class: "item link", href: "#/function/" + encodeURIComponent(a.id), text: a.description || a.name }); }))));
       }
       if (!body.children.length) body.appendChild(S.empty("search", "Keine Treffer"));
@@ -93,7 +93,7 @@
     events: "events", statistics: "statistics", chat: "chat", worldTrim: "world-trim",
     discordStatus: "discord-status", scoreboard: "scoreboard", luckperms: "luckperms",
     lands: "lands", locks: "access-locks", commands: "commands", appSettings: "settings",
-    functions: "functions", menu: "menu", bans: "moderation"
+    functions: "functions", menu: "menu", bans: "moderation", communityTools: "community-tools"
   };
   var initialShortcuts = ["overview", "advertising", "players", "tickets"];
   function shortcutItems() {

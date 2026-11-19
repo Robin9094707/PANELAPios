@@ -16,6 +16,14 @@ final class DiscordInvite {
         return code;
     }
     String code(){return plugin.getConfig().getString("community.discord-invite-code","2gAsymnXfd");}
+    String update(String actor, String input) {
+        String value = parseCode(input);
+        plugin.getConfig().set("community.discord-invite-code", value);
+        plugin.saveConfig();
+        plugin.refreshDiscordInvites();
+        plugin.suiteAudit(actor, "Discord-Link", "Code=" + value);
+        return value;
+    }
     boolean show(CommandSender sender){
         String code;
         try {code=parseCode(code());}catch(IllegalArgumentException e){sender.sendMessage(plugin.publicUiText(sender,"Discord invite is currently unavailable."));return true;}
@@ -35,7 +43,7 @@ final class DiscordInvite {
     boolean set(CommandSender s,String[] args){
         if(!plugin.has(s,"simplexadminsuite.settings") || s instanceof Player p && !plugin.adminSessionUsable(p)){s.sendMessage(s instanceof Player p?plugin.playerText(p,"§cKeine Einstellungsrechte.","§cMissing settings permission."):"Missing settings permission.");return true;}
         if(args.length!=1){s.sendMessage("/setdiscord <Code oder https://discord.gg/Code>");return true;}
-        try{String value=parseCode(args[0]);plugin.getConfig().set("community.discord-invite-code",value);plugin.saveConfig();plugin.refreshDiscordInvites();plugin.suiteAudit(s.getName(),"Discord-Link","Code="+value);s.sendMessage((s instanceof Player p?plugin.playerText(p,"§aDiscord-Link gespeichert: ","§aDiscord invite saved: "):"Discord invite saved: ")+"https://discord.gg/"+value);}catch(IllegalArgumentException e){s.sendMessage("§c"+(s instanceof Player p?plugin.playerText(p,e.getMessage(),"Enter a valid Discord invite code or discord.gg link."):e.getMessage()));}
+        try{String value=update(s.getName(),args[0]);s.sendMessage((s instanceof Player p?plugin.playerText(p,"§aDiscord-Link gespeichert: ","§aDiscord invite saved: "):"Discord invite saved: ")+"https://discord.gg/"+value);}catch(IllegalArgumentException e){s.sendMessage("§c"+(s instanceof Player p?plugin.playerText(p,e.getMessage(),"Enter a valid Discord invite code or discord.gg link."):e.getMessage()));}
         return true;
     }
     void edit(Player p){plugin.adminUpdate.prompt(p,"Discord-Link oder Einladungscode",code(),v->{set(p,new String[]{v});plugin.unifiedMenu.category(p,"Community");});}

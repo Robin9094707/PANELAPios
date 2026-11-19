@@ -1,5 +1,53 @@
 [
   {
+    "version": "10.22.0",
+    "app": "5.15.0",
+    "title": "Account-Transfer",
+    "items": [
+      {
+        "title": "Tausch mit Vorschau",
+        "icon": "users",
+        "text": "Zwei Offline-Spieler auswählen und Inventar, Endertruhe, Fortschritte und weiteren Spielstand in beide Richtungen tauschen."
+      },
+      {
+        "title": "Punkte und Rechte",
+        "icon": "shield",
+        "text": "Simplex Points und LuckPerms optional einbeziehen."
+      },
+      {
+        "title": "Sicherung",
+        "icon": "box",
+        "text": "Der Server sichert die Originale und prüft die Vorschau vor dem Tausch erneut."
+      }
+    ],
+    "date": "2026-11-19",
+    "intro": "Der geführte Account-Transfer ist in der App, im Web und im Ingame-Menü verfügbar."
+  },
+  {
+    "version": "10.21.0",
+    "app": "5.14.0",
+    "title": "Community-Verwaltung",
+    "items": [
+      {
+        "title": "Punkte und Shop",
+        "icon": "box",
+        "text": "Simplex Points mit Buchungsgrund ändern und bestehende Shop-Angebote pflegen."
+      },
+      {
+        "title": "Quick Delivery",
+        "icon": "users",
+        "text": "Zweisprachige Nachrichten vorbereiten und Zustellung nachsehen."
+      },
+      {
+        "title": "Server-Einstellungen",
+        "icon": "settings",
+        "text": "Öffentlichen Discord-Link und Spieltagzähler in App und Web ändern."
+      }
+    ],
+    "date": "2026-11-18",
+    "intro": "Gemeinsame Verwaltung für App und Web mit Vorschau und getrennten Rechten."
+  },
+  {
     "version": "10.20.0",
     "app": "5.13.0",
     "title": "Bann-Zentrale & LiteBans-Ablösung",

@@ -27,6 +27,7 @@ final class AdminUpdateMenu implements Listener {
       String group, String path, String title, String hint, String kind, int min, int max) {}
 
   private final SimplexAdminSuite plugin;
+  final AccountTransfer accountTransfer;
   private final Map<UUID, Consumer<String>> text = new ConcurrentHashMap<>();
   private final Map<UUID, Long> textRevision = new ConcurrentHashMap<>();
   static final List<Setting> SETTINGS =
@@ -382,6 +383,19 @@ final class AdminUpdateMenu implements Listener {
 
   AdminUpdateMenu(SimplexAdminSuite plugin) {
     this.plugin = plugin;
+    this.accountTransfer = new AccountTransfer(plugin);
+  }
+
+  @EventHandler(priority = EventPriority.HIGHEST)
+  public void accountTransferPreLogin(AsyncPlayerPreLoginEvent event) {
+    if (event.getLoginResult() == AsyncPlayerPreLoginEvent.Result.ALLOWED && accountTransfer.held(event.getUniqueId()))
+      event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, "Deine Spielerdaten werden gerade übertragen. Bitte später erneut verbinden.");
+  }
+
+  @EventHandler(priority = EventPriority.HIGHEST)
+  public void accountTransferLogin(PlayerLoginEvent event) {
+    if (event.getResult() == PlayerLoginEvent.Result.ALLOWED && accountTransfer.held(event.getPlayer().getUniqueId()))
+      event.disallow(PlayerLoginEvent.Result.KICK_OTHER, "Deine Spielerdaten werden gerade übertragen. Bitte später erneut verbinden.");
   }
 
   private boolean permitted(Player p) {

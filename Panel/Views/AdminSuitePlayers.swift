@@ -279,6 +279,11 @@ struct SuitePlayerView: View {
             if suite.features.contains("luckperms-v1") && suite.can("data.luckperms") { SuitePlayerRankSection(suite: suite, player: player, name: name) }
             if suite.features.contains("player-connection-v1") && (suite.can("data.diagnostics") || suite.can("data.profile")) { SuitePlayerConnectionSection(suite: suite, player: player) }
             Section("Spielerverwaltung") {
+                if suite.features.contains("community-tools-v1") && suite.can("data.community-tools"), UUID(uuidString: player) != nil {
+                    NavigationLink { SuiteCommunityToolsView(suite: suite, initialPlayer: player) } label: {
+                        Label("Punktekonto & Quick Delivery", systemImage: "storefront.fill")
+                    }
+                }
                 if suite.features.contains("player-timeline-v1") && suite.can("data.profile") {
                     NavigationLink { SuitePlayerTimelineView(suite: suite, player: player, name: name) } label: { Label("Verlauf · Chat, Aktionen, Kämpfe & Items", systemImage: "clock.arrow.circlepath") }.accessibilityIdentifier("player-timeline")
                 }

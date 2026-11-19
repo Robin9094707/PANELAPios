@@ -17,6 +17,8 @@
     ] },
     { group: "Community", items: [
       { id: "players", label: "Spieler", icon: "users", perm: "data.players" },
+      { id: "community-tools", label: "Community-Verwaltung", icon: "box", perm: "data.community-tools", feature: "community-tools-v1", keywords: "Simplex Points Punkte Shop Angebote Quick Delivery Zustellung Discord Einladung Spieltag Scoreboard" },
+      { id: "account-transfer", label: "Account-Transfer", icon: "users", full: true, owner: true, mainAdmin: true, feature: "account-transfer-v1", keywords: "Spielerdaten Profil Inventar tauschen Homes umziehen LuckPerms" },
       { id: "tickets", label: "Tickets", icon: "ticket", perm: "data.tickets", badge: "tickets" },
       { id: "staff-chat", label: "Staff-Chat", icon: "team", perm: "data.staff-chat", feature: "staff-chat-v1" },
       { id: "chat", label: "Serverchat", icon: "chat", perm: "data.chat" },
@@ -74,6 +76,7 @@
   function denied(item) {
     if (!item) return null;
     if (item.feature && !S.has(item.feature)) return "Benötigt eine neuere Admin Suite";
+    if (item.mainAdmin && !(S.health && S.health.account && (S.health.account.owner || S.health.account.kind === "key"))) return "Nur für den Hauptadmin";
     if (item.owner && !(S.account && S.account.manager)) return "Nur für den Hauptadmin";
     if (item.full && !S.full()) return "Benötigt Vollzugriff";
     if (item.perm && !S.can(item.perm)) return "Keine Berechtigung: " + item.perm;
@@ -134,7 +137,7 @@
         S.btn("", { kind: "ghost", size: "sm icon", icon: "logout", title: "Abmelden", onClick: logout }))));
 
     var title = h("h1", { id: "page-title", text: "" }), crumb = h("span", { class: "crumb hide-mobile", id: "page-crumb" });
-    var finder = h("button", { type: "button", class: "finder hide-mobile", title: "Schnellsuche (Strg/⌘ + K)", onClick: function () { if (S.palette) S.palette(); } }, icon("search"), h("span", { text: "Suchen" }), h("kbd", { text: /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘K" : "Strg K" }));
+    var finder = h("button", { type: "button", class: "finder", "aria-label": "Werkzeuge suchen", title: "Schnellsuche (Strg/⌘ + K)", onClick: function () { if (S.palette) S.palette(); } }, icon("search"), h("span", { class: "hide-mobile", text: "Suchen" }), h("kbd", { class: "hide-mobile", text: /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘K" : "Strg K" }));
     var topbar = h("header", { class: "topbar" }, S.btn("", { kind: "ghost", size: "icon", icon: "menu", title: "Menü", onClick: openDrawer, aria: "Menü öffnen" }), h("div", { class: "grow row", style: { gap: "12px", minWidth: 0 } }, title, crumb), finder, h("div", { id: "page-actions", class: "row" }));
     topbar.firstChild.classList.add("menu-btn");
     var content = h("div", { class: "content", id: "content" });

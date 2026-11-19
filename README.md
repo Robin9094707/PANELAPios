@@ -1,3 +1,11 @@
+## Panel 5.15.0 und Admin Suite 10.22.0
+
+Geführter Account-Transfer in App, Webpanel und Java-/Bedrock-Adminmenü. Zwei Offline-Accounts lassen sich mit Vorschau und Sicherung in beide Richtungen tauschen. [Update-Anleitung](UPDATE-5.15.0.md)
+
+## Panel 5.14.0 und Admin Suite 10.21.0
+
+Community-Verwaltung in iOS und Web für Simplex Points, Shop-Angebote, zweisprachige Quick Delivery, Discord-Einladung und Spieltagzähler. Der Admin-Tab zeigt Favoriten und eine eigene Suche für alle Werkzeuge. [Update-Anleitung](UPDATE-5.14.0.md)
+
 ## Panel 5.13.0 und Admin Suite 10.20.0
 
 Großes Sperren-Update: Bann-Zentrale in App und Webpanel mit Hauptbanns und gesperrten Alt-Konten, Entsperren nur eines Kontos oder des ganzen Falls direkt im Spielerprofil, IP-Fehlbanns mit einem Schritt aufheben – und LiteBans wird abgeschaltet und mit Auswahl pro Fall übernommen (die geteilte IP 82.165.45.159 wird nie übernommen). Enthält alles aus 5.12.0 / 10.19.0. SentinelBridge 1.6.0 bleibt unverändert.

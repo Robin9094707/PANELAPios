@@ -13,10 +13,19 @@ struct SuiteToolDirectoryView: View {
     var embedded = false
     @State private var search = ""
     @AppStorage("suite.tools.favorites.v1") private var favorites = "advertising,players,tickets,diagnostics,adminLog,histories"
-    var selectedQuery: String { search.isEmpty ? query : search }
-    var tools: [SuiteTool] { SuiteTool.allCases.filter { $0 != .overview && $0.matches(selectedQuery) && ($0.feature.isEmpty || suite.features.contains($0.feature)) } }
-    func allowed(_ tool: SuiteTool) -> Bool { tool.permission.isEmpty || suite.can(tool.permission) }
+    var selectedQuery: String { (embedded ? query : search).trimmingCharacters(in: .whitespacesAndNewlines) }
+    var tools: [SuiteTool] {
+        SuiteTool.allCases.filter { $0 != .overview && allowed($0) && $0.matches(selectedQuery)
+            && ($0.feature.isEmpty || suite.features.contains($0.feature)) }
+    }
+    func allowed(_ tool: SuiteTool) -> Bool {
+        if tool == .accountTransfer { return suite.canTransferAccounts }
+        return tool.permission.isEmpty || suite.can(tool.permission)
+    }
     var groups: [String] { var result: [String] = []; for tool in tools where !result.contains(tool.group) { result.append(tool.group) }; return result }
+    var favoriteTools: [SuiteTool] {
+        favorites.split(separator: ",").compactMap { SuiteTool(rawValue: String($0)) }.filter { tools.contains($0) }
+    }
     var body: some View {
         if embedded { directoryContent } else {
             ScrollView { directoryContent }.panelScreen().navigationTitle("Admin-Werkzeuge")
@@ -25,35 +34,60 @@ struct SuiteToolDirectoryView: View {
         }
     }
     var directoryContent: some View {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                if selectedQuery.isEmpty {
-                    if !embedded {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Label("Admin Suite", systemImage: "shield.lefthalf.filled").font(.title2.bold())
-                        Text(suite.connection.endpoint).font(.caption).foregroundStyle(.secondary)
-                        Text("Schnellzugriffe lange drücken, um Favoriten anzupassen.").font(.caption).foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading).card()
-                    }
+        LazyVStack(alignment: .leading, spacing: 18) {
+            if selectedQuery.isEmpty {
+                if embedded {
+                    toolGroup("Schnellzugriffe", tools: favoriteTools)
+                    NavigationLink {
+                        SuiteToolDirectoryView(suite: suite, actions: actions, panel: panel, server: server, live: live, badges: badges)
+                    } label: {
+                        Label("Alle Admin-Werkzeuge", systemImage: "square.grid.2x2.fill")
+                            .frame(maxWidth: .infinity, alignment: .leading).card()
+                    }.buttonStyle(.plain).accessibilityIdentifier("suiteAllTools")
                     SuiteBriefingCard(suite: suite)
-                    toolGroup("Schnellzugriffe", tools: tools.filter { favorites.split(separator: ",").contains(Substring($0.rawValue)) && allowed($0) })
-                }
-                ForEach(groups, id: \.self) { group in toolGroup(group, tools: tools.filter { $0.group == group }) }
-                if selectedQuery.isEmpty { SuitePinnedActionsView(suite: suite, actions: actions) }
-                if !selectedQuery.isEmpty {
-                    let matches = actions.filter { SuiteSearch.matches(selectedQuery, in: $0.title + " " + $0.id + " " + $0.group) }
-                    if !matches.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Label("Weitere Funktionen", systemImage: "magnifyingglass").font(.headline)
-                            ForEach(matches) { action in NavigationLink(action.title) { SuiteActionView(suite: suite, action: action) }.disabled(action.data["allowed"] == .bool(false)) }
-                        }.frame(maxWidth: .infinity, alignment: .leading).card()
+                } else {
+                    toolGroup("Schnellzugriffe", tools: favoriteTools)
+                    ForEach(groups, id: \.self) { group in
+                        toolGroup(group, tools: tools.filter { $0.group == group && !favoriteTools.contains($0) })
                     }
-                    if tools.isEmpty && matches.isEmpty { ContentUnavailableView.search(text: selectedQuery) }
+                    NavigationLink { SuiteShortcutHelpView() } label: {
+                        Label("Kurzbefehle & Home-Bildschirm", systemImage: "square.stack.3d.up.fill")
+                            .frame(maxWidth: .infinity, alignment: .leading).card()
+                    }.buttonStyle(.plain)
+                    if suite.connection.panel.hasPrefix("suite-direct:") {
+                        NavigationLink { SuiteDirectDashboard(connection: suite.connection) } label: {
+                            Label("Gespeicherten Zugang verwalten", systemImage: "key.horizontal.fill")
+                                .frame(maxWidth: .infinity, alignment: .leading).card()
+                        }.buttonStyle(.plain)
+                    }
                 }
-                NavigationLink { SuiteShortcutHelpView() } label: { Label("Kurzbefehle & Home-Bildschirm", systemImage: "square.stack.3d.up.fill").frame(maxWidth: .infinity, alignment: .leading).card() }.buttonStyle(.plain)
-                if suite.connection.panel.hasPrefix("suite-direct:") {
-                    NavigationLink { SuiteDirectDashboard(connection: suite.connection) } label: { Label("Gespeicherten Zugang verwalten", systemImage: "key.horizontal.fill").frame(maxWidth: .infinity, alignment: .leading).card() }.buttonStyle(.plain)
+                SuitePinnedActionsView(suite: suite, actions: actions)
+            } else {
+                toolGroups
+                actionResults
+            }
+        }.padding(embedded ? 0 : 20).frame(maxWidth: 1000).frame(maxWidth: .infinity)
+    }
+    private var toolGroups: some View {
+        ForEach(groups, id: \.self) { group in
+            toolGroup(group, tools: tools.filter { $0.group == group })
+        }
+    }
+    @ViewBuilder private var actionResults: some View {
+        let matches = actions.filter { action in
+            !action.data["dedicated"].bool && action.data["allowed"] != .bool(false)
+                && suite.can("action." + action.id)
+                && SuiteSearch.matches(selectedQuery, in: action.title + " " + action.id + " " + action.group)
+        }
+        if !matches.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Weitere Funktionen", systemImage: "magnifyingglass").font(.headline)
+                ForEach(matches) { action in
+                    NavigationLink(action.title) { SuiteActionView(suite: suite, action: action) }
                 }
-            }.padding(embedded ? 0 : 20).frame(maxWidth: 1000).frame(maxWidth: .infinity)
+            }.frame(maxWidth: .infinity, alignment: .leading).card()
+        }
+        if tools.isEmpty && matches.isEmpty { ContentUnavailableView.search(text: selectedQuery) }
     }
     @ViewBuilder func toolGroup(_ title: String, tools: [SuiteTool]) -> some View {
         if !tools.isEmpty {
@@ -63,7 +97,7 @@ struct SuiteToolDirectoryView: View {
                     ForEach(tools) { tool in
                         SuiteToolTile(title: tool.title, symbol: tool.symbol, tint: tool == .advertising ? .orange : Color.panelAccent, badge: badges[tool] ?? 0, identifier: "suiteTool-" + tool.id) {
                             SuiteToolDestination(suite: suite, tool: tool, actions: actions, panel: panel, server: server, live: live)
-                        }.disabled(!allowed(tool)).contextMenu {
+                        }.contextMenu {
                             Button(favorites.split(separator: ",").contains(Substring(tool.rawValue)) ? "Favorit entfernen" : "Als Favorit merken", systemImage: "star") { toggle(tool) }
                             Button("Kurzbefehle-Link kopieren", systemImage: "link") { Clipboard.copy(SuiteLaunchRequest(tool: tool, connection: suite.connection.id).url.absoluteString) }
                         }
@@ -89,13 +123,15 @@ struct SuiteToolDestination: View {
     var place: String? = nil
     var prepareAd = false
     @ViewBuilder var body: some View {
-        if !tool.permission.isEmpty && !suite.can(tool.permission) {
+        if tool == .accountTransfer && !suite.canTransferAccounts {
+            ContentUnavailableView("Nur für Hauptadmins", systemImage: "lock.fill")
+        } else if !tool.permission.isEmpty && !suite.can(tool.permission) {
             ContentUnavailableView("Keine Berechtigung", systemImage: "lock.fill", description: Text(tool.title + " · " + tool.permission))
         } else if !tool.feature.isEmpty && !suite.features.contains(tool.feature) {
             ContentUnavailableView("Suite aktualisieren", systemImage: "arrow.down.circle", description: Text("Diese Funktion ist auf dem verbundenen Server noch nicht verfügbar."))
         } else {
             switch tool {
-            case .overview: SuiteToolDirectoryView(suite: suite, actions: actions, panel: panel, server: server)
+            case .overview: SuiteToolDirectoryView(suite: suite, actions: actions, panel: panel, server: server, live: live)
             case .advertising: SuiteAdHubView(suite: suite, initialPlace: place, prepareOnOpen: prepareAd)
             case .players:
                 if let panel, let server { SuitePlayersView(suite: suite, panel: panel, server: server, actions: actions) }
@@ -114,6 +150,8 @@ struct SuiteToolDestination: View {
             case .quickCenter: SuiteQuickCenterEditor(record: suite.connection)
             case .chatSilence: SuiteChatSilenceView(suite: suite)
             case .banCenter: SuiteBanCenterView(suite: suite)
+            case .communityTools: SuiteCommunityToolsView(suite: suite)
+            case .accountTransfer: SuiteAccountTransferView(suite: suite)
             case .serverEvents: SuiteServerEventsView(suite: suite)
             case .assistant: SuiteAIAssistantView(suite: suite, panel: panel, server: server)
             case .diagnostics: SuiteDiagnosticsView(suite: suite)

@@ -18,6 +18,17 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.15.0", title: "Account-Transfer", summary: "Zwei Spielerkonten auswählen, den Bestand vergleichen und Spielstände in beide Richtungen tauschen.", items: [
+            .init(symbol: "arrow.right.arrow.left", title: "Spielstand tauschen", detail: "Das bisherige Inventar des neuen Accounts landet auf dem alten Account. Beide Accounts müssen offline sein."),
+            .init(symbol: "shield", title: "Punkte und Rechte", detail: "Simplex Points und LuckPerms lassen sich beim Tausch zusätzlich auswählen."),
+            .init(symbol: "doc.text.magnifyingglass", title: "Vorschau und Sicherung", detail: "Vor dem Schreiben wird der geladene Stand geprüft. Die Originaldateien werden auf dem Server gesichert.")
+        ]),
+        WhatsNewRelease(version: "5.14.0", title: "Community-Verwaltung", summary: "Punkte, Shop, Quick Delivery, Discord-Einladung und Spieltage direkt in App und Web verwalten.", items: [
+            .init(symbol: "star.fill", title: "Kompakter Admin-Tab", detail: "Favoriten und der Einstieg zu allen Werkzeugen stehen oben. Beim Suchen siehst du direkt die Treffer."),
+            .init(symbol: "storefront.fill", title: "Punkte und Shop", detail: "Punktestand ansehen, mit Grund buchen und Preise, Bestand oder Status vorhandener Angebote ändern."),
+            .init(symbol: "envelope.badge.fill", title: "Quick Delivery", detail: "Nachrichten auf Deutsch und Englisch vorbereiten und ihren Zustellstatus sehen."),
+            .init(symbol: "calendar", title: "Discord und Spieltage", detail: "Einladung und Zähler beider konfigurierten Weltgruppen über die Community-Verwaltung ändern.")
+        ]),
         WhatsNewRelease(version: "5.13.0", title: "Bann-Zentrale", summary: "Alle Sperren an einem Ort: Hauptbanns und gesperrte Alt-Konten, Freigabe einzeln oder für den ganzen Fall, IP-Fehlbanns mit einem Tipp aufheben – und LiteBans wird abgelöst und übernommen. Alle bestehenden Banns und Daten bleiben erhalten.", items: [
             .init(symbol: "shield.slash.fill", title: "Bann-Zentrale", detail: "Jeder Fall zeigt das Hauptkonto und alle zugehörigen Alt-Konten mit Grund, Dauer, Herkunft und IP – filterbar und durchsuchbar."),
             .init(symbol: "person.2.slash", title: "Hauptbann oder Alt-Konto", detail: "Im Spielerprofil siehst du sofort, ob jemand selbst gebannt ist oder als Alt-Konto eines anderen Spielers gesperrt wurde."),

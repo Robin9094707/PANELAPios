@@ -83,6 +83,9 @@ final class UnifiedAdminMenu {
         if(group.equals("Server")&&plugin.has(p,"simplexadminsuite.commands.admin"))items.add(b("Befehlsverwaltung","Spielerbefehle sperren • Vorschläge nach Berechtigung bereinigen",Material.COMMAND_BLOCK,()->plugin.playerCommands.open(p)));
         if(group.equals("Server")&&plugin.has(p,"simplexadminsuite.settings.advanced"))items.add(b("Suite-Einstellungen","Bestehende Einstellungen durchsuchen und nativ bearbeiten",Material.COMPARATOR,()->plugin.moderationControl.settings(p,"")));
         if(group.equals("Spieler")&&plugin.adminAccess.master(p))items.add(b("Adminrollen & Einzelrechte","Bestehende Rollen und Berechtigungen verwalten",Material.TRIPWIRE_HOOK,()->plugin.adminUpdate.players(p,true)));
+        if (group.equals("Spieler") && plugin.adminUpdate.accountTransfer.gameAllowed(p))
+            items.add(b("Account-Transfer", "Zwei Accounts auswählen, Spielstände vergleichen und tauschen", Material.ENDER_CHEST,
+                () -> plugin.adminUpdate.accountTransfer.open(p)));
         if(group.equals("Spieler")&&plugin.has(p,"simplexadminsuite.nickname"))items.add(b(plugin.playerText(p,"Spielernamen & Diagnose","Player names & diagnostics"),plugin.playerText(p,"LuckPerms, AFK und sichtbare Nicknames","LuckPerms, AFK and display nicknames"),Material.NAME_TAG,()->plugin.qualityOfLife.menu(p)));
         if(group.equals("Beobachtung")&&plugin.has(p,"simplexadminsuite.bluemap"))items.add(b("BlueMap",plugin.playerText(p,"Dauerhaft verbergen oder mit Vanish koppeln","Hide permanently or follow vanish"),Material.MAP,()->plugin.qualityOfLife.mapMenu(p)));
         if(group.equals("Sicherheit")&&plugin.securityHub!=null&&plugin.has(p,"simplexadminsuite.clientsecurity.admin"))items.add(b("Sicherheitszentrale","Ausnahmen, private Protokolle, Alt-Alerts, Standortdiagnose und Neustarts",Material.COMPARATOR,()->plugin.securityHub.menu(p)));

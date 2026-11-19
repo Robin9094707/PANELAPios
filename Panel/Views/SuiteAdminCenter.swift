@@ -76,13 +76,17 @@ struct SuiteAdminCenterView: View {
     func content(_ suite: SuiteAPI) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
-                header(suite)
-                metrics
-                alerts(suite)
-                onlinePlayers(suite)
-                bookmarksCard(suite)
-                tools(suite)
-                activity(suite)
+                if toolSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    header(suite)
+                    metrics
+                    alerts(suite)
+                    onlinePlayers(suite)
+                    tools(suite)
+                    bookmarksCard(suite)
+                    activity(suite)
+                } else {
+                    tools(suite)
+                }
             }.padding(20).frame(maxWidth: 1000).frame(maxWidth: .infinity)
         }.panelScreen().refreshable { await model.load(force: true); await center.load(suite) }.scrollBounceBehavior(.always)
             .task(id: "\(scenePhase)-\(ObjectIdentifier(suite))") {
