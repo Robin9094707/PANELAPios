@@ -1,3 +1,7 @@
+## Panel 5.15.0 und Admin Suite 10.22.0
+
+Geführter Account-Transfer in App, Webpanel und Java-/Bedrock-Adminmenü. Zwei Offline-Accounts lassen sich mit Vorschau und Sicherung in beide Richtungen tauschen. [Update-Anleitung](UPDATE-5.15.0.md)
+
 ## Panel 5.14.0 und Admin Suite 10.21.0
 
 Community-Verwaltung in iOS und Web für Simplex Points, Shop-Angebote, zweisprachige Quick Delivery, Discord-Einladung und Spieltagzähler. Der Admin-Tab zeigt Favoriten und eine eigene Suche für alle Werkzeuge. [Update-Anleitung](UPDATE-5.14.0.md)

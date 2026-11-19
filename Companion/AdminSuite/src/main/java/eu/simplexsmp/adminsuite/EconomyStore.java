@@ -66,6 +66,25 @@ final class EconomyStore implements AutoCloseable {
             db.commit();return true;
         }catch(SQLException|RuntimeException e){db.rollback();throw e;}finally{db.setAutoCommit(true);}
     }
+    synchronized boolean swapBalances(UUID left, UUID right, long expectedLeft, long expectedRight, String reason) throws SQLException {
+        if (left.equals(right)) throw new IllegalArgumentException("Zwei Punktekonten erforderlich.");
+        db.setAutoCommit(false);
+        try {
+            if (balance(left) != expectedLeft || balance(right) != expectedRight) { db.rollback(); return false; }
+            exec("INSERT OR IGNORE INTO accounts VALUES(?,0)", left);
+            exec("INSERT OR IGNORE INTO accounts VALUES(?,0)", right);
+            exec("UPDATE accounts SET balance=? WHERE uuid=?", expectedRight, left);
+            exec("UPDATE accounts SET balance=? WHERE uuid=?", expectedLeft, right);
+            if (expectedLeft != expectedRight) {
+                long now = System.currentTimeMillis();
+                exec("INSERT INTO ledger(uuid,delta,reason,created) VALUES(?,?,?,?)", left, expectedRight - expectedLeft, reason, now);
+                exec("INSERT INTO ledger(uuid,delta,reason,created) VALUES(?,?,?,?)", right, expectedLeft - expectedRight, reason, now);
+            }
+            db.commit();
+            return true;
+        } catch (SQLException | RuntimeException error) { db.rollback(); throw error; }
+        finally { db.setAutoCommit(true); }
+    }
     private static Offer offer(ResultSet r)throws SQLException {return new Offer(r.getString("id"),r.getString("de"),r.getString("en"),r.getBytes("item"),r.getLong("price"),r.getLong("stock"),r.getLong("lim"),r.getLong("expires"),r.getString("icon"),r.getLong("revision"),r.getBoolean("enabled"),r.getBytes("currency"));}
     synchronized List<Offer> offers()throws SQLException {List<Offer> out=new ArrayList<>();try(Statement s=db.createStatement();ResultSet r=s.executeQuery("SELECT * FROM offers ORDER BY id")){while(r.next())out.add(offer(r));}return out;}
     synchronized Offer offer(String id)throws SQLException {try(PreparedStatement s=db.prepareStatement("SELECT * FROM offers WHERE id=?")){bind(s,id);try(ResultSet r=s.executeQuery()){return r.next()?offer(r):null;}}}

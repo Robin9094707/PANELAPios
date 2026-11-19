@@ -18,7 +18,10 @@ struct SuiteToolDirectoryView: View {
         SuiteTool.allCases.filter { $0 != .overview && allowed($0) && $0.matches(selectedQuery)
             && ($0.feature.isEmpty || suite.features.contains($0.feature)) }
     }
-    func allowed(_ tool: SuiteTool) -> Bool { tool.permission.isEmpty || suite.can(tool.permission) }
+    func allowed(_ tool: SuiteTool) -> Bool {
+        if tool == .accountTransfer { return suite.canTransferAccounts }
+        return tool.permission.isEmpty || suite.can(tool.permission)
+    }
     var groups: [String] { var result: [String] = []; for tool in tools where !result.contains(tool.group) { result.append(tool.group) }; return result }
     var favoriteTools: [SuiteTool] {
         favorites.split(separator: ",").compactMap { SuiteTool(rawValue: String($0)) }.filter { tools.contains($0) }
@@ -120,7 +123,9 @@ struct SuiteToolDestination: View {
     var place: String? = nil
     var prepareAd = false
     @ViewBuilder var body: some View {
-        if !tool.permission.isEmpty && !suite.can(tool.permission) {
+        if tool == .accountTransfer && !suite.canTransferAccounts {
+            ContentUnavailableView("Nur für Hauptadmins", systemImage: "lock.fill")
+        } else if !tool.permission.isEmpty && !suite.can(tool.permission) {
             ContentUnavailableView("Keine Berechtigung", systemImage: "lock.fill", description: Text(tool.title + " · " + tool.permission))
         } else if !tool.feature.isEmpty && !suite.features.contains(tool.feature) {
             ContentUnavailableView("Suite aktualisieren", systemImage: "arrow.down.circle", description: Text("Diese Funktion ist auf dem verbundenen Server noch nicht verfügbar."))
@@ -146,6 +151,7 @@ struct SuiteToolDestination: View {
             case .chatSilence: SuiteChatSilenceView(suite: suite)
             case .banCenter: SuiteBanCenterView(suite: suite)
             case .communityTools: SuiteCommunityToolsView(suite: suite)
+            case .accountTransfer: SuiteAccountTransferView(suite: suite)
             case .serverEvents: SuiteServerEventsView(suite: suite)
             case .assistant: SuiteAIAssistantView(suite: suite, panel: panel, server: server)
             case .diagnostics: SuiteDiagnosticsView(suite: suite)

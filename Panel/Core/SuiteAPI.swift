@@ -108,6 +108,7 @@ enum SuiteDevice {
     private(set) var features: Set<String> = []
     /// 9.8 account summary from /v1/health (kind user/key, owner, manager, mfa, canMigrate).
     private(set) var account: JSON = .null
+    var canTransferAccounts: Bool { !demo && scope == "full" && (account["owner"].bool || account["kind"].string == "key") }
     private(set) var web: JSON = .null
     private var token: String
     private let session: URLSession

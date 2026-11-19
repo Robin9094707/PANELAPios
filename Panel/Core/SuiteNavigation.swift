@@ -11,7 +11,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
     case chat, restart, pairing
     case locker, smartRestart, automations, quickCenter
     case chatSilence
-    case banCenter, communityTools
+    case banCenter, communityTools, accountTransfer
     var id: String { rawValue }
     var title: String { metadata.0 }
     var symbol: String { metadata.1 }
@@ -79,6 +79,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .chatSilence: return ("Chat-Ruhe", "bell.slash.fill", "Kommunikation & Studio", "data.chat-silence", "chat-silence-v1")
         case .banCenter: return ("Bann-Zentrale", "shield.slash.fill", "Moderation & PowerBot", "data.ban-center", "ban-center-v1")
         case .communityTools: return ("Community-Verwaltung", "storefront.fill", "Kommunikation & Studio", "data.community-tools", "community-tools-v1")
+        case .accountTransfer: return ("Account-Transfer", "arrow.right.arrow.left.circle.fill", "Spieler & Rechte", "", "account-transfer-v1")
         }
     }
     func matches(_ query: String) -> Bool {
@@ -94,6 +95,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .chatSilence: extra = " Chat stummschalten stumm Ruhe Mute Erwähnungen Flüstern Spieler aufheben"
         case .banCenter: extra = " Bann Banns gesperrt entsperren aufheben Alt-Konto Alts IP LiteBans Migration Sperren Hauptbann"
         case .communityTools: extra = " Simplex Points Punkte Shop Angebot Bestand Quick Delivery Zustellung Discord Einladung Spieltag Scoreboard"
+        case .accountTransfer: extra = " Spieler Profil Daten umziehen Inventar transferieren tauschen Rechte LuckPerms Homes"
         default: extra = ""
         }
         return SuiteSearch.matches(query, in: title + " " + group + " " + rawValue + extra)
