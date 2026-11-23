@@ -64,6 +64,63 @@ final class AppPluginFiles {
         }
         return Map.of("items", items, "updateDirectory", publicPath(updateDirectory(false)));
     }
+    /** 10.23.0: descriptor cache keyed by file name, size and modification time – overview stays fast on large servers. */
+    private final Map<String,Object[]> descriptorCache = new HashMap<>();
+    private Map<String,Object> cachedDescriptor(Path path) throws Exception {
+        var attributes = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        String key = path.toString(); long size = attributes.size(), modified = attributes.lastModifiedTime().toMillis();
+        synchronized (descriptorCache) { Object[] hit = descriptorCache.get(key); if (hit != null && (long) hit[0] == size && (long) hit[1] == modified) return (Map<String,Object>) hit[2]; }
+        Map<String,Object> value = new LinkedHashMap<>(descriptor(path)); value.remove("yaml"); value.put("size", size); value.put("modified", modified);
+        synchronized (descriptorCache) { if (descriptorCache.size() > 4096) descriptorCache.clear(); descriptorCache.put(key, new Object[]{size, modified, value}); }
+        return value;
+    }
+    /**
+     * 10.23.0: one server-side overview of every plugin JAR, the version Paper actually loaded, pending updates
+     * and the versioned file name a pending update will get. {@code loaded}: plugin name → {version, enabled, file}.
+     */
+    @SuppressWarnings("unchecked")
+    Map<String,Object> overview(Map<String,String[]> loaded) throws Exception {
+        Path update = updateDirectory(false);
+        Map<String,Map<String,Object>> pendingByName = new HashMap<>();
+        List<Object> pendingRows = new ArrayList<>();
+        if (Files.isDirectory(update, LinkOption.NOFOLLOW_LINKS)) {
+            directory(update);
+            try (var files = Files.list(update)) {
+                for (Path path : files.sorted().limit(512).toList()) {
+                    String name = path.getFileName().toString(); if (!name.endsWith(".jar") || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) continue;
+                    Map<String,Object> row = new LinkedHashMap<>(); row.put("filename", name);
+                    try { Map<String,Object> d = cachedDescriptor(path); row.putAll(d); row.put("versionedFilename", PluginFileNaming.versionedName(String.valueOf(d.get("name")), String.valueOf(d.get("version")))); pendingByName.put(String.valueOf(d.get("name")).toLowerCase(Locale.ROOT), row); }
+                    catch (Exception e) { row.put("error", e.getMessage()); }
+                    pendingRows.add(row);
+                }
+            }
+        }
+        List<Object> items = new ArrayList<>(); Set<String> seen = new HashSet<>();
+        try (var files = Files.list(plugins)) {
+            for (Path path : files.sorted().limit(1024).toList()) {
+                String name = path.getFileName().toString();
+                if ((!name.endsWith(".jar") && !name.endsWith(".jar.disabled")) || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) continue;
+                Map<String,Object> row = new LinkedHashMap<>(); row.put("filename", name); row.put("disabled", name.endsWith(".disabled"));
+                try {
+                    Map<String,Object> d = cachedDescriptor(path); row.putAll(d);
+                    String pluginName = String.valueOf(d.get("name")), version = String.valueOf(d.get("version"));
+                    seen.add(pluginName.toLowerCase(Locale.ROOT));
+                    String[] state = loaded.get(pluginName.toLowerCase(Locale.ROOT));
+                    row.put("loaded", state != null); row.put("loadedVersion", state == null ? "" : state[0]); row.put("enabled", state != null && "true".equals(state[1]));
+                    row.put("restartPending", state != null && !state[0].equals(version));
+                    row.put("versionInFilename", PluginFileNaming.carriesVersion(name, version));
+                    Map<String,Object> pending = pendingByName.get(pluginName.toLowerCase(Locale.ROOT));
+                    if (pending != null) row.put("pending", SimplexAdminSuite.appMap("version", pending.get("version"), "filename", pending.get("filename"), "versionedFilename", pending.get("versionedFilename")));
+                } catch (Exception e) { row.put("error", e.getMessage()); }
+                items.add(row);
+            }
+        }
+        List<Object> runtimeOnly = new ArrayList<>();
+        for (var e : loaded.entrySet()) if (!seen.contains(e.getKey())) runtimeOnly.add(SimplexAdminSuite.appMap("name", e.getValue().length > 3 ? e.getValue()[3] : e.getKey(), "version", e.getValue()[0], "enabled", "true".equals(e.getValue()[1])));
+        long enabled = loaded.values().stream().filter(v -> "true".equals(v[1])).count();
+        return SimplexAdminSuite.appMap("items", items, "pending", pendingRows, "runtimeOnly", runtimeOnly, "updateDirectory", publicPath(update),
+            "loaded", loaded.size(), "enabled", enabled, "versionedFilenames", true, "installWhileRunning", true, "generatedAt", System.currentTimeMillis());
+    }
     Map<String,Object> inspect(String name, boolean pending) throws Exception { return inspect(pending ? updateDirectory(false) : plugins, name, true); }
     Map<String,Object> identity(String name) throws Exception { return inspect(plugins,name,false,true); }
     private Map<String,Object> inspect(Path folder, String name, boolean hashes) throws Exception { return inspect(folder,name,hashes,false); }
@@ -147,11 +204,15 @@ final class AppPluginFiles {
                 if(Boolean.TRUE.equals(existing.get("queued")))return existing;
                 prepare(values);
                 checkPending(folder,installed,text(values,"name"));
-                Path destination=folder.resolve(installed);
+                // 10.23.0: Paper adopts the staged file name – the update ends up as plugins/<Name>-<Version>.jar.
+                String versioned=PluginFileNaming.versionedName(text(values,"name"),text(values,"version"));
+                if(!versioned.equalsIgnoreCase(installed)&&Files.exists(plugins.resolve(versioned),LinkOption.NOFOLLOW_LINKS))versioned=installed;
+                checkPending(folder,versioned,text(values,"name"));
+                Path destination=folder.resolve(versioned);
                 // The verified temporary file becomes the pending JAR without overwriting another upload.
                 try { Files.createLink(destination,temporary); }
                 catch(UnsupportedOperationException e){Files.move(temporary,destination);}
-                return Map.of("queued",true,"updateDirectory",publicPath(folder),"filename",installed,"sha256",wanted,"restartRequired",true);
+                return Map.of("queued",true,"updateDirectory",publicPath(folder),"filename",versioned,"installedFilename",installed,"sha256",wanted,"restartRequired",true);
             }
         }finally{Files.deleteIfExists(temporary);}
     }
@@ -170,6 +231,10 @@ final class AppPluginFiles {
         filename(filename);if(!expected.matches("[a-f0-9]{64}"))throw new IllegalArgumentException("SHA-256 erforderlich");Path folder=updateDirectory(false);Path file=folder.resolve(filename);
         if(Files.exists(folder))directory(folder);
         boolean queued=Files.isRegularFile(file,LinkOption.NOFOLLOW_LINKS)&&Files.size(file)<=MAX&&hash(file).equals(expected);
-        return Map.of("queued",queued,"updateDirectory",publicPath(folder),"filename",filename,"sha256",expected,"restartRequired",true);
+        String found=filename;
+        // 10.23.0: versioned staging – find the pending JAR by its checksum.
+        if(!queued&&Files.isDirectory(folder,LinkOption.NOFOLLOW_LINKS)){try(var paths=Files.list(folder)){for(Path path:paths.filter(p->p.getFileName().toString().endsWith(".jar")).limit(256).toList()){
+            if(Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS)&&Files.size(path)<=MAX&&hash(path).equals(expected)){queued=true;found=path.getFileName().toString();break;}}}}
+        return Map.of("queued",queued,"updateDirectory",publicPath(folder),"filename",found,"sha256",expected,"restartRequired",true);
     }
 }

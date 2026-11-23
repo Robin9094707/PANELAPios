@@ -1,6 +1,6 @@
 name: SimplexAdminSuite
 main: eu.simplexsmp.adminsuite.SimplexAdminSuite
-version: 10.22.0
+version: 10.23.1
 api-version: '26.2'
 author: RJ
 website: https://simplexsmp.eu
@@ -71,6 +71,10 @@ commands:
     description: Chat break – mute the public chat for yourself (temporarily or until you turn it on). Chat-Ruhe.
     usage: /chat [an|aus [30m|3h|24h|dauerhaft]|flüstern an|aus|erwähnungen an|aus|status] · /chat [on|off|whispers|mentions|status]
     aliases: [chat, chatruhe, chatbreak, mutechat, chatmute, ruhe, stumm]
+  simplexignore:
+    description: Mute single players just for yourself (optionally with their other accounts). Admins cannot be muted. Spieler nur für dich stummschalten.
+    usage: /ignorieren [Spieler [alle]|entfernen <Spieler>|liste] · /ignoreplayer [player [all]|remove <player>|list]
+    aliases: [ignorieren, spielerstumm, stummschalten, ignoreplayer, mutepl, blockieren]
   feedback:
     description: Send feedback to the server team or read replies.
     usage: /feedback [message]

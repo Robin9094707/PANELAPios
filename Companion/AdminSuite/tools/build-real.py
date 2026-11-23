@@ -24,14 +24,14 @@ if classes.exists():shutil.rmtree(classes)
 classes.mkdir(parents=True)
 classpath=os.pathsep.join(str(cache/item['name']) for item in lock if not item['name'].startswith('ecj-'))
 java=os.environ.get('JAVA','java')
-command=[java,'-jar',str(cache/'ecj-3.46.0.jar'),'-17','-encoding','UTF-8','-warn:none','-cp',classpath,'-d',str(classes)]
+command=[java,'-jar',str(cache/'ecj-3.46.100.jar'),'-17','-encoding','UTF-8','-warn:none','-cp',classpath,'-d',str(classes)]
 command.extend(str(p) for p in sorted((root/'src/main/java').rglob('*.java')))
 subprocess.run(command,check=True)
 version=next(line.split(':',1)[1].strip() for line in (root/'src/main/resources/plugin.yml').read_text().splitlines() if line.startswith('version:'))
 jar=root/f'target/SimplexAdminSuite-{version}.jar'
 with zipfile.ZipFile(jar,'w',zipfile.ZIP_DEFLATED) as archive:
-    archive.writestr('META-INF/MANIFEST.MF',f'Manifest-Version: 1.0\r\nImplementation-Title: Simplex Admin Suite\r\nImplementation-Version: {version}\r\nBuilt-Against: Paper 26.3.build.180-stable\r\n\r\n')
-    with zipfile.ZipFile(cache/'sqlite-jdbc-3.53.4.0.jar') as sqlite:
+    archive.writestr('META-INF/MANIFEST.MF',f'Manifest-Version: 1.0\r\nImplementation-Title: Simplex Admin Suite\r\nImplementation-Version: {version}\r\nBuilt-Against: Paper 26.3.build.258-stable\r\n\r\n')
+    with zipfile.ZipFile(cache/'sqlite-jdbc-3.54.1.0.jar') as sqlite:
         for name in sqlite.namelist():
             if name.startswith('org/sqlite/native/') and not any(name.startswith('org/sqlite/native/'+platform+'/') for platform in ['Linux/x86_64','Linux/aarch64','Linux-Musl/x86_64','Linux-Musl/aarch64','Windows/x86_64','Windows/aarch64','Mac/x86_64','Mac/aarch64']): continue
             if name.startswith('META-INF/') and (name.endswith(('.SF','.RSA','.DSA')) or name=='META-INF/MANIFEST.MF'): continue

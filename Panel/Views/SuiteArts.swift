@@ -39,12 +39,6 @@ struct SuiteServerEventsView: View {
 
     private var statusSection: some View {
         Section("Serverstatus & Lockdown") {
-            if suite.features.contains("automations-v1") {
-                NavigationLink { SuiteAutomationsView(suite: suite) } label: { Label("Automationen · Wenn … dann …", systemImage: "wand.and.stars") }
-            }
-            if suite.features.contains("smart-restart-v1") && suite.can("data.operations") {
-                NavigationLink { SuiteSmartRestartView(suite: suite) } label: { Label("Smart-Neustart", systemImage: "clock.arrow.2.circlepath") }
-            }
             LabeledContent("Aktives Event", value: data["active"].string.isEmpty ? "Keines" : data["active"].string)
             LabeledContent("Lockdown", value: modes.first(where: { $0.0 == data["lockdown"].string })?.1 ?? "–")
             if data["manage"].bool {

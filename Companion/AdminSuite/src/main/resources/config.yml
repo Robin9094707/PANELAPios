@@ -1273,3 +1273,33 @@ powerbot:
 chat-silence:
   # dialog = native Java dialog (Paper, Minecraft 1.21.6+), inventory = chest menu. Bedrock always uses native Floodgate forms.
   java-menu: dialog
+
+# 10.23.0 Persönliche Spieler-Stummschaltung (/ignorieren, auch über /chat → Spieler).
+# Spieler blenden einzelne Spieler nur für sich aus – optional mit deren weiteren Konten (jetzt und künftig).
+# Welche Konten das sind, sehen nur Admins in App und Web. Admins können nie stummgeschaltet werden.
+player-mutes:
+  # Befehle, mit denen ein stummgeschalteter Spieler keinen Kontakt aufnehmen darf (erstes Argument = Zielspieler).
+  contact-commands: [tpa, tpahere, tpask, etpa, etpahere, tpr, call, mail, email, trade, duel, party, invite, friend, friends, f, pay]
+
+# 10.23.0 Paper-Server-Updater (App/Web → Server-Updater). Installiert nur auf ausdrücklichen Klick.
+server-updater:
+  # false = nur neue Builds derselben Minecraft-Version (empfohlen). true = auch Minecraft-Versionswechsel.
+  allow-minecraft-upgrade: false
+  # Vorabversionen (Beta/Alpha, Release Candidates) anzeigen.
+  include-experimental: false
+  # Anzahl gesicherter alter Server-JARs unter plugins/SimplexAdminSuite/server-updates/backups.
+  keep-backups: 3
+
+# 10.23.0 Smart Anti-Lag (App/Web → Anti-Lag). Greift nur ein, wenn der Server wirklich leidet UND ein Hotspot weit über normal liegt.
+anti-lag:
+  # off = aus, observe = nur erkennen, notify = erkennen und Spieler informieren, smart = zusätzlich Spawnbremse und KI-Drossel.
+  mode: smart
+  # Ab dieser Tickzeit (ms, normal < 50) über 15 Sekunden gilt der Server als belastet.
+  trigger-mspt: 48
+  mob-limit-per-chunk: 150
+  same-type-limit-per-chunk: 100
+  item-limit-per-chunk: 600
+  redstone-updates-per-second: 800
+  # Spieler in diesem Umkreis (Blöcke) werden höflich informiert.
+  notify-radius: 96
+  notify-staff: true

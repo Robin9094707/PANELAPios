@@ -130,9 +130,9 @@ final class TicketDiscord {
             case "form"->{
                 Draft d=drafts.getOrDefault(userId,new Draft(arg.equals("de")?"de":"en","general","normal",0));boolean de=d.lang.equals("de");
                 List<Object> rows=new ArrayList<>();
-                rows.add(mapOf("type",1,"components",List.of(mapOf("type",4,"custom_id","subject","label",de?"Betreff":"Subject","style",1,"min_length",0,"max_length",100,"required",false,"placeholder",de?"Kurz zusammengefasst":"Short summary"))));
-                rows.add(mapOf("type",1,"components",List.of(mapOf("type",4,"custom_id","message","label",de?"Dein Anliegen":"Your request","style",2,"min_length",5,"max_length",1500,"required",true,"placeholder",de?"Was ist passiert? Wo? Wer ist beteiligt?":"What happened? Where? Who is involved?"))));
-                if(linkedMinecraft(userId)==null)rows.add(mapOf("type",1,"components",List.of(mapOf("type",4,"custom_id","minecraft","label",de?"Minecraft-Name (optional)":"Minecraft name (optional)","style",1,"min_length",0,"max_length",32,"required",false))));
+                rows.add(DiscordBotManager.modalField(mapOf("type",4,"custom_id","subject","label",de?"Betreff":"Subject","style",1,"min_length",0,"max_length",100,"required",false,"placeholder",de?"Kurz zusammengefasst":"Short summary")));
+                rows.add(DiscordBotManager.modalField(mapOf("type",4,"custom_id","message","label",de?"Dein Anliegen":"Your request","style",2,"min_length",5,"max_length",1500,"required",true,"placeholder",de?"Was ist passiert? Wo? Wer ist beteiligt?":"What happened? Where? Who is involved?")));
+                if(linkedMinecraft(userId)==null)rows.add(DiscordBotManager.modalField(mapOf("type",4,"custom_id","minecraft","label",de?"Minecraft-Name (optional)":"Minecraft name (optional)","style",1,"min_length",0,"max_length",32,"required",false)));
                 bot.ticketRespond(id,token,9,mapOf("custom_id","sasticket:modal:"+d.lang,"title",TicketStore.clip((de?"Ticket · ":"Ticket · ")+TicketManager.category(d.category,de)+" · "+TicketManager.priority(d.priority,de),45),"components",rows));
             }
             case "close","claim","reopen"->{
@@ -409,9 +409,9 @@ final class TicketDiscord {
         out.put("botReady",bot.enabled()&&bot.configured());out.put("botConnected",bot.ticketRunning());
         if(bot.enabled()&&bot.configured())try{
             HttpResponse<String> r=bot.ticketHttp("GET","/guilds/"+bot.ticketGuild()+"/channels",null);
-            if(DiscordBotManager.Json.parse(r.body()) instanceof List<?> list)for(Object raw:list)if(raw instanceof Map<?,?> c){int type=c.get("type") instanceof Number n?n.intValue():-1;Map<String,Object> row=SimplexAdminSuite.appMap("id",str(c.get("id")),"name",str(c.get("name")),"category",str(c.get("parent_id")),"type",type,"position",c.get("position") instanceof Number n?n.intValue():0);if(type==0||type==5)channels.add(row);else if(type==4)categories.add(row);}
+            if(DiscordBotManager.Json.parse(r.body()) instanceof List<?> list)for(Object raw:list)if(raw instanceof Map<?,?> c&&DiscordBotManager.visibleChannel(c)){int type=c.get("type") instanceof Number n?n.intValue():-1;Map<String,Object> row=SimplexAdminSuite.appMap("id",str(c.get("id")),"name",str(c.get("name")),"category",str(c.get("parent_id")),"type",type,"position",c.get("position") instanceof Number n?n.intValue():0);if(type==0||type==5)channels.add(row);else if(type==4)categories.add(row);}
             HttpResponse<String> rr=bot.ticketHttp("GET","/guilds/"+bot.ticketGuild()+"/roles",null);
-            if(DiscordBotManager.Json.parse(rr.body()) instanceof List<?> list)for(Object raw:list)if(raw instanceof Map<?,?> role&&!bot.ticketGuild().equals(str(role.get("id")))&&!Boolean.TRUE.equals(role.get("managed")))roleRows.add(SimplexAdminSuite.appMap("id",str(role.get("id")),"name",str(role.get("name")),"color",role.get("color") instanceof Number n?n.intValue():0,"position",role.get("position") instanceof Number n?n.intValue():0));
+            if(DiscordBotManager.Json.parse(rr.body()) instanceof List<?> list)for(Object raw:list)if(raw instanceof Map<?,?> role&&!bot.ticketGuild().equals(str(role.get("id")))&&!Boolean.TRUE.equals(role.get("managed")))roleRows.add(SimplexAdminSuite.appMap("id",str(role.get("id")),"name",str(role.get("name")),"color",DiscordBotManager.roleColor(role),"position",role.get("position") instanceof Number n?n.intValue():0));
         }catch(Exception e){lastError="Kanalliste: "+e.getClass().getSimpleName();}
         out.put("channels",channels);out.put("categories",categories);out.put("roles",roleRows);
         List<Object> checks=new ArrayList<>();for(Check c:diagnose(channelId(),mode(),categoryId(),staffRoles(),logChannelId()))checks.add(c.json());out.put("diagnostics",checks);

@@ -295,7 +295,50 @@
   }
   P["chat-silence"] = async function (param, query, alive) {
     if (!S.has("chat-silence-v1") || !S.can("data.chat-silence")) { S.mount(S.lockedPage("Chat-Ruhe gesperrt", "data.chat-silence")); return; }
-    var data, search = "", filter = "active", area = h("div", { class: "stack" }), list = h("div", { class: "list" }), kpis = h("div", { class: "grid kpis" });
+    var data, search = "", filter = "active", area = h("div", { class: "stack" }), list = h("div", { class: "list" }), kpis = h("div", { class: "grid kpis" }), mutesList = h("div", { class: "list" }), muteSearch = "";
+    var SOUND_LABEL = { off: "Alle Töne an", chat: "Chat-Töne aus", plugins: "Plugin-/Hinweistöne aus", all: "Alle Server-Töne aus" };
+    function soundEditor(row) {
+      var mode = row.sounds || "off", dlg;
+      dlg = S.modal("Server-Töne für " + row.name, h("div", { class: "stack" },
+        h("p", { class: "muted", text: "Gilt immer – auch ohne Chat-Ruhe. Spieler stellen das selbst mit /chat töne ein." }),
+        S.segmented([["off", "An"], ["chat", "Chat-Töne aus"], ["plugins", "Plugin-Töne aus"], ["all", "Stille"]], mode, function (v) { mode = v; }),
+        h("ul", { class: "small muted" }, h("li", { text: "Chat-Töne aus: kein Pling bei Chatnachrichten, z. B. Spender-Töne anderer Plugins." }),
+          h("li", { text: "Plugin-Töne aus: keine Hinweis-, Menü- und Plugin-Töne; die Spielwelt bleibt hörbar." }),
+          h("li", { text: "Stille: keinerlei Töne vom Server – nur Musik und eigene Schritte." }))), [
+        S.btn("Abbrechen", { onClick: function () { dlg.close(); } }),
+        S.btn("Speichern", { kind: "primary", onClick: async function () { dlg.close(); await send({ operation: "sounds", player: row.player, mode: mode }, "Gespeichert."); } })], { icon: "bell" });
+    }
+    async function addMute() {
+      var owner = await (S.pickPlayer || S.pickOnlinePlayer)("Wer möchte jemanden stummschalten?", ""); if (!owner) return;
+      var target = await (S.pickPlayer || S.pickOnlinePlayer)(owner.name + " schaltet stumm …", owner.id); if (!target) return;
+      var alts = false, contact = true, dlg;
+      dlg = S.modal(owner.name + " → " + target.name, h("div", { class: "stack" },
+        h("p", { class: "muted", text: owner.name + " sieht danach keine Nachrichten mehr von " + target.name + ". Für alle anderen ändert sich nichts. Admins können nie stummgeschaltet werden." }),
+        h("label", { class: "check" }, S.sw(alts, function (v) { alts = v; }), h("span", { text: "Auch weitere Konten von " + target.name + " (bestehende und künftige; der Spieler sieht nicht, welche)" })),
+        h("label", { class: "check" }, S.sw(contact, function (v) { contact = v; }), h("span", { text: "Auch Flüstern und Anfragen (tpa, mail …) blockieren" }))), [
+        S.btn("Abbrechen", { onClick: function () { dlg.close(); } }),
+        S.btn("Stummschalten", { kind: "primary", icon: "bellOff", onClick: async function () { dlg.close(); await send({ operation: "ignore", player: owner.id, target: target.id, alts: alts, contact: contact }, "Gespeichert."); } })], { icon: "bellOff" });
+    }
+    function paintMutes() {
+      S.clear(mutesList);
+      var rows = (data.mutes || []).filter(function (m) { var q = muteSearch.toLowerCase(); return !q || String(m.ownerName).toLowerCase().indexOf(q) >= 0 || String(m.targetName).toLowerCase().indexOf(q) >= 0; });
+      rows.forEach(function (m) {
+        var linked = m.linked ? m.linked.map(function (l) { return l.name; }).join(", ") : "";
+        var badges = h("div", { class: "row wrap", style: { gap: "6px" } },
+          m.alts ? S.badge(m.linkedCount ? "+" + m.linkedCount + " weitere Konten" : "inkl. künftiger Konten", "warn", "users") : S.badge("Nur dieses Konto", ""),
+          m.contact ? S.badge("Kontakt blockiert", "info") : S.badge("Nur Chat", ""),
+          m["protected"] ? S.badge("Admin – wirkt nicht", "danger", "shield") : null,
+          String(m.by || "").indexOf("staff:") === 0 ? S.badge("vom Team gesetzt", "") : null);
+        mutesList.append(h("div", { class: "item" }, S.avatar(m.ownerName), h("div", { class: "meta grow" },
+          h("b", { text: m.ownerName + " → " + m.targetName }),
+          h("div", { class: "small muted", text: "seit " + S.ago(m.since) + (linked ? " · Verknüpft (nur für Admins sichtbar): " + linked : m.alts && !data.showLinked && m.linkedCount ? " · Konten nur mit Alt-Recht sichtbar" : "") }), badges),
+          data.manage ? S.btn("Aufheben", { size: "sm", icon: "bell", onClick: async function () {
+            if (!await S.confirm("Stummschaltung aufheben?", m.ownerName + " sieht danach wieder Nachrichten von " + m.targetName + ".", "Aufheben")) return;
+            await send({ operation: "unignore", player: m.owner, target: m.target }, "Aufgehoben.");
+          } }) : null));
+      });
+      if (!rows.length) mutesList.append(S.empty("users", "Keine persönlichen Stummschaltungen", "Spieler nutzen im Spiel /ignorieren <Spieler> oder /chat → Spieler stummschalten."));
+    }
     function kpi(label, value, ic, hint) { return h("section", { class: "card kpi" }, h("div", { class: "ico" }, S.icon(ic)), h("div", { class: "label", text: label }), h("div", { class: "value", text: String(value) }), hint ? h("div", { class: "hint small muted", text: hint }) : null); }
     async function send(body, done) {
       try { data = await S.api("chat-silence", { body: Object.assign({ confirmed: true }, body) }); S.toast(data.notice || done); paint(); }
@@ -331,18 +374,23 @@
       kpis.append(kpi("Chat stummgeschaltet", data.active, "bellOff", "Spieler mit aktiver Chat-Ruhe"),
         kpi("Davon online", (data.items || []).filter(function (r) { return r.active && r.online; }).length, "users"),
         kpi("Spieler online", data.online, "activity"),
-        kpi("Plugin-Filter", data.packetFilter === "idle" ? "bereit" : data.packetFilter, "shieldCheck", "Kanäle mit aktivem Nachrichtenfilter"));
+        kpi("Plugin-Filter", data.packetFilter === "idle" ? "bereit" : data.packetFilter, "shieldCheck", "Kanäle mit aktivem Nachrichtenfilter"),
+        kpi("Töne gedämpft", data.soundActive || 0, "bell", "Spieler mit Ton-Modus"),
+        kpi("Persönlich stumm", (data.mutes || []).length, "users", "Spieler-zu-Spieler"));
+      paintMutes();
       rows.forEach(function (r) {
         var badges = h("div", { class: "row wrap", style: { gap: "6px" } },
           S.badge(r.active ? "Chat stumm" : "Chat sichtbar", r.active ? "warn" : "ok", r.active ? "bellOff" : "bell"),
           r.online ? S.badge(r.bedrock ? "Online · Bedrock" : "Online · Java", "info") : S.badge("Offline", ""),
-          r.whispers ? S.badge("Flüstern stumm", "") : null, r.mentions ? S.badge("Erwähnungen stumm", "") : null);
+          r.whispers ? S.badge("Flüstern stumm", "") : null, r.mentions ? S.badge("Erwähnungen stumm", "") : null,
+          r.sounds && r.sounds !== "off" ? S.badge(SOUND_LABEL[r.sounds] || r.sounds, "info", "bell") : null);
         var actions = data.manage ? h("div", { class: "row wrap", style: { gap: "6px" } },
           r.active ? S.btn("Aufheben", { kind: "primary", icon: "bell", size: "sm", onClick: async function () {
             if (!await S.confirm("Chat für " + r.name + " wieder einschalten?", "Der Spieler sieht danach wieder alle Chatnachrichten und wird im Spiel informiert.", "Einschalten")) return;
             await send({ operation: "unmute", player: r.player }, "Aufgehoben.");
           } }) : S.btn("Stummschalten", { icon: "bellOff", size: "sm", onClick: function () { editor({ id: r.player, name: r.name }, r); } }),
-          S.btn("Optionen", { size: "sm", icon: "settings", onClick: function () { options(r); } })) : null;
+          S.btn("Optionen", { size: "sm", icon: "settings", onClick: function () { options(r); } }),
+          S.btn("Töne", { size: "sm", icon: "bell", onClick: function () { soundEditor(r); } })) : null;
         list.append(h("div", { class: "item" }, S.avatar(r.name), h("div", { class: "meta grow" }, h("b", { text: r.name }),
           h("div", { class: "small muted", text: silenceUntil(r) + (silenceBy(r) ? " · " + silenceBy(r) : "") + (r.since ? " · " + S.ago(r.since) : "") }), badges), actions));
       });
@@ -356,11 +404,15 @@
     area.append(kpis,
       S.card("Spieler", { icon: "bellOff", cls: "pad-list", sub: "Aktive Chat-Ruhen und gespeicherte Optionen. Spieler verwalten das selbst mit /chat (Java: Dialog oder Menü, Bedrock: natives Formular)." },
         h("div", { class: "stack" }, h("div", { class: "row wrap" }, S.searchBox("Spieler suchen …", function (q) { search = q; paint(); }, search),
-          S.segmented([["active", "Aktiv"], ["inactive", "Nur Optionen"], ["all", "Alle"]], filter, function (v) { filter = v; paint(); })), list)),
+          S.segmented([["active", "Aktiv"], ["inactive", "Nur Optionen/Töne"], ["all", "Alle"]], filter, function (v) { filter = v; paint(); })), list)),
+      S.card("Persönliche Stummschaltungen", { icon: "users", cls: "pad-list", sub: "Spieler A blendet Spieler B nur für sich aus – C sieht B weiterhin. Optional inklusive weiterer Konten (jetzt und künftig, über die Alt-Erkennung). Welche Konten das sind, sehen nur Admins. Admins können nie stummgeschaltet werden.",
+        actions: S.can("chat-silence.manage") ? S.btn("Hinzufügen", { size: "sm", icon: "plus", onClick: addMute }) : null },
+        h("div", { class: "stack" }, S.searchBox("Spieler suchen …", function (q) { muteSearch = q; paintMutes(); }, muteSearch), mutesList)),
       S.card("So funktioniert es", { icon: "info" }, h("div", { class: "stack small" },
         h("p", { text: "Während der Chat-Ruhe erhält der Spieler keine Chatnachrichten anderer Spieler und Plugins und keine Chat-Töne. Action-Bar, Titel und Antworten auf eigene Befehle bleiben sichtbar." }),
         h("p", { text: "Erwähnungen mit vollem Namen kommen an (der Spieler kann sie per Klick bzw. /chat erwähnungen aus stummschalten). Schreibt der Spieler selbst in den Chat, erscheint ein Hinweis mit dem Weg zurück." }),
-        h("p", { text: "Wer einen stummgeschalteten Spieler erwähnt – auch mit mindestens sechs Buchstaben des Namens –, erhält einen Hinweis. Flüsternachrichten werden abgelehnt, wenn der Spieler sie stummgeschaltet hat." }))));
+        h("p", { text: "Wer einen stummgeschalteten Spieler erwähnt – auch mit mindestens sechs Buchstaben des Namens –, erhält einen Hinweis. Flüsternachrichten werden abgelehnt, wenn der Spieler sie stummgeschaltet hat." }),
+        h("p", { text: "Server-Töne (/chat töne): Chat-Töne aus, Plugin-/Hinweistöne aus oder völlige Stille – unabhängig von der Chat-Ruhe." }))));
     S.mount(area);
     data = await S.api("chat-silence"); if (!alive()) return;
     paint();

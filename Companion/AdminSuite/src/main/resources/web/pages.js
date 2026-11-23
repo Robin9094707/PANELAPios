@@ -173,13 +173,16 @@
     var p = await S.api("data/profile", { query: { player: id } }); if (!alive()) return;
     S.title(p.name, "Spielerprofil", h("a", { class: "btn ghost sm", href: "#/players" }, icon("chevLeft"), h("span", { class: "hide-mobile", text: "Spieler" })));
     var head = S.card(null, {}, h("div", { class: "row wrap", style: { gap: "16px" } }, S.avatar(p.name, "lg"),
-      h("div", { class: "grow" }, h("h2", { style: { margin: 0, fontSize: "22px" }, text: p.name }), h("div", { class: "mono muted tiny", text: p.id }), h("div", { class: "row wrap", style: { gap: "6px", marginTop: "8px" } }, playerBadges(p), p.staff ? S.badge(p.staff, "accent", "shieldCheck") : null, p.vpnWhitelisted ? S.badge("VPN-Ausnahme", "info") : null)),
-      actionMenu(p)));
+      h("div", { class: "grow" }, h("h2", { style: { margin: 0, fontSize: "22px" }, text: p.name }), h("div", { class: "mono muted tiny profile-id", text: p.id }), h("div", { class: "row wrap", style: { gap: "6px", marginTop: "8px" } }, playerBadges(p), p.staff ? S.badge(p.staff, "accent", "shieldCheck") : null, p.vpnWhitelisted ? S.badge("VPN-Ausnahme", "info") : null)),
+      // 10.23.1: with the tool grid every action is in "Werkzeuge" – no second "Aktionen" menu.
+      S.has("profile-v4") ? null : actionMenu(p)));
     var info = S.card("Profil", { icon: "user" }, S.kv([
       ["Erstmals gesehen", S.date(p.firstSeen)], ["Zuletzt gesehen", p.online ? "Jetzt online" : S.date(p.lastSeen)], ["Client", p.client === "BEDROCK" ? "Bedrock · " + (p.device || "Gerät unbekannt") : p.client === "JAVA" ? "Java" + (p.brand ? " · " + p.brand : "") : p.client],
       ["Version", p.version], ["Simplex-Punkte", S.num(p.points)], ["Spielzeit", p.activity ? S.dur(p.activity.playMillis) + " (AFK " + S.dur(p.activity.afkMillis) + ")" : null],
       ["Sitzungen", p.activity ? S.num(p.activity.sessions) : null], ["Geräte", p.deviceCount], ["Mögliche Alts", p.altCount], ["Frühere Namen", (p.previousNames || []).join(", ")],
-      ["Letzter Ort", p.lastLocation ? fmtLoc(p.lastLocation) : null]]));
+      ["Letzter Ort", p.lastLocation ? fmtLoc(p.lastLocation) : null],
+      ["Chat-Ruhe", p.chatSilence ? (p.chatSilence.active ? "aktiv" : "aus") + " · " + p.chatSilence.soundLabel : null],
+      ["Persönlich stummgeschaltet", p.personalMutes ? (p.personalMutes["protected"] ? "Admin – kann nicht stummgeschaltet werden" : p.personalMutes.muting + " Spieler") : null]]));
     var cards = [head];
     // 10.20.0: main ban or blocked alt account, whole case and lift options right in the profile.
     if (S.has("ban-center-v1") && S.can("data.ban-center") && S.banStatusCard) cards.push(S.banStatusCard(p.id));
@@ -193,7 +196,8 @@
       S.has("access-locks-v1") && S.can("data.access-locks") ? h("a", { class: "btn sm primary", href: "#/access-locks/" + p.id }, icon("lock"), "Rechte & Sperren") : null,
       S.has("luckperms-v1") && S.can("data.luckperms") ? h("a", { class: "btn sm", href: "#/luckperms/player/" + p.id }, icon("key"), "Rang & LuckPerms") : null,
       S.has("command-rights-v1") && S.can("data.commands") ? h("a", { class: "btn sm", href: "#/commands/" + p.id }, icon("terminal"), "Befehle") : null);
-    if (quick.children.length) cards.push(quick);
+    // 10.23.0: every player tool in one glass grid – links plus all player actions from the schema.
+    if (S.has("profile-v4")) cards.push(toolGrid(p, quick)); else if (quick.children.length) cards.push(quick);
     // 10.1.0: rank with prefix/suffix preview and one-click group assignment right in the profile.
     if (S.has("luckperms-v1") && S.can("data.luckperms")) cards.push(rankCard(p));
     var grid = h("div", { class: "grid two" }, info);
@@ -232,7 +236,8 @@
     if (S.has("player-dossier-v1") && S.dossierCard) cards.push(S.dossierCard(p.id));
     var tabBody = h("div");
     var tabs = h("div", { class: "tabs" });
-    [["devices", "Geräte", "data.devices"], ["alts", "Alt-Accounts", "data.alts"]].forEach(function (t, i) {
+    // 10.23.1: devices are a tool tile; the tab card keeps only what has no tile of its own.
+    (S.has("profile-v4") && S.has("visual-inventory-v1") ? [["alts", "Alt-Accounts", "data.alts"]] : [["devices", "Geräte", "data.devices"], ["alts", "Alt-Accounts", "data.alts"]]).forEach(function (t, i) {
       var b = h("button", { class: i === 0 ? "on" : "", type: "button", text: t[1], disabled: !S.can(t[2]), title: S.can(t[2]) ? "" : "Keine Berechtigung: " + t[2] });
       b.addEventListener("click", function () { Array.prototype.forEach.call(tabs.children, function (c) { c.classList.remove("on"); }); b.classList.add("on"); loadTab(t[0]); });
       tabs.appendChild(b);
@@ -251,8 +256,38 @@
     }
     cards.push(S.card(null, {}, tabs, tabBody));
     S.mount(h("div", { class: "stack" }, cards));
-    if (S.can("data.devices")) loadTab("devices"); else tabBody.appendChild(S.notice("Keine Berechtigung für Gerätedaten.", "warn", "lock"));
+    var firstTab = tabs.firstChild ? (tabs.firstChild.textContent === "Geräte" ? "devices" : "alts") : "alts";
+    if (S.can(firstTab === "devices" ? "data.devices" : "data.alts")) loadTab(firstTab); else tabBody.appendChild(S.notice(firstTab === "devices" ? "Keine Berechtigung für Gerätedaten." : "Keine Berechtigung für Alt-Accounts.", "warn", "lock"));
   };
+  function glassTool(label, hint, ic, onClick, kind, disabled) {
+    return h("button", { type: "button", class: "glass-tool" + (kind ? " " + kind : ""), disabled: !!disabled, title: disabled ? "Keine Berechtigung" : hint || label, onClick: onClick },
+      h("span", { class: "gi" }, icon(ic || "chevRight")), h("b", { text: label }), hint ? h("small", { text: hint }) : null);
+  }
+  var ACTION_ICONS = { punish: "gavel", kick: "logout", warn: "alert", notes: "edit", watchlist: "eye", history: "clock", info: "info", teleport: "map", freeze: "lock", heal: "activity", vitals: "activity", gamemode: "layers", message: "send", points: "star" };
+  function actionIcon(id) { var keys = Object.keys(ACTION_ICONS); for (var i = 0; i < keys.length; i++) if (String(id).indexOf(keys[i]) >= 0) return ACTION_ICONS[keys[i]]; return "sparkles"; }
+  function toolGrid(p, quick) {
+    var grid = h("div", { class: "glass-tools" });
+    function go(href) { return function () { S.go(href); }; }
+    if (S.has("visual-inventory-v1")) grid.append(glassTool(p.online ? "Live-Inventar" : "Offline-Inventar", p.online ? "Inventar, Rüstung, Endertruhe live" : "Gespeicherter Stand", "box", go("#/inventory/" + p.id + (p.online ? "" : "?offline=true")), "ok", !S.can("data.inventory")));
+    if (S.has("powerbot-v1")) grid.append(glassTool("Snapshots", "Inventar-Verlauf wiederherstellen", "clock", go("#/snapshots/" + p.id), "", !(S.can("data.snapshots") && S.can("data.snapshot-content"))));
+    if (S.has("access-locks-v1")) grid.append(glassTool("Rechte & Sperren", "Bauen, Chat, Befehle …", "lock", go("#/access-locks/" + p.id), "warn", !S.can("data.access-locks")));
+    if (S.has("luckperms-v1")) grid.append(glassTool("Rang & LuckPerms", "Gruppen und Rechte", "crown", go("#/luckperms/player/" + p.id), "", !S.can("data.luckperms")));
+    if (S.has("command-rights-v1")) grid.append(glassTool("Befehle", "Erlaubte Befehle", "terminal", go("#/commands/" + p.id), "", !S.can("data.commands")));
+    if (S.has("community-tools-v1")) grid.append(glassTool("Punkte & Delivery", "Simplex Points, Zustellungen", "star", go("#/community-tools?player=" + encodeURIComponent(p.id)), "", !S.can("data.community-tools")));
+    if (S.has("visual-inventory-v1")) grid.append(glassTool("Geräte", "Clients, Sitzungen", "devices", go("#/player-devices/" + p.id), "", !S.can("data.devices")));
+    // Bann-Zentrale: reachable from the "Sperrstatus" card directly above – not a second time here.
+    if (S.has("chat-silence-v1")) grid.append(glassTool("Chat-Ruhe & Töne", "Chat, Töne, persönliche Stummschaltungen", "bellOff", go("#/chat-silence"), "", !S.can("data.chat-silence")));
+    if (S.has("smart-anti-lag-v1") && S.can("data.anti-lag")) grid.append(glassTool("Anti-Lag", "Verursacht dieser Spieler Last?", "activity", go("#/anti-lag"), "warn"));
+    var actionsGrid = h("div", { class: "glass-tools" });
+    S.schema().then(function (schema) {
+      schema.filter(function (a) { return (a.options || []).some(function (o) { return o.name === "player"; }); }).forEach(function (a) {
+        var allowed = a.allowed !== false && S.can("action." + a.id);
+        actionsGrid.append(glassTool(a.description || a.name, a.group || "Spieleraktion", actionIcon(a.id), function () { S.openAction(a, { player: p.name }); }, /punish|ban|kick/.test(a.id) ? "danger" : "", !allowed));
+      });
+    }).catch(function () { /* actions stay in the Aktionen menu */ });
+    return S.card("Werkzeuge", { icon: "grid", sub: "Alles für " + p.name + " an einem Ort – ausgegraute Werkzeuge brauchen ein zusätzliches Recht." },
+      h("div", { class: "stack" }, grid, h("div", { class: "card-sub", text: "Aktionen" }), actionsGrid));
+  }
   function fmtLoc(l) { return typeof l === "string" ? l : [l.world, Math.round(l.x), Math.round(l.y), Math.round(l.z)].filter(function (v) { return v !== undefined; }).join(" · "); }
   function actionMenu(p) {
     var wrap = h("div", { class: "rel" });
@@ -640,6 +675,32 @@
 
   // ============================================================ Plugins
   P.plugins = async function (param, query, alive) {
+    // 10.23.0: one server-side overview – file version, loaded version, pending updates and versioned file names.
+    if (S.has("plugin-versioned-files-v1") && S.can("data.plugins")) {
+      var o; try { o = await S.api("plugin-files/overview"); } catch (e) { o = null; }
+      if (o && alive()) {
+        var list = h("div", { class: "list" }), items = (o.items || []).slice().sort(function (a, b) { return String(a.name || a.filename).localeCompare(String(b.name || b.filename)); });
+        function paint(q) {
+          S.clear(list);
+          items.filter(function (p) { return !q || String(p.name || p.filename).toLowerCase().indexOf(q.toLowerCase()) >= 0; }).forEach(function (p) {
+            var badges = h("div", { class: "row wrap", style: { gap: "6px" } },
+              p.disabled ? S.badge("Deaktiviert", "") : p.enabled ? S.badge("Aktiv", "ok") : p.loaded ? S.badge("Fehler beim Laden", "danger") : S.badge("Neu – aktiv nach Neustart", "info"),
+              p.restartPending ? S.badge("Läuft noch " + p.loadedVersion + " – Neustart nötig", "warn") : null,
+              p.pending ? S.badge("Update " + p.pending.version + " vorgemerkt → " + p.pending.versionedFilename, "info", "download") : null,
+              p.error ? S.badge(p.error, "danger") : null);
+            list.append(h("div", { class: "item" }, h("div", { class: "ico-tile" + (p.pending ? " info" : p.enabled ? " ok" : "") }, icon("puzzle")),
+              h("div", { class: "meta grow" }, h("b", { text: (p.name || p.filename) + (p.version ? " " + p.version : "") }), h("div", { class: "small muted mono", text: p.filename + (p.size ? " · " + S.bytes(p.size) : "") }), badges)));
+          });
+        }
+        S.title("Plugins", items.length + " Dateien · " + o.enabled + " aktiv");
+        S.mount(h("div", { class: "stack" },
+          S.notice("Neue Plugins kannst du jetzt auch bei laufendem Server hinzufügen – sie werden beim nächsten Neustart aktiv. Updates werden mit Versionsnummer im Dateinamen vorgemerkt (z. B. LuckPerms-5.4.150.jar) – Paper übernimmt diesen Namen beim nächsten Start.", "info"),
+          S.searchBox("Plugin suchen …", paint), S.card("Plugin-Dateien", { icon: "puzzle", cls: "pad-list", sub: "Update-Ordner: " + o.updateDirectory }, list),
+          (o.runtimeOnly || []).length ? S.card("Nur zur Laufzeit geladen", { icon: "info" }, h("div", { class: "small muted", text: o.runtimeOnly.map(function (r) { return r.name + " " + r.version; }).join(", ") })) : null));
+        paint("");
+        return;
+      }
+    }
     var r = await S.api("data/plugins"); if (!alive()) return;
     var rows = (r.items || []).slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
     var tbody = h("tbody");

@@ -206,6 +206,7 @@ struct SuitePlayerView: View {
     @State private var updated: Date?
     @State private var resolved: PlayerPlatform?
     @State private var quick: SuiteQuickAction?
+    @State private var openTool: SuitePlayerTool?
     @ObservedObject private var bookmarks = SuitePlayerBookmarks.shared
     var current: JSON { profile == .null ? initialProfile : profile }
     var favorite: Bool { bookmarks.isFavorite(suite.bookmarkScope, player) }
@@ -234,6 +235,7 @@ struct SuitePlayerView: View {
                 LabeledContent("Simplex Points", value: current["points"].string)
                 LabeledContent("Warnungen", value: current["warnings"].string)
             }
+            SuitePlayerToolGrid(suite: suite, player: player, name: name, current: current, actions: actions, selection: $openTool)
             quickActionSection
             if suite.features.contains(SuiteBanText.feature) && suite.can(SuiteBanText.viewPermission) {
                 SuitePlayerBanSection(suite: suite, player: player)
@@ -241,34 +243,7 @@ struct SuitePlayerView: View {
             if suite.features.contains("moderation-qol-v1") && suite.can("ai.assistant.use") {
                 SuitePlayerAssistantLink(suite: suite, player: player)
             }
-            if suite.features.contains("player-dossier-v1") && suite.can("data.profile") {
-                Section {
-                    NavigationLink { SuitePlayerDossierView(suite: suite, player: player) } label: { Label("Steckbrief: alles über \(name)", systemImage: "person.text.rectangle.fill") }.accessibilityIdentifier("player-dossier")
-                } footer: { Text("Identität, Aktivität, Client, Bedrock-Gerät, Netzwerk, Moderation und Verlauf auf einen Blick – durchsuchbar.") }
-            }
             SuiteSavedNBTSection(suite: suite, player: player)
-            if suite.can("data.inventory") || suite.can("data.nbt-paths") || suite.can("data.snapshots") {
-            Section("Inventar & Speicherstand") {
-                if suite.can("data.inventory") {
-                    if suite.features.contains("visual-inventory-v1") {
-                        NavigationLink { SuiteVisualInventoryView(suite: suite, player: current["id"].string, offline: !current["online"].bool) } label: {
-                            Label(current["online"].bool ? "Live-Inventar & Endertruhe" : "Offline-Inventar & Endertruhe", systemImage: "square.grid.3x3.fill")
-                        }.disabled(!current["online"].bool && !suite.features.contains("powerbot-v1"))
-                    } else {
-                        NavigationLink { SuiteDataListView(suite: suite, kind: "inventory", player: player, actions: actions) } label: {
-                            Label("Aktuelles Inventar & Endertruhe", systemImage: "square.grid.3x3.fill")
-                        }.disabled(!current["online"].bool)
-                    }
-                }
-                if suite.can("data.nbt-paths") {
-                    NavigationLink { SuiteNBTPathsView(suite: suite, panel: panel, server: server, player: player) } label: { Label("NBT-Editor öffnen", systemImage: "doc.badge.gearshape") }
-                }
-                if suite.can("data.snapshots") {
-                    NavigationLink { SuiteSnapshotsView(suite: suite, player: player, actions: actions) } label: { Label("Inventar-Snapshots", systemImage: "archivebox") }
-                }
-                if !current["online"].bool && !suite.features.contains("powerbot-v1") { Text("Offline-Inventar über den NBT-Editor oder einen gespeicherten Snapshot öffnen.").font(.caption).foregroundStyle(.secondary) }
-            }
-            }
             if current["logoutLocation"] != .null {
                 Section("Zuletzt ausgeloggt") {
                     LabeledContent("Welt", value: current["logoutLocation"]["world"].string)
@@ -278,47 +253,21 @@ struct SuitePlayerView: View {
             }
             if suite.features.contains("luckperms-v1") && suite.can("data.luckperms") { SuitePlayerRankSection(suite: suite, player: player, name: name) }
             if suite.features.contains("player-connection-v1") && (suite.can("data.diagnostics") || suite.can("data.profile")) { SuitePlayerConnectionSection(suite: suite, player: player) }
-            Section("Spielerverwaltung") {
-                if suite.features.contains("community-tools-v1") && suite.can("data.community-tools"), UUID(uuidString: player) != nil {
-                    NavigationLink { SuiteCommunityToolsView(suite: suite, initialPlayer: player) } label: {
-                        Label("Punktekonto & Quick Delivery", systemImage: "storefront.fill")
-                    }
-                }
-                if suite.features.contains("player-timeline-v1") && suite.can("data.profile") {
-                    NavigationLink { SuitePlayerTimelineView(suite: suite, player: player, name: name) } label: { Label("Verlauf · Chat, Aktionen, Kämpfe & Items", systemImage: "clock.arrow.circlepath") }.accessibilityIdentifier("player-timeline")
-                }
-                if suite.features.contains("powerbot-cases-v2") && suite.can("data.powerbot") {
-                    NavigationLink { SuitePowerBotPlayerView(suite: suite, player: player, name: name) } label: { Label("PowerBot-Akte", systemImage: "shield.lefthalf.filled") }
-                }
-                if suite.features.contains("player-rights-v1") {
-                    NavigationLink { SuiteAccessLockPlayerView(suite: suite, player: player) } label: { Label("Rechte & Sperren", systemImage: "lock.shield.fill") }.disabled(!suite.can("data.access-locks")).accessibilityIdentifier("player-rights")
-                    if suite.features.contains("command-rights-v1") { NavigationLink { SuiteCommandPlayerView(suite: suite, player: player) } label: { Label("Befehle erlauben & sperren", systemImage: "terminal.fill") }.disabled(!suite.can("data.commands")).accessibilityIdentifier("player-commands") }
-                } else {
-                    NavigationLink("Spielerrechte & Vererbung") { SuitePermissionView(suite:suite,player:player) }
-                }
-                NavigationLink("Client jetzt prüfen") { SuiteProbeView(suite:suite,player:player) }.disabled(!current["online"].bool)
-            }
             Section("Netzwerk & Verknüpfungen") {
                 if current["vpnWhitelisted"] != .null {
                     Toggle("VPN-Whitelist für diesen Spieler", isOn: Binding(get: { current["vpnWhitelisted"].bool }, set: { _ in vpnSheet = true })).disabled(suite.scope == "read" || suite.demo).accessibilityIdentifier("profile-vpn-whitelist")
                     Text("Die Änderung wird vor dem Speichern geprüft und bestätigt.").font(.caption).foregroundStyle(.secondary)
                 }
                 SuiteNetworkContent(network: current["network"])
-                NavigationLink { SuiteAltDashboardView(suite: suite, panel: panel, server: server, actions: actions) } label: { Label("Alt-Account-Dashboard", systemImage: "chart.bar.xaxis") }
                 if !current["network"]["ip"].string.isEmpty {
                     if current["network"]["altExcluded"].bool { Label("Diese IP wird für Alt-Verknüpfungen ignoriert", systemImage: "shield.lefthalf.filled").font(.caption).foregroundStyle(.orange) }
                     NavigationLink { SuiteAltIPsView(suite: suite, initialIP: current["network"]["ip"].string) } label: { Label("Diese IP ausschließen / verwalten", systemImage: "network") }
                 }
-                NavigationLink { SuiteDataListView(suite: suite, kind: "alts", player: player, actions: actions, panel: panel, server: server) } label: { Label(current["altCount"] == .null ? "Alt-Accounts & deren Profile" : "Alt-Accounts & deren Profile · \(current["altCount"].int)", systemImage: "person.2.badge.key.fill") }.accessibilityLabel("Alt-Accounts & deren Profile")
                 NavigationLink { SuiteVPNPlatformView(suite: suite) } label: { Label("VPN-Plattformen & Standortdiagnose", systemImage: "network") }
             }
-            Section("Schnellaktionen") {
-                NavigationLink { SuiteDataListView(suite: suite, kind: "devices", player: player, actions: actions, panel: panel, server: server) } label: { Label("Alle Geräte anzeigen", systemImage: "iphone.and.arrow.right.inward") }
-                if let action = actions.first(where: { $0.id == "security.ultraban" }) {
+            if let action = actions.first(where: { $0.id == "security.ultraban" }) {
+                Section("Sicherheit") {
                     NavigationLink { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player)]) } label: { Label("Ultrabann", systemImage: "shield.slash.fill").foregroundStyle(.red) }.accessibilityIdentifier("player-ultraban")
-                }
-                if let action = actions.first(where: { $0.id == "player.punish" }) {
-                    NavigationLink { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player)]) } label: { Label("Alle Strafen & Warnungen", systemImage: "hand.raised.fill") }
                 }
             }
             if live != .null {
@@ -340,7 +289,7 @@ struct SuitePlayerView: View {
             }
             }
             Section { DisclosureGroup("Weitere Spieleraktionen") {
-                ForEach(actions.filter { ["player.notes", "player.watchlist", "player.action", "player.message", "player.points", "player.nickname", "security.alt-ban", "moderation.restrict", "moderation.banmode"].contains($0.id) }) { action in NavigationLink(action.title) { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player)]) } }
+                ForEach(actions.filter { ["player.watchlist", "player.action", "player.points", "player.nickname", "security.alt-ban", "moderation.restrict", "moderation.banmode"].contains($0.id) }) { action in NavigationLink(action.title) { SuiteActionView(suite: suite, action: action, preset: ["player": .string(player)]) } }
             }
             }
             Section {
@@ -350,6 +299,7 @@ struct SuitePlayerView: View {
             }
         }.panelScreen().navigationTitle(name).navigationBarTitleDisplayMode(.inline).task(id: automatic) { await load(); for _ in 0..<12 { guard current["network"]["pending"].bool && !Task.isCancelled else { break }; do { try await Task.sleep(for: .seconds(2)) } catch { return }; await load() }; while automatic && !Task.isCancelled { do { try await Task.sleep(for: .seconds(15)) } catch { return }; await load() } }.refreshable { await load() }.errorAlert($error)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(favorite ? "Favorit entfernen" : "Als Favorit markieren", systemImage: favorite ? "star.fill" : "star") { bookmarks.toggleFavorite(suite.bookmarkScope, id: player, name: name) }.tint(.yellow).accessibilityIdentifier("player-favorite") } }
+            .navigationDestination(item: $openTool) { tool in SuitePlayerToolDestination(tool: tool, suite: suite, panel: panel, server: server, player: player, name: name, current: current, actions: actions) }
             .sheet(item: $quick, onDismiss: { Task { await load() } }) { item in SuiteQuickActionSheet(suite: suite, item: item) { quick = nil } }
             .sheet(isPresented: $vpnSheet, onDismiss: { Task { await load() } }) { NavigationStack { SuiteActionView(suite: suite, action: .make("vpn.whitelist", "VPN-Ausnahme ändern"), preset: ["player": .string(player), "allowed": .string(current["vpnWhitelisted"].bool ? "false" : "true")]) } }
     }
@@ -363,7 +313,7 @@ struct SuitePlayerView: View {
                             Button { quick = entry.item } label: {
                                 VStack(spacing: 6) { Image(systemName: entry.symbol).font(.title3); Text(entry.title).font(.caption.weight(.medium)).lineLimit(1) }
                                     .frame(minWidth: 72).padding(.vertical, 10).padding(.horizontal, 8)
-                                    .background((entry.role != nil ? Color.red : Color.panelAccent).opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                                    .glassEffect(.regular.tint((entry.role != nil ? Color.red : Color.panelAccent).opacity(0.18)).interactive(), in: RoundedRectangle(cornerRadius: 14))
                                     .foregroundStyle(entry.role != nil ? Color.red : Color.panelAccent)
                             }.buttonStyle(.plain).accessibilityIdentifier("player-quick-" + entry.title)
                         }

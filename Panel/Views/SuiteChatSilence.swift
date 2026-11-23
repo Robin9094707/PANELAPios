@@ -41,6 +41,16 @@ struct SuiteChatSilenceTarget: Identifiable, Equatable {
     var whispers = false
     var mentions = false
     var active = false
+    var sounds = "off"
+}
+
+/// 5.16.0: one personal mute being created by staff (owner mutes target only for themselves).
+struct SuitePlayerMuteDraft: Identifiable, Equatable {
+    var id: String { owner + ">" + target }
+    let owner: String
+    let ownerName: String
+    let target: String
+    let targetName: String
 }
 
 struct SuiteChatSilenceView: View {
@@ -54,6 +64,12 @@ struct SuiteChatSilenceView: View {
     @State private var unmuting: SuiteChatSilenceTarget?
     @State private var error: String?
     @State private var loaded = false
+    @State private var muteOwnerPicking = false
+    @State private var muteOwner: (String, String)?
+    @State private var muteTargetPicking = false
+    @State private var muteDraft: SuitePlayerMuteDraft?
+    @State private var pendingDraft: SuitePlayerMuteDraft?
+    @State private var removingMute: JSON?
 
     private var manage: Bool { data["manage"].bool }
     private var rows: [JSON] { SuiteChatSilenceText.filter(data["items"].array, activeOnly: activeOnly, search: search) }
@@ -68,15 +84,19 @@ struct SuiteChatSilenceView: View {
                 }.pickerStyle(.segmented)
             }
             rowsSection
+            mutesSection
             SuiteChatSilenceHelp()
         }
         .panelScreen()
-        .navigationTitle("Chat-Ruhe")
+        .navigationTitle("Chat-Ruhe & Stummschaltung")
         .searchable(text: $search, prompt: "Spieler suchen")
         .toolbar {
             if manage {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { picking = true } label: { Label("Spieler stummschalten", systemImage: "bell.slash.fill") }
+                    Menu {
+                        Button("Chat-Ruhe oder Töne für Spieler", systemImage: "bell.slash.fill") { picking = true }
+                        if data["mutesAvailable"].bool { Button("Persönliche Stummschaltung", systemImage: "person.crop.circle.badge.xmark") { muteOwnerPicking = true } }
+                    } label: { Label("Hinzufügen", systemImage: "plus.circle.fill") }
                 }
             }
         }
@@ -86,6 +106,20 @@ struct SuiteChatSilenceView: View {
                 picked = SuiteChatSilenceTarget(id: id, name: name, whispers: existing?["whispers"].bool ?? false, mentions: existing?["mentions"].bool ?? false, active: existing?["active"].bool ?? false)
             }
         }
+        .sheet(isPresented: $muteOwnerPicking, onDismiss: { if muteOwner != nil { muteTargetPicking = true } }) {
+            SuiteChatSilencePlayerPicker(suite: suite) { id, name in muteOwner = (id, name) }
+        }
+        .sheet(isPresented: $muteTargetPicking, onDismiss: { if let pendingDraft { muteDraft = pendingDraft; self.pendingDraft = nil }; muteOwner = nil }) {
+            SuiteChatSilencePlayerPicker(suite: suite) { id, name in
+                if let owner = muteOwner, owner.0 != id { pendingDraft = SuitePlayerMuteDraft(owner: owner.0, ownerName: owner.1, target: id, targetName: name) }
+            }
+        }
+        .sheet(item: $muteDraft) { draft in SuitePlayerMuteEditor(draft: draft) { body in await send(body) } }
+        .confirmationDialog("Stummschaltung aufheben?", isPresented: Binding(get: { removingMute != nil }, set: { if !$0 { removingMute = nil } }), titleVisibility: .visible) {
+            if let removingMute {
+                Button("Aufheben") { Task { await send(["operation": .string("unignore"), "player": removingMute["owner"], "target": removingMute["target"]]) } }
+            }
+        } message: { Text("\(removingMute?["ownerName"].string ?? "") sieht danach wieder Nachrichten von \(removingMute?["targetName"].string ?? "").") }
         .sheet(item: $editing) { target in
             SuiteChatSilenceEditor(target: target) { body in await send(body) }
         }
@@ -114,7 +148,24 @@ struct SuiteChatSilenceView: View {
     }
 
     private func target(_ row: JSON) -> SuiteChatSilenceTarget {
-        SuiteChatSilenceTarget(id: row["player"].string, name: row["name"].string, whispers: row["whispers"].bool, mentions: row["mentions"].bool, active: row["active"].bool)
+        SuiteChatSilenceTarget(id: row["player"].string, name: row["name"].string, whispers: row["whispers"].bool, mentions: row["mentions"].bool, active: row["active"].bool, sounds: row["sounds"].string.isEmpty ? "off" : row["sounds"].string)
+    }
+
+    @ViewBuilder private var mutesSection: some View {
+        if data["mutesAvailable"].bool {
+            Section {
+                let mutes = data["mutes"].array.filter { search.isEmpty || ($0["ownerName"].string + " " + $0["targetName"].string).localizedCaseInsensitiveContains(search) }
+                ForEach(Array(mutes.enumerated()), id: \.offset) { _, row in
+                    SuitePlayerMuteRow(row: row, showLinked: data["showLinked"].bool)
+                        .swipeActions(edge: .trailing) { if manage { Button("Aufheben", systemImage: "bell.fill") { removingMute = row }.tint(.green) } }
+                }
+                if mutes.isEmpty {
+                    ContentUnavailableView("Keine persönlichen Stummschaltungen", systemImage: "person.2.slash", description: Text("Spieler nutzen im Spiel /ignorieren <Spieler> oder /chat → Spieler stummschalten."))
+                }
+            } header: { Text("Persönliche Stummschaltungen") } footer: {
+                Text("Spieler A blendet Spieler B nur für sich aus – C sieht B weiterhin. Optional inklusive weiterer Konten (bestehend und künftig, über die Alt-Erkennung). Welche Konten das sind, sehen nur Admins. Admins können nie stummgeschaltet werden.")
+            }
+        }
     }
 
     private func load(quiet: Bool = false) async {
@@ -199,6 +250,7 @@ struct SuiteChatSilenceRow: View {
             PowerBotTag(text: row["online"].bool ? (row["bedrock"].bool ? "Bedrock" : "Java") : "Offline", tint: row["online"].bool ? .blue : .secondary)
             if row["whispers"].bool { PowerBotTag(text: "Flüstern stumm", tint: .purple) }
             if row["mentions"].bool { PowerBotTag(text: "Erwähnungen stumm", tint: .pink) }
+            if !row["sounds"].string.isEmpty && row["sounds"].string != "off" { PowerBotTag(text: SuiteUpkeep.soundTitle(row["sounds"].string), tint: .teal) }
         }
     }
 }
@@ -212,6 +264,7 @@ struct SuiteChatSilenceEditor: View {
     @State private var mentions = false
     @State private var notify = true
     @State private var busy = false
+    @State private var sounds = "off"
 
     var body: some View {
         NavigationStack {
@@ -227,6 +280,10 @@ struct SuiteChatSilenceEditor: View {
                     Toggle("Flüsternachrichten stummschalten", isOn: $whispers)
                     Toggle("Erwähnungen stummschalten", isOn: $mentions)
                 } footer: { Text("Ohne diese Schalter kommen Flüsternachrichten und Erwähnungen mit vollem Namen weiterhin an.") }
+                Section {
+                    Picker("Server-Töne", selection: $sounds) { ForEach(SuiteUpkeep.soundModes, id: \.0) { Text($0.1).tag($0.0) } }
+                    Button { Task { await run(["operation": .string("sounds"), "mode": .string(sounds)]) } } label: { Label("Nur Töne speichern", systemImage: "speaker.slash.fill") }
+                } header: { Text("Server-Töne") } footer: { Text(SuiteUpkeep.soundDetail(sounds) + " Gilt immer – auch ohne Chat-Ruhe.") }
                 Section { Toggle("Spieler im Spiel informieren", isOn: $notify) } footer: { Text("Auf Deutsch oder Englisch – je nach Sprache des Spielers.") }
                 Section {
                     Button { Task { await run(["operation": .string("mute"), "minutes": .number(Double(minutes)), "whispers": .bool(whispers), "mentions": .bool(mentions)]) } } label: {
@@ -247,7 +304,7 @@ struct SuiteChatSilenceEditor: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } } }
             .disabled(busy)
-            .onAppear { whispers = target.whispers; mentions = target.mentions }
+            .onAppear { whispers = target.whispers; mentions = target.mentions; sounds = target.sounds }
         }
     }
 
@@ -305,7 +362,63 @@ struct SuiteChatSilenceHelp: View {
             Label("Keine Chatnachrichten und keine Chat-Töne. Wer selbst schreibt, erhält einen Hinweis mit dem Weg zurück.", systemImage: "bell.slash.fill")
             Label("Erwähnungen mit vollem Namen und Flüsternachrichten kommen an, solange sie nicht ebenfalls stummgeschaltet sind.", systemImage: "at")
             Label("Wer einen stummgeschalteten Spieler erwähnt – auch nur mit sechs Buchstaben des Namens –, bekommt einen Hinweis.", systemImage: "info.circle.fill")
+            Label("Server-Töne (/chat töne): Chat-Töne aus, Plugin-Töne aus oder völlige Stille – unabhängig von der Chat-Ruhe.", systemImage: "speaker.slash.fill")
+            Label("Persönlich stummschalten (/ignorieren): nur für einen selbst, optional mit allen Konten der Person. Admins sind ausgenommen.", systemImage: "person.crop.circle.badge.xmark")
         }
         .font(.subheadline)
+    }
+}
+
+struct SuitePlayerMuteRow: View {
+    let row: JSON
+    let showLinked: Bool
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            SuitePlayerAvatar(row: .object(["id": row["owner"]]), size: 36)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(row["ownerName"].string + " → " + row["targetName"].string).font(.headline)
+                Text(SuiteUpkeep.muteDetail(row)).font(.caption).foregroundStyle(.secondary)
+                if showLinked && !SuiteUpkeep.linkedNames(row).isEmpty {
+                    Label("Verknüpft: " + SuiteUpkeep.linkedNames(row), systemImage: "eye.fill").font(.caption2).foregroundStyle(.orange)
+                }
+                if let since = SuitePlayerPresentation.date(row["since"]) { Text(SuiteRelativeTime.text(since)).font(.caption2).foregroundStyle(.tertiary) }
+            }
+        }.padding(.vertical, 2)
+    }
+}
+
+struct SuitePlayerMuteEditor: View {
+    let draft: SuitePlayerMuteDraft
+    let save: ([String: JSON]) async -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var alts = false
+    @State private var contact = true
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("\(draft.ownerName) sieht danach keine Nachrichten mehr von \(draft.targetName). Für alle anderen ändert sich nichts.").foregroundStyle(.secondary)
+                }
+                Section {
+                    Toggle("Auch weitere Konten einschließen", isOn: $alts)
+                    Toggle("Flüstern und Anfragen blockieren", isOn: $contact)
+                } footer: { Text("Weitere Konten: bestehende und künftige, erkannt über die Alt-Erkennung. Der Spieler erfährt nicht, welche das sind. Admins können nie stummgeschaltet werden.") }
+            }
+            .panelScreen()
+            .navigationTitle("Persönlich stummschalten")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Speichern") {
+                        Task {
+                            await save(["operation": .string("ignore"), "player": .string(draft.owner), "target": .string(draft.target), "alts": .bool(alts), "contact": .bool(contact)])
+                            dismiss()
+                        }
+                    }
+                }
+            }
+        }
     }
 }

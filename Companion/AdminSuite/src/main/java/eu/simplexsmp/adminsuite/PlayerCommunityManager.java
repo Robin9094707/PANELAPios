@@ -215,7 +215,7 @@ final class PlayerCommunityManager implements Listener {
     if (plugin.chatSilence != null)
       rows.add(
           b(
-              t(p, "Chat-Ruhe", "Chat break"),
+              t(p, "Chat-Ruhe, Töne & Stummschalten", "Chat break, sounds & muting"),
               chatSilenceDetail(p),
               Material.BELL,
               () -> plugin.chatSilence.open(p, () -> open(p))));
@@ -307,15 +307,7 @@ final class PlayerCommunityManager implements Listener {
               set(p, new Preferences(pref.language, pref.scoreboard, !pref.joins));
               settings(p);
             }));
-    if (plugin.chatSilence != null) {
-      boolean muted = plugin.chatSilence.silenced(p);
-      rows.add(
-          b(
-              t(p, "Chat-Ruhe: ", "Chat break: ") + (muted ? t(p, "● AKTIV", "● ACTIVE") : state(p, false)),
-              chatSilenceDetail(p),
-              muted ? Material.BELL : Material.NOTE_BLOCK,
-              () -> plugin.chatSilence.open(p, () -> settings(p))));
-    }
+    // 10.23.1: Chat-Ruhe, Töne und Stummschaltungen haben genau einen Eintrag – im Profil-Hauptmenü.
     rows.add(
         b(
             t(p, "Zurück", "Back"),

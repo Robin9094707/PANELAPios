@@ -7,7 +7,6 @@ struct SuiteUpgradeView: View {
         List {
             if suite.features.contains("accounts-v2") {
                 Section {
-                    NavigationLink { SuiteAccountView(suite: suite) } label: { Label("Konto & Sicherheit", systemImage: "lock.shield.fill") }
                     NavigationLink { SuiteSessionsView(suite: suite) } label: { Label(suite.account["manager"].bool ? "Geräte & Sitzungen" : "Meine Geräte", systemImage: "laptopcomputer.and.iphone") }
                 } header: { Text("Mein Zugang") } footer: {
                     if suite.account["canMigrate"].bool { Text("Neu: Wechsle vom Hauptschlüssel zu Benutzername & Passwort – mit 2FA, Passkeys und Webpanel. Unter Konto & Sicherheit.") }
@@ -15,22 +14,14 @@ struct SuiteUpgradeView: View {
             }
             Section("Zugriff") {
                 NavigationLink { SuiteUsersView(suite: suite) } label: { Label("App-Benutzer & Rechte", systemImage: "person.badge.key.fill") }.disabled(!suite.can("data.access"))
-                NavigationLink { SuiteLinksView(suite: suite) } label: { Label("Discord-Verifizierungen", systemImage: "link") }.disabled(!suite.can("data.links"))
-                if suite.can("action.notifications.update") { NavigationLink { SuiteBarkSettingsView(suite: suite) } label: { Label("Meine Bark-Benachrichtigungen", systemImage: "bell.badge") } }
-                if suite.can("action.notifications.update") && suite.features.contains("quiet-hours-v1") { NavigationLink { SuiteQuietHoursView(suite: suite) } label: { Label("Ruhezeiten & Notfallneustart", systemImage: "moon.zzz.fill") } }
             }
-            if suite.features.contains("app-settings-v1") || suite.features.contains("staff-chat-v1") {
-                Section("Team & Einstellungen") {
+            if suite.features.contains("staff-chat-v1") {
+                Section("Team") {
                     if suite.features.contains("staff-chat-v1") { NavigationLink { SuiteStaffChatSettingsView(suite: suite) } label: { Label("Staff-Chat & Discord-Kanal", systemImage: "bubble.left.and.text.bubble.right") }.disabled(suite.scope != "full") }
-                    if suite.features.contains("app-settings-v1") { NavigationLink { SuiteAppSettingsView(suite: suite) } label: { Label("Weitere Suite-Einstellungen", systemImage: "switch.2") }.disabled(!suite.can("data.app-settings")) }
                 }
             }
-            Section("Serverregeln") {
-                NavigationLink { SuiteMemoryGuardView(suite: suite) } label: { Label("RAM-Notfallneustart", systemImage: "memorychip") }.disabled(!suite.can("data.memory"))
-                NavigationLink { SuiteOnlineSettingsView(suite: suite) } label: { Label("Discord-Beitrittshinweise", systemImage: "person.crop.circle.badge.clock") }.disabled(!suite.can("data.online-settings"))
-            }
-            Section { Text("Bestehende API-Schlüssel und Verifizierungen bleiben erhalten. Ein gesperrtes Werkzeug kann mit diesem Benutzer nicht genutzt werden.").font(.footnote).foregroundStyle(.secondary) }
-        }.panelScreen().navigationTitle("Zugänge & Serverregeln")
+            Section { Text("Konto, Discord-Verknüpfungen, Bark, Ruhezeiten, RAM-Notfallneustart, Beitrittshinweise und App-Einstellungen findest du direkt unter Alle Admin-Werkzeuge. Bestehende API-Schlüssel und Verifizierungen bleiben erhalten.").font(.footnote).foregroundStyle(.secondary) }
+        }.panelScreen().navigationTitle("Benutzer & Sitzungen")
     }
 }
 
