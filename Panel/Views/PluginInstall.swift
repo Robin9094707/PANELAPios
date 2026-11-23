@@ -47,17 +47,19 @@ struct PluginInstallView:View {
          }
          let installedNames = try await api.list(prefix + "/list", query: ["directory": "/plugins"]).map { $0["name"].string }
          // The version is part of the name; a checksum suffix is only added when that name is already taken.
-         var name = descriptor.versionedFilename
-         if installedNames.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
-             name = String(descriptor.versionedFilename.dropLast(4)) + "-" + String(digest.prefix(8)) + ".jar"
-         }
-         let pending = name + ".pending"
-         pendingName = pending
          func verify(_ filename: String) async throws {
              let remote = try await api.fileData(server: server.id, path: "/plugins/" + filename, limit: 128 * 1024 * 1024)
              let hash = await Task.detached(priority: .userInitiated) { PluginArchive.digest(remote) }.value
              guard hash == digest else { throw PanelError(message: "Die Prüfsumme der Serverdatei stimmt nicht überein.") }
          }
+         var name = descriptor.versionedFilename
+         if let existing = installedNames.first(where: { $0.caseInsensitiveCompare(descriptor.versionedFilename) == .orderedSame }) {
+             // Same file already installed: nothing to do. Different content: keep both apart with a checksum suffix.
+             if (try? await verify(existing)) != nil { success = true; return }
+             name = String(descriptor.versionedFilename.dropLast(4)) + "-" + String(digest.prefix(8)) + ".jar"
+         }
+         let pending = name + ".pending"
+         pendingName = pending
          if try await exists(name) { try await verify(name); success = true; return }
          if !(try await exists(pending)) {
              let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
