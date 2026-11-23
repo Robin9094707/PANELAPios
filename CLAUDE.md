@@ -2,12 +2,12 @@
 
 Arbeitssprache mit dem Besitzer: **Deutsch**. Nutzertexte in App, Plugin und Doku sind Deutsch (Plugin-Spielertexte teils DE/EN).
 
-## Aktueller Stand (15.11.2026)
+## Aktueller Stand (23.11.2026)
 
 | Komponente | Version | Ort |
 | --- | --- | --- |
-| iOS-App „Simplex Panel“ | **5.13.0** (Build 54) | `Panel/`, `Shared/`, `PanelWidgets/`, `project.yml` |
-| Paper-Plugin „Simplex Admin Suite“ | **10.20.0** | `Companion/AdminSuite/` |
+| iOS-App „Simplex Panel“ | **5.16.0** (Build 57) | `Panel/`, `Shared/`, `PanelWidgets/`, `project.yml` |
+| Paper-Plugin „Simplex Admin Suite“ | **10.23.0** | `Companion/AdminSuite/` |
 | Geyser-Extension „SentinelBridge“ | 1.6.0 (unverändert seit 4.6.0) | `Companion/SentinelBridge/` |
 
 Hoster: **UltraServers** (`https://panel.ultraservers.com`, Pterodactyl-Client-API mit `ptlc_`-Schlüsseln). Kinetic wurde in 5.12.0 vollständig entfernt – nicht wieder einbauen.
@@ -66,6 +66,15 @@ Hinweis für die Admin-Suite-App-API bei UltraServers: Allocation mit Haken für
 ## Bann-Zentrale & LiteBans (10.20.0 / 5.13.0)
 
 LiteBans ist abgelöst (`litebans-migration.disable-litebans`, Standard an): `LiteBansMigration.java` liest per API/MySQL/H2-Datei einen Snapshot, schaltet LiteBans ab, `BanCommands.java` übernimmt /ban usw. (leitet an `/sas …` weiter). Fälle = gleiche Zeit/Grund/Ersteller; ausgeschlossene IPs (82.165.45.159) werden nie übernommen. `SimplexAdminSuite.BanCenterCore` baut Fälle aus Profil-Feldern `internal-punishments.ban.{case,role,main,…}` + Ultra-Gruppen; `BanCenterApi.java` = `/v1/ban-center`, `/v1/ban-center/player`, `/v1/ban-migration`. Web: `web/bans.js`. App: `SuiteBanCenter.swift`, `SuiteBanMigration.swift`, `SuiteBanCenterModel.swift`. Konsole: `/sas bans`. Test-Paper-Server lokal: Paper 26.3 über fill.papermc.io, Temurin 25.
+
+## 10.23.0 / 5.16.0
+
+- `ServerUpdater.java` – Paper-Updater über fill.papermc.io v3, `/v1/server-updater`; App `SuiteServerUpdaterView`, Web `upkeep.js`.
+- `SmartAntiLag.java` – Hotspots/Verursacher/sanfte Maßnahmen, `/v1/anti-lag`; App `SuiteAntiLagView`, Web `upkeep.js`.
+- `PlayerMutes.java` – persönliche Stummschaltung (/ignorieren) inkl. versteckter Alts über `confirmedAlts`; Tonmodi in `ChatSilence` (`sounds` in chat-silence.yml).
+- Plugin-Updates werden als `<Name>-<Version>.jar` vorgemerkt – Paper übernimmt den Namen (geprüft in `FileProviderSource#checkUpdate`). `PluginFileNaming`, `/v1/plugin-files/overview`.
+- App-Logik ohne SwiftUI in `Panel/Core/SuiteUpkeepModel.swift`, Glas-Kacheln in `Design.swift` (`SuiteGlassTileLabel`), Profil-Raster `SuitePlayerTools.swift`.
+- MariaDB-Treiber bewusst auf 3.5.x (4.0 erzwingt verify-full TLS).
 
 ## Zuletzt behoben (10.19.0)
 

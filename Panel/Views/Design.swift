@@ -163,10 +163,69 @@ struct PanelCardStyle: ViewModifier {
     @AppStorage("theme.compactCards") private var compact = false
     @AppStorage("theme.cardRadius") private var radius = 24.0
     @AppStorage("theme.cardTint") private var tint = 0.0
-    func body(content: Content) -> some View {
-        content.padding(compact ? 12 : 18)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: radius))
-            .background(Color.panelAccent.opacity(tint), in: RoundedRectangle(cornerRadius: radius))
-            .overlay { RoundedRectangle(cornerRadius: radius).strokeBorder(Color.panelAccent.opacity(tint > 0 ? 0.18 : 0.06)) }
+    /// 5.16.0: cards use iOS 26 Liquid Glass by default; the classic material stays available in Darstellung.
+    @AppStorage("theme.liquidGlass") private var liquidGlass = true
+    @ViewBuilder func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius)
+        if liquidGlass {
+            content.padding(compact ? 12 : 18)
+                .background(Color.panelAccent.opacity(tint), in: shape)
+                .glassEffect(.regular, in: shape)
+        } else {
+            content.padding(compact ? 12 : 18)
+                .background(.regularMaterial, in: shape)
+                .background(Color.panelAccent.opacity(tint), in: shape)
+                .overlay { shape.strokeBorder(Color.panelAccent.opacity(tint > 0 ? 0.18 : 0.06)) }
+        }
+    }
+}
+
+/// 5.16.0: the visual part of a Liquid Glass tool tile (used inside Buttons and NavigationLinks).
+struct SuiteGlassTileLabel: View {
+    let title: String
+    let detail: String
+    let symbol: String
+    var tint: Color = .panelAccent
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(tint.gradient, in: RoundedRectangle(cornerRadius: 10))
+            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2).multilineTextAlignment(.leading)
+            Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
+        }
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .padding(12)
+        .contentShape(RoundedRectangle(cornerRadius: 18))
+        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 18))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// 5.16.0: one Liquid Glass tool tile with an action.
+struct SuiteGlassTile: View {
+    let title: String
+    let detail: String
+    let symbol: String
+    var tint: Color = .panelAccent
+    var enabled = true
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) { SuiteGlassTileLabel(title: title, detail: detail, symbol: symbol, tint: tint) }
+            .buttonStyle(.plain)
+            .opacity(enabled ? 1 : 0.45)
+            .disabled(!enabled)
+    }
+}
+
+/// 5.16.0: grid of glass tiles inside a GlassEffectContainer so neighbouring tiles blend smoothly.
+struct SuiteGlassGrid<Content: View>: View {
+    @ViewBuilder let content: Content
+    var body: some View {
+        GlassEffectContainer(spacing: 10) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) { content }
+        }
     }
 }

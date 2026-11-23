@@ -1,3 +1,7 @@
+## Panel 5.16.0 und Admin Suite 10.23.0
+
+Paper-Server-Updater mit Builds, Änderungen und sicherem Austausch der `server.jar`, Smart Anti-Lag mit Lag-Maschinen, Verursachern und Teleport, Server-Töne stummschalten (`/chat töne`), Spieler persönlich stummschalten – optional mit allen Konten, Admins ausgenommen (`/ignorieren`), Plugin-Updates mit Versionsnamen, Plugins bei laufendem Server hinzufügen, Liquid-Glass-Spielerprofil und aktualisierte Bibliotheken. [Update-Anleitung](UPDATE-5.16.0.md)
+
 ## Panel 5.15.0 und Admin Suite 10.22.0
 
 Geführter Account-Transfer in App, Webpanel und Java-/Bedrock-Adminmenü. Zwei Offline-Accounts lassen sich mit Vorschau und Sicherung in beide Richtungen tauschen. [Update-Anleitung](UPDATE-5.15.0.md)

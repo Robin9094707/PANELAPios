@@ -14,17 +14,17 @@ struct PluginInstallView:View {
      transfers.records.first { $0.active && $0.upload && $0.filename == pendingName }
  }
  var body:some View {List {
-  Section {Text("Neue Plugin-JAR installieren").font(.title2.bold());Text("Die App prüft die Plugin-Metadaten vor dem Upload. Der Server muss gestoppt sein; Paper lädt das Plugin beim nächsten Start. Serverversion und Abhängigkeiten zusätzlich prüfen.").font(.footnote).foregroundStyle(.secondary);Button("JAR auswählen",systemImage:"doc.badge.plus"){importer=true}.disabled(busy)}
-  if let descriptor {Section("Dateiprüfung erfolgreich"){LabeledContent("Plugin",value:descriptor.name);LabeledContent("Version",value:descriptor.version);LabeledContent("Hauptklasse",value:descriptor.main);LabeledContent("API",value:descriptor.apiVersion);Text(descriptor.summary);Button("Installation bestätigen"){confirm=true}.disabled(busy || success)}}
+  Section {Text("Neue Plugin-JAR installieren").font(.title2.bold());Text("Die App prüft die Plugin-Metadaten vor dem Upload. Das geht auch bei laufendem Server – Paper lädt das Plugin beim nächsten Neustart. Die Datei erhält die Versionsnummer im Namen. Serverversion und Abhängigkeiten zusätzlich prüfen.").font(.footnote).foregroundStyle(.secondary);Button("JAR auswählen",systemImage:"doc.badge.plus"){importer=true}.disabled(busy)}
+  if let descriptor {Section("Dateiprüfung erfolgreich"){LabeledContent("Plugin",value:descriptor.name);LabeledContent("Version",value:descriptor.version);LabeledContent("Hauptklasse",value:descriptor.main);LabeledContent("API",value:descriptor.apiVersion);LabeledContent("Dateiname",value:descriptor.versionedFilename);Text(descriptor.summary);Button("Installation bestätigen"){confirm=true}.disabled(busy || success)}}
   if busy {
       if let progress, let fraction = progress.fraction {
           ProgressView(value: fraction) { Text(progress.title) }
       } else { ProgressView(pendingName == nil ? "JAR prüfen …" : "Upload oder Verifizierung läuft …") }
   }
-  if success{Label("Plugin für nächsten Serverstart installiert",systemImage:"checkmark.shield.fill").foregroundStyle(.green)}
+  if success{Label("Plugin installiert – aktiv nach dem nächsten Neustart",systemImage:"checkmark.shield.fill").foregroundStyle(.green)}
  }.panelScreen().navigationTitle("Plugin hinzufügen").errorAlert($error)
  .sheet(isPresented:$importer){FileImportPicker(retainSelection:true){result in importer=false;switch result{case .success(let urls):if let url=urls.first{inspect(url)};case .failure(let failure):error=failure.localizedDescription}}.ignoresSafeArea()}
- .confirmationDialog("Geprüfte JAR installieren?",isPresented:$confirm,titleVisibility:.visible){Button("Installieren"){Task{await install()}}}message:{Text("Es wird eine neue Datei mit eindeutiger Kennung angelegt. Vorhandene JARs werden nicht überschrieben.")}
+ .confirmationDialog("Geprüfte JAR installieren?",isPresented:$confirm,titleVisibility:.visible){Button("Installieren"){Task{await install()}}}message:{Text("Die Datei wird als \(descriptor?.versionedFilename ?? "Plugin.jar") angelegt. Vorhandene JARs werden nie überschrieben. Ein laufender Server lädt das Plugin beim nächsten Neustart.")}
  }
  func inspect(_ url:URL){busy=true;Task{defer{busy=false};do{let pair=try await Task.detached{let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let info=try url.resourceValues(forKeys:[.fileSizeKey]);guard (info.fileSize ?? 0)<=128*1024*1024 else{throw PanelError(message:"JAR größer als 128 MiB")};let bytes=try Data(contentsOf:url);return try PluginArchive.descriptor(bytes)}.value;file=url;descriptor=pair;success=false}catch{self.error=error.localizedDescription}}}
  func install() async {
@@ -34,12 +34,7 @@ struct PluginInstallView:View {
      do {
          guard !api.demo else { throw PanelError(message: "Demomodus") }
          let prefix = "servers/\(server.id)/files"
-         func requireStopped() async throws {
-             guard try await api.request("servers/\(server.id)/resources").attributes["current_state"].string == "offline" else {
-                 throw PanelError(message: "Stoppe den Server vor der Installation. Eine vorbereitete Datei bleibt im .pending-Format.")
-             }
-         }
-         try await requireStopped()
+         // 5.16.0: installing while the server runs is safe – Paper only loads new JARs on the next start.
          let access = file.startAccessingSecurityScopedResource()
          defer { if access { file.stopAccessingSecurityScopedResource() } }
          let (bytes, digest) = try await Task.detached(priority: .userInitiated) {
@@ -47,12 +42,17 @@ struct PluginInstallView:View {
              guard try PluginArchive.descriptor(bytes) == descriptor else { throw PanelError(message: "Die ausgewählte JAR wurde geändert. Bitte erneut auswählen.") }
              return (bytes, PluginArchive.digest(bytes))
          }.value
-         let name = String(descriptor.versionedFilename.dropLast(4)) + "-" + String(digest.prefix(16)) + ".jar"
-         let pending = name + ".pending"
-         pendingName = pending
          func exists(_ filename: String) async throws -> Bool {
              try await api.list(prefix + "/list", query: ["directory": "/plugins"]).contains { $0["name"].string == filename }
          }
+         let installedNames = try await api.list(prefix + "/list", query: ["directory": "/plugins"]).map { $0["name"].string }
+         // The version is part of the name; a checksum suffix is only added when that name is already taken.
+         var name = descriptor.versionedFilename
+         if installedNames.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
+             name = String(descriptor.versionedFilename.dropLast(4)) + "-" + String(digest.prefix(8)) + ".jar"
+         }
+         let pending = name + ".pending"
+         pendingName = pending
          func verify(_ filename: String) async throws {
              let remote = try await api.fileData(server: server.id, path: "/plugins/" + filename, limit: 128 * 1024 * 1024)
              let hash = await Task.detached(priority: .userInitiated) { PluginArchive.digest(remote) }.value
@@ -72,7 +72,6 @@ struct PluginInstallView:View {
              }
          }
          try await verify(pending)
-         try await requireStopped()
          do { try await api.mutate(prefix + "/rename", method: "PUT", ["root": "/plugins", "files": [["from": pending, "to": name]]]) }
          catch {
              if RequestFailure.isCancellation(error) { throw error }

@@ -996,7 +996,7 @@ final class DiscordBotManager {
         var response=featureRequest("GET","/guilds/"+guildId()+"/channels",null);
         if(response.statusCode()!=200)throw new IllegalArgumentException("Discord-Kanäle nicht verfügbar (HTTP "+response.statusCode()+"). Bot-Rechte prüfen.");
         List<Object> rows=new ArrayList<>();Object raw=Json.parse(response.body());
-        if(raw instanceof List<?> channels)for(Object value:channels)if(value instanceof Map<?,?> c&&Set.of(0,5).contains(intValue(c.get("type"),-1)))rows.add(mapOf("id",string(c.get("id")),"name",string(c.get("name")),"category",string(c.get("parent_id"))));
+        if(raw instanceof List<?> channels)for(Object value:channels)if(value instanceof Map<?,?> c&&visibleChannel(c)&&Set.of(0,5).contains(intValue(c.get("type"),-1)))rows.add(mapOf("id",string(c.get("id")),"name",string(c.get("name")),"category",string(c.get("parent_id"))));
         return mapOf("items",rows,"guild",guildId());
     }
     void appValidateChannel(String id)throws Exception {
@@ -1011,7 +1011,7 @@ final class DiscordBotManager {
                 if(enabled()&&configured()){
                     var response=requestSync("GET","/guilds/"+guildId()+"/channels",null);
                     if(response.statusCode()==200 && Json.parse(response.body()) instanceof List<?> list)
-                        for(Object item:list)if(item instanceof Map<?,?> channel){int type=intValue(channel.get("type"),-1);String id=string(channel.get("id"));if((type==0||type==5)&&id.matches("[0-9]{15,22}"))channels.put(id,string(channel.get("name")));}
+                        for(Object item:list)if(item instanceof Map<?,?> channel&&visibleChannel(channel)){int type=intValue(channel.get("type"),-1);String id=string(channel.get("id"));if((type==0||type==5)&&id.matches("[0-9]{15,22}"))channels.put(id,string(channel.get("name")));}
                 }
             }catch(Exception error){lastError="Kanalliste: "+error.getClass().getSimpleName();}
             if(running.get())plugin.runAdminTask(()->callback.accept(channels));
@@ -1706,7 +1706,7 @@ final class DiscordBotManager {
             Map<String, Object> input = mapOf("type", 4, "custom_id", "command", "label", "Serverbefehl", "style", 1,
                     "placeholder", "z. B. list oder time query daytime", "min_length", 1, "max_length", 500, "required", true);
             respondData(id, token, 9, mapOf("custom_id", "sas:modal-submit:console", "title", "Serverkonsole • Bestätigung folgt",
-                    "components", List.of(mapOf("type", 1, "components", List.of(input)))));
+                    "components", List.of(modalField(input))));
             return;
         }
         if (customId.equals("sas:modal:player")) {
@@ -1861,8 +1861,42 @@ final class DiscordBotManager {
                 return cleanText(string(component.get("value")), customId.equals("command") ? 500 : 100);
             String nested = modalValue(component.get("components"), customId);
             if (!nested.isBlank()) return nested;
+            // 10.23.0: Discord's Label component (type 18) wraps a single input in "component".
+            if (component.get("component") != null) {
+                nested = modalValue(List.of(component.get("component")), customId);
+                if (!nested.isBlank()) return nested;
+            }
         }
         return "";
+    }
+
+    /**
+     * 10.23.0: Discord deprecated ActionRow + TextInput in modals in favour of the Label component
+     * (type 18). The input keeps its custom_id; label and optional description move to the wrapper.
+     */
+    static Map<String, Object> modalField(Map<String, Object> input) {
+        Map<String, Object> child = new LinkedHashMap<>(input);
+        Object label = child.remove("label");
+        Object description = child.remove("description");
+        Map<String, Object> field = new LinkedHashMap<>();
+        field.put("type", 18);
+        field.put("label", label == null ? "Eingabe" : String.valueOf(label));
+        if (description != null && !String.valueOf(description).isBlank()) field.put("description", String.valueOf(description));
+        field.put("component", child);
+        return field;
+    }
+
+    /** 10.23.0: channels the bot cannot view arrive obfuscated (flag 1<<17, name "___hidden___"). */
+    static boolean visibleChannel(Map<?, ?> channel) {
+        if (channel == null) return false;
+        long flags = channel.get("flags") instanceof Number n ? n.longValue() : 0L;
+        return (flags & (1L << 17)) == 0 && !"___hidden___".equals(String.valueOf(channel.get("name")));
+    }
+
+    /** 10.23.0: role "color" is deprecated in favour of "colors.primary_color". */
+    static int roleColor(Map<?, ?> role) {
+        if (role != null && role.get("colors") instanceof Map<?, ?> colors && colors.get("primary_color") instanceof Number n) return n.intValue();
+        return role != null && role.get("color") instanceof Number n ? n.intValue() : 0;
     }
 
     private boolean hasAdministrator(Map<String, Object> member) {
@@ -1969,7 +2003,7 @@ final class DiscordBotManager {
         Map<String, Object> modal = mapOf(
                 "custom_id", "sas:modal-submit:player",
                 "title", "Simplex Spielerakte öffnen",
-                "components", List.of(mapOf("type", 1, "components", List.of(input))));
+                "components", List.of(modalField(input)));
         respondData(id, token, 9, modal);
     }
 
@@ -1998,7 +2032,7 @@ final class DiscordBotManager {
         Map<String, Object> modal = mapOf(
                 "custom_id", "sas:modal-submit:suite:" + (section.isBlank() ? "home" : section),
                 "title", "Simplex Suite-Befehl",
-                "components", List.of(mapOf("type", 1, "components", List.of(input))));
+                "components", List.of(modalField(input)));
         respondData(id, token, 9, modal);
     }
 

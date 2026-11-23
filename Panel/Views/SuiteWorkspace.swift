@@ -152,6 +152,8 @@ struct SuiteToolDestination: View {
             case .banCenter: SuiteBanCenterView(suite: suite)
             case .communityTools: SuiteCommunityToolsView(suite: suite)
             case .accountTransfer: SuiteAccountTransferView(suite: suite)
+            case .serverUpdater: SuiteServerUpdaterView(suite: suite)
+            case .antiLag: SuiteAntiLagView(suite: suite)
             case .serverEvents: SuiteServerEventsView(suite: suite)
             case .assistant: SuiteAIAssistantView(suite: suite, panel: panel, server: server)
             case .diagnostics: SuiteDiagnosticsView(suite: suite)

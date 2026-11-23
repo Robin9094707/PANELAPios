@@ -267,6 +267,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     ServerEvents serverEvents;
     SmartRestart smartRestart;
     ChatSilence chatSilence;
+    PlayerMutes playerMutes;
+    ServerUpdater serverUpdater;
+    SmartAntiLag antiLag;
     Automations automations;
     PublicChatAssistant publicChatAssistant;
     OpenAiIntegration openAiIntegration() { return openAi; }
@@ -529,6 +532,14 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         try { serverEvents = new ServerEvents(this); } catch (Exception error) { getLogger().warning("Event-Modus konnte nicht geladen werden: " + error.getClass().getSimpleName()); }
         try { chatSilence = new ChatSilence(this); Bukkit.getPluginManager().registerEvents(chatSilence, this); chatSilence.start(); register("simplexchat"); if (qualityOfLife != null) qualityOfLife.packets.chat = chatSilence; }
         catch (Exception error) { chatSilence = null; getLogger().warning("Chat-Ruhe konnte nicht geladen werden; vorhandene Datei bleibt erhalten: " + error.getMessage()); }
+        // 10.23.0: personal player mutes (with hidden linked accounts), Paper server updater and Smart Anti-Lag.
+        if (chatSilence != null) {
+            try { playerMutes = new PlayerMutes(this, chatSilence); Bukkit.getPluginManager().registerEvents(playerMutes, this); playerMutes.start(); chatSilence.mutes = playerMutes; register("simplexignore"); }
+            catch (Exception error) { playerMutes = null; getLogger().warning("Spieler-Stummschaltung konnte nicht geladen werden; vorhandene Datei bleibt erhalten: " + error.getMessage()); }
+        }
+        try { serverUpdater = new ServerUpdater(this); } catch (Exception error) { getLogger().warning("Server-Updater konnte nicht geladen werden: " + error.getMessage()); }
+        try { antiLag = new SmartAntiLag(this); Bukkit.getPluginManager().registerEvents(antiLag, this); antiLag.start(); }
+        catch (Exception error) { antiLag = null; getLogger().warning("Smart Anti-Lag konnte nicht geladen werden: " + error.getMessage()); }
         try { smartRestart = new SmartRestart(this); } catch (Exception error) { getLogger().warning("Smart-Neustart konnte nicht geladen werden: " + error.getMessage()); }
         try { automations = new Automations(this); } catch (Exception error) { getLogger().warning("Automationen konnten nicht geladen werden: " + error.getMessage()); }
         try { startBanCenter(); } catch (Exception error) { getLogger().warning("Bann-Zentrale konnte nicht geladen werden: " + error.getMessage()); }
@@ -556,6 +567,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (community != null) community.stop();
         if (powerBot != null) powerBot.close();
         if (chatSilence != null) chatSilence.stop();
+        if (antiLag != null) antiLag.stop();
+        if (serverUpdater != null) serverUpdater.stop();
         if (liteBansMigration != null) liteBansMigration.stop();
         if (liveInventory != null) liveInventory.close();
         if (publicChatAssistant != null) publicChatAssistant.close();
@@ -804,6 +817,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             return handlePasswordCommand(sender, label, Arrays.copyOfRange(args, 1, args.length));
         }
         if (rootCommand.equals("simplexprofile") || rootCommand.equals("feedback")) return community.command(sender, rootCommand, args);
+        if (rootCommand.equals("simplexignore")) { if (playerMutes == null) sender.sendMessage(prefix() + "Spieler-Stummschaltung nicht verfügbar."); else if (sender instanceof Player p) playerMutes.command(p, args); else sender.sendMessage("Nur im Spiel. Verwaltung in App und Web-Panel."); return true; }
         if (rootCommand.equals("simplexchat")) { if (chatSilence == null) sender.sendMessage(prefix() + "Chat-Ruhe nicht verfügbar."); else chatSilence.command(sender, args); return true; }
         if (rootCommand.equals("ticket")) { if (tickets == null) sender.sendMessage(prefix() + "Ticketsystem nicht verfügbar."); else tickets.command(sender, args); return true; }
         if (rootCommand.equals("discord")) return args.length == 0 ? discordInvite.show(sender) : discordInvite.set(sender, args);
@@ -1895,6 +1909,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (root.equals("connection")) return connectionDiagnostics.complete(sender, args);
         if ((root.equals("sas") || root.equals("simplexadmin")) && args.length > 1 && args[0].equalsIgnoreCase("connection"))
             return connectionDiagnostics.complete(sender, Arrays.copyOfRange(args, 1, args.length));
+        if(root.equals("simplexignore")) return playerMutes == null || !(sender instanceof Player player) ? List.of() : playerMutes.complete(player, args);
         if(root.equals("simplexchat")) return chatSilence == null ? List.of() : chatSilence.complete(sender, args);
         if(root.equals("simplexprofile")) return args.length==1?filter(List.of("settings","history","stats","feedback"),args[0]):List.of();
         if(root.equals("feedback")) return List.of();
@@ -9260,6 +9275,9 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         Map<String,Object> row=appMap("id",p.uuid.toString(),"name",p.name,"online",online!=null,"client",p.clientPlatform,"device",p.bedrockDeviceModel,"brand",p.javaClientBrandValue(),"version",p.clientVersion,"firstSeen",p.firstSeen,"lastSeen",p.lastSeen,"points",p.simplexPoints(),"warnings",p.warnings.size(),"ban",p.internalBanActive(System.currentTimeMillis()),"mute",p.internalMuteActive(System.currentTimeMillis()));
         if(p.internalBanActive(System.currentTimeMillis())){row.put("banRole",BanCenterCore.roleOf(p));row.put("banMain",p.internalBanMainName);row.put("banCase",p.internalBanCase);}
         if(detail){row.put("deviceCount",p.devices.size());row.put("altCount",altDetection==null||altDetection.matchCache==null?null:altDetection.matchCache.counts.getOrDefault(p.uuid,0));row.put("vpnWhitelisted",vpnProtection!=null&&vpnProtection.isWhitelisted(p.uuid,p.name));row.put("logoutLocation",appLocation(p.logoutLocation));row.put("lastLocation",appLocation(p.lastLocation));row.put("network",profileNetwork(p));row.put("notes",new ArrayList<>(p.notes));row.put("warningEntries",new ArrayList<>(p.warnings));row.put("previousNames",new ArrayList<>(p.previousNames));row.put("rights",Arrays.stream(powerRights()).map(r->appMap("id",r,"blocked",p.blockedRightsSet().contains(r),"until",p.temporaryBlockedRightsMap().getOrDefault(r,0L))).toList());
+            // 10.23.0: chat break, sound mode and personal mutes at a glance (counts only – no names).
+            if(chatSilence!=null){ChatSilence.State cs=chatSilence.state(p.uuid);row.put("chatSilence",appMap("active",cs.active(System.currentTimeMillis()),"sounds",cs.sounds(),"soundLabel",ChatSilence.soundLabelDe(cs.sounds())));}
+            if(playerMutes!=null){row.put("personalMutes",appMap("muting",playerMutes.entries(p.uuid).size(),"protected",playerMutes.protectedAccount(p.uuid)));}
             ServerStatistics.Profile stats=p.statisticsSnapshot();row.put("activity",appMap("playMillis",stats.play(),"afkMillis",stats.afk(),"sessions",stats.sessions(),"devices",stats.devices()));
             if(adminAccess!=null){Map<String,Boolean> lp=luckPerms==null?Map.of():luckPerms.permissions.getOrDefault(p.uuid,Map.of());row.put("staff",adminAccess.hasAccess(p.uuid,online,lp)?adminAccess.roleLabel(p.uuid):"");}
             if(online!=null){List<Object> preview=new ArrayList<>();int occupied=0;for(org.bukkit.inventory.ItemStack item:online.getInventory().getStorageContents())if(item!=null&&!item.getType().isAir()){occupied++;if(preview.size()<6)preview.add(appMap("id",String.valueOf(occupied),"name",item.getType().name().toLowerCase(Locale.ROOT).replace('_',' '),"amount",item.getAmount()));}row.put("inventoryPreview",appMap("occupied",occupied,"items",preview));Location loc=online.getLocation();row.put("live",appMap("health",online.getHealth(),"maxHealth",online.getMaxHealth(),"food",online.getFoodLevel(),"saturation",online.getSaturation(),"level",online.getLevel(),"exp",online.getExp(),"gamemode",online.getGameMode().name().toLowerCase(Locale.ROOT),"invulnerable",online.isInvulnerable(),"allowFlight",online.getAllowFlight(),"world",loc.getWorld()==null?"":loc.getWorld().getName(),"x",loc.getX(),"y",loc.getY(),"z",loc.getZ()));}
@@ -9499,6 +9517,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     void qolSetCommandLockdown(String actor, boolean enabled) {
         if (serverControls != null && serverControls.commandLockdownEnabled() != enabled) serverControls.setCommandLockdown(actor, enabled);
     }
+    /** 10.23.0: restart after a server/plugin update (countdown with the usual player notices). */
+    boolean updateRestart(String actor, int seconds, String reason) { return restartManager != null && restartManager.scheduleQuiet(actor, Math.max(10, Math.min(1800, seconds)), reason == null ? "" : reason); }
     boolean qolScheduleRestart(String actor) { return restartManager != null && restartManager.schedule(actor); }
     boolean qolSaveAllWorlds() { return Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "save-all flush"); }
     void qolClearPublicChat(String actor) { clearPublicChat(actor); }
@@ -16025,13 +16045,18 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
                     UpdateJarVerifier.copyLimited(input, temp.toPath(), 150L * 1024L * 1024L);
                 }
                 String downloadedVersion = UpdateJarVerifier.verify(temp.toPath(), pluginName, Runtime.version().feature());
-                String downloadedHash = sha256(temp); String installedVersion = installed.version; File target = new File(updateDir, targetName);
+                String downloadedHash = sha256(temp); String installedVersion = installed.version;
+                // 10.23.0: Paper matches update JARs by plugin name and adopts the staged file name – stage with the version in it.
+                File legacyTarget = new File(updateDir, targetName); File target = new File(updateDir, PluginFileNaming.versionedName(pluginName, downloadedVersion));
+                if (!target.exists() && legacyTarget.isFile()) target = legacyTarget;
                 File installedFile = installed.file; String installedHash = installedFile != null && installedFile.isFile() ? sha256(installedFile) : "";
                 String stagedHash = target.exists() ? sha256(target) : ""; String rememberedHash = rememberedHash(pluginName);
                 boolean versionMismatch = !installedVersion.isBlank() && !sameVersion(downloadedVersion, installedVersion);
                 if (downloadedHash.equalsIgnoreCase(stagedHash) || downloadedHash.equalsIgnoreCase(installedHash) || (!versionMismatch && downloadedHash.equalsIgnoreCase(rememberedHash))) {
                     rememberHash(pluginName, downloadedHash); unchanged.add(pluginName + " " + downloadedVersion); Files.deleteIfExists(temp.toPath()); return;
                 }
+                File versionedTarget = new File(updateDir, PluginFileNaming.versionedName(pluginName, downloadedVersion));
+                if (!versionedTarget.equals(target) && target.equals(legacyTarget)) { Files.deleteIfExists(legacyTarget.toPath()); target = versionedTarget; }
                 try { Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); } catch (Exception atomicUnavailable) { Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING); }
                 rememberHash(pluginName, downloadedHash); staged.add(pluginName + " " + downloadedVersion);
             } catch (Exception error) { failed.add(pluginName + ": " + error.getMessage()); if (temp != null) try { Files.deleteIfExists(temp.toPath()); } catch (Exception ignored) { } }

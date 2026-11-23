@@ -77,6 +77,6 @@ import XCTest
         XCTAssertEqual(SuiteLaunchRequest.parse(SuiteLaunchRequest(tool: tool).url)?.tool, tool)
         XCTAssertTrue(tool.matches("Inventar tauschen"))
         XCTAssertEqual(tool.feature, "account-transfer-v1")
-        XCTAssertEqual(WhatsNew.releases.first?.version, "5.15.0")
+        XCTAssertEqual(WhatsNew.release(for: "5.15.0")?.title, "Account-Transfer")
     }
 }

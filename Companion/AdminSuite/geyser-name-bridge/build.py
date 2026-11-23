@@ -17,7 +17,7 @@ if not api.exists() or hashlib.sha256(api.read_bytes()).hexdigest()!=expected:
    if name.endswith('.class') and name.startswith(('org/geysermc/geyser/api/','org/geysermc/api/','org/geysermc/event/','org/geysermc/cumulus/')):out.writestr(name,source.read(name))
  if hashlib.sha256(api.read_bytes()).hexdigest()!=expected:raise SystemExit('Extracted API checksum mismatch')
 classes=root/'target/classes';classes.mkdir(parents=True,exist_ok=True)
-compiler=suite/'target/build-deps/ecj-3.46.0.jar';java=os.environ.get('JAVA','java')
+compiler=suite/'target/build-deps/ecj-3.46.100.jar';java=os.environ.get('JAVA','java')
 subprocess.run([java,'-jar',str(compiler),'-17','-encoding','UTF-8','-warn:none','-cp',str(api),'-d',str(classes),*[str(p) for p in (root/'src/main/java').rglob('*.java')]],check=True)
 jar=root/'target/SimplexNameBridge-1.0.0.jar'
 with zipfile.ZipFile(jar,'w',zipfile.ZIP_DEFLATED) as out:

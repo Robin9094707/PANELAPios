@@ -34,6 +34,7 @@ struct AppearanceSettingsView: View {
     @AppStorage("theme.primary") private var primary = "008F83"
     @AppStorage("theme.secondary") private var secondary = "7046BA"
     @AppStorage("theme.compactCards") private var compact = false
+    @AppStorage("theme.liquidGlass") private var liquidGlass = true
     @AppStorage("theme.cardRadius") private var radius = 24.0
     @AppStorage("theme.cardTint") private var cardTint = 0.0
     @AppStorage("theme.backgroundStrength") private var backgroundStrength = 1.0
@@ -107,6 +108,7 @@ struct AppearanceSettingsView: View {
             } header: { Text("Simplex Panel 4") } footer: { Text("Kompakt zeigt dieselben Infos mit weniger Platz. Die Startanimation entfällt automatisch bei „Bewegung reduzieren“.") }
             Section("Karten & Hintergrund") {
                 Toggle("Kompakte Karten", isOn: $compact)
+                Toggle("Liquid-Glass-Karten", isOn: $liquidGlass)
                 LabeledContent("Eckenradius", value: String(Int(radius)))
                 Slider(value: $radius, in: 8...36, step: 2).accessibilityLabel("Eckenradius")
                 Text("Farbtönung der Karten").font(.subheadline)

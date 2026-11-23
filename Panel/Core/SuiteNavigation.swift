@@ -12,6 +12,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
     case locker, smartRestart, automations, quickCenter
     case chatSilence
     case banCenter, communityTools, accountTransfer
+    case serverUpdater, antiLag
     var id: String { rawValue }
     var title: String { metadata.0 }
     var symbol: String { metadata.1 }
@@ -76,10 +77,12 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .smartRestart: return ("Smart-Neustart", "clock.arrow.2.circlepath", "Server & Diagnose", "data.operations", "smart-restart-v1")
         case .automations: return ("Automationen", "wand.and.stars", "Server & Diagnose", "data.server-events", "automations-v1")
         case .quickCenter: return ("Schnellzentrale", "bolt.circle.fill", "Übersicht & Verläufe", "", "quick-center-v1")
-        case .chatSilence: return ("Chat-Ruhe", "bell.slash.fill", "Kommunikation & Studio", "data.chat-silence", "chat-silence-v1")
+        case .chatSilence: return ("Chat-Ruhe & Stummschaltung", "bell.slash.fill", "Kommunikation & Studio", "data.chat-silence", "chat-silence-v1")
         case .banCenter: return ("Bann-Zentrale", "shield.slash.fill", "Moderation & PowerBot", "data.ban-center", "ban-center-v1")
         case .communityTools: return ("Community-Verwaltung", "storefront.fill", "Kommunikation & Studio", "data.community-tools", "community-tools-v1")
         case .accountTransfer: return ("Account-Transfer", "arrow.right.arrow.left.circle.fill", "Spieler & Rechte", "", "account-transfer-v1")
+        case .serverUpdater: return ("Server-Updater", "arrow.down.app.fill", "Server & Diagnose", "data.server-updater", "server-updater-v1")
+        case .antiLag: return ("Smart Anti-Lag", "bolt.shield.fill", "Server & Diagnose", "data.anti-lag", "smart-anti-lag-v1")
         }
     }
     func matches(_ query: String) -> Bool {
@@ -92,7 +95,9 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .smartRestart: extra = " Neustart automatisch Intervall Spieler online Countdown"
         case .automations: extra = " Wenn dann Regeln Ingame-Tag Zeitplan Auslöser Aktionen planen"
         case .quickCenter: extra = " Kacheln Neustart Wartung Ankündigung schnell Aktionen anpassen"
-        case .chatSilence: extra = " Chat stummschalten stumm Ruhe Mute Erwähnungen Flüstern Spieler aufheben"
+        case .chatSilence: extra = " Chat stummschalten stumm Ruhe Mute Erwähnungen Flüstern Spieler aufheben Töne Sounds ignorieren blockieren"
+        case .serverUpdater: extra = " Paper Build Version Update aktualisieren server.jar Changelog Neuerungen"
+        case .antiLag: extra = " Lag Lagmaschine Hotspot Mobs Redstone Trichter TPS MSPT Verursacher Teleport"
         case .banCenter: extra = " Bann Banns gesperrt entsperren aufheben Alt-Konto Alts IP LiteBans Migration Sperren Hauptbann"
         case .communityTools: extra = " Simplex Points Punkte Shop Angebot Bestand Quick Delivery Zustellung Discord Einladung Spieltag Scoreboard"
         case .accountTransfer: extra = " Spieler Profil Daten umziehen Inventar transferieren tauschen Rechte LuckPerms Homes"

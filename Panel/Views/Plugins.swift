@@ -41,10 +41,11 @@ struct PluginsView: View {
                     Label(updates.cache.statuses.values.contains(where: { $0.release != nil }) ? "Updates verfügbar · Update-Center öffnen" : "Update-Center · Modrinth, Hangar, Spigot, GeyserMC & CurseForge", systemImage: "arrow.triangle.2.circlepath")
                 }
                 if updates.busy { ProgressView(updates.progress).font(.caption) }
+                NavigationLink { SuitePluginOverviewView(panel: api, server: server) } label: { Label("Server-Übersicht · geladene Versionen & Updates", systemImage: "list.bullet.rectangle.portrait.fill") }
                 NavigationLink("Plugin-Dateien & Konfigurationen") { FilesView(api: api, server: server, root: "/plugins") }
                 NavigationLink("Vorgemerkte Updates") { FilesView(api: api, server: server, root: updateDirectory) }
                 Link("Paper-Anleitung für Plugin-Updates", destination: URL(string: "https://docs.papermc.io/paper/updating/#step-2-update-plugins")!)
-            } footer: { Text("Der Updatepfad wird aus bukkit.yml gelesen. Standard: /plugins/update. Neue Plugins direkt unter /plugins bei gestopptem Server installieren.") }
+            } footer: { Text("Der Updatepfad wird aus bukkit.yml gelesen. Standard: /plugins/update. Updates erhalten die Versionsnummer im Dateinamen – Paper übernimmt ihn beim nächsten Start. Neue Plugins lassen sich auch bei laufendem Server hinzufügen.") }
             Section {
                 ForEach(jars, id: \.["name"].string) { entry in
                     let name = entry["name"].string

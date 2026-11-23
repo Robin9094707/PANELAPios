@@ -53,21 +53,42 @@ final class ChatSilence implements Listener {
   private static final java.util.regex.Pattern NOTIFY_SOUND =
       java.util.regex.Pattern.compile("note_block|experience_orb|levelup|ui\\.|bell|chime|amethyst|pling|toast|item\\.pickup|chicken\\.egg|villager\\.(yes|no|trade|ambient)|arrow\\.hit_player|bubble|anvil\\.land");
 
-  /** Persisted per player. Whisper and mention flags only apply while the chat is silenced. */
-  record State(boolean chat, long until, boolean whispers, boolean mentions, String name, String by, long since) {
-    static State defaults(String name) { return new State(false, 0, false, false, name == null ? "" : name, "", 0); }
+  /** 10.23.0: server sound modes, independent of the chat break. */
+  static final List<String> SOUND_MODES = List.of("off", "chat", "plugins", "all");
+  private static final long CHAT_SOUND_MS = 900;
+
+  /** Persisted per player. Whisper and mention flags only apply while the chat is silenced; sounds always. */
+  record State(boolean chat, long until, boolean whispers, boolean mentions, String name, String by, long since, String sounds) {
+    State(boolean chat, long until, boolean whispers, boolean mentions, String name, String by, long since) { this(chat, until, whispers, mentions, name, by, since, "off"); }
+    static State defaults(String name) { return new State(false, 0, false, false, name == null ? "" : name, "", 0, "off"); }
     boolean active(long now) { return chat && (until <= 0 || until > now); }
-    State muted(long until, String by, long now, String name) { return new State(true, until, whispers, mentions, name, by, now); }
-    State unmuted(String by, long now, String name) { return new State(false, 0, whispers, mentions, name, by, now); }
-    State options(boolean whispers, boolean mentions) { return new State(chat, until, whispers, mentions, name, by, since); }
-    boolean worthKeeping() { return chat || whispers || mentions; }
+    State muted(long until, String by, long now, String name) { return new State(true, until, whispers, mentions, name, by, now, sounds); }
+    State unmuted(String by, long now, String name) { return new State(false, 0, whispers, mentions, name, by, now, sounds); }
+    State options(boolean whispers, boolean mentions) { return new State(chat, until, whispers, mentions, name, by, since, sounds); }
+    State withSounds(String mode) { return new State(chat, until, whispers, mentions, name, by, since, normalizeSoundMode(mode)); }
+    State renamed(String newName) { return new State(chat, until, whispers, mentions, newName, by, since, sounds); }
+    int soundLevel() { return Math.max(0, SOUND_MODES.indexOf(sounds)); }
+    boolean worthKeeping() { return chat || whispers || mentions || !"off".equals(sounds); }
+  }
+
+  static String normalizeSoundMode(String mode) {
+    String m = mode == null ? "off" : mode.toLowerCase(Locale.ROOT).strip();
+    return switch (m) {
+      case "chat", "chattöne", "chattoene", "ping", "pings" -> "chat";
+      case "plugins", "plugin", "server", "hinweise", "notifications" -> "plugins";
+      case "all", "alle", "alles", "stille", "silence", "everything" -> "all";
+      default -> "off";
+    };
   }
 
   /** Read by the Netty thread; written on the main thread. */
   static final class Gate {
     volatile boolean active;
-    volatile long openUntil, lastDrop, soundUntil;
+    volatile int soundMode;
+    volatile long openUntil, lastDrop, soundUntil, lastChat;
     final ConcurrentLinkedQueue<Token> tokens = new ConcurrentLinkedQueue<>();
+    /** 10.23.0: texts of messages from personally muted players that must not arrive as system chat either. */
+    final ConcurrentLinkedQueue<Token> blocked = new ConcurrentLinkedQueue<>();
   }
 
   record Token(String text, long expires) {}
@@ -80,6 +101,8 @@ final class ChatSilence implements Listener {
   private final Map<String, Long> senderInfo = new ConcurrentHashMap<>();
   private BukkitTask task;
   private volatile boolean stopped;
+  /** 10.23.0: personal player mutes; null until attached by the Suite. */
+  volatile PlayerMutes mutes;
 
   ChatSilence(SimplexAdminSuite plugin) throws IOException {
     this.plugin = plugin;
@@ -138,6 +161,12 @@ final class ChatSilence implements Listener {
     return next;
   }
 
+  State sounds(UUID id, String mode) {
+    State next = state(id).withSounds(mode);
+    put(id, next);
+    return next;
+  }
+
   private void put(UUID id, State next) {
     if (next.worthKeeping()) states.put(id, next);
     else states.remove(id);
@@ -168,8 +197,11 @@ final class ChatSilence implements Listener {
   void refreshGate(Player p) {
     Gate gate = gates.computeIfAbsent(p.getUniqueId(), id -> new Gate());
     gate.active = silenced(p) && !plugin.chatSilenceBypass(p);
+    State s = states.get(p.getUniqueId());
+    gate.soundMode = s == null ? 0 : s.soundLevel();
     long now = System.currentTimeMillis();
     gate.tokens.removeIf(token -> token.expires < now);
+    gate.blocked.removeIf(token -> token.expires < now);
   }
 
   private Gate gate(Player p) { return gates.computeIfAbsent(p.getUniqueId(), id -> new Gate()); }
@@ -179,19 +211,33 @@ final class ChatSilence implements Listener {
   /** Called on the Netty event loop for every outgoing packet of {@code id}. Returns false to drop. */
   boolean allowOutgoing(UUID id, Object packet) {
     Gate gate = gates.get(id);
-    if (gate == null || !gate.active || packet == null) return true;
+    if (gate == null || packet == null) return true;
+    boolean muted = gate.active, blocking = !gate.blocked.isEmpty();
+    int soundMode = gate.soundMode;
+    if (!muted && soundMode == 0 && !blocking) return true;
     String type = packet.getClass().getSimpleName();
     long now = System.currentTimeMillis();
-    if (type.equals("ClientboundSoundPacket")) {
-      if (now < gate.soundUntil || now - gate.lastDrop > SOUND_MS) return true;
-      return !NOTIFY_SOUND.matcher(soundName(packet)).find();
+    if (type.equals("ClientboundSoundPacket") || type.equals("ClientboundSoundEntityPacket")) {
+      if (now < gate.soundUntil) return true;
+      return allowSound(gate, soundMode, muted, soundName(packet), soundSource(packet), now);
     }
+    if (type.equals("ClientboundLevelEventPacket") && soundMode == 3) return !soundLevelEvent(packet);
+    if (type.equals("ClientboundPlayerChatPacket")) { gate.lastChat = now; return true; }
     if (!type.equals("ClientboundSystemChatPacket") && !type.equals("ClientboundDisguisedChatPacket")) return true;
     if (type.equals("ClientboundSystemChatPacket")) {
       try { if (Boolean.TRUE.equals(SuitePacketGuard.call(packet, "overlay", "isOverlay"))) return true; }
       catch (ReflectiveOperationException | RuntimeException ignored) { }
     }
-    if (now < gate.openUntil) return true;
+    gate.lastChat = now;
+    if (blocking) {
+      String plain = normalize(packetText(packet));
+      for (Iterator<Token> it = gate.blocked.iterator(); it.hasNext(); ) {
+        Token token = it.next();
+        if (token.expires < now) { it.remove(); continue; }
+        if (!token.text.isEmpty() && plain.contains(token.text)) { gate.lastDrop = now; return false; }
+      }
+    }
+    if (!muted || now < gate.openUntil) return true;
     String text = normalize(packetText(packet));
     for (Iterator<Token> it = gate.tokens.iterator(); it.hasNext(); ) {
       Token token = it.next();
@@ -231,6 +277,32 @@ final class ChatSilence implements Listener {
     catch (ReflectiveOperationException | RuntimeException e) { return null; }
   }
 
+  /**
+   * 10.23.0 sound modes: 1 = chat pings (notification-like or MASTER sounds right after a chat line),
+   * 2 = every plugin/server notice sound (notification-like or MASTER category), 3 = no server sounds.
+   * During a chat break the original chat-ping filter stays active.
+   */
+  static boolean allowSound(Gate gate, int mode, boolean muted, String name, String source, long now) {
+    if (mode >= 3) return false;
+    boolean notify = NOTIFY_SOUND.matcher(name).find();
+    boolean master = "master".equals(source);
+    if (mode == 2 && (notify || master)) return false;
+    if (mode == 1 && (notify || master) && now - gate.lastChat <= CHAT_SOUND_MS) return false;
+    if (muted && notify && now - gate.lastDrop <= SOUND_MS) return false;
+    return true;
+  }
+
+  private static String soundSource(Object packet) {
+    try { return String.valueOf(SuitePacketGuard.call(packet, "getSource", "source")).toLowerCase(Locale.ROOT); }
+    catch (ReflectiveOperationException | RuntimeException e) { return ""; }
+  }
+
+  /** Level events below 2000 are sounds (doors, dispensers, portals …); 2000+ are particles. */
+  private static boolean soundLevelEvent(Object packet) {
+    try { Object value = SuitePacketGuard.call(packet, "getType", "type"); return value instanceof Number n && n.intValue() < 2000; }
+    catch (ReflectiveOperationException | RuntimeException e) { return false; }
+  }
+
   private static String soundName(Object packet) {
     try { return String.valueOf(SuitePacketGuard.call(packet, "getSound", "sound")).toLowerCase(Locale.ROOT); }
     catch (ReflectiveOperationException | RuntimeException e) { return ""; }
@@ -250,6 +322,8 @@ final class ChatSilence implements Listener {
     String text = normalize(plain);
     if (gate.active && text.length() >= 1) gate.tokens.add(new Token(text, System.currentTimeMillis() + TOKEN_MS));
   }
+
+  Component prefixComponent() { return prefix(); }
 
   private Component prefix() {
     return net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize(plugin.prefix());
@@ -310,6 +384,21 @@ final class ChatSilence implements Listener {
   }
 
   /** Mentions are prepared before other plugins may cancel and re-broadcast the message as system chat. */
+  /** 10.23.0: marks the chat moment for sound mode "chat" before other plugins play their ping. */
+  @EventHandler(priority = EventPriority.LOWEST)
+  public void markChat(AsyncChatEvent e) {
+    long now = System.currentTimeMillis();
+    for (Gate gate : gates.values()) if (gate.soundMode > 0) gate.lastChat = now;
+    PlayerMutes m = mutes;
+    if (m == null || !m.anyActive()) return;
+    // Plugins that cancel and re-broadcast chat as system messages: remember the text per muting viewer.
+    String text = normalize(PlainTextComponentSerializer.plainText().serialize(e.message()));
+    if (text.length() < 2) return;
+    UUID sender = e.getPlayer().getUniqueId();
+    for (Player viewer : Bukkit.getOnlinePlayers())
+      if (m.hides(viewer.getUniqueId(), sender)) gate(viewer).blocked.add(new Token(text, now + TOKEN_MS));
+  }
+
   @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
   public void prepareMentions(AsyncChatEvent e) {
     if (states.isEmpty()) return;
@@ -319,6 +408,15 @@ final class ChatSilence implements Listener {
       State s = state(viewer.getUniqueId());
       if (!s.mentions && fullMention(message, viewer.getName())) allowText(viewer, message);
     }
+  }
+
+  @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+  public void filterMutedSenders(AsyncChatEvent e) {
+    PlayerMutes m = mutes;
+    if (m == null || !m.anyActive()) return;
+    UUID sender = e.getPlayer().getUniqueId();
+    try { e.viewers().removeIf(audience -> audience instanceof Player viewer && m.hides(viewer.getUniqueId(), sender)); }
+    catch (UnsupportedOperationException ignored) { }
   }
 
   @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -406,7 +504,17 @@ final class ChatSilence implements Listener {
 
   /** Called by the Suite for whisper commands. True = cancel the command. */
   boolean whisper(Player sender, List<UUID> recipients, String text) {
-    if (states.isEmpty() || recipients.isEmpty()) return false;
+    if (recipients.isEmpty()) return false;
+    PlayerMutes m = mutes;
+    if (m != null && m.anyActive()) {
+      for (UUID id : recipients) {
+        if (!m.blocksContact(id, sender.getUniqueId())) continue;
+        deliver(sender, prefix().append(Component.text(t(sender, "Diese Person möchte gerade keine privaten Nachrichten von dir erhalten.", "This player does not want private messages from you right now."), NamedTextColor.RED)));
+        feedback(sender, false);
+        return true;
+      }
+    }
+    if (states.isEmpty()) return false;
     boolean blocked = false;
     for (UUID id : recipients) {
       Player target = Bukkit.getPlayer(id);
@@ -439,7 +547,7 @@ final class ChatSilence implements Listener {
     Player p = e.getPlayer();
     refreshGate(p);
     State s = states.get(p.getUniqueId());
-    if (s != null && !s.name.equals(p.getName())) { states.put(p.getUniqueId(), new State(s.chat, s.until, s.whispers, s.mentions, p.getName(), s.by, s.since)); save(); }
+    if (s != null && !s.name.equals(p.getName())) { states.put(p.getUniqueId(), s.renamed(p.getName())); save(); }
     if (!silenced(p)) return;
     Bukkit.getScheduler().runTaskLater(plugin, () -> {
       if (!p.isOnline() || !silenced(p)) return;
@@ -487,6 +595,19 @@ final class ChatSilence implements Listener {
         options(p.getUniqueId(), s.whispers, muted == null ? !s.mentions : muted);
         optionNotice(p);
       }
+      case "töne", "toene", "sounds", "sound", "ton", "geräusche" -> {
+        if (args.length < 2) { soundStatus(p); return true; }
+        String mode = normalizeSoundMode(args[1]);
+        if (mode.equals("off") && !Set.of("aus", "off", "an", "on", "normal", "keine").contains(args[1].toLowerCase(Locale.ROOT))) { soundStatus(p); return true; }
+        sounds(p.getUniqueId(), mode);
+        deliver(p, prefix().append(Component.text(t(p, "Server-Töne: ", "Server sounds: ") + soundLabel(p, mode), NamedTextColor.GREEN)));
+        feedback(p, true);
+      }
+      case "spieler", "players", "ignorieren", "ignore", "blockieren" -> {
+        PlayerMutes m = mutes;
+        if (m == null) { deliver(p, prefix().append(Component.text(t(p, "Spieler-Stummschaltung ist nicht verfügbar.", "Player muting is not available."), NamedTextColor.RED))); return true; }
+        m.command(p, Arrays.copyOfRange(args, 1, args.length));
+      }
       case "status", "info" -> deliver(p, prefix().append(Component.text(statusLine(p, state(p.getUniqueId())), NamedTextColor.WHITE)));
       case "hilfe", "help", "?" -> usage(p);
       case "menü", "menu", "einstellungen", "settings" -> open(p, null);
@@ -501,9 +622,12 @@ final class ChatSilence implements Listener {
 
   List<String> complete(CommandSender sender, String[] args) {
     boolean german = sender instanceof Player p && de(p);
-    if (args.length == 1) return filter(german ? List.of("an", "aus", "flüstern", "erwähnungen", "status", "hilfe") : List.of("on", "off", "whispers", "mentions", "status", "help"), args[0]);
+    if (args.length == 1) return filter(german ? List.of("an", "aus", "flüstern", "erwähnungen", "töne", "spieler", "status", "hilfe") : List.of("on", "off", "whispers", "mentions", "sounds", "players", "status", "help"), args[0]);
+    if (args.length >= 2 && Set.of("spieler", "players", "ignorieren", "ignore", "blockieren").contains(args[0].toLowerCase(Locale.ROOT)) && sender instanceof Player player && mutes != null)
+      return mutes.complete(player, Arrays.copyOfRange(args, 1, args.length));
     if (args.length == 2) {
       String first = args[0].toLowerCase(Locale.ROOT);
+      if (Set.of("töne", "toene", "sounds", "sound", "ton").contains(first)) return filter(german ? List.of("aus", "chat", "plugins", "alle") : List.of("off", "chat", "plugins", "all"), args[1]);
       if (Set.of("aus", "off", "mute", "stumm", "ruhe", "pause").contains(first)) return filter(german ? List.of("30m", "3h", "24h", "dauerhaft") : List.of("30m", "3h", "24h", "permanent"), args[1]);
       if (Set.of("flüstern", "fluestern", "whispers", "whisper", "erwähnungen", "erwaehnungen", "mentions", "mention").contains(first)) return filter(german ? List.of("an", "aus") : List.of("on", "off"), args[1]);
     }
@@ -536,10 +660,41 @@ final class ChatSilence implements Listener {
     return minutes <= 0 || minutes > 60L * 24 * 365 ? -1 : minutes;
   }
 
+  String soundLabel(Player p, String mode) {
+    return switch (normalizeSoundMode(mode)) {
+      case "chat" -> t(p, "Chat-Töne aus", "Chat pings off");
+      case "plugins" -> t(p, "Plugin- und Hinweistöne aus", "Plugin and notice sounds off");
+      case "all" -> t(p, "Alle Server-Töne aus (Stille)", "All server sounds off (silence)");
+      default -> t(p, "Alle Töne an", "All sounds on");
+    };
+  }
+
+  private String soundDetail(Player p, String mode) {
+    return switch (normalizeSoundMode(mode)) {
+      case "chat" -> t(p, "Kein Pling mehr bei Chatnachrichten (z. B. Spender-Töne)", "No more pings on chat messages (e.g. donor sounds)");
+      case "plugins" -> t(p, "Keine Hinweis-, Menü- und Plugin-Töne – Spielwelt bleibt hörbar", "No notice, menu and plugin sounds – the world stays audible");
+      case "all" -> t(p, "Du hörst nichts mehr vom Server – nur Musik und eigene Schritte", "You hear nothing from the server – only music and your own steps");
+      default -> t(p, "Alles wie gewohnt", "Everything as usual");
+    };
+  }
+
+  private void soundStatus(Player p) {
+    String current = state(p.getUniqueId()).sounds;
+    deliver(p, prefix().append(Component.text(t(p, "Server-Töne: ", "Server sounds: ") + soundLabel(p, current), NamedTextColor.WHITE)));
+    for (String mode : SOUND_MODES) {
+      String word = switch (mode) { case "chat" -> "chat"; case "plugins" -> "plugins"; case "all" -> t(p, "alle", "all"); default -> t(p, "aus", "off"); };
+      String command = "/chat " + t(p, "töne ", "sounds ") + word;
+      Component line = plugin.isBedrockClient(p)
+          ? Component.text(" • " + command + " – " + soundLabel(p, mode), mode.equals(current) ? NamedTextColor.GREEN : NamedTextColor.GRAY)
+          : Component.text(" • ", NamedTextColor.DARK_GRAY).append(commandHint(p, soundLabel(p, mode), command, soundDetail(p, mode), mode.equals(current) ? NamedTextColor.GREEN : NamedTextColor.AQUA));
+      deliver(p, line);
+    }
+  }
+
   private void usage(Player p) {
     String[] lines = de(p)
-        ? new String[] {"§b§lChat-Ruhe §7– so geht's", "§e/chat §7– Menü mit Vorschau öffnen", "§e/chat aus [30m|3h|24h|dauerhaft] §7– Chat stummschalten", "§e/chat an §7– Chat wieder einschalten", "§e/chat flüstern an|aus §7– Flüsternachrichten erlauben/stummschalten", "§e/chat erwähnungen an|aus §7– Erwähnungen erlauben/stummschalten", "§e/chat status §7– aktuellen Stand zeigen"}
-        : new String[] {"§b§lChat break §7– how it works", "§e/chat §7– open the menu with a preview", "§e/chat off [30m|3h|24h|permanent] §7– mute the chat", "§e/chat on §7– turn the chat back on", "§e/chat whispers on|off §7– allow/mute whispers", "§e/chat mentions on|off §7– allow/mute mentions", "§e/chat status §7– show the current state"};
+        ? new String[] {"§b§lChat-Ruhe §7– so geht's", "§e/chat §7– Menü mit Vorschau öffnen", "§e/chat aus [30m|3h|24h|dauerhaft] §7– Chat stummschalten", "§e/chat an §7– Chat wieder einschalten", "§e/chat flüstern an|aus §7– Flüsternachrichten erlauben/stummschalten", "§e/chat erwähnungen an|aus §7– Erwähnungen erlauben/stummschalten", "§e/chat töne aus|chat|plugins|alle §7– Server-Töne stummschalten", "§e/chat spieler §7– einzelne Spieler nur für dich stummschalten", "§e/chat status §7– aktuellen Stand zeigen"}
+        : new String[] {"§b§lChat break §7– how it works", "§e/chat §7– open the menu with a preview", "§e/chat off [30m|3h|24h|permanent] §7– mute the chat", "§e/chat on §7– turn the chat back on", "§e/chat whispers on|off §7– allow/mute whispers", "§e/chat mentions on|off §7– allow/mute mentions", "§e/chat sounds off|chat|plugins|all §7– mute server sounds", "§e/chat players §7– mute single players just for you", "§e/chat status §7– show the current state"};
     for (String line : lines) deliver(p, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize(line));
   }
 
@@ -578,7 +733,9 @@ final class ChatSilence implements Listener {
   private String statusLine(Player p, State s) {
     boolean muted = s.active(System.currentTimeMillis());
     return (muted ? t(p, "Chat-Ruhe: aktiv, ", "Chat break: active, ") + remaining(p, s) : t(p, "Chat-Ruhe: aus – du siehst den Chat.", "Chat break: off – you see the chat."))
-        + "\n" + t(p, "Flüstern: ", "Whispers: ") + onOff(p, !s.whispers) + " · " + t(p, "Erwähnungen: ", "Mentions: ") + onOff(p, !s.mentions);
+        + "\n" + t(p, "Flüstern: ", "Whispers: ") + onOff(p, !s.whispers) + " · " + t(p, "Erwähnungen: ", "Mentions: ") + onOff(p, !s.mentions)
+        + "\n" + t(p, "Server-Töne: ", "Server sounds: ") + soundLabel(p, s.sounds)
+        + (mutes == null ? "" : "\n" + t(p, "Stummgeschaltete Spieler: ", "Muted players: ") + mutes.entries(p.getUniqueId()).size());
   }
 
   /** What the player will experience – shown in every menu before a change. */
@@ -591,7 +748,9 @@ final class ChatSilence implements Listener {
     b.append(t(p, "§7• Keine Chat-Töne", "§7• No chat sounds")).append('\n');
     b.append(t(p, "§7• Erwähnungen mit vollem Namen: ", "§7• Mentions with your full name: ")).append(s.mentions ? t(p, "§cstumm", "§cmuted") : t(p, "§akommen an", "§aarrive")).append('\n');
     b.append(t(p, "§7• Flüsternachrichten: ", "§7• Whispers: ")).append(s.whispers ? t(p, "§cstumm", "§cmuted") : t(p, "§akommen an", "§aarrive")).append('\n');
-    b.append(t(p, "§7• Selbst schreiben ist pausiert – Befehle funktionieren weiter", "§7• Writing is paused – commands keep working"));
+    b.append(t(p, "§7• Selbst schreiben ist pausiert – Befehle funktionieren weiter", "§7• Writing is paused – commands keep working")).append("\n\n");
+    b.append(t(p, "§fServer-Töne: ", "§fServer sounds: ")).append(s.sounds.equals("off") ? "§a" : "§6").append(soundLabel(p, s.sounds));
+    if (mutes != null) b.append('\n').append(t(p, "§fStummgeschaltete Spieler: §7", "§fMuted players: §7")).append(mutes.entries(p.getUniqueId()).size());
     return b.toString();
   }
 
@@ -647,6 +806,9 @@ final class ChatSilence implements Listener {
       var mode = DialogInput.singleOption("mode", Component.text(t(p, "Chat", "Chat"), NamedTextColor.WHITE), entries).width(300).build();
       var whispers = DialogInput.bool("whispers", Component.text(t(p, "Flüsternachrichten auch stummschalten", "Also mute whispers"))).initial(s.whispers).build();
       var mentions = DialogInput.bool("mentions", Component.text(t(p, "Erwähnungen auch stummschalten", "Also mute mentions"))).initial(s.mentions).build();
+      List<SingleOptionDialogInput.OptionEntry> soundEntries = new ArrayList<>();
+      for (String m : SOUND_MODES) soundEntries.add(SingleOptionDialogInput.OptionEntry.create(m, Component.text(soundLabel(p, m), m.equals("off") ? NamedTextColor.GREEN : NamedTextColor.GOLD), m.equals(s.sounds)));
+      var soundInput = DialogInput.singleOption("sounds", Component.text(t(p, "Server-Töne", "Server sounds"), NamedTextColor.WHITE), soundEntries).width(300).build();
       ItemStack icon = new ItemStack(s.active(now) ? Material.BELL : Material.NOTE_BLOCK);
       Component status = net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize(preview(p, s));
       DialogBase base = DialogBase.builder(Component.text(t(p, "Chat-Ruhe", "Chat break"), NamedTextColor.AQUA, TextDecoration.BOLD))
@@ -654,13 +816,15 @@ final class ChatSilence implements Listener {
           .canCloseWithEscape(true).pause(false)
           .body(List.of(DialogBody.item(icon).description(DialogBody.plainMessage(Component.text(t(p, "Nimm dir eine Pause vom Chat – mit einem Klick wieder da.", "Take a break from chat – back with one click."), NamedTextColor.GRAY))).showTooltip(false).build(),
               DialogBody.plainMessage(status, 300)))
-          .inputs(List.of(mode, whispers, mentions)).build();
+          .inputs(List.of(mode, whispers, mentions, soundInput)).build();
       var save = DialogAction.customClick((view, audience) -> {
         if (!(audience instanceof Player sender) || !sender.getUniqueId().equals(owner)) return;
         String chosen = view.getText("mode");
         Boolean w = view.getBoolean("whispers"), m = view.getBoolean("mentions");
+        String soundChoice = view.getText("sounds");
         Bukkit.getScheduler().runTask(plugin, () -> {
           if (!sender.isOnline()) return;
+          if (soundChoice != null && !normalizeSoundMode(soundChoice).equals(state(owner).sounds)) sounds(owner, soundChoice);
           applyChoice(sender, chosen == null ? "keep" : chosen, Boolean.TRUE.equals(w), Boolean.TRUE.equals(m));
           if (back != null) back.run();
         });
@@ -672,6 +836,13 @@ final class ChatSilence implements Listener {
       List<ActionButton> buttons = new ArrayList<>();
       buttons.add(ActionButton.builder(Component.text(t(p, "✔ Übernehmen", "✔ Apply"), NamedTextColor.GREEN)).tooltip(Component.text(t(p, "Auswahl speichern", "Save your choice"))).width(150).action(save).build());
       if (s.active(now)) buttons.add(ActionButton.builder(Component.text(t(p, "Chat sofort an", "Chat on now"), NamedTextColor.AQUA)).tooltip(Component.text(t(p, "Chat-Ruhe beenden", "End the chat break"))).width(150).action(quickOn).build());
+      if (mutes != null) {
+        var players = DialogAction.customClick((view, audience) -> {
+          if (!(audience instanceof Player sender) || !sender.getUniqueId().equals(owner)) return;
+          Bukkit.getScheduler().runTask(plugin, () -> { if (sender.isOnline() && mutes != null) mutes.open(sender, () -> open(sender, back)); });
+        }, ClickCallback.Options.builder().uses(1).lifetime(Duration.ofMinutes(10)).build());
+        buttons.add(ActionButton.builder(Component.text(t(p, "Spieler stummschalten", "Mute players"), NamedTextColor.GOLD)).tooltip(Component.text(t(p, "Einzelne Spieler nur für dich ausblenden", "Hide single players just for you"))).width(150).action(players).build());
+      }
       ActionButton close = ActionButton.builder(Component.text(t(p, "Schließen", "Close"))).width(150).build();
       Dialog dialog = Dialog.create(builder -> builder.empty().base(base).type(DialogType.multiAction(buttons).exitAction(close).columns(2).build()));
       p.closeInventory();
@@ -715,6 +886,8 @@ final class ChatSilence implements Listener {
     }
     form.button(t(p, "Flüstern: ", "Whispers: ") + onOff(p, !s.whispers) + "\n" + t(p, "Tippen zum Umschalten", "Tap to switch"), "textures/items/feather", r -> run(owner, () -> { State c = state(owner); options(owner, !c.whispers, c.mentions); feedback(p, true); bedrock(p, back); }));
     form.button(t(p, "Erwähnungen: ", "Mentions: ") + onOff(p, !s.mentions) + "\n" + t(p, "Tippen zum Umschalten", "Tap to switch"), "textures/items/name_tag", r -> run(owner, () -> { State c = state(owner); options(owner, c.whispers, !c.mentions); feedback(p, true); bedrock(p, back); }));
+    form.button(t(p, "Server-Töne: ", "Server sounds: ") + soundLabel(p, s.sounds) + "\n" + t(p, "Tippen zum Wechseln", "Tap to switch"), "textures/ui/sound_glyph_color_2x", r -> run(owner, () -> { State c = state(owner); sounds(owner, SOUND_MODES.get((c.soundLevel() + 1) % SOUND_MODES.size())); feedback(p, true); bedrock(p, back); }));
+    if (mutes != null) form.button(t(p, "Spieler stummschalten", "Mute players") + "\n" + t(p, "Nur für dich, Admins ausgenommen", "Just for you, admins excluded"), "textures/ui/mute_on", r -> run(owner, () -> mutes.open(p, () -> bedrock(p, back))));
     form.button(t(p, "Alles auf einmal einstellen", "Set everything at once") + "\n" + t(p, "Dauer, Flüstern, Erwähnungen", "Duration, whispers, mentions"), "textures/ui/icon_setting", r -> run(owner, () -> bedrockCustom(p, back)));
     if (back != null) form.button(t(p, "Zurück", "Back"), "textures/ui/arrow_left", r -> run(owner, back));
     return plugin.sendBedrockForm(p, form);
@@ -731,7 +904,10 @@ final class ChatSilence implements Listener {
         .dropdown(t(p, "Chat", "Chat"), labels, Math.max(0, ids.indexOf(current)))
         .toggle(t(p, "Flüsternachrichten auch stummschalten", "Also mute whispers"), s.whispers)
         .toggle(t(p, "Erwähnungen auch stummschalten", "Also mute mentions"), s.mentions)
+        .dropdown(t(p, "Server-Töne", "Server sounds"), SOUND_MODES.stream().map(m -> soundLabel(p, m)).toList(), s.soundLevel())
         .validResultHandler(r -> run(owner, () -> {
+          int soundIndex = Math.max(0, Math.min(SOUND_MODES.size() - 1, r.asDropdown(3)));
+          if (!SOUND_MODES.get(soundIndex).equals(state(owner).sounds)) sounds(owner, SOUND_MODES.get(soundIndex));
           int index = Math.max(0, Math.min(ids.size() - 1, r.asDropdown(0)));
           String chosen = ids.get(index);
           if (chosen.equals(current) && !chosen.equals("on")) chosen = "keep";
@@ -799,6 +975,20 @@ final class ChatSilence implements Listener {
     inv.setItem(32, glow(item(Material.NAME_TAG, t(p, "§fErwähnungen: ", "§fMentions: ") + (s.mentions ? t(p, "§cstumm", "§cmuted") : t(p, "§akommen an", "§aarrive")),
         List.of(t(p, "§7Nachrichten mit deinem vollen Namen", "§7Messages with your full name"), t(p, "§7während der Chat-Ruhe", "§7during the chat break"), "", t(p, "§e➜ Klicken zum Umschalten", "§e➜ Click to switch"))), s.mentions));
     h.actions.put(32, () -> { State c = state(owner); options(owner, c.whispers, !c.mentions); feedback(p, true); inventory(p, back); });
+    int level = s.soundLevel();
+    List<String> soundLore = new ArrayList<>();
+    for (String m : SOUND_MODES) soundLore.add((m.equals(s.sounds) ? "§a▶ " : "§8• §7") + soundLabel(p, m));
+    soundLore.add("");
+    soundLore.add("§7" + soundDetail(p, s.sounds));
+    soundLore.add("");
+    soundLore.add(t(p, "§e➜ Klicken zum Wechseln", "§e➜ Click to switch"));
+    inv.setItem(38, glow(item(level == 0 ? Material.JUKEBOX : Material.NOTE_BLOCK, t(p, "§fServer-Töne: ", "§fServer sounds: ") + (level == 0 ? "§a" : "§6") + soundLabel(p, s.sounds), soundLore), level > 0));
+    h.actions.put(38, () -> { State c = state(owner); sounds(owner, SOUND_MODES.get((c.soundLevel() + 1) % SOUND_MODES.size())); feedback(p, true); inventory(p, back); });
+    if (mutes != null) {
+      int count = mutes.entries(owner).size();
+      inv.setItem(42, item(Material.PLAYER_HEAD, t(p, "§fSpieler stummschalten", "§fMute players"), List.of(t(p, "§7Einzelne Spieler nur für dich ausblenden", "§7Hide single players just for you"), t(p, "§7Admins können nicht stummgeschaltet werden", "§7Admins cannot be muted"), "", "§f" + count + t(p, " stummgeschaltet", " muted"), "", t(p, "§e➜ Klicken zum Öffnen", "§e➜ Click to open"))));
+      h.actions.put(42, () -> mutes.open(p, () -> inventory(p, back)));
+    }
     inv.setItem(40, item(Material.BOOK, t(p, "§bSo geht's", "§bHow it works"), List.of(t(p, "§7/chat aus 3h §8– 3 Stunden Ruhe", "§7/chat off 3h §8– 3 hours of quiet"), t(p, "§7/chat an §8– Chat wieder an", "§7/chat on §8– chat back on"), t(p, "§7Auch im Profil: /profil → Einstellungen", "§7Also in /profile → settings"))));
     if (back != null) { inv.setItem(45, item(Material.ARROW, t(p, "§fZurück", "§fBack"), List.of())); h.actions.put(45, back); }
     inv.setItem(49, item(Material.BARRIER, t(p, "§cSchließen", "§cClose"), List.of()));
@@ -847,7 +1037,9 @@ final class ChatSilence implements Listener {
 
   // ------------------------------------------------------------------ app & web panel
 
-  Map<String, Object> data(boolean manage) {
+  Map<String, Object> data(boolean manage) { return data(manage, false); }
+
+  Map<String, Object> data(boolean manage, boolean showLinked) {
     long now = System.currentTimeMillis();
     List<Map<String, Object>> items = new ArrayList<>();
     for (var e : states.entrySet()) {
@@ -855,15 +1047,30 @@ final class ChatSilence implements Listener {
       Player online = Bukkit.getPlayer(e.getKey());
       items.add(SimplexAdminSuite.appMap("player", e.getKey().toString(), "name", online != null ? online.getName() : s.name, "online", online != null,
           "bedrock", online != null && plugin.isBedrockClient(online), "active", s.active(now), "until", s.until, "whispers", s.whispers, "mentions", s.mentions,
-          "by", s.by, "since", s.since));
+          "by", s.by, "since", s.since, "sounds", s.sounds));
     }
     items.sort(Comparator.<Map<String, Object>, Boolean>comparing(m -> !(Boolean) m.get("active")).thenComparing(m -> !(Boolean) m.get("online")).thenComparing(m -> String.valueOf(m.get("name")).toLowerCase(Locale.ROOT)));
     long active = items.stream().filter(m -> Boolean.TRUE.equals(m.get("active"))).count();
     return SimplexAdminSuite.appMap("manage", manage, "items", items, "active", active, "online", Bukkit.getOnlinePlayers().size(),
-        "presets", List.of(30, 180, 1440, 0), "packetFilter", plugin.chatSilenceFilterStatus(), "javaMenu", plugin.getConfig().getString("chat-silence.java-menu", "dialog"));
+        "presets", List.of(30, 180, 1440, 0), "packetFilter", plugin.chatSilenceFilterStatus(), "javaMenu", plugin.getConfig().getString("chat-silence.java-menu", "dialog"),
+        "soundModes", SOUND_MODES.stream().map(m -> SimplexAdminSuite.appMap("id", m, "label", soundLabelDe(m))).toList(),
+        "soundActive", items.stream().filter(m -> !"off".equals(m.get("sounds"))).count(),
+        "mutes", mutes == null ? List.of() : mutes.data(showLinked), "mutesAvailable", mutes != null, "showLinked", showLinked,
+        "features", List.of("sounds-v1", PlayerMutes.FEATURE));
   }
 
-  Map<String, Object> apply(String actor, Map<String, Object> body) {
+  static String soundLabelDe(String mode) {
+    return switch (normalizeSoundMode(mode)) {
+      case "chat" -> "Chat-Töne aus";
+      case "plugins" -> "Plugin- und Hinweistöne aus";
+      case "all" -> "Alle Server-Töne aus";
+      default -> "Alle Töne an";
+    };
+  }
+
+  Map<String, Object> apply(String actor, Map<String, Object> body) { return apply(actor, body, false); }
+
+  Map<String, Object> apply(String actor, Map<String, Object> body, boolean showLinked) {
     String operation = String.valueOf(body.getOrDefault("operation", ""));
     String query = String.valueOf(body.getOrDefault("player", "")).strip();
     if (query.isEmpty()) throw new IllegalArgumentException("Spieler fehlt");
@@ -895,10 +1102,39 @@ final class ChatSilence implements Listener {
         options(id, whispers, mentions);
         plugin.suiteAudit(actor, "Chat-Ruhe-Optionen geändert", name + " • Flüstern " + (whispers ? "stumm" : "an") + " • Erwähnungen " + (mentions ? "stumm" : "an"));
       }
+      case "sounds" -> {
+        String mode = normalizeSoundMode(String.valueOf(body.getOrDefault("mode", "off")));
+        sounds(id, mode);
+        plugin.suiteAudit(actor, "Server-Töne geändert", name + " • " + soundLabelDe(mode));
+        if (online != null && notify) deliver(online, prefix().append(Component.text(t(online, "Ein Teammitglied hat deine Server-Töne eingestellt: ", "A staff member changed your server sounds: ") + soundLabel(online, mode), NamedTextColor.AQUA)));
+      }
+      case "ignore", "unignore" -> {
+        if (mutes == null) throw new AppApiManager.ApiError(503, "Spieler-Stummschaltung nicht geladen");
+        String targetQuery = String.valueOf(body.getOrDefault("target", "")).strip();
+        UUID target;
+        try { target = UUID.fromString(targetQuery); } catch (IllegalArgumentException notUuid) { target = plugin.discordAdminResolvePlayer(targetQuery); }
+        if (target == null) throw new AppApiManager.ApiError(404, "Zielspieler nicht gefunden");
+        String targetName = plugin.discordAdminPlayerName(target);
+        if (operation.equals("ignore")) {
+          String error = mutes.add(id, target, targetName, Boolean.TRUE.equals(body.get("alts")), !Boolean.FALSE.equals(body.get("contact")), "staff:" + actor);
+          if (error != null) throw new IllegalArgumentException(error);
+          plugin.suiteAudit(actor, "Spieler-Stummschaltung gesetzt", name + " → " + targetName + (Boolean.TRUE.equals(body.get("alts")) ? " (inkl. weiterer Konten)" : ""));
+        } else {
+          if (!mutes.remove(id, target)) throw new IllegalArgumentException(targetName + " ist bei " + name + " nicht stummgeschaltet.");
+          plugin.suiteAudit(actor, "Spieler-Stummschaltung aufgehoben", name + " → " + targetName);
+        }
+      }
       default -> throw new IllegalArgumentException("Unbekannte Aktion");
     }
-    Map<String, Object> result = data(true);
-    result.put("notice", operation.equals("unmute") ? name + " sieht den Chat wieder." : operation.equals("mute") ? "Chat-Ruhe für " + name + " gesetzt." : "Optionen für " + name + " gespeichert.");
+    Map<String, Object> result = data(true, showLinked);
+    result.put("notice", switch (operation) {
+      case "unmute" -> name + " sieht den Chat wieder.";
+      case "mute" -> "Chat-Ruhe für " + name + " gesetzt.";
+      case "sounds" -> "Server-Töne für " + name + " gespeichert.";
+      case "ignore" -> "Persönliche Stummschaltung für " + name + " gespeichert.";
+      case "unignore" -> "Persönliche Stummschaltung aufgehoben.";
+      default -> "Optionen für " + name + " gespeichert.";
+    });
     return result;
   }
 
@@ -917,13 +1153,14 @@ final class ChatSilence implements Listener {
     if (!path.equals("/v1/chat-silence")) return false;
     api.requirePermission(key, VIEW);
     boolean manage = api.allows(key, MANAGE) && AppApiSecurity.permitted(key, "manage");
-    if (method.equals("GET")) AppApiManager.send(x, 200, api.onMain(rev, () -> data(manage)));
+    boolean showLinked = api.allows(key, "data.alts");
+    if (method.equals("GET")) AppApiManager.send(x, 200, api.onMain(rev, () -> data(manage, showLinked)));
     else if (method.equals("POST")) {
       if (!manage) throw new AppApiManager.ApiError(403, "Ändern benötigt das Recht " + MANAGE);
       Map<String, Object> body = AppApiManager.body(x, 4096);
       if (!Boolean.TRUE.equals(body.get("confirmed"))) throw new IllegalArgumentException("Bestätigung fehlt");
       String actor = api.actorName(key);
-      AppApiManager.send(x, 200, api.onMain(rev, () -> apply(actor, body)));
+      AppApiManager.send(x, 200, api.onMain(rev, () -> apply(actor, body, showLinked)));
     } else throw new AppApiManager.ApiError(405, "Methode nicht erlaubt");
     return true;
   }
@@ -942,7 +1179,7 @@ final class ChatSilence implements Listener {
       try { id = UUID.fromString(key); } catch (IllegalArgumentException invalid) { continue; }
       String root = "players." + key + ".";
       State s = new State(y.getBoolean(root + "chat", false), y.getLong(root + "until", 0), y.getBoolean(root + "whispers", false), y.getBoolean(root + "mentions", false),
-          y.getString(root + "name", ""), y.getString(root + "by", ""), y.getLong(root + "since", 0));
+          y.getString(root + "name", ""), y.getString(root + "by", ""), y.getLong(root + "since", 0), normalizeSoundMode(y.getString(root + "sounds", "off")));
       if (s.worthKeeping()) states.put(id, s);
     }
   }
@@ -960,6 +1197,7 @@ final class ChatSilence implements Listener {
       y.set(root + "mentions", s.mentions);
       y.set(root + "by", s.by);
       y.set(root + "since", s.since);
+      y.set(root + "sounds", s.sounds);
     }
     try {
       Files.createDirectories(file.getParent());

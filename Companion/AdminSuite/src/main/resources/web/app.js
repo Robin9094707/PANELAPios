@@ -22,7 +22,7 @@
       { id: "tickets", label: "Tickets", icon: "ticket", perm: "data.tickets", badge: "tickets" },
       { id: "staff-chat", label: "Staff-Chat", icon: "team", perm: "data.staff-chat", feature: "staff-chat-v1" },
       { id: "chat", label: "Serverchat", icon: "chat", perm: "data.chat" },
-      { id: "chat-silence", label: "Chat-Ruhe", icon: "bellOff", perm: "data.chat-silence", feature: "chat-silence-v1" },
+      { id: "chat-silence", label: "Chat-Ruhe & Stummschaltung", icon: "bellOff", perm: "data.chat-silence", feature: "chat-silence-v1", keywords: "Töne Sounds stumm ignorieren blockieren Spieler stummschalten" },
       { id: "moderation", label: "Moderation", icon: "gavel", perm: "data.reports" },
       { id: "ban-center", label: "Bann-Zentrale", icon: "shield", perm: "data.ban-center", feature: "ban-center-v1" },
       { id: "locker", label: "Einbehaltungsablage", icon: "box", perm: "data.inventory", feature: "item-locker-v1" }
@@ -31,6 +31,8 @@
       { id: "server-events", label: "Event-Modus & Lockdown", icon: "bell", perm: "data.server-events", feature: "server-events-v1" },
       { id: "automations", label: "Automationen", icon: "star", perm: "data.server-events", feature: "automations-v1" },
       { id: "smart-restart", label: "Smart-Neustart", icon: "clock", perm: "data.operations", feature: "smart-restart-v1" },
+      { id: "anti-lag", label: "Smart Anti-Lag", icon: "activity", perm: "data.anti-lag", feature: "smart-anti-lag-v1", keywords: "Lag Lagmaschine Hotspot Mobs Redstone Trichter TPS MSPT" },
+      { id: "server-updater", label: "Server-Updater", icon: "download", perm: "data.server-updater", feature: "server-updater-v1", keywords: "Paper Build Update Version server.jar" },
       { id: "diagnostics", label: "Diagnose", icon: "activity", perm: "data.diagnostics", feature: "diagnostics-v1", badge: "diagnostics" },
       { id: "statistics", label: "Statistiken", icon: "chart", perm: "data.statistics" },
       { id: "worlds", label: "Welten", icon: "globe", perm: "data.worlds" },

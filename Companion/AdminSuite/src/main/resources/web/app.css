@@ -988,3 +988,47 @@ div.mc-slot { cursor: default; width: 44px; flex: none; }
 .quick-edit { align-items: center; flex-wrap: wrap; gap: 10px; }
 .quick-dot { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: #fff; flex: none; }
 .quick-dot svg { width: 18px; height: 18px; }
+
+/* 10.23.0 – Server-Updater, Smart Anti-Lag, Spielerprofil (Glas-Werkzeuge) */
+.ico-tile { width: 40px; height: 40px; flex: none; border-radius: 12px; display: grid; place-items: center; background: rgba(34, 211, 238, 0.12); color: var(--accent); border: 1px solid var(--border); }
+.ico-tile svg { width: 20px; height: 20px; }
+.ico-tile.ok { background: rgba(52, 211, 153, 0.14); color: var(--ok); }
+.ico-tile.warn { background: rgba(251, 191, 36, 0.14); color: var(--warn); }
+.ico-tile.danger, .ico-tile.bad { background: rgba(248, 113, 113, 0.14); color: var(--danger); }
+.ico-tile.info { background: rgba(96, 165, 250, 0.14); color: var(--info); }
+.item.current { box-shadow: inset 3px 0 0 var(--ok); }
+.kpi.ok .value { color: var(--ok); }
+.kpi.warn .value { color: var(--warn); }
+.steps { display: flex; gap: 6px; flex-wrap: wrap; }
+.steps .step { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+.steps .step i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: 12px; background: var(--surface); }
+.steps .step.on { color: var(--text); border-color: var(--accent); box-shadow: var(--glow); }
+.steps .step.on i { background: var(--accent); color: var(--accent-ink); }
+.steps .step.done { color: var(--ok); }
+.steps .step.done i { background: rgba(52, 211, 153, 0.2); color: var(--ok); }
+.steps .step.bad { color: var(--danger); border-color: var(--danger); }
+details.changes { margin-top: 6px; }
+details.changes summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+details.changes ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; color: var(--text-2); }
+details.changes code, ol.guide code { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+ol.guide { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; word-break: break-word; }
+.chart-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.card.mini { padding: 12px 14px; display: grid; gap: 6px; }
+.rank { width: 32px; flex: none; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.glass-tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.glass-tool { position: relative; display: grid; gap: 8px; align-content: start; padding: 14px; border-radius: 18px; text-align: left; cursor: pointer; color: var(--text);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02)); border: 1px solid var(--border-strong);
+  -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 12px 30px -18px rgba(0, 0, 0, 0.7); font: inherit; }
+.glass-tool:hover { border-color: var(--accent); }
+.glass-tool:disabled { opacity: .45; cursor: not-allowed; }
+.glass-tool .gi { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: #fff; background: var(--grad); }
+.glass-tool .gi svg { width: 18px; height: 18px; }
+.glass-tool b { font-size: 14px; }
+.glass-tool small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.glass-tool.danger .gi { background: linear-gradient(135deg, #f87171, #ef4444); }
+.glass-tool.warn .gi { background: linear-gradient(135deg, #fbbf24, #f97316); }
+.glass-tool.ok .gi { background: linear-gradient(135deg, #34d399, #10b981); }
+:root[data-theme="light"] .glass-tool { background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.7)); }
+.profile-hero { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.profile-hero .avatar { width: 64px; height: 64px; font-size: 24px; border-radius: 18px; }
+@media (max-width: 720px) { .chart-row { grid-template-columns: 1fr; } .glass-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

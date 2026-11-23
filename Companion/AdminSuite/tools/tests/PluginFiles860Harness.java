@@ -30,7 +30,10 @@ public final class PluginFiles860Harness {
             check(((List<?>)service.list(false).get("items")).size()==1,"installed inventory");check(service.inspect(installed.getFileName().toString(),false).get("version").equals("8.4.0"),"version from actual JAR");
             check(service.prepare(plan).get("name").equals("SimplexAdminSuite"),"preview checks installed identity");check(!Files.exists(plugins.resolve("incoming")),"preview has no side effects");
             var queued=service.stage(plan,new ByteArrayInputStream(next));check(Boolean.TRUE.equals(queued.get("queued")),"confirmed publication");
-            Path destination=plugins.resolve("incoming/updates/").resolve(installed.getFileName());check(Arrays.equals(Files.readAllBytes(destination),next),"exact uploaded bytes in configured nested update directory");
+            // 10.23.0: Paper adopts the staged file name, so the update is staged with its version in the name.
+            Path destination=plugins.resolve("incoming/updates/").resolve("SimplexAdminSuite-8.6.0.jar");check(Arrays.equals(Files.readAllBytes(destination),next),"exact uploaded bytes in configured nested update directory, versioned name");
+            check("SimplexAdminSuite-8.6.0.jar".equals(queued.get("filename")),"versioned file name reported");
+            check(Boolean.TRUE.equals(service.status(installed.getFileName().toString(),String.valueOf(plan.get("sha256"))).get("queued")),"status finds the versioned pending JAR by checksum");
             check(Arrays.equals(Files.readAllBytes(installed),old),"running 8.4.0 JAR untouched");check(Files.readString(data.resolve("existing.yml")).equals("existing-player-data"),"existing data untouched");
             check(Boolean.TRUE.equals(service.stage(plan,new ByteArrayInputStream(next)).get("queued")),"idempotent exact queued hash");
             check(!Files.list(destination.getParent()).anyMatch(p->p.toString().endsWith(".pending")),"temporary files cleaned");

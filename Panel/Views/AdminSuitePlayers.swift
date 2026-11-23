@@ -234,6 +234,7 @@ struct SuitePlayerView: View {
                 LabeledContent("Simplex Points", value: current["points"].string)
                 LabeledContent("Warnungen", value: current["warnings"].string)
             }
+            SuitePlayerToolGrid(suite: suite, panel: panel, server: server, player: player, name: name, current: current, actions: actions)
             quickActionSection
             if suite.features.contains(SuiteBanText.feature) && suite.can(SuiteBanText.viewPermission) {
                 SuitePlayerBanSection(suite: suite, player: player)
@@ -363,7 +364,7 @@ struct SuitePlayerView: View {
                             Button { quick = entry.item } label: {
                                 VStack(spacing: 6) { Image(systemName: entry.symbol).font(.title3); Text(entry.title).font(.caption.weight(.medium)).lineLimit(1) }
                                     .frame(minWidth: 72).padding(.vertical, 10).padding(.horizontal, 8)
-                                    .background((entry.role != nil ? Color.red : Color.panelAccent).opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                                    .glassEffect(.regular.tint((entry.role != nil ? Color.red : Color.panelAccent).opacity(0.18)).interactive(), in: RoundedRectangle(cornerRadius: 14))
                                     .foregroundStyle(entry.role != nil ? Color.red : Color.panelAccent)
                             }.buttonStyle(.plain).accessibilityIdentifier("player-quick-" + entry.title)
                         }

@@ -18,6 +18,16 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.16.0", title: "Server-Updater, Smart Anti-Lag & Stummschaltung", summary: "Paper-Builds direkt in der App aktualisieren, Lag-Maschinen und ihre Verursacher finden, Server-Töne stummschalten und Spieler nur für sich selbst stummschalten. Dazu Liquid Glass im Spielerprofil. Alle Daten bleiben erhalten.", items: [
+            .init(symbol: "arrow.down.app.fill", title: "Paper-Server-Updater", detail: "Installierten Build, neuere Builds und ihre Änderungen sehen. Auf Tippen wird server.jar geprüft, gesichert und vorsichtig ersetzt – sonst führt dich eine Anleitung durch den manuellen Weg."),
+            .init(symbol: "bolt.shield.fill", title: "Smart Anti-Lag", detail: "Erkennt Mob-Ansammlungen, Item-Haufen und Redstone-Maschinen, informiert die Verursacher und greift erst ein, wenn der Server wirklich leidet. Mit Teleport zum Hotspot."),
+            .init(symbol: "person.crop.circle.badge.exclamationmark", title: "Wer verursacht Lag?", detail: "Rangliste der Spieler, die Maschinen gebaut oder Tiere gezüchtet haben – mit Ort und Teleport."),
+            .init(symbol: "speaker.slash.fill", title: "Server-Töne stummschalten", detail: "Spieler schalten mit /chat töne Chat-Pings, Plugin-Töne oder alle Server-Töne aus – auch die Spender-Töne anderer Plugins."),
+            .init(symbol: "person.crop.circle.badge.xmark", title: "Spieler persönlich stummschalten", detail: "Mit /ignorieren blendet ein Spieler einen anderen nur für sich aus – auf Wunsch inklusive aller Konten, ohne sie zu verraten. Admins sind ausgenommen."),
+            .init(symbol: "square.grid.2x2.fill", title: "Spielerprofil mit Werkzeugen", detail: "Alle Werkzeuge eines Spielers in einem Liquid-Glass-Raster – Inventar, Rechte, Alts, Verlauf, Strafen und mehr."),
+            .init(symbol: "puzzlepiece.extension.fill", title: "Plugins mit Versionsnamen", detail: "Updates werden als Name-Version.jar gespeichert. Neue Plugins lassen sich auch bei laufendem Server hinzufügen. Neue Server-Übersicht zeigt geladene Versionen."),
+            .init(symbol: "shippingbox.fill", title: "Aktuelle Bibliotheken", detail: "Admin Suite 10.23.0 baut gegen Paper 26.3 Build 258 und nutzt aktuelle Bibliotheken. Discord-Formulare verwenden das neue Label-Format.")
+        ]),
         WhatsNewRelease(version: "5.15.0", title: "Account-Transfer", summary: "Zwei Spielerkonten auswählen, den Bestand vergleichen und Spielstände in beide Richtungen tauschen.", items: [
             .init(symbol: "arrow.right.arrow.left", title: "Spielstand tauschen", detail: "Das bisherige Inventar des neuen Accounts landet auf dem alten Account. Beide Accounts müssen offline sein."),
             .init(symbol: "shield", title: "Punkte und Rechte", detail: "Simplex Points und LuckPerms lassen sich beim Tausch zusätzlich auswählen."),
