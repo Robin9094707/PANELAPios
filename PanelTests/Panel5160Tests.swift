@@ -15,7 +15,7 @@ import XCTest
         XCTAssertTrue(SuiteTool.serverUpdater.matches("paper build"))
         XCTAssertTrue(SuiteTool.antiLag.matches("lagmaschine"))
         XCTAssertTrue(SuiteTool.chatSilence.matches("töne"))
-        XCTAssertEqual(WhatsNew.releases.first?.version, "5.16.0")
+        XCTAssertEqual(WhatsNew.release(for: "5.16.0")?.title, "Server-Updater, Smart Anti-Lag & Stummschaltung")
     }
 
     func testUpdaterTexts() throws {

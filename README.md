@@ -1,3 +1,7 @@
+## Panel 5.16.1 und Admin Suite 10.23.1
+
+Bugfix: Ein Tipp öffnet im Spielerprofil wieder genau ein Werkzeug, jeder Menüpunkt existiert nur noch einmal (App, Web, Ingame), und lange Texte werden vollständig angezeigt. [Update-Anleitung](UPDATE-5.16.1.md)
+
 ## Panel 5.16.0 und Admin Suite 10.23.0
 
 Paper-Server-Updater mit Builds, Änderungen und sicherem Austausch der `server.jar`, Smart Anti-Lag mit Lag-Maschinen, Verursachern und Teleport, Server-Töne stummschalten (`/chat töne`), Spieler persönlich stummschalten – optional mit allen Konten, Admins ausgenommen (`/ignorieren`), Plugin-Updates mit Versionsnamen, Plugins bei laufendem Server hinzufügen, Liquid-Glass-Spielerprofil und aktualisierte Bibliotheken. [Update-Anleitung](UPDATE-5.16.0.md)

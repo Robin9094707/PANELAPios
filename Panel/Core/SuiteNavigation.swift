@@ -52,7 +52,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .team: return ("Admin-Team", "person.badge.shield.checkmark.fill", "Einstellungen & Zugänge", "data.management", "admin-roles-v3")
         case .appSettings: return ("App-Einstellungen", "switch.2", "Einstellungen & Zugänge", "data.app-settings", "app-settings-v1")
         case .settings: return ("Suite-Einstellungen", "slider.horizontal.3", "Einstellungen & Zugänge", "data.settings", "")
-        case .access: return ("Zugänge & Serverregeln", "person.badge.key.fill", "Einstellungen & Zugänge", "", "accounts-v1")
+        case .access: return ("Benutzer & Sitzungen", "person.badge.key.fill", "Einstellungen & Zugänge", "", "accounts-v1")
         case .account: return ("Konto & Sicherheit", "lock.shield.fill", "Einstellungen & Zugänge", "", "accounts-v2")
         case .bark: return ("Bark-Zentrale", "bell.badge.fill", "Einstellungen & Zugänge", "action.notifications.update", "events-v1")
         case .quiet: return ("Ruhezeiten", "moon.zzz.fill", "Einstellungen & Zugänge", "action.notifications.update", "quiet-hours-v1")
@@ -100,10 +100,24 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .antiLag: extra = " Lag Lagmaschine Hotspot Mobs Redstone Trichter TPS MSPT Verursacher Teleport"
         case .banCenter: extra = " Bann Banns gesperrt entsperren aufheben Alt-Konto Alts IP LiteBans Migration Sperren Hauptbann"
         case .communityTools: extra = " Simplex Points Punkte Shop Angebot Bestand Quick Delivery Zustellung Discord Einladung Spieltag Scoreboard"
+        case .access: extra = " Zugänge Serverregeln App-Benutzer Geräte Sitzungen Staff-Chat Rechte"
         case .accountTransfer: extra = " Spieler Profil Daten umziehen Inventar transferieren tauschen Rechte LuckPerms Homes"
         default: extra = ""
         }
         return SuiteSearch.matches(query, in: title + " " + group + " " + rawValue + extra)
+    }
+}
+
+/// 5.16.1: tools that already live inside another tool are not shown a second time in the directory grid.
+/// They stay reachable by search, Shortcuts and links.
+enum SuiteToolCatalog {
+    static func nested(_ tool: SuiteTool, features: Set<String>, live: Bool) -> Bool {
+        switch tool {
+        case .lagMap, .spark, .crashes, .console: return features.contains("diagnostics-v1")   // inside Diagnose
+        case .bans: return features.contains("ban-center-v1")                                  // replaced by the Bann-Zentrale
+        case .statistics: return !live                                                         // identical to Serverbetrieb without live data
+        default: return false
+        }
     }
 }
 

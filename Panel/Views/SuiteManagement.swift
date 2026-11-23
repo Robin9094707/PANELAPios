@@ -16,11 +16,7 @@ struct SuiteManagementView: View {
                 Button("Discord-Link speichern") { Task { await model.prepare("management.apply", ["operation": .string("discord"), "value": .string(discord)], summary: "Discord-Einladung ändern?\n" + discord) } }.disabled((suite.scope != "full" || !suite.can("action.management.apply")))
             }
             Section("Verwaltung") {
-                if suite.features.contains("restart-v1") { NavigationLink("Neustart planen & abbrechen") { SuiteRestartView(suite: suite) } }
-                NavigationLink("Suite-Administratoren & Rollen") { SuiteAdminDirectory(suite: suite) }
                 NavigationLink("Geräte, Betriebssysteme & Java-Brands") { SuiteAccessRulesView(suite: suite, actions: actions) }
-                NavigationLink("Plugin-Bibliotheken prüfen") { SuiteDependencyView(suite: suite) }
-                if suite.scope == "full" { NavigationLink("Java-/Bedrock-Adminmenüs") { SuiteRemoteMenuView(suite: suite) } }
                 NavigationLink("Startseiten-Aktionen anpassen") { SuiteShortcutEditor(suite: suite, actions: actions) }
             }
         }.panelScreen().navigationTitle("Suite-Verwaltung").errorAlert($model.error).task { await load() }.refreshable { await load() }

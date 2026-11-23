@@ -200,6 +200,7 @@ struct SuiteBriefingView: View {
     @AppStorage("briefing.thresholdHours") private var threshold = 3.0
     @AppStorage("briefing.sections") private var sectionsText = "players,powerbot,events"
     @State private var range = "visit"
+    @State private var openTool: SuiteTool?
     @State private var data: JSON = .null
     @State private var error: String?
     var sections: Set<String> { Set(sectionsText.split(separator: ",").map(String.init)) }
@@ -227,7 +228,8 @@ struct SuiteBriefingView: View {
                 let tiles = SuiteBriefingModel.tiles(data, sections: sections)
                 if !tiles.isEmpty {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
-                        ForEach(tiles) { tile in NavigationLink { SuiteToolDestination(suite: suite, tool: tile.tool) } label: { SuiteBriefingTileView(tile: tile) }.buttonStyle(.plain) }
+                        // 5.16.1: buttons – several NavigationLinks in one List row opened every tool at once.
+                        ForEach(tiles) { tile in Button { openTool = tile.tool } label: { SuiteBriefingTileView(tile: tile) }.buttonStyle(.plain) }
                     }.padding(.vertical, 4)
                 }
             }
@@ -272,6 +274,7 @@ struct SuiteBriefingView: View {
             } header: { Text("Einstellungen") } footer: { Text("Der Rückblick erscheint auf der Startseite und in der Admin Suite, wenn seit deinem letzten Besuch etwas passiert ist.") }
         }
         .panelScreen().navigationTitle("Rückblick")
+        .navigationDestination(item: $openTool) { tool in SuiteToolDestination(suite: suite, tool: tool) }
         .task(id: range) { await load() }
         .refreshable { await load() }
         .errorAlert($error)

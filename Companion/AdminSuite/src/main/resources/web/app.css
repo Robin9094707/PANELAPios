@@ -244,8 +244,10 @@ textarea.input { min-height: 96px; resize: vertical; line-height: 1.45; }
 .list .item.link { cursor: pointer; transition: background 0.12s; }
 .list .item.link:hover { background: var(--surface-2); }
 .list .item .meta { min-width: 0; flex: 1; }
-.list .item .meta b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list .item .meta small { display: block; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 10.23.1: list rows show the whole text (wrapping) instead of cutting it off with "…". */
+.list .item .meta { min-width: 0; }
+.list .item .meta b { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.list .item .meta small { display: block; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
 .list .item .meta p { margin: 4px 0 0; color: var(--text-2); font-size: 13.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .list .item .side { display: flex; align-items: center; gap: 8px; flex: none; }
 .chev { color: var(--muted); }
@@ -594,7 +596,7 @@ select.input { appearance: none; -webkit-appearance: none; background-image: lin
 .suggest-row { display: grid; gap: 2px; width: 100%; text-align: left; padding: 8px 12px; border: 0; border-top: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer; }
 .suggest-row:first-child { border-top: 0; }
 .suggest-row:hover, .suggest-row.on { background: var(--surface-2); }
-.suggest-row small { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-row small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 
 .lock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 10px; }
 .lock-flag { min-width: 0; flex-wrap: wrap; }
@@ -1032,3 +1034,5 @@ ol.guide { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14
 .profile-hero { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 .profile-hero .avatar { width: 64px; height: 64px; font-size: 24px; border-radius: 18px; }
 @media (max-width: 720px) { .chart-row { grid-template-columns: 1fr; } .glass-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.glass-tool b, .glass-tool small { overflow-wrap: anywhere; }
+.profile-id { word-break: break-all; }

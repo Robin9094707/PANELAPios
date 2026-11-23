@@ -6,8 +6,8 @@ Arbeitssprache mit dem Besitzer: **Deutsch**. Nutzertexte in App, Plugin und Dok
 
 | Komponente | Version | Ort |
 | --- | --- | --- |
-| iOS-App „Simplex Panel“ | **5.16.0** (Build 57) | `Panel/`, `Shared/`, `PanelWidgets/`, `project.yml` |
-| Paper-Plugin „Simplex Admin Suite“ | **10.23.0** | `Companion/AdminSuite/` |
+| iOS-App „Simplex Panel“ | **5.16.1** (Build 58) | `Panel/`, `Shared/`, `PanelWidgets/`, `project.yml` |
+| Paper-Plugin „Simplex Admin Suite“ | **10.23.1** | `Companion/AdminSuite/` |
 | Geyser-Extension „SentinelBridge“ | 1.6.0 (unverändert seit 4.6.0) | `Companion/SentinelBridge/` |
 
 Hoster: **UltraServers** (`https://panel.ultraservers.com`, Pterodactyl-Client-API mit `ptlc_`-Schlüsseln). Kinetic wurde in 5.12.0 vollständig entfernt – nicht wieder einbauen.
@@ -38,6 +38,8 @@ Lokal in einer Cloud-Sitzung:
 ## Konventionen und Fallstricke
 
 - Versionssprung: `project.yml` (`MARKETING_VERSION`, `CURRENT_PROJECT_VERSION` +1), `plugin.yml` + `pom.xml`, JAR-Namen im Workflow, `WhatsNew.releases` (neuester Eintrag zuerst), UPDATE-Dateien, README-Kopf, Release-Notes im Workflow.
+- **Nie mehrere `NavigationLink`s in einer `List`-Zeile** (z. B. Kachel-Grid): iOS öffnet beim Tippen alle nacheinander. Kacheln als Buttons + eine `navigationDestination(item:)` (siehe `SuitePlayerTools.swift`).
+- Jedes Werkzeug hat genau einen Einstieg: das Werkzeug-Verzeichnis (`SuiteToolDirectoryView`). Unterseiten verlinken keine Verzeichnis-Werkzeuge erneut; verschachtelte Werkzeuge in `SuiteToolCatalog.nested`.
 - **Keine zwei Swift-Dateien mit gleichem Namen** (auch nicht in verschiedenen Ordnern) – Xcode bricht mit „Multiple commands produce …stringsdata“ ab.
 - Lange verschachtelte Ausdrücke (Ternaries, heterogene Literale in `map`) sprengen den Swift-Typchecker → in Teilausdrücke zerlegen.
 - Swift 5-Modus, iOS 26-SDK, keine Fremdabhängigkeiten.

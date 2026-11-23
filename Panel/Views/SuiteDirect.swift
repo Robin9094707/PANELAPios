@@ -76,25 +76,9 @@ struct SuiteDirectDashboard: View {
         List {
             Section { Label(health["name"].string.isEmpty ? connection.endpoint : health["name"].string, systemImage: "server.rack"); Text("Admin Suite " + health["version"].string).font(.caption).foregroundStyle(.secondary) }
             if let suite {
-                Section("Schnellzugriffe") {
+                Section {
                     NavigationLink { SuiteToolDirectoryView(suite: suite, actions: actions) } label: { Label("Alle Werkzeuge & Einstellungen", systemImage: "square.grid.2x2.fill") }
-                    if suite.features.contains("ad-hub-v1") { NavigationLink { SuiteAdHubView(suite: suite) } label: { Label("Werbe-Zentrale", systemImage: "megaphone.fill") }.disabled(!suite.can("data.discord-ads")) }
-                }
-                Section("Verwaltung") {
-                    NavigationLink { SuiteUpgradeView(suite: suite) } label: { Label("Zugänge & Serverregeln", systemImage: "person.badge.key.fill") }
-                    NavigationLink { SuiteTicketsView(suite: suite) } label: { Label("Tickets", systemImage: "ticket.fill") }.disabled(!suite.can("data.tickets"))
-                    NavigationLink { SuiteDirectEvents(suite: suite) } label: { Label("Serverereignisse", systemImage: "bell.badge") }.disabled(!suite.can("data.events"))
-                    NavigationLink { SuiteLiveChatView(suite: suite) } label: { Label("Serverchat", systemImage: "bubble.left.and.bubble.right") }.disabled(!suite.can("data.chat"))
-                    NavigationLink { SuiteBarkSettingsView(suite: suite) } label: { Label("Meine Bark-Hinweise", systemImage: "bell.badge") }.disabled(!suite.can("action.notifications.update"))
-                    if suite.features.contains("admin-log-v1") { NavigationLink { SuiteAdminLogView(suite: suite) } label: { Label("Admin-Log", systemImage: "list.bullet.clipboard.fill") }.disabled(!suite.can("data.admin-log")) }
-                    if suite.features.contains("staff-chat-v1") { NavigationLink { SuiteStaffChatView(suite: suite) } label: { Label("Staff-Chat", systemImage: "bubble.left.and.text.bubble.right.fill") }.disabled(!suite.can("data.staff-chat")) }
-                    if suite.features.contains("luckperms-v1") { NavigationLink { SuiteLuckPermsView(suite: suite) } label: { Label("Ränge & Rechte", systemImage: "crown.fill") }.disabled(!suite.can("data.luckperms")) }
-                    if suite.features.contains("lands-v1") { NavigationLink { SuiteLandsView(suite: suite) } label: { Label("Lands", systemImage: "map.fill") }.disabled(!suite.can("data.lands")) }
-                    if suite.features.contains("access-locks-v1") { NavigationLink { SuiteAccessLocksView(suite: suite) } label: { Label("Rechte & Sperren", systemImage: "lock.shield.fill") }.disabled(!suite.can("data.access-locks")) }
-                    if suite.features.contains("command-rights-v1") { NavigationLink { SuiteCommandsView(suite: suite) } label: { Label("Befehle", systemImage: "terminal.fill") }.disabled(!suite.can("data.commands")) }
-                    if suite.features.contains("quiet-hours-v1") { NavigationLink { SuiteQuietHoursView(suite: suite) } label: { Label("Ruhezeiten", systemImage: "moon.zzz.fill") }.disabled(!suite.can("action.notifications.update")) }
-                    NavigationLink { SuiteActionsView(suite: suite, actions: actions.filter { !["menu.action", "settings.update"].contains($0.id) }, title: "Suite-Funktionen") } label: { Label("Alle Funktionen", systemImage: "square.grid.2x2") }
-                }
+                } footer: { Text("Alle Bereiche der Admin Suite an einem Ort – mit Favoriten und Suche.") }
             }
             Section { Button("Erneut anmelden", systemImage: "key.horizontal") { login = true }; Button("Zugang auf diesem Gerät entfernen", role: .destructive) { remove = true } }
         }.panelScreen().navigationTitle("Admin Suite").task { await load() }.refreshable { await load() }.errorAlert($error)

@@ -18,6 +18,12 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.16.1", title: "Bugfix: Navigation & Menüs", summary: "Ein Tipp öffnet wieder genau ein Werkzeug, jeder Menüpunkt gibt es nur noch einmal, und lange Texte werden vollständig angezeigt. Alle Daten bleiben erhalten.", items: [
+            .init(symbol: "hand.tap.fill", title: "Ein Tipp, ein Werkzeug", detail: "Im Spielerprofil und im Rückblick öffneten sich beim Tippen auf eine Kachel alle Werkzeuge nacheinander. Jetzt öffnet sich nur das gewählte – ein Zurück genügt."),
+            .init(symbol: "square.grid.2x2.fill", title: "Keine doppelten Menüpunkte", detail: "Spielerwerkzeuge gibt es nur noch im Raster oben im Profil. Kopplungsseite, Direktzugang, Suite-Verwaltung, Neustart und Event-Modus verlinken nicht mehr dieselben Werkzeuge; alles liegt im Werkzeug-Verzeichnis."),
+            .init(symbol: "text.alignleft", title: "Vollständige Texte", detail: "Kacheln in der App sowie Listen, Aktionen und Gerätenamen im Web werden nicht mehr mit „…“ abgeschnitten."),
+            .init(symbol: "gamecontroller.fill", title: "Ingame-Profil aufgeräumt", detail: "Chat-Ruhe, Töne und Stummschaltung haben im /profil-Menü genau einen Eintrag.")
+        ]),
         WhatsNewRelease(version: "5.16.0", title: "Server-Updater, Smart Anti-Lag & Stummschaltung", summary: "Paper-Builds direkt in der App aktualisieren, Lag-Maschinen und ihre Verursacher finden, Server-Töne stummschalten und Spieler nur für sich selbst stummschalten. Dazu Liquid Glass im Spielerprofil. Alle Daten bleiben erhalten.", items: [
             .init(symbol: "arrow.down.app.fill", title: "Paper-Server-Updater", detail: "Installierten Build, neuere Builds und ihre Änderungen sehen. Auf Tippen wird server.jar geprüft, gesichert und vorsichtig ersetzt – sonst führt dich eine Anleitung durch den manuellen Weg."),
             .init(symbol: "bolt.shield.fill", title: "Smart Anti-Lag", detail: "Erkennt Mob-Ansammlungen, Item-Haufen und Redstone-Maschinen, informiert die Verursacher und greift erst ein, wenn der Server wirklich leidet. Mit Teleport zum Hotspot."),

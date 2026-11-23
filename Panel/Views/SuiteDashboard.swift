@@ -36,8 +36,6 @@ struct SuiteDashboardCard: View {
                 }
                 if online.isEmpty { Text(model.updated == nil ? "Spielerdaten werden geladen …" : "Gerade niemand online").font(.subheadline).foregroundStyle(.secondary) }
                 if model.overview["online"].int > 4 { Text("Weitere Spieler in der Online-Liste").font(.caption).foregroundStyle(.secondary) }
-                if suite.features.contains("public-chat-v1") { NavigationLink { SuiteLiveChatView(suite:suite) } label: { Label("Serverchat live",systemImage:"bubble.left.and.text.bubble.right.fill") } }
-                NavigationLink { SuiteDiscordView(suite: suite) } label: { Label("Discord verwalten", systemImage: "bubble.left.and.bubble.right.fill") }
                 SuitePinnedActionsView(suite:suite,actions:model.actions)
                 Divider()
                 ViewThatFits(in: .horizontal) {
@@ -50,7 +48,7 @@ struct SuiteDashboardCard: View {
                 Button("Erneut verbinden", systemImage: "arrow.clockwise") { Task { await model.load(force: true) } }.disabled(model.busy)
             }
             if model.api != nil, let issue = model.error { Label(issue, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange) }
-            NavigationLink { SuiteHubView(panel: model.panel, server: model.server, model: model) } label: { Label("Suite-Verwaltung", systemImage: "slider.horizontal.3") }
+            NavigationLink { SuiteHubView(panel: model.panel, server: model.server, model: model) } label: { Label("Kopplung & Verbindung", systemImage: "key.horizontal.fill") }
         }.card()
     }
     @ViewBuilder func shortcuts(_ suite: SuiteAPI) -> some View {

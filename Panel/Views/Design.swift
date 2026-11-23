@@ -193,8 +193,9 @@ struct SuiteGlassTileLabel: View {
                 .foregroundStyle(.white)
                 .frame(width: 34, height: 34)
                 .background(tint.gradient, in: RoundedRectangle(cornerRadius: 10))
-            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2).multilineTextAlignment(.leading)
-            Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
+            // 5.16.1: full texts, never cut off with "…".
+            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+            Text(detail).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
         .padding(12)
@@ -220,12 +221,3 @@ struct SuiteGlassTile: View {
     }
 }
 
-/// 5.16.0: grid of glass tiles inside a GlassEffectContainer so neighbouring tiles blend smoothly.
-struct SuiteGlassGrid<Content: View>: View {
-    @ViewBuilder let content: Content
-    var body: some View {
-        GlassEffectContainer(spacing: 10) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) { content }
-        }
-    }
-}

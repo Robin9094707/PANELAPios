@@ -69,33 +69,11 @@ struct SuiteHubView: View {
                 }
             }
             if let api = model.api {
-                if model.health["features"].array.contains(.string("moderation-center-v1")) {
-                    Section("Sicherheitszentrale") {
-                        ForEach(SuiteSecurityArea.allCases, id: \.self) { area in
-                            NavigationLink { SuiteSecurityCenterView(suite: api, panel: panel, server: server, actions: model.actions, area: area) } label: { Label(area.title, systemImage: area.symbol) }
-                        }
-                    }
-                }
-                // 4.6.0: grouped by task instead of one long list; every entry from 4.5 is still here.
-                Section("Spieler & Moderation") {
-                    if api.features.contains("powerbot-v1") && api.can("data.powerbot") {
-                        NavigationLink { SuitePowerBotView(suite: api) } label: {
-                            Label("PowerBot-Fallzentrale", systemImage: "shield.lefthalf.filled")
-                        }
-                    }
-                    NavigationLink { SuitePlayersView(suite: api, panel: panel, server: server, actions: model.actions) } label: { Label("Spieler, Geräte & Alt-Accounts", systemImage: "person.2.fill") }
-                    NavigationLink { SuiteAltDashboardView(suite: api, panel: panel, server: server, actions: model.actions) } label: { Label("Alt-Account-Dashboard & IP-Regeln", systemImage: "person.2.badge.key.fill") }
-                }
-                SuiteHubServerSection(api: api, actions: model.actions, overview: model.health["features"].array.contains(.string("overview")))
-                SuiteHubCommunicationSection(api: api)
-                Section("Verwaltung & Zugänge") {
-                    NavigationLink { SuiteManagementView(suite: api, actions: model.actions) } label: { Label("Suite-Verwaltung & Wartungsmodus", systemImage: "wrench.and.screwdriver.fill") }
-                    NavigationLink { SuiteSettingsView(suite: api) } label: { Label("Suite-Einstellungen", systemImage: "slider.horizontal.3") }
-                    if api.features.contains("accounts-v1") { NavigationLink { SuiteUpgradeView(suite: api) } label: { Label("Benutzer, Verifizierungen & RAM-Schutz", systemImage: "person.badge.key.fill") } }
-                }
-                Section("Weitere Funktionen") {
-                    NavigationLink { SuiteActionsView(suite: api, actions: model.actions.filter { !["menu.action", "settings.update"].contains($0.id) }, title: "Alle Funktionen") } label: { Label("Alle Funktionen durchsuchen", systemImage: "magnifyingglass") }
-                }
+                // 5.16.1: every tool lives in exactly one place – the searchable Admin directory.
+                Section {
+                    NavigationLink { SuiteToolDirectoryView(suite: api, actions: model.actions, panel: panel, server: server) } label: { Label("Alle Admin-Werkzeuge", systemImage: "square.grid.2x2.fill") }
+                        .accessibilityIdentifier("suite-all-tools")
+                } footer: { Text("Spieler, Moderation, Diagnose, Kommunikation, Einstellungen und alle Funktionen – durchsuchbar an einem Ort.") }
                 Section { Button("Kopplung bearbeiten", systemImage: "key.horizontal") { settings = true }; Button("Verbindung aktualisieren", systemImage: "arrow.clockwise") { Task { await model.load(force: true) } } }
             }
             if model.api == nil { Section("Einrichten & rückgängig machen") {
@@ -110,45 +88,6 @@ struct SuiteHubView: View {
     func scopeName(_ value: String) -> String { switch value { case "full": return "Vollzugriff"; case "manage": return "Spieler & Moderation"; default: return "Nur lesen" } }
     func symbol(_ group: String) -> String { switch group { case "Spieler": return "person.crop.circle"; case "Server": return "server.rack"; case "Sicherheit": return "lock.shield"; case "Moderation": return "hand.raised.fill"; case "Einstellungen": return "gearshape"; case "KI & Integrationen": return "sparkles"; default: return "square.grid.2x2" } }
 }
-/// 4.6.0 hub: server operation, diagnostics and the world trimmer in one place.
-struct SuiteHubServerSection: View {
-    let api: SuiteAPI
-    let actions: [SuiteAction]
-    let overview: Bool
-    var body: some View {
-        Section {
-            if api.features.contains("diagnostics-v1") {
-                NavigationLink { SuiteDiagnosticsView(suite: api) } label: { Label("Diagnose: Live, Disconnects, Lag & Abstürze", systemImage: "stethoscope") }.disabled(!api.can("data.diagnostics")).accessibilityIdentifier("suite-diagnostics")
-            }
-            if overview { NavigationLink { SuiteOperationsView(suite: api, actions: actions) } label: { Label("Server, Statistiken & Discord-Protokolle", systemImage: "chart.xyaxis.line") } }
-            NavigationLink { SuiteReadView(suite: api, path: "server.status", title: "Serverstatus") } label: { Label("Server & Neustartstatus", systemImage: "server.rack") }
-            if api.features.contains("world-trim-v1") {
-                NavigationLink { SuiteWorldTrimView(suite: api) } label: { Label("Welten-Trimmer", systemImage: "scissors") }.disabled(!api.can("data.world-trim")).accessibilityIdentifier("suite-world-trim")
-            }
-        } header: { Text("Server & Diagnose") } footer: { Text("Live-Werte, Disconnect-Wellen, Lag und Abstürze; der Welten-Trimmer mit Sicherheitskopie und Integritätsprüfung.") }
-    }
-}
-
-/// 4.6.0 hub: chat, Discord and the new Studio designers with live preview.
-struct SuiteHubCommunicationSection: View {
-    let api: SuiteAPI
-    var body: some View {
-        Section {
-            if api.features.contains("public-chat-v1") { NavigationLink { SuiteLiveChatView(suite: api) } label: { Label("Serverchat live", systemImage: "bubble.left.fill") } }
-            NavigationLink { SuiteDiscordView(suite: api) } label: { Label("Discord-Zentrale", systemImage: "bubble.left.and.bubble.right.fill") }
-            if api.features.contains("discord-status-designer-v1") {
-                NavigationLink { SuiteDiscordStatusDesignerView(suite: api) } label: { Label("Discord-Status gestalten", systemImage: "paintpalette.fill") }.disabled(!api.can("data.discord-status")).accessibilityIdentifier("suite-discord-status")
-            }
-            if api.features.contains("scoreboard-designer-v1") {
-                NavigationLink { SuiteScoreboardDesignerView(suite: api) } label: { Label("Scoreboard gestalten", systemImage: "list.bullet.rectangle.fill") }.disabled(!api.can("data.scoreboard")).accessibilityIdentifier("suite-scoreboard")
-            }
-            if api.features.contains("ad-hub-v1") {
-                NavigationLink { SuiteAdHubView(suite: api) } label: { Label("Werbe-Zentrale", systemImage: "megaphone.fill") }.disabled(!api.can("data.discord-ads")).accessibilityIdentifier("suite-ad-hub")
-            }
-        } header: { Text("Kommunikation & Studio") } footer: { Text("Discord-Status und Scoreboard mit Vorlagen und Live-Vorschau bearbeiten. Werbe-Zentrale: Discord, Reddit, Planet Minecraft, Facebook & Co. mit Bark-Erinnerung – kopieren, öffnen, einfügen.") }
-    }
-}
-
 struct SuiteConnectionView: View {
     let panel: PanelAPI
     let server: Server

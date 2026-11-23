@@ -123,7 +123,6 @@ struct ServerView: View {
                 NavigationLink("Minecraft-Einstellungen") { MinecraftPropertiesView(api: api, server: server) }
                 NavigationLink("Plugins & Updates") { PluginsView(api: api, server: server) }
                 NavigationLink("Mods & Updates") { ModsView(api: api, server: server) }
-                if let client = suite.api { NavigationLink("Live-Welten & Serverbetrieb") { SuiteOperationsView(suite: client, actions: suite.actions) } }
             }.frame(maxWidth: .infinity, alignment: .leading).card()
         case .storageTools:
             VStack(alignment: .leading, spacing: 14) {

@@ -16,7 +16,8 @@ struct SuiteToolDirectoryView: View {
     var selectedQuery: String { (embedded ? query : search).trimmingCharacters(in: .whitespacesAndNewlines) }
     var tools: [SuiteTool] {
         SuiteTool.allCases.filter { $0 != .overview && allowed($0) && $0.matches(selectedQuery)
-            && ($0.feature.isEmpty || suite.features.contains($0.feature)) }
+            && ($0.feature.isEmpty || suite.features.contains($0.feature))
+            && (!selectedQuery.isEmpty || !SuiteToolCatalog.nested($0, features: suite.features, live: live != nil)) }
     }
     func allowed(_ tool: SuiteTool) -> Bool {
         if tool == .accountTransfer { return suite.canTransferAccounts }
