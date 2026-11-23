@@ -231,7 +231,15 @@ struct SuiteUpdateJobSection: View {
                     }
                 }
             }
-        } header: { Text(failed ? "Update nicht möglich" : job["phase"].string == "done" ? "Update installiert" : "Update läuft") }
+        } header: { Text(headerTitle) }
+    }
+
+    private var headerTitle: String {
+        switch job["phase"].string {
+        case "failed": return "Update nicht möglich"
+        case "done": return "Update installiert"
+        default: return "Update läuft"
+        }
     }
 }
 
