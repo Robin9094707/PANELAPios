@@ -47,7 +47,7 @@
       { id: "luckperms", label: "Ränge & LuckPerms", icon: "crown", perm: "data.luckperms", feature: "luckperms-v1" },
       { id: "access-locks", label: "Rechte & Sperren", icon: "lock", perm: "data.access-locks", feature: "access-locks-v1" },
       { id: "commands", label: "Befehle", icon: "terminal", perm: "data.commands", feature: "command-rights-v1" },
-      { id: "lands", label: "Lands", icon: "map", perm: "data.lands", feature: "lands-v1" }
+      { id: "lands", label: "Länder", icon: "map", perm: "data.lands", feature: "lands-center-v1", keywords: "Lands Land Grundstück Claim Gebiet Mitglieder Rollen Rechte Nation" }
     ] },
     { group: "Studio", items: [
       { id: "discord-status", label: "Discord-Status", icon: "palette", perm: "data.discord-status", feature: "discord-status-designer-v1" },
@@ -70,7 +70,7 @@
   /** 9.9.0: the phone tab bar and hidden menu entries follow the account's appearance settings. */
   function tabs() { var p = S.prefs && S.prefs.tabs; var list = (p && p.length ? p : TABS.slice(0, 4)).filter(function (id) { return navItem(id); }).slice(0, 4); return list.concat(["more"]); }
   function hiddenItem(id) { return !!(S.prefs && (S.prefs.hidden || []).indexOf(id) >= 0) && ["dashboard", "appearance", "security"].indexOf(id) < 0; }
-  var ALIASES = { player: "players", ticket: "tickets", function: "functions", "ban-migration": "ban-center" };
+  var ALIASES = { land: "lands", "land-area": "lands", player: "players", ticket: "tickets", function: "functions", "ban-migration": "ban-center" };
   S.nav = NAV;
 
   function navItem(id) { for (var g = 0; g < NAV.length; g++) for (var i = 0; i < NAV[g].items.length; i++) if (NAV[g].items[i].id === id) return NAV[g].items[i]; return null; }

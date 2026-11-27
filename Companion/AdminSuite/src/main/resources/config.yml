@@ -947,7 +947,8 @@ alt-detection:
   enabled: true
   # Strict correlation policy since 7.2.0: automatic Alt relations use only exact shared IP history
   # and verified Bedrock device/XUID/self-signed identities. Java brand, protocol, locale, registered
-  # plugin channels, inferred mods, Bedrock model/OS and client-random IDs never create or score an edge.
+  # plugin channels, inferred mods and Bedrock model/OS never create or score an edge. Seit 10.24.0 können
+  # die experimentellen Hinweise unten (u. a. client-random IDs) Punkte geben – nie Kaskaden.
   # Manual links remain possible because they are an explicit staff decision.
   analysis:
     # Die Übersicht wird asynchron aufgebaut. Eine alte gemeinsame IP bleibt als forensische Kante
@@ -958,6 +959,23 @@ alt-detection:
   cascade:
     # A shared IP by itself never qualifies for automatic cascade punishment.
     minimum-score: 70
+  # 10.24.0: experimentelle Identitätssignale (Java und Bedrock über Geyser). Nur Hinweise mit
+  # Punkten in der Alt-Analyse – sie lösen nie automatische Strafen oder Kaskaden aus.
+  # Genutzt werden nur Daten, die der Client ohnehin sendet (keine Ressourcenpaket-Tricks).
+  experimental:
+    enabled: true
+    # Gleicher seltener Skin (Mojang speichert Skins nach Bild-Hash; Geyser lädt Bedrock-Skins genauso hoch).
+    skin-fingerprint: true
+    # Konto B kommt kurz nach Konto A über denselben Anschluss – mehrfach.
+    account-switch: true
+    switch-window-seconds: 120
+    switch-minimum: 2
+    # Gleicher IPv6-Anschluss (/64). IPv4 /24 zählt nur zusätzlich zu einem anderen Signal.
+    network-prefix: true
+    # Bedrock ClientRandomId (pro Installation) als Hinweis.
+    client-random-id: true
+    # Skins und Installations-IDs zählen nur, wenn sie höchstens so viele Konten teilen.
+    max-shared-accounts: 3
   bridge:
     # Local HMAC-authenticated channel used by SimplexSentinelBridge in Geyser/extensions.
     enabled: true

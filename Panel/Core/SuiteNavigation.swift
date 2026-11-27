@@ -45,7 +45,7 @@ enum SuiteTool: String, CaseIterable, Identifiable, Codable {
         case .scoreboard: return ("Scoreboard", "list.bullet.rectangle.fill", "Kommunikation & Studio", "data.scoreboard", "scoreboard-designer-v1")
         case .discord: return ("Discord-Kanäle", "bubble.left.and.bubble.right.fill", "Kommunikation & Studio", "data.discord-channels", "")
         case .luckperms: return ("Ränge & Rechte", "crown.fill", "Spieler & Rechte", "data.luckperms", "luckperms-v1")
-        case .lands: return ("Lands", "map.fill", "Spieler & Rechte", "data.lands", "lands-v1")
+        case .lands: return ("Länder", "map.fill", "Spieler & Rechte", "data.lands", "lands-v1")
         case .locks: return ("Rechte & Sperren", "lock.shield.fill", "Spieler & Rechte", "data.access-locks", "access-locks-v1")
         case .commands: return ("Befehle", "terminal.fill", "Spieler & Rechte", "data.commands", "command-rights-v1")
         case .management: return ("Suite-Verwaltung", "wrench.and.screwdriver.fill", "Einstellungen & Zugänge", "data.management", "")

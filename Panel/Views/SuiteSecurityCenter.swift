@@ -68,7 +68,6 @@ struct SuiteSecurityCenterView: View {
                 Text(subtitle).font(.footnote).foregroundStyle(.secondary)
                 if area == .bans {
                     Picker("Bannquelle", selection: $source) { Text("Admin Suite").tag("internal"); Text("Client-Prüfung").tag("client"); Text("Minecraft").tag("minecraft"); Text("LiteBans").tag("litebans") }
-                    NavigationLink { SuiteUltraView(suite: suite, actions: actions) } label: { Label("Ultrabanns & Identitätsgruppen", systemImage: "person.2.slash") }
                 }
                 if area == .reports && suite.features.contains("moderation-qol-v1") {
                     Picker("Fälle", selection: $source) {
@@ -319,9 +318,8 @@ struct SuiteBarkSettingsView: View {
                 }
                 if visibleEvents.isEmpty { Text("Keine passenden Ereignisse").foregroundStyle(.secondary) }
             }
-            if suite.features.contains("quiet-hours-v1") {
-                Section { NavigationLink { SuiteQuietHoursView(suite: suite) } label: { Label("Ruhezeiten & Notfallneustart", systemImage: "moon.zzz.fill") } } footer: { Text("Schlafenszeit, Arbeitszeit und der Hinweis nach einem Notfallneustart haben einen eigenen Bereich.") }
-            } else { Section("Ruhezeiten") {
+            // 5.17.0: one entry per tool – quiet hours live in the tool directory ("Ruhezeiten"), not here again.
+            if !suite.features.contains("quiet-hours-v1") { Section("Ruhezeiten") {
                 Picker("Während der Ruhezeit",selection:$quietMode){Text("Keine Ruhezeit").tag("off");Text("Alles stumm").tag("all");Text("Nur kritische Hinweise").tag("critical");Text("Nur ausgewählte kritische Hinweise").tag("selected")}
                 TextField("Beginn HH:mm",text:$quietStart);TextField("Ende HH:mm",text:$quietEnd);TextField("IANA-Zeitzone",text:$timezone).textInputAutocapitalization(.never)
                 if quietMode=="selected" {ForEach(events,id:\.0){event in Toggle(event.1,isOn:Binding(get:{quietKinds.contains(event.0)},set:{if $0{quietKinds.insert(event.0)}else{quietKinds.remove(event.0)}}))}}

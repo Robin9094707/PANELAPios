@@ -270,6 +270,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
     PlayerMutes playerMutes;
     ServerUpdater serverUpdater;
     SmartAntiLag antiLag;
+    IdentitySignals identitySignals;
     Automations automations;
     PublicChatAssistant publicChatAssistant;
     OpenAiIntegration openAiIntegration() { return openAi; }
@@ -538,6 +539,8 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             catch (Exception error) { playerMutes = null; getLogger().warning("Spieler-Stummschaltung konnte nicht geladen werden; vorhandene Datei bleibt erhalten: " + error.getMessage()); }
         }
         try { serverUpdater = new ServerUpdater(this); } catch (Exception error) { getLogger().warning("Server-Updater konnte nicht geladen werden: " + error.getMessage()); }
+        try { identitySignals = new IdentitySignals(this); Bukkit.getPluginManager().registerEvents(identitySignals, this); identitySignals.start(); }
+        catch (Exception error) { identitySignals = null; getLogger().warning("Experimentelle Identitätssignale bleiben aus: " + error.getMessage()); }
         try { antiLag = new SmartAntiLag(this); Bukkit.getPluginManager().registerEvents(antiLag, this); antiLag.start(); }
         catch (Exception error) { antiLag = null; getLogger().warning("Smart Anti-Lag konnte nicht geladen werden: " + error.getMessage()); }
         try { smartRestart = new SmartRestart(this); } catch (Exception error) { getLogger().warning("Smart-Neustart konnte nicht geladen werden: " + error.getMessage()); }
@@ -568,6 +571,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         if (powerBot != null) powerBot.close();
         if (chatSilence != null) chatSilence.stop();
         if (antiLag != null) antiLag.stop();
+        if (identitySignals != null) identitySignals.stop();
         if (serverUpdater != null) serverUpdater.stop();
         if (liteBansMigration != null) liteBansMigration.stop();
         if (liveInventory != null) liveInventory.close();
@@ -16792,11 +16796,31 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
         private List<AltMatchCacheEngine.Profile> snapshotProfilesForCache(){return snapshotProfilesForCache(false);}
         private List<AltMatchCacheEngine.Profile> snapshotProfilesForCache(boolean rawIps) {
             List<AltMatchCacheEngine.Profile> snapshots = new ArrayList<>();
-            for (PlayerProfile profile : plugin.database.sortedProfiles()) {
+            List<PlayerProfile> profiles = plugin.database.sortedProfiles();
+            // 10.24.0: experimental hints. Skins and Bedrock installation ids only count while rare (shared by few accounts).
+            IdentitySignals signals = plugin.identitySignals;
+            boolean experimental = signals != null && signals.enabled();
+            Map<String, Integer> skinUse = new HashMap<>(), randomUse = new HashMap<>();
+            if (experimental) for (PlayerProfile profile : profiles) {
+                for (String skin : signals.skins(profile.uuid).keySet()) skinUse.merge(skin, 1, Integer::sum);
+                if (signals.enabled("client-random-id")) for (String random : copyHistory(profile.altClientRandomHistory).keySet()) randomUse.merge(random, 1, Integer::sum);
+            }
+            int maxShared = experimental ? signals.maxShared() : 0;
+            for (PlayerProfile profile : profiles) {
+                Map<String, Long> ips = rawIps?copyHistory(profile.altIpHistory):ipExclusions.evidence(profile.altIpHistory);
+                AltMatchCacheEngine.Experimental extra = null;
+                if (experimental) {
+                    Map<String, Long> skins = new HashMap<>(signals.skins(profile.uuid));
+                    skins.keySet().removeIf(skin -> skinUse.getOrDefault(skin, 0) > maxShared);
+                    Map<String, Long> randoms = signals.enabled("client-random-id") ? copyHistory(profile.altClientRandomHistory) : new HashMap<>();
+                    randoms.keySet().removeIf(random -> random.isBlank() || randomUse.getOrDefault(random, 0) > maxShared);
+                    Map<String, Long> networks = signals.enabled("network-prefix") ? AltMatchCacheEngine.networkPrefixes(ipExclusions.evidence(profile.altIpHistory)) : Map.of();
+                    extra = new AltMatchCacheEngine.Experimental(skins, networks, randoms, signals.switchPartners(profile.uuid));
+                }
                 snapshots.add(new AltMatchCacheEngine.Profile(profile.uuid, profile.name, profile.lastSeen,
-                        rawIps?copyHistory(profile.altIpHistory):ipExclusions.evidence(profile.altIpHistory), copyHistory(profile.altDeviceHistory),
+                        ips, copyHistory(profile.altDeviceHistory),
                         copyHistory(profile.altSelfSignedHistory), copyHistory(profile.altXuidHistory),
-                        copySet(profile.manualAltLinks), copySet(profile.ignoredAltLinks), plugin.verifiedLinks(profile.uuid)));
+                        copySet(profile.manualAltLinks), copySet(profile.ignoredAltLinks), plugin.verifiedLinks(profile.uuid), extra));
             }
             return snapshots;
         }
@@ -17934,6 +17958,7 @@ public final class SimplexAdminSuite extends JavaPlugin implements Listener, Com
             profile.manualAltLinks.clear(); profile.ignoredAltLinks.clear();
             profile.altIpHistory.clear(); profile.altDeviceHistory.clear(); profile.altSelfSignedHistory.clear(); profile.altClientRandomHistory.clear(); profile.altXuidHistory.clear();
             profile.devices.clear();
+            if (plugin.identitySignals != null) plugin.identitySignals.forget(profile.uuid);
             profile.bedrockDiagnostics.clear(); profile.javaDiagnostics.clear(); profile.lastBedrockSnapshotAt = 0L;
             profile.lastIpHash = ""; profile.lastIpMasked = "";
             profile.bedrockXuidHash = ""; profile.bedrockDeviceIdHash = ""; profile.bedrockSelfSignedIdHash = ""; profile.bedrockClientRandomIdHash = ""; profile.bedrockPlayFabIdHash = "";

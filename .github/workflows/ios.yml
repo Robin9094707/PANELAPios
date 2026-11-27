@@ -83,7 +83,7 @@ jobs:
           fixture_pid=$!
           trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
           # Focused regression checks, a real pinned TLS fixture and three short UI navigation checks.
-          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -only-testing:PanelTests/Panel460Tests -only-testing:PanelTests/Panel480Tests -only-testing:PanelTests/Panel490Tests -only-testing:PanelTests/Panel491Tests -only-testing:PanelTests/Panel560Tests -only-testing:PanelTests/Panel570Tests -only-testing:PanelTests/Panel580Tests -only-testing:PanelTests/Panel590Tests -only-testing:PanelTests/Panel5100Tests -only-testing:PanelTests/Panel5120Tests -only-testing:PanelTests/Panel5130Tests -only-testing:PanelTests/Panel5160Tests -only-testing:PanelTests/Panel5161Tests -only-testing:PanelTests/MinecraftTests -only-testing:PanelTests/PinnedHTTPTests -only-testing:PanelUITests/PanelUITests/test490HomeShortcutsAndHelpLaunch -only-testing:PanelUITests/PanelUITests/test491SpecificServerShortcutsAndSelectablePicker -only-testing:PanelUITests/PanelUITests/test491FailedServerCanRetryWithoutBlockingOtherServers -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
+          xcodebuild test-without-building -project Panel.xcodeproj -scheme Panel -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO -only-testing:PanelTests/Panel400Tests -only-testing:PanelTests/Panel410Tests -only-testing:PanelTests/Panel420Tests -only-testing:PanelTests/Panel430Tests -only-testing:PanelTests/Panel440Tests -only-testing:PanelTests/Panel450Tests -only-testing:PanelTests/Panel460Tests -only-testing:PanelTests/Panel480Tests -only-testing:PanelTests/Panel490Tests -only-testing:PanelTests/Panel491Tests -only-testing:PanelTests/Panel560Tests -only-testing:PanelTests/Panel570Tests -only-testing:PanelTests/Panel580Tests -only-testing:PanelTests/Panel590Tests -only-testing:PanelTests/Panel5100Tests -only-testing:PanelTests/Panel5120Tests -only-testing:PanelTests/Panel5130Tests -only-testing:PanelTests/Panel5160Tests -only-testing:PanelTests/Panel5161Tests -only-testing:PanelTests/Panel5170Tests -only-testing:PanelTests/MinecraftTests -only-testing:PanelTests/PinnedHTTPTests -only-testing:PanelUITests/PanelUITests/test490HomeShortcutsAndHelpLaunch -only-testing:PanelUITests/PanelUITests/test491SpecificServerShortcutsAndSelectablePicker -only-testing:PanelUITests/PanelUITests/test491FailedServerCanRetryWithoutBlockingOtherServers -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 | tee simulator.log
       - name: Extract UI test screenshots
         if: always()
         run: |
@@ -145,7 +145,7 @@ jobs:
       - name: Upload the JAR as an individual file
         uses: actions/upload-artifact@v7.0.2
         with:
-          path: Companion/AdminSuite/target/SimplexAdminSuite-10.23.1.jar
+          path: Companion/AdminSuite/target/SimplexAdminSuite-10.24.0.jar
           archive: false
           if-no-files-found: error
           retention-days: 30
@@ -160,7 +160,7 @@ jobs:
           python3 tools/package-source.py
           cp ../../docs/Simplex-Admin-Recovery.pdf target/
           cd target
-          sha256sum SimplexAdminSuite-10.23.1.jar SimplexAdminSuite-10.23.1-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
+          sha256sum SimplexAdminSuite-10.24.0.jar SimplexAdminSuite-10.24.0-source.zip Simplex-Admin-Recovery.pdf > AdminSuite-SHA256SUMS.txt
       - name: Build and test SimplexSentinelBridge (Geyser extension) against the real Geyser API
         working-directory: Companion/SentinelBridge
         run: |
@@ -174,8 +174,8 @@ jobs:
         with:
           name: SimplexAdminSuite-unsigned-plugin
           path: |
-            Companion/AdminSuite/target/SimplexAdminSuite-10.23.1.jar
-            Companion/AdminSuite/target/SimplexAdminSuite-10.23.1-source.zip
+            Companion/AdminSuite/target/SimplexAdminSuite-10.24.0.jar
+            Companion/AdminSuite/target/SimplexAdminSuite-10.24.0-source.zip
             Companion/AdminSuite/target/Simplex-Admin-Recovery.pdf
             Companion/AdminSuite/target/AdminSuite-SHA256SUMS.txt
           if-no-files-found: error
@@ -235,6 +235,8 @@ jobs:
             exit 1
           fi
           cat > build/release/RELEASE-NOTES.md <<'NOTES'
+          Simplex Panel 5.17.0 / Admin Suite 10.24.0: Länder-Zentrale for the Lands plugin in app, web panel and API (/v1/lands): dashboard with all lands, totals and sorting; per land members with roles, add/remove/ban/unban, role rights (action and management flags) as switches, rank, rename and delete roles, natural flags, sub-areas with their own members/roles/rules, rename, enter message, taxes, land bank, owner change and land deletion with name confirmation. The player profile shows owned lands (main land), memberships with role and sub-areas and land bans, with add to land, role change and remove (also from all lands at once). New rights lands.manage and lands.delete. Experimental identity signals for the alt analysis (Java and Bedrock via Geyser): rare identical skin texture, repeated account switches on the same connection, same IPv6 /64 line and the Bedrock installation id – hints only, never cascade or auto-punish, configurable under alt-detection.experimental. Duplicate entries to Ultrabanns and quiet hours removed. All existing data stays valid. See UPDATE-5.17.0.md.
+
           Simplex Panel 5.16.1 / Admin Suite 10.23.1: bugfix release. Tapping a tile in the player profile or the briefing opened every tool of that row one after another (several NavigationLinks in one List row) – now exactly the chosen tool opens. Every tool has one entry: the profile keeps its tools only in the Liquid Glass grid, and the pairing page, direct-access dashboard, Suite management, restart, event mode and server card no longer repeat directory tools; diagnostics sub-tools and the superseded ban list appear only by search. Full texts in app tiles and in web lists (devices, alt evidence, actions) instead of "…"; no second actions menu or devices tab in the web profile; one chat break entry in the in-game /profil menu. All data stays valid. See UPDATE-5.16.1.md.
 
           Simplex Panel 5.16.0 / Admin Suite 10.23.0: Paper server updater (installed build, newer builds with PaperMC change notes, careful server.jar replacement with checksum, backup and automatic rollback, guided manual update on failure; same Minecraft version only by default). Smart Anti-Lag finds mob crowds, item piles and redstone/piston/hopper machines, names the players who built or bred them, informs them politely and only acts when the server really suffers (spawn brake, reversible AI pause) – with teleport from app and web. Players mute server sounds (chat pings, plugin sounds or silence) and mute single players just for themselves, optionally including hidden linked accounts; admins can never be muted. Plugin updates are staged as Name-Version.jar, new plugins can be added while the server runs, and a fast server-side plugin overview. Liquid Glass tool grid in the player profile (app and web). Paper API 26.3 build 258, sqlite-jdbc 3.54.1.0, Netty/Guava build references aligned with Paper, Discord modals use Label components and hidden channels are skipped. All existing data stays valid. See UPDATE-5.16.0.md.

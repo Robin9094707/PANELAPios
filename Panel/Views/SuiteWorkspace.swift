@@ -165,7 +165,7 @@ struct SuiteToolDestination: View {
             case .scoreboard: SuiteScoreboardDesignerView(suite: suite)
             case .discord: SuiteDiscordView(suite: suite)
             case .luckperms: SuiteLuckPermsView(suite: suite)
-            case .lands: SuiteLandsView(suite: suite)
+            case .lands: SuiteLandsCenterView(suite: suite)
             case .locks: SuiteAccessLocksView(suite: suite)
             case .commands: SuiteCommandsView(suite: suite)
             case .management: SuiteManagementView(suite: suite, actions: actions)

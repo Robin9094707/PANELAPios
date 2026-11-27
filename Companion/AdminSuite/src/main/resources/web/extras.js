@@ -515,33 +515,5 @@
     S.mount(h("div", { class: "stack" }, head, h("div", { class: "grid two" }, groupsCard, h("div", { class: "stack" }, add, nodes))));
   }
 
-  // ============================================================ Page: Lands
-  P.lands = async function (param, query, alive) {
-    var q = query.get("q") || "";
-    var d = await S.api("data/lands", { query: { q: q } }); if (!alive()) return;
-    S.title("Lands", d.installed ? "Lands " + (d.version || "") : "");
-    if (!d.installed) { S.mount(S.card(null, {}, S.empty("map", "Lands ist nicht installiert", "Mit dem Lands-Plugin siehst du hier alle Länder und verwaltest, welche Admins überall Zugriff haben."))); return; }
-    var canEdit = S.can("action.lands.access") && S.full() && d.luckperms;
-    function toggle(m, node, on) {
-      var what = node === "lands.bypass.*" ? "Bypass" : "Admin";
-      return S.btn(what + (on ? " entziehen" : " vergeben"), { size: "sm", icon: on ? "x" : "plus", kind: on ? "danger" : "", disabled: !canEdit, title: canEdit ? "" : (d.luckperms ? "Benötigt action.lands.access" : "Benötigt LuckPerms"),
-        onClick: async function () { var r = await S.runAction("lands.access", { player: m.uuid, node: node, operation: on ? "revoke" : "grant" }, { title: (on ? "Zugriff entziehen: " : "Zugriff vergeben: ") + m.name, danger: on }); if (r) setTimeout(S.reload, 900); } });
-    }
-    var admins = S.card("Admin-Zugriff auf alle Länder", { icon: "shieldCheck", cls: "pad-list", sub: "lands.bypass.* = überall bauen/öffnen · lands.admin.* = Lands-Adminbefehle" }, h("div", { class: "list" }, (d.admins || []).length ? d.admins.map(function (m) {
-      return h("div", { class: "item stackable" }, S.avatar(m.name, "sm"), h("div", { class: "meta" }, h("b", { text: m.name }), h("div", { class: "row wrap", style: { gap: "6px", marginTop: "4px" } },
-        m.bypass ? S.badge("Bypass", "warn", "unlock") : S.badge("Kein Bypass"), m.admin ? S.badge("Lands-Admin", "accent", "crown") : null, m.online ? S.badge("Online", "ok") : null)),
-        h("div", { class: "side wrap" }, toggle(m, "lands.bypass.*", m.bypass), toggle(m, "lands.admin.*", m.admin)));
-    }) : h("div", { class: "item muted small", text: "Keine Teammitglieder erkannt." })));
-    var list = S.card("Länder", { icon: "map", cls: "pad-0", sub: d.total + " gefunden" }, h("div", { class: "table-wrap" }, h("table", { class: "table responsive" },
-      h("thead", {}, h("tr", {}, ["Land", "Besitzer", "Mitglieder", "Chunks", "Kasse", "Level"].map(function (t) { return h("th", { text: t }); }))),
-      h("tbody", {}, (d.lands || []).map(function (l) {
-        return h("tr", {}, h("td", { class: "primary", text: l.display || l.name }), h("td", { "data-label": "Besitzer" }, l.owner && S.can("data.profile") ? h("a", { href: "#/player/" + l.owner, text: l.ownerName }) : l.ownerName),
-          h("td", { "data-label": "Mitglieder", text: S.num(l.members) }), h("td", { "data-label": "Chunks", text: S.num(l.chunks) }), h("td", { "data-label": "Kasse", text: S.num(Math.round(l.balance)) }), h("td", { "data-label": "Level", text: l.level || "–" }));
-      })))));
-    S.mount(h("div", { class: "stack" }, d.error ? S.notice(d.error, "warn", "alert") : null,
-      h("div", { class: "grid kpis" }, kpi("Länder", d.total, "map"), kpi("Admins mit Bypass", (d.admins || []).filter(function (a) { return a.bypass; }).length, "unlock"), kpi("Lands-Admins", (d.admins || []).filter(function (a) { return a.admin; }).length, "crown")),
-      admins, h("div", { class: "row" }, S.searchBox("Land oder Besitzer suchen …", function (v) { S.go("#/lands?q=" + encodeURIComponent(v)); }, q)), list,
-      !d.luckperms ? S.notice("Zugriff vergeben/entziehen benötigt LuckPerms.", "warn", "lock") : null));
-  };
   function kpi(label, value, ic) { return h("section", { class: "card kpi" }, h("div", { class: "ico" }, icon(ic)), h("div", { class: "label", text: label }), h("div", { class: "value", text: S.num(value) })); }
 })();

@@ -24,12 +24,13 @@ final class PanelHub {
     private final AppApiSecurity security;
     final LuckPermsAdmin luckPerms;
     final LandsBridge lands;
+    final LandsAdmin landsAdmin;
     private final Path prefsFile;
     private final Properties prefs = new Properties();
 
     PanelHub(AppApiManager api, SimplexAdminSuite plugin, AppApiSecurity security) throws IOException {
         this.api = api; this.plugin = plugin; this.security = security;
-        luckPerms = new LuckPermsAdmin(plugin); lands = new LandsBridge(plugin);
+        luckPerms = new LuckPermsAdmin(plugin); lands = new LandsBridge(plugin); landsAdmin = new LandsAdmin(plugin, lands);
         prefsFile = security.directory.resolve("web-prefs.properties");
         if (Files.exists(prefsFile)) try (var in = Files.newBufferedReader(prefsFile, StandardCharsets.UTF_8)) { prefs.load(in); }
     }

@@ -1,3 +1,7 @@
+## Panel 5.17.0 und Admin Suite 10.24.0
+
+Länder-Zentrale für Lands in App und Webpanel: Dashboard aller Länder, Mitglieder mit Rollen hinzufügen/entfernen/bannen, alle Rollenrechte und Natur-Regeln als Schalter, Untergebiete, Name, Begrüßung, Steuern, Landbank, Besitzer und Löschen mit Bestätigung – und im Spielerprofil eigene Länder, Mitgliedschaften und Land-Banns. Dazu experimentelle Identitätssignale für die Alt-Erkennung (seltener Skin, Kontowechsel, IPv6-Anschluss, Bedrock-Installations-ID) – nur Hinweise, nie automatische Strafen. [Update-Anleitung](UPDATE-5.17.0.md)
+
 ## Panel 5.16.1 und Admin Suite 10.23.1
 
 Bugfix: Ein Tipp öffnet im Spielerprofil wieder genau ein Werkzeug, jeder Menüpunkt existiert nur noch einmal (App, Web, Ingame), und lange Texte werden vollständig angezeigt. [Update-Anleitung](UPDATE-5.16.1.md)

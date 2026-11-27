@@ -186,6 +186,8 @@
     var cards = [head];
     // 10.20.0: main ban or blocked alt account, whole case and lift options right in the profile.
     if (S.has("ban-center-v1") && S.can("data.ban-center") && S.banStatusCard) cards.push(S.banStatusCard(p.id));
+    // 10.24.0: lands of this player (owner, member with role, banned) with add/remove/role right here.
+    if (S.has("lands-center-v1") && S.can("data.lands") && S.landsCard) cards.push(S.landsCard(p.id));
     // 10.0.0: quick access to rank (LuckPerms) and access locks of this player.
     var quick = h("div", { class: "row wrap" },
       S.has("community-tools-v1") && S.can("data.community-tools")

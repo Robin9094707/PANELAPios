@@ -1,6 +1,8 @@
 package eu.simplexsmp.adminsuite;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Locale;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -123,7 +125,11 @@ final class AltMatchCacheEngine {
         return one.verifiedLinks.contains(two.uuid.toString())||two.verifiedLinks.contains(one.uuid.toString())||intersects(one.deviceHistory, two.deviceHistory)
                 || intersects(one.xuidHistory, two.xuidHistory)
                 || intersects(one.selfSignedHistory, two.selfSignedHistory)
-                || intersects(one.ipHistory, two.ipHistory);
+                || intersects(one.ipHistory, two.ipHistory)
+                || intersects(one.randomHistory, two.randomHistory)
+                || intersects(one.skinHistory, two.skinHistory)
+                || one.switchPartners.containsKey(two.uuid.toString()) || two.switchPartners.containsKey(one.uuid.toString())
+                || sharedNetwork(one.netHistory, two.netHistory).startsWith("v6:");
     }
 
     private static Score score(Profile one, Profile two, int cascadeMinimumScore, long now) {
@@ -151,6 +157,17 @@ final class AltMatchCacheEngine {
                 points += ageDays <= 7 ? 35 : ageDays <= 30 ? 25 : 12;
                 evidence.add("Gemeinsame IP-Historie (" + ageDays + " Tage alt)");
             }
+            // 10.24.0 experimental hints – they add points but never make an edge safe for cascade actions.
+            if (intersects(one.randomHistory, two.randomHistory)) { points += 60; evidence.add("Gleiche Bedrock-Installations-ID (experimentell)"); }
+            if (intersects(one.skinHistory, two.skinHistory)) { points += 30; evidence.add("Gleicher seltener Skin (experimentell)"); }
+            Integer switched = one.switchPartners.get(two.uuid.toString());
+            if (switched == null) switched = two.switchPartners.get(one.uuid.toString());
+            if (switched != null && switched > 0) { points += Math.min(40, 10 * switched); evidence.add("Kontowechsel am selben Anschluss (" + switched + "×, experimentell)"); }
+            if (newestIp <= 0L) {
+                String net = sharedNetwork(one.netHistory, two.netHistory);
+                if (net.startsWith("v6:")) { points += 20; evidence.add("Gleicher IPv6-Anschluss /64 (experimentell)"); }
+                else if (net.startsWith("v4:") && points > 0) { points += 8; evidence.add("Gleiches IPv4-Netz /24 (experimentell)"); }
+            }
             safe = safe || points >= cascadeMinimumScore && evidence.stream().anyMatch(text ->
                     text.contains("Geräte-ID") || text.contains("XUID") || text.contains("selbstsignierte"));
         }
@@ -158,6 +175,13 @@ final class AltMatchCacheEngine {
         String level = confirmed ? "BESTÄTIGT" : points >= 70 ? "STARK" : points >= 45 ? "WAHRSCHEINLICH"
                 : points >= 25 ? "SCHWACH" : "HINWEIS";
         return new Score(points, level, Collections.unmodifiableList(evidence), safe);
+    }
+
+    private static String sharedNetwork(Map<String, Long> first, Map<String, Long> second) {
+        if (first.isEmpty() || second.isEmpty()) return "";
+        String best = "";
+        for (String key : first.keySet()) if (second.containsKey(key)) { if (key.startsWith("v6:")) return key; best = key; }
+        return best;
     }
 
     private static boolean intersects(Map<String, Long> first, Map<String, Long> second) {
@@ -197,7 +221,20 @@ final class AltMatchCacheEngine {
                 Set<String> manualLinks, Set<String> ignoredLinks) {
             this(uuid,name,lastSeen,ipHistory,deviceHistory,selfSignedHistory,xuidHistory,manualLinks,ignoredLinks,Set.of());
         }
+        /** 10.24.0: experimental hints (never cascade-safe); empty unless alt-detection.experimental is on. */
+        final Map<String, Long> skinHistory;
+        final Map<String, Long> netHistory;
+        final Map<String, Long> randomHistory;
+        final Map<String, Integer> switchPartners;
+
         Profile(UUID uuid,String name,long lastSeen,Map<String,Long> ipHistory,Map<String,Long> deviceHistory,Map<String,Long> selfSignedHistory,Map<String,Long> xuidHistory,Set<String> manualLinks,Set<String> ignoredLinks,Set<String> verifiedLinks){
+            this(uuid,name,lastSeen,ipHistory,deviceHistory,selfSignedHistory,xuidHistory,manualLinks,ignoredLinks,verifiedLinks,null);
+        }
+        Profile(UUID uuid,String name,long lastSeen,Map<String,Long> ipHistory,Map<String,Long> deviceHistory,Map<String,Long> selfSignedHistory,Map<String,Long> xuidHistory,Set<String> manualLinks,Set<String> ignoredLinks,Set<String> verifiedLinks,Experimental experimental){
+            this.skinHistory=immutableMap(experimental==null?null:experimental.skins);
+            this.netHistory=immutableMap(experimental==null?null:experimental.networks);
+            this.randomHistory=immutableMap(experimental==null?null:experimental.clientRandom);
+            this.switchPartners=experimental==null||experimental.switches==null?Map.of():Collections.unmodifiableMap(new HashMap<>(experimental.switches));
             this.verifiedLinks=immutableSet(verifiedLinks);
             this.uuid = uuid;
             this.name = name == null ? "Unknown" : name;
@@ -217,6 +254,58 @@ final class AltMatchCacheEngine {
         private static Set<String> immutableSet(Set<String> source) {
             return Collections.unmodifiableSet(new HashSet<>(source == null ? Collections.emptySet() : source));
         }
+    }
+
+    /** 10.24.0: inputs for the experimental hints (see {@link IdentitySignals}). */
+    static final class Experimental {
+        final Map<String, Long> skins, networks, clientRandom;
+        final Map<String, Integer> switches;
+        Experimental(Map<String, Long> skins, Map<String, Long> networks, Map<String, Long> clientRandom, Map<String, Integer> switches) {
+            this.skins = skins; this.networks = networks; this.clientRandom = clientRandom; this.switches = switches;
+        }
+    }
+
+    /**
+     * Network prefixes of an IP history: "v6:" + first four hextets (/64, one household line) or "v4:" + first three
+     * octets (/24). Only IP literals are parsed – never a DNS lookup.
+     */
+    static Map<String, Long> networkPrefixes(Map<String, Long> ips) {
+        Map<String, Long> out = new HashMap<>();
+        if (ips == null) return out;
+        for (Map.Entry<String, Long> e : ips.entrySet()) {
+            String prefix = networkPrefix(e.getKey());
+            if (!prefix.isEmpty()) out.merge(prefix, e.getValue() == null ? 0L : e.getValue(), Math::max);
+        }
+        return out;
+    }
+
+    static String networkPrefix(String ip) {
+        if (ip == null) return "";
+        String v = ip.trim();
+        if (v.matches("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}")) {
+            if (v.startsWith("10.") || v.startsWith("127.") || v.startsWith("192.168.")) return "";
+            return "v4:" + v.substring(0, v.lastIndexOf('.'));
+        }
+        if (v.indexOf(':') < 0 || !v.matches("[0-9A-Fa-f:]{2,39}")) return "";
+        String[] head, tail;
+        int gap = v.indexOf("::");
+        if (gap >= 0) {
+            String left = v.substring(0, gap), right = v.substring(gap + 2);
+            head = left.isEmpty() ? new String[0] : left.split(":");
+            tail = right.isEmpty() ? new String[0] : right.split(":");
+        } else { head = v.split(":"); tail = new String[0]; }
+        if (head.length + tail.length > 8) return "";
+        String[] full = new String[8];
+        Arrays.fill(full, "0");
+        for (int i = 0; i < head.length; i++) full[i] = head[i];
+        for (int i = 0; i < tail.length; i++) full[8 - tail.length + i] = tail[i];
+        if (full[0].equalsIgnoreCase("fe80") || full[0].equalsIgnoreCase("0") && full[1].equals("0")) return "";
+        StringBuilder out = new StringBuilder("v6:");
+        for (int i = 0; i < 4; i++) {
+            String part = full[i].replaceFirst("^0+(?=.)", "").toLowerCase(Locale.ROOT);
+            out.append(i == 0 ? "" : ":").append(part);
+        }
+        return out.toString();
     }
 
     static final class Match {

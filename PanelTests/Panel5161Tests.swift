@@ -26,6 +26,6 @@ import XCTest
 
     func testPlayerToolsAreUnique() {
         XCTAssertEqual(Set(SuitePlayerTool.allCases.map(\.id)).count, SuitePlayerTool.allCases.count)
-        XCTAssertEqual(WhatsNew.releases.first?.version, "5.16.1")
+        XCTAssertNotNil(WhatsNew.releases.first { $0.version == "5.16.1" })
     }
 }

@@ -18,6 +18,16 @@ struct WhatsNewRelease: Identifiable, Equatable {
 enum WhatsNew {
     static let lastSeenKey = "whatsNew.lastSeenVersion"
     static let releases: [WhatsNewRelease] = [
+        WhatsNewRelease(version: "5.17.0", title: "Länder-Zentrale & neue Identitätssignale", summary: "Alle Länder des Lands-Plugins direkt in der App verwalten – und im Spielerprofil sehen, wem welches Land gehört und wo jemand Mitglied ist. Dazu neue, experimentelle Signale für die Alt-Erkennung. Alle Daten bleiben erhalten.", items: [
+            .init(symbol: "map.fill", title: "Länder-Dashboard", detail: "Alle Länder mit Besitzer, Mitgliedern, Chunks, Landbank, Level und Nation – sortierbar nach Größe, Mitgliedern, Online, Bank oder Alter."),
+            .init(symbol: "person.2.fill", title: "Mitglieder verwalten", detail: "Spieler zu einem Land oder Gebiet hinzufügen – direkt mit Rolle –, Rolle ändern, entfernen, bannen und entbannen."),
+            .init(symbol: "crown.fill", title: "Rollen & Rechte", detail: "Jedes Aktions- und Verwaltungsrecht jeder Rolle als Schalter, Rang ändern, umbenennen und löschen. Die Besitzer-Rolle bleibt geschützt."),
+            .init(symbol: "leaf.fill", title: "Natur-Regeln & Gebiete", detail: "Monster, Feuer, TNT, Wasser und mehr pro Land und Untergebiet. Untergebiete mit eigenen Mitgliedern, Rollen und Regeln."),
+            .init(symbol: "slider.horizontal.3", title: "Land-Einstellungen", detail: "Name, Begrüßung, Steuern, Landbank und Besitzer ändern. Länder löschen mit Bestätigung durch den Landnamen (Recht lands.delete)."),
+            .init(symbol: "person.crop.rectangle.stack.fill", title: "Länder im Spielerprofil", detail: "Eigene Länder (Hauptland), Mitgliedschaften mit Rolle und Gebieten und Land-Banns – mit Hinzufügen, Rolle ändern und Entfernen, auch aus allen Ländern auf einmal."),
+            .init(symbol: "person.2.badge.key.fill", title: "Neue Identitätssignale", detail: "Experimentell für Java und Bedrock: gleicher seltener Skin, wiederholte Kontowechsel am selben Anschluss, gleicher IPv6-Anschluss und die Bedrock-Installations-ID. Nur Hinweise – nie automatische Strafen."),
+            .init(symbol: "square.grid.2x2.fill", title: "Aufgeräumt", detail: "Ultrabanns und Ruhezeiten haben nur noch ihren Eintrag im Werkzeug-Verzeichnis.")
+        ]),
         WhatsNewRelease(version: "5.16.1", title: "Bugfix: Navigation & Menüs", summary: "Ein Tipp öffnet wieder genau ein Werkzeug, jeder Menüpunkt gibt es nur noch einmal, und lange Texte werden vollständig angezeigt. Alle Daten bleiben erhalten.", items: [
             .init(symbol: "hand.tap.fill", title: "Ein Tipp, ein Werkzeug", detail: "Im Spielerprofil und im Rückblick öffneten sich beim Tippen auf eine Kachel alle Werkzeuge nacheinander. Jetzt öffnet sich nur das gewählte – ein Zurück genügt."),
             .init(symbol: "square.grid.2x2.fill", title: "Keine doppelten Menüpunkte", detail: "Spielerwerkzeuge gibt es nur noch im Raster oben im Profil. Kopplungsseite, Direktzugang, Suite-Verwaltung, Neustart und Event-Modus verlinken nicht mehr dieselben Werkzeuge; alles liegt im Werkzeug-Verzeichnis."),

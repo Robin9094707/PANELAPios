@@ -2,12 +2,12 @@
 
 Arbeitssprache mit dem Besitzer: **Deutsch**. Nutzertexte in App, Plugin und Doku sind Deutsch (Plugin-Spielertexte teils DE/EN).
 
-## Aktueller Stand (23.11.2026)
+## Aktueller Stand (27.11.2026)
 
 | Komponente | Version | Ort |
 | --- | --- | --- |
-| iOS-App „Simplex Panel“ | **5.16.1** (Build 58) | `Panel/`, `Shared/`, `PanelWidgets/`, `project.yml` |
-| Paper-Plugin „Simplex Admin Suite“ | **10.23.1** | `Companion/AdminSuite/` |
+| iOS-App „Simplex Panel“ | **5.17.0** (Build 59) | `Panel/`, `Shared/`, `PanelWidgets/`, `project.yml` |
+| Paper-Plugin „Simplex Admin Suite“ | **10.24.0** | `Companion/AdminSuite/` |
 | Geyser-Extension „SentinelBridge“ | 1.6.0 (unverändert seit 4.6.0) | `Companion/SentinelBridge/` |
 
 Hoster: **UltraServers** (`https://panel.ultraservers.com`, Pterodactyl-Client-API mit `ptlc_`-Schlüsseln). Kinetic wurde in 5.12.0 vollständig entfernt – nicht wieder einbauen.
@@ -77,6 +77,11 @@ LiteBans ist abgelöst (`litebans-migration.disable-litebans`, Standard an): `Li
 - Plugin-Updates werden als `<Name>-<Version>.jar` vorgemerkt – Paper übernimmt den Namen (geprüft in `FileProviderSource#checkUpdate`). `PluginFileNaming`, `/v1/plugin-files/overview`.
 - App-Logik ohne SwiftUI in `Panel/Core/SuiteUpkeepModel.swift`, Glas-Kacheln in `Design.swift` (`SuiteGlassTileLabel`), Profil-Raster `SuitePlayerTools.swift`.
 - MariaDB-Treiber bewusst auf 3.5.x (4.0 erzwingt verify-full TLS).
+
+## 10.24.0 / 5.17.0
+
+- Länder-Zentrale: `LandsAdmin.java` (Lands-API per Reflection – Methodennamen gegen github.com/Angeschossen/LandsAPI geprüft), `LandsApi.java` (`/v1/lands`, `/lands/land`, `/lands/area`, `/lands/player`, POST-Operationen), `LandsFlagTitles.java`. Rechte `data.lands`, `lands.manage`, `lands.delete`. Web `web/lands.js` (alte Seite aus `extras.js` entfernt), App `SuiteLands.swift` + `Core/SuiteLandsModel.swift`, Profil-Abschnitt `SuitePlayerLandsSection`. Länder erstellen gibt die API nicht her.
+- Experimentelle Alt-Signale: `IdentitySignals.java` (Skin-Textur-ID, Kontowechsel, `identity-signals.yml`), `AltMatchCacheEngine.Experimental` (Skin, Wechsel, IPv6-/64, ClientRandomId) – nie kaskadensicher, `alt-detection.experimental.*`. Ressourcenpaket-Cache-Fingerprinting bewusst nicht (Client-Exploit, TTDSG).
 
 ## Zuletzt behoben (10.19.0)
 
